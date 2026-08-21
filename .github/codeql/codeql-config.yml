@@ -1,0 +1,5 @@
+name: Aegify CodeQL configuration
+
+paths-ignore:
+  # Intentionally vulnerable sources used to verify Aegify detections.
+  - scanner/tests/fixtures/**

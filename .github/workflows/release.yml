@@ -58,7 +58,7 @@ jobs:
           upload-artifact: false
 
       - name: Attest wheel provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.0.0
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
         with:
           subject-path: scanner/dist/*.whl
 

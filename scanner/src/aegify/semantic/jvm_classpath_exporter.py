@@ -250,7 +250,7 @@ class JvmClasspathExporter:
             "-o",
             "-q",
             f"-Dmaven.repo.local={repository_cache}",
-            "dependency:build-classpath",
+            "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:build-classpath",
             "-DincludeScope=compile",
             f"-Dmdep.outputFile={relative_output}",
         ]

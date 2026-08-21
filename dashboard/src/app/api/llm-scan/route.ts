@@ -7,8 +7,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { scanId, mode } = body;
 
-    if (!scanId) {
-      return NextResponse.json({ error: "scanId is required" }, { status: 400 });
+    if (typeof scanId !== "string" || !/^[a-z0-9]{20,40}$/.test(scanId)) {
+      return NextResponse.json({ error: "a valid scanId is required" }, { status: 400 });
     }
 
     if (!mode || !["quick", "deep"].includes(mode)) {
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     // Fire async review (fire-and-forget)
     reviewScanFindings(scanId, mode).catch((err) =>
-      console.error(`LLM review ${scanId} failed:`, err),
+      console.error("LLM review failed", { scanId, error: err }),
     );
 
     return NextResponse.json({

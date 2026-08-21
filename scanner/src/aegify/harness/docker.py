@@ -289,6 +289,9 @@ class DockerVerificationExecutor:
         workdir = "/workspace"
         if step.working_directory not in {"", "."}:
             workdir = f"/workspace/{step.working_directory}"
+        tmpfs_options = ["rw", "nosuid", "nodev"]
+        tmpfs_options.append("exec" if plan.policy.tmpfs_executable else "noexec")
+        tmpfs_options.append(f"size={plan.policy.tmpfs_size}")
         return [
             self.docker or "docker",
             "run",
@@ -319,7 +322,7 @@ class DockerVerificationExecutor:
             "--env",
             "XDG_CACHE_HOME=/tmp/.cache",
             "--tmpfs",
-            f"/tmp:rw,nosuid,nodev,noexec,size={plan.policy.tmpfs_size}",
+            f"/tmp:{','.join(tmpfs_options)}",
             "--mount",
             f"type=bind,src={workspace},dst=/workspace",
             "--workdir",

@@ -5,6 +5,7 @@
 !scanner/
 scanner/**
 !scanner/pyproject.toml
+!scanner/uv.lock
 !scanner/README.md
 !scanner/src/
 !scanner/src/**

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import * as yaml from "js-yaml";
 import * as fs from "fs";
 import * as path from "path";
+import { assertAegifyRuleId, resolveWithinDirectory } from "@/lib/rule-path";
 
 interface YamlRule {
   id: string;
@@ -36,7 +37,10 @@ function findYamlFiles(dir: string): string[] {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...findYamlFiles(fullPath));
-    } else if (entry.name.endsWith(".yml") || entry.name.endsWith(".yaml")) {
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".yml") || entry.name.endsWith(".yaml"))
+    ) {
       results.push(fullPath);
     }
   }
@@ -105,6 +109,11 @@ export async function syncYamlToDb(): Promise<{ synced: number; errors: string[]
 }
 
 export async function syncDbToYaml(ruleId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    assertAegifyRuleId(ruleId);
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Invalid rule ID" };
+  }
   const rule = await prisma.rule.findUnique({ where: { id: ruleId } });
   if (!rule) return { success: false, error: "Rule not found" };
 
@@ -114,13 +123,21 @@ export async function syncDbToYaml(ruleId: string): Promise<{ success: boolean; 
   // Otherwise, create a new file based on rule ID
   let targetFile: string;
   if (rule.sourceFile) {
-    targetFile = path.join(rulesDir, rule.sourceFile);
+    try {
+      targetFile = resolveWithinDirectory(rulesDir, rule.sourceFile);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Invalid rule source path",
+      };
+    }
   } else {
     // Generate a file path from the rule ID
-    const category = ruleId.toLowerCase().replace(/^cg-/, "").split("-")[0];
-    const dir = path.join(rulesDir, category);
+    const category = ruleId.toLowerCase().replace(/^aeg-/, "").split("-")[0];
+    const relativeTarget = path.join(category, `${ruleId.toLowerCase()}.yml`);
+    targetFile = resolveWithinDirectory(rulesDir, relativeTarget);
+    const dir = path.dirname(targetFile);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    targetFile = path.join(dir, `${ruleId.toLowerCase()}.yml`);
   }
 
   try {

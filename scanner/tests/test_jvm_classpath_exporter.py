@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 import aegify.harness
 from aegify.cli import app
 from aegify.config import AegifyConfig
+from aegify.harness.docker import DockerVerificationExecutor
 from aegify.harness.models import (
     VerificationArtifact,
     VerificationReport,
@@ -184,6 +185,7 @@ def test_maven_export_runs_offline_argv_and_builds_single_bundle(tmp_path: Path)
 
     assert commands[0][0] == "mvn"
     assert "-o" in commands[0]
+    assert "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:build-classpath" in commands[0]
     assert all(item not in {"sh", "bash", "-c"} for item in commands[0])
     with zipfile.ZipFile(bundle) as archive:
         snapshot = JvmClasspathSnapshot.model_validate_json(archive.read("classpath.json"))
@@ -250,6 +252,18 @@ def test_planner_emits_one_no_network_export_per_independent_build(tmp_path: Pat
         "tools",
     }
     assert repository_plan.verification_plan.policy.network == "none"
+    assert repository_plan.verification_plan.policy.tmpfs_executable is True
+    docker_command = (
+        DockerVerificationExecutor("docker")
+        .plan(
+            repository_plan.verification_plan,
+            repository,
+        )
+        .docker_commands[0]
+    )
+    tmpfs = docker_command[docker_command.index("--tmpfs") + 1]
+    assert tmpfs == "/tmp:rw,nosuid,nodev,exec,size=4g"
+    assert "noexec" not in tmpfs
     for step in repository_plan.verification_plan.steps:
         assert step.command[:3] == [
             "python",

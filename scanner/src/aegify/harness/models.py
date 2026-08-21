@@ -30,6 +30,7 @@ class VerificationPolicy(BaseModel):
     memory: str = "2g"
     pids_limit: int = Field(default=256, ge=16, le=4096)
     tmpfs_size: str = "256m"
+    tmpfs_executable: bool = False
     max_output_bytes: int = Field(default=1_000_000, ge=1024, le=20_000_000)
     max_artifact_bytes: int = Field(
         default=200_000_000,

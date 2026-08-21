@@ -28,6 +28,7 @@ from aegify.models import (
     TaintSink,
     TaintSource,
 )
+from aegify.text import scrub_quoted_strings
 
 _TraceMap = dict[str, "_Trace"]
 _CallString = tuple[str, ...]
@@ -1217,12 +1218,7 @@ class StructuredTaintAnalyzer:
         for fragment in re.findall(r"\{([^{}]+)\}", expression):
             interpolated.extend(cls._ACCESS.findall(fragment))
         interpolated.extend(re.findall(r"\$(?!\{)([A-Za-z_$][\w$]*)", expression))
-        scrubbed = re.sub(
-            r"(['\"])(?:\\.|(?!\1).)*\1",
-            lambda match: " " * len(match.group(0)),
-            expression,
-            flags=re.DOTALL,
-        )
+        scrubbed = scrub_quoted_strings(expression)
         accesses: list[str] = [
             value for value in interpolated if value not in cls._KEYWORDS and not value[0].isupper()
         ]
