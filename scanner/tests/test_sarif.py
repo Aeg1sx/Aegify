@@ -96,6 +96,7 @@ class TestSARIFReporter:
             assert "ruleId" in result
             assert "level" in result
             assert "message" in result
+            assert result["partialFingerprints"]["aegifyFingerprint/v1"]
             assert len(result["locations"]) > 0
 
             loc = result["locations"][0]["physicalLocation"]

@@ -50,7 +50,7 @@ class SARIFReporter:
                 "driver": {
                     "name": self.TOOL_NAME,
                     "version": self.TOOL_VERSION,
-                    "informationUri": "https://github.com/aegify/sast",
+                    "informationUri": "https://github.com/Aeg1sx/Aegify",
                     "rules": rules,
                 }
             },
@@ -438,6 +438,9 @@ class SARIFReporter:
             "ruleId": finding.rule_id,
             "level": SEVERITY_MAP.get(finding.severity, "warning"),
             "message": {"text": finding.message},
+            "partialFingerprints": {
+                "aegifyFingerprint/v1": finding.fingerprint,
+            },
             "locations": [
                 {
                     "physicalLocation": {
