@@ -245,7 +245,6 @@ class SARIFReporter:
                     {
                         "target": {
                             "id": f"CWE-{finding.cwe_id}",
-                            "guid": f"cwe-{finding.cwe_id}",
                             "toolComponent": {"name": "CWE"},
                         },
                         "kinds": ["superset"],

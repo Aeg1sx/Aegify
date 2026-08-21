@@ -87,6 +87,8 @@ class TestSARIFReporter:
             assert "id" in rule
             assert "name" in rule
             assert "shortDescription" in rule
+            for relationship in rule.get("relationships", []):
+                assert "guid" not in relationship["target"]
 
     def test_sarif_results_have_locations(self, reporter, scan_result):
         sarif = reporter.generate(scan_result)
