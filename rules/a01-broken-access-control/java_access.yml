@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-AC-JAVA-001"
+  - id: "AEG-AC-JAVA-001"
     name: "Spring endpoint without @PreAuthorize"
     description: >
       A Spring MVC or Spring WebFlux controller method mapped with @GetMapping,
@@ -24,7 +24,7 @@ rules:
       - "@RolesAllowed(\"ADMIN\")"
     message: "Spring controller endpoint lacks method-level authorization annotation. Add @PreAuthorize, @Secured, or @RolesAllowed to enforce access control at the method level."
 
-  - id: "CG-AC-JAVA-002"
+  - id: "AEG-AC-JAVA-002"
     name: "Apache Shiro missing role or permission check"
     description: >
       A controller or service method that performs a privileged operation does not
@@ -50,7 +50,7 @@ rules:
       - "subject.checkRole(\"admin\")"
     message: "Shiro-protected endpoint is missing an authorization check. Add @RequiresRoles, @RequiresPermissions, or a programmatic permission check."
 
-  - id: "CG-AC-JAVA-003"
+  - id: "AEG-AC-JAVA-003"
     name: "Servlet without authentication filter"
     description: >
       A Java Servlet mapped via @WebServlet or web.xml is not protected by an
@@ -76,7 +76,7 @@ rules:
       - "SecurityContextHolder.getContext().getAuthentication()"
     message: "Servlet processes requests without authentication verification. Add an auth filter to the filter chain or check credentials within the servlet."
 
-  - id: "CG-AC-JAVA-004"
+  - id: "AEG-AC-JAVA-004"
     name: "JPA query without tenant scope"
     description: >
       A JPA or Hibernate query in a multi-tenant application retrieves entities without
@@ -103,7 +103,7 @@ rules:
       - "TenantContext.getCurrentTenantId()"
     message: "JPA query does not scope results to the current tenant. Add a tenant filter predicate to prevent cross-tenant data leakage."
 
-  - id: "CG-AC-JAVA-005"
+  - id: "AEG-AC-JAVA-005"
     name: "Spring CORS misconfiguration"
     description: >
       A Spring Security or Spring MVC CORS configuration uses
@@ -131,7 +131,7 @@ rules:
       - "allowedOriginPatterns(\"https://*.example.com\")"
     message: "Spring CORS allows all origins with credentials. Restrict allowedOrigins to a specific list of trusted domains."
 
-  - id: "CG-AC-JAVA-006"
+  - id: "AEG-AC-JAVA-006"
     name: "Missing CSRF protection in Spring Security"
     description: >
       Spring Security's CSRF protection is explicitly disabled via

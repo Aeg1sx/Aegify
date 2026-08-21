@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
-from codeguard.config import CodeGuardConfig
-from codeguard.framework import SpringModelAnalyzer
-from codeguard.ir.query import ProgramGraphQuery
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.framework import SpringModelAnalyzer
+from aegify.ir.query import ProgramGraphQuery
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.engine import ScanEngine
 
 
 def test_spring_di_security_transaction_and_reactor_edges(tmp_path: Path):
@@ -57,7 +57,7 @@ def test_workspace_kotlin_suspend_and_security_are_in_program_graph(tmp_path: Pa
     )
     manifest = tmp_path / "workspace.yml"
     manifest.write_text("version: 1\nrepositories:\n  - id: api\n    path: .\n")
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 
@@ -198,7 +198,7 @@ def test_spring_bean_factory_preserves_profile_and_property_conditions(
     }
     manifest = tmp_path / "workspace.yml"
     manifest.write_text("version: 1\nrepositories:\n  - id: service\n    path: .\n")
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
     result = engine.scan_workspace(manifest)
@@ -342,7 +342,7 @@ def test_cross_repo_auto_configuration_uses_exact_artifact_provider_only(
         "  - id: provider\n    path: ./provider\n"
         "  - id: decoy\n    path: ./decoy\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 

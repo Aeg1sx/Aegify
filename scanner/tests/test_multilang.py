@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.models import Language
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.call_graph import CallGraphBuilder
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.models import Language
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.engine import ScanEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -116,7 +116,7 @@ class TestGoParser:
 class TestMultiLangScan:
     @pytest.fixture
     def engine(self):
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         return ScanEngine(config=config)
@@ -127,7 +127,7 @@ class TestMultiLangScan:
         assert len(result.findings) > 0
         rule_ids = [f.rule_id for f in result.findings]
         # Should detect at least SQL injection or command injection
-        has_detection = any(r.startswith(("CG-SQL", "CG-CMD", "CG-XSS")) for r in rule_ids)
+        has_detection = any(r.startswith(("AEG-SQL", "AEG-CMD", "AEG-XSS")) for r in rule_ids)
         assert has_detection, f"Expected detections in JS, got: {rule_ids}"
 
     def test_scan_java(self, engine):

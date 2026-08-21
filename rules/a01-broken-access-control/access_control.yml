@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A01-002
+  - id: AEG-A01-002
     name: Horizontal Privilege Escalation via User ID Parameter
     description: >
       A user-supplied ID parameter (from query string, path, or body) is used
@@ -20,7 +20,7 @@ rules:
       '{source}' (line {source_line}) is used to look up a user record at
       '{sink}' (line {sink_line}) without an ownership or authorization check.
 
-  - id: CG-A01-003
+  - id: AEG-A01-003
     name: Directory Listing Enabled
     description: >
       Server configuration enables directory listing (autoindex, directory
@@ -39,7 +39,7 @@ rules:
       Directory listing is enabled at line {sink_line}. This exposes the
       file structure and may reveal sensitive files to unauthorized users.
 
-  - id: CG-A01-004
+  - id: AEG-A01-004
     name: CORS Wildcard Origin
     description: >
       The Access-Control-Allow-Origin header is set to '*', permitting any
@@ -59,7 +59,7 @@ rules:
       Access-Control-Allow-Origin to '*' allows any website to make
       cross-origin requests to this application.
 
-  - id: CG-A01-006
+  - id: AEG-A01-006
     name: Forced Browsing via Predictable Resource IDs
     description: >
       Resources are accessed using sequential numeric IDs or other predictable
@@ -79,7 +79,7 @@ rules:
       authorization verification. An attacker could enumerate IDs to access
       resources belonging to other users.
 
-  - id: CG-A01-007
+  - id: AEG-A01-007
     name: Unrestricted File Upload Type
     description: >
       A file upload handler accepts files without validating the file type,
@@ -102,7 +102,7 @@ rules:
       not validate file type, extension, or MIME type, potentially allowing
       upload of executable or malicious files.
 
-  - id: CG-A01-008
+  - id: AEG-A01-008
     name: Privilege Escalation via Role Manipulation
     description: >
       User-controlled input containing role or privilege fields (e.g., role,

@@ -1,4 +1,4 @@
-# CodeGuard SAST Scanner
+# Aegify Scanner
 
 Alpha-stage white-box application security scanner with repository-aware
 program graphs, compiler-index integration, API/runtime attack-surface
@@ -7,8 +7,8 @@ evidence, isolated verification, and optional LLM review.
 ## Quick Start
 
 ```bash
-pip install codeguard-sast
-codeguard scan ./src --severity high
+pip install aegify-sast
+aegify scan ./src --severity high
 ```
 
 ## Features

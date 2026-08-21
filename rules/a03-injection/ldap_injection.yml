@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-LDAP-001"
+  - id: "AEG-LDAP-001"
     name: "LDAP Filter Injection"
     description: >
       Detects user-controlled input concatenated or interpolated into LDAP
@@ -47,7 +47,7 @@ rules:
       - "\\\\28|\\\\29|\\\\2a|\\\\5c|\\\\00"
     message: "LDAP filter at line {line} concatenates unsanitized user input, enabling filter injection. An attacker can modify search logic to enumerate directory entries, bypass authentication, or extract sensitive attributes."
 
-  - id: "CG-LDAP-002"
+  - id: "AEG-LDAP-002"
     name: "LDAP Distinguished Name Injection"
     description: >
       Detects user-controlled input used to construct LDAP Distinguished
@@ -90,7 +90,7 @@ rules:
       - "\\\\2c|\\\\2b|\\\\22|\\\\5c|\\\\3c|\\\\3e|\\\\3b"
     message: "LDAP Distinguished Name at line {line} includes unsanitized user input, enabling DN injection. An attacker can traverse the directory tree, bind as a different user, or target administrative organizational units."
 
-  - id: "CG-LDAP-003"
+  - id: "AEG-LDAP-003"
     name: "LDAP Search Base and Scope Injection"
     description: >
       Detects user-controlled input used to define LDAP search base DNs or
@@ -132,7 +132,7 @@ rules:
       - "startsWith.*dc="
     message: "LDAP search at line {line} uses user-controlled input for the search base or scope, enabling directory traversal. An attacker can redirect queries to privileged OUs or expand search scope to enumerate the entire directory."
 
-  - id: "CG-LDAP-004"
+  - id: "AEG-LDAP-004"
     name: "Active Directory Query Injection"
     description: >
       Detects user-controlled input incorporated into Active Directory-specific

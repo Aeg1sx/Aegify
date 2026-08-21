@@ -10,8 +10,8 @@
 /docker-compose*.yml @Aeg1sx
 /SECURITY.md @Aeg1sx
 /deploy/vault/ @Aeg1sx
-/scanner/src/codeguard/harness/ @Aeg1sx
-/scanner/src/codeguard/semantic/ @Aeg1sx
-/scanner/src/codeguard/ir/ @Aeg1sx
+/scanner/src/aegify/harness/ @Aeg1sx
+/scanner/src/aegify/semantic/ @Aeg1sx
+/scanner/src/aegify/ir/ @Aeg1sx
 /dashboard/src/app/api/ @Aeg1sx
 /dashboard/prisma/ @Aeg1sx

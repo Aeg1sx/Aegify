@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.reporter.sarif import SARIFReporter
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.reporter.sarif import SARIFReporter
+from aegify.scanner.engine import ScanEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -15,7 +15,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 class TestSARIFReporter:
     @pytest.fixture
     def scan_result(self):
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         engine = ScanEngine(config=config)
@@ -33,11 +33,11 @@ class TestSARIFReporter:
         assert len(sarif["runs"]) == 1
 
         run = sarif["runs"][0]
-        assert run["tool"]["driver"]["name"] == "CodeGuard SAST"
+        assert run["tool"]["driver"]["name"] == "Aegify"
         assert len(run["results"]) > 0
         assert run["properties"]["evidenceContractVersion"] == 1
         assert run["properties"]["workspaceSnapshot"].startswith("sha256:")
-        assert run["properties"]["taintAnalysis"]["provider"] == ("codeguard-taint-v2")
+        assert run["properties"]["taintAnalysis"]["provider"] == ("aegify-taint-v2")
         assert run["properties"]["taintAnalysis"]["iterations"] >= 1
         assert run["properties"]["taintAnalysis"]["context_depth"] == 2
         assert run["properties"]["taintAnalysis"]["contexts_analyzed"] >= 1
@@ -104,7 +104,7 @@ class TestSARIFReporter:
 
             provenance = result["properties"]["provenance"]
             assert provenance["contract_version"] == 1
-            assert provenance["producer"].startswith("codeguard.")
+            assert provenance["producer"].startswith("aegify.")
             assert provenance["rule_digest"].startswith("sha256:")
             assert provenance["evidence_id"].startswith("ev:")
             assert provenance["workspace_snapshot"] == scan_result.workspace_snapshot
@@ -124,7 +124,7 @@ class TestSARIFReporter:
         shutil.copy2(source, first)
         shutil.copy2(source, second)
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         engine = ScanEngine(config=config)
         first_result = engine.scan(first)
@@ -140,7 +140,7 @@ class TestSARIFReporter:
         shutil.copytree(FIXTURES / "workspace_golden", workspace)
         manifest = workspace / "workspace.yml"
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         engine = ScanEngine(config=config)
         first = engine.scan_workspace(manifest)

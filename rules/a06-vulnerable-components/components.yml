@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A06-001
+  - id: AEG-A06-001
     name: Known Vulnerable Dependency Import
     description: >
       Code imports a library with known critical vulnerabilities that have
@@ -24,7 +24,7 @@ rules:
       Import of known vulnerable library at '{callee}' (line {line}).
       Check for CVEs and upgrade to a patched version or use an alternative.
 
-  - id: CG-A06-002
+  - id: AEG-A06-002
     name: Outdated Cryptographic Library Usage
     description: >
       Code uses deprecated or outdated cryptographic libraries that contain
@@ -50,7 +50,7 @@ rules:
       actively maintained libraries: use 'cryptography>=41.0' (Python),
       'crypto-js>=4.2' (JavaScript), or 'javax.crypto' with modern algorithms.
 
-  - id: CG-A06-004
+  - id: AEG-A06-004
     name: Use of Deprecated API
     description: >
       Code calls a function or method that has been officially deprecated by

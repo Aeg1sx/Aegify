@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-RCE-PY-001"
+  - id: "AEG-RCE-PY-001"
     name: "eval() with user-controlled input"
     description: >
       The eval() built-in function interprets a string as Python code and executes it.
@@ -53,7 +53,7 @@ rules:
       - "https://cwe.mitre.org/data/definitions/95.html"
       - "https://owasp.org/Top10/A03_2021-Injection/"
 
-  - id: "CG-RCE-PY-002"
+  - id: "AEG-RCE-PY-002"
     name: "exec() with user-controlled input"
     description: >
       The exec() built-in function executes dynamically created Python statements.
@@ -102,7 +102,7 @@ rules:
       - "https://docs.python.org/3/library/functions.html#exec"
       - "https://cwe.mitre.org/data/definitions/95.html"
 
-  - id: "CG-RCE-PY-003"
+  - id: "AEG-RCE-PY-003"
     name: "subprocess with shell=True and user input"
     description: >
       Using subprocess functions (Popen, call, check_output, check_call, run) with
@@ -152,7 +152,7 @@ rules:
       - "https://docs.python.org/3/library/subprocess.html#security-considerations"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-PY-004"
+  - id: "AEG-RCE-PY-004"
     name: "os.system() with user-controlled input"
     description: >
       os.system() executes a command string in a subshell, inheriting all shell
@@ -202,7 +202,7 @@ rules:
       - "https://docs.python.org/3/library/os.html#os.system"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-PY-005"
+  - id: "AEG-RCE-PY-005"
     name: "os.popen() with user-controlled input"
     description: >
       os.popen() opens a pipe to or from a command string executed through the system
@@ -247,7 +247,7 @@ rules:
       - "https://docs.python.org/3/library/os.html#os.popen"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-PY-006"
+  - id: "AEG-RCE-PY-006"
     name: "pickle.loads() with untrusted data"
     description: >
       Python's pickle module can serialize and deserialize arbitrary Python objects.

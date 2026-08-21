@@ -87,7 +87,7 @@ jobs:
         working-directory: scanner
         run: |
           set +e
-          uv run codeguard scan .. --no-llm --severity medium --output sarif --output-file ../aegify-results.sarif
+          uv run aegify scan .. --no-llm --severity medium --output sarif --output-file ../aegify-results.sarif
           scan_status="$?"
           set -e
           echo "exit-code=$scan_status" >> "$GITHUB_OUTPUT"

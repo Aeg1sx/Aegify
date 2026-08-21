@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-CRYPTO-JS-001"
+  - id: "AEG-CRYPTO-JS-001"
     name: "Math.random used for cryptographic purposes"
     description: >
       The application uses Math.random() to generate tokens, session identifiers, OTP
@@ -27,7 +27,7 @@ rules:
       - "uuid.v4()  # uses crypto internally"
     message: "Math.random() is not cryptographically secure. Use crypto.randomBytes() (Node.js) or crypto.getRandomValues() (browser) for security-sensitive random values."
 
-  - id: "CG-CRYPTO-JS-002"
+  - id: "AEG-CRYPTO-JS-002"
     name: "Deprecated crypto.createCipher usage"
     description: >
       The application uses the deprecated crypto.createCipher() function instead of
@@ -50,7 +50,7 @@ rules:
       - "crypto.scryptSync(password, salt, 32)  # derive key first"
     message: "crypto.createCipher() is deprecated and uses insecure key derivation (single MD5, no salt, null IV). Use crypto.createCipheriv() with a properly derived key and random IV."
 
-  - id: "CG-CRYPTO-JS-003"
+  - id: "AEG-CRYPTO-JS-003"
     name: "bcrypt with insufficient work factor"
     description: >
       The application uses bcrypt with a salt rounds (cost factor) value below 10.
@@ -77,7 +77,7 @@ rules:
       - "bcrypt.hash(password, 14)  # higher for admin accounts"
     message: "bcrypt cost factor is below recommended minimum of 12 rounds. Increase salt rounds to at least 12 to provide adequate brute-force resistance."
 
-  - id: "CG-CRYPTO-JS-004"
+  - id: "AEG-CRYPTO-JS-004"
     name: "Weak JWT signing algorithm"
     description: >
       The application signs or verifies JWTs using the 'none' algorithm, uses HS256
@@ -105,7 +105,7 @@ rules:
       - "{ algorithms: ['RS256'], issuer: 'trusted-issuer' }"
     message: "JWT uses 'none' algorithm, lacks algorithm restriction, or is vulnerable to algorithm confusion. Specify an explicit algorithms allowlist in jwt.verify() options."
 
-  - id: "CG-CRYPTO-JS-005"
+  - id: "AEG-CRYPTO-JS-005"
     name: "Missing crypto.timingSafeEqual for secret comparison"
     description: >
       The application compares cryptographic secrets, HMAC digests, API keys, tokens,
@@ -131,7 +131,7 @@ rules:
       - "const isValid = crypto.timingSafeEqual(expected, actual);"
     message: "Secret comparison uses non-constant-time operator. Use crypto.timingSafeEqual() to prevent timing side-channel attacks on HMAC, token, or API key verification."
 
-  - id: "CG-CRYPTO-JS-006"
+  - id: "AEG-CRYPTO-JS-006"
     name: "Hardcoded encryption key"
     description: >
       An encryption key, HMAC secret, JWT secret, or API signing key is hardcoded as

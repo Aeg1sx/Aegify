@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-AC-PY-001"
+  - id: "AEG-AC-PY-001"
     name: "Django view without login_required"
     description: >
       A Django function-based view is defined and mapped to a URL pattern but does
@@ -24,7 +24,7 @@ rules:
       - "LoginRequiredMixin"
     message: "Django view function lacks @login_required or equivalent authentication decorator. Unauthenticated users can access this endpoint."
 
-  - id: "CG-AC-PY-002"
+  - id: "AEG-AC-PY-002"
     name: "Flask route without authentication"
     description: >
       A Flask route handler is registered via @app.route or @blueprint.route without
@@ -46,7 +46,7 @@ rules:
       - "current_user.is_authenticated"
     message: "Flask route handler is missing an authentication decorator or explicit auth check. The endpoint is accessible without credentials."
 
-  - id: "CG-AC-PY-003"
+  - id: "AEG-AC-PY-003"
     name: "DRF viewset without permission class"
     description: >
       A Django REST Framework ViewSet or APIView subclass does not define a
@@ -70,7 +70,7 @@ rules:
       - "permission_classes = [DjangoObjectPermissions"
     message: "DRF ViewSet or APIView does not declare permission_classes or uses AllowAny. Enforce explicit permission policies on every view."
 
-  - id: "CG-AC-PY-004"
+  - id: "AEG-AC-PY-004"
     name: "Django IDOR via unscoped primary key lookup"
     description: >
       A Django view retrieves an object using a primary key or ID supplied directly
@@ -95,7 +95,7 @@ rules:
       - "self.request.user"
     message: "Object retrieved by user-supplied primary key without ownership verification. Validate that the requesting user has access to the referenced object."
 
-  - id: "CG-AC-PY-005"
+  - id: "AEG-AC-PY-005"
     name: "SQLAlchemy query without tenant filter"
     description: >
       A SQLAlchemy query is executed against a multi-tenant table without applying a
@@ -120,7 +120,7 @@ rules:
       - "@tenant_scoped"
     message: "SQLAlchemy query does not include a tenant scope filter. In multi-tenant applications, every query must be scoped to the current tenant to prevent cross-tenant data access."
 
-  - id: "CG-AC-PY-006"
+  - id: "AEG-AC-PY-006"
     name: "Unsafe file path construction from user input"
     description: >
       A file path is constructed using user-supplied input (query parameters, form
@@ -147,7 +147,7 @@ rules:
       - "os.path.abspath(path).startswith(UPLOAD_DIR)"
     message: "File path constructed from user input without path traversal protection. Use secure_filename(), realpath validation, or Path.resolve().relative_to() to constrain file access."
 
-  - id: "CG-AC-PY-007"
+  - id: "AEG-AC-PY-007"
     name: "Missing CSRF protection on state-changing view"
     description: >
       A Django or Flask view that handles POST, PUT, PATCH, or DELETE requests has
@@ -173,7 +173,7 @@ rules:
       - "CsrfViewMiddleware"
     message: "CSRF protection is explicitly disabled on a state-changing view. Re-enable CSRF validation or verify this endpoint is exclusively used by non-browser API clients with token auth."
 
-  - id: "CG-AC-PY-008"
+  - id: "AEG-AC-PY-008"
     name: "Insecure direct object reference in Django REST serializer"
     description: >
       A Django REST Framework serializer or view uses a user-supplied identifier to

@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-API-010"
+  - id: "AEG-API-010"
     name: "Unsafe consumption of third-party API responses"
     description: >
       The application consumes data from a third-party API and uses the response directly in
@@ -57,7 +57,7 @@ rules:
       - "https://owasp.org/API-Security/editions/2023/en/0xaa-unsafe-consumption-of-apis/"
       - "https://cwe.mitre.org/data/definitions/918.html"
 
-  - id: "CG-API-011"
+  - id: "AEG-API-011"
     name: "Missing rate limiting on authentication endpoint"
     description: >
       An authentication endpoint (login, token generation, password reset, MFA verification)
@@ -111,7 +111,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/307.html"
 
-  - id: "CG-API-012"
+  - id: "AEG-API-012"
     name: "JWT algorithm confusion vulnerability"
     description: >
       The JWT verification configuration accepts the 'none' algorithm, allows algorithm
@@ -161,7 +161,7 @@ rules:
       - "https://portswigger.net/web-security/jwt/algorithm-confusion"
       - "https://cwe.mitre.org/data/definitions/327.html"
 
-  - id: "CG-API-013"
+  - id: "AEG-API-013"
     name: "GraphQL introspection enabled in production"
     description: >
       The GraphQL API has introspection queries enabled, allowing any client to discover the
@@ -209,7 +209,7 @@ rules:
       - "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
       - "https://cwe.mitre.org/data/definitions/200.html"
 
-  - id: "CG-API-014"
+  - id: "AEG-API-014"
     name: "Missing pagination on list endpoints"
     description: >
       An API list endpoint returns all matching records without enforcing pagination limits
@@ -255,7 +255,7 @@ rules:
       - "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
       - "https://cwe.mitre.org/data/definitions/770.html"
 
-  - id: "CG-API-015"
+  - id: "AEG-API-015"
     name: "Sensitive data in URL query parameters"
     description: >
       Sensitive data such as API keys, authentication tokens, passwords, session identifiers,

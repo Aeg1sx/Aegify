@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from codeguard.semantic.scip_java import ScipJavaPlanner
+from aegify.semantic.scip_java import ScipJavaPlanner
 
 PINNED_IMAGE = f"ghcr.io/scip-code/scip-java@sha256:{'b' * 64}"
 

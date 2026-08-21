@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-PROTO-001"
+  - id: "AEG-PROTO-001"
     name: "__proto__ property assignment"
     description: >
       The application allows user input to set the __proto__ property on a JavaScript
@@ -35,7 +35,7 @@ rules:
       - "Object\\.freeze\\(Object\\.prototype\\)"
     message: "Potential __proto__ property injection from user input. Validate property keys against a deny list (__proto__, constructor, prototype) or use Object.create(null) for lookup objects."
 
-  - id: "CG-PROTO-002"
+  - id: "AEG-PROTO-002"
     name: "Constructor prototype manipulation"
     description: >
       The application allows user-controlled property paths that can reach
@@ -71,7 +71,7 @@ rules:
       - "sanitize.*path|validate.*path"
     message: "User input can reach constructor.prototype for prototype pollution. Block both __proto__ and constructor property paths in recursive operations and use Object.create(null) for safe objects."
 
-  - id: "CG-PROTO-003"
+  - id: "AEG-PROTO-003"
     name: "Recursive merge without prototype pollution safeguard"
     description: >
       The application implements a recursive object merge or deep clone function
@@ -110,7 +110,7 @@ rules:
       - "structuredClone"
     message: "Recursive merge/clone does not guard against prototype pollution. Add checks to skip __proto__, constructor, and prototype keys, or use structuredClone() for safe deep cloning."
 
-  - id: "CG-PROTO-004"
+  - id: "AEG-PROTO-004"
     name: "lodash merge or set with user-controlled input"
     description: >
       The application uses lodash.merge, lodash.set, lodash.defaultsDeep, or

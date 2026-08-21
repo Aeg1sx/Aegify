@@ -14,7 +14,7 @@ function getEncryptionKey(): Buffer {
     );
   }
   // Use a fixed salt derived from the secret itself for deterministic key derivation
-  const salt = scryptSync(secret, "codeguard-salt", SALT_LENGTH);
+  const salt = scryptSync(secret, "aegify-salt", SALT_LENGTH);
   return scryptSync(secret, salt, KEY_LENGTH) as Buffer;
 }
 

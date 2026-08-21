@@ -1,6 +1,6 @@
 """Tests for file hashing utilities."""
 
-from codeguard.storage.hasher import compute_file_hash, compute_hashes
+from aegify.storage.hasher import compute_file_hash, compute_hashes
 
 
 class TestFileHasher:

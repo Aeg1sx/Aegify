@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-RCE-JS-001"
+  - id: "AEG-RCE-JS-001"
     name: "child_process.exec() with user-controlled input"
     description: >
       The child_process.exec() function in Node.js spawns a shell and executes a
@@ -59,7 +59,7 @@ rules:
       - "https://nodejs.org/api/child_process.html#child_processexeccommand-options-callback"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-JS-002"
+  - id: "AEG-RCE-JS-002"
     name: "vm.runInNewContext() with user-controlled code"
     description: >
       The vm module in Node.js provides APIs for compiling and running code within
@@ -112,7 +112,7 @@ rules:
       - "https://nodejs.org/api/vm.html#vm-executing-javascript"
       - "https://cwe.mitre.org/data/definitions/94.html"
 
-  - id: "CG-RCE-JS-003"
+  - id: "AEG-RCE-JS-003"
     name: "eval() with user-controlled input"
     description: >
       The eval() function in JavaScript evaluates a string as code in the current
@@ -173,7 +173,7 @@ rules:
       - "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval#never_use_direct_eval!"
       - "https://cwe.mitre.org/data/definitions/95.html"
 
-  - id: "CG-RCE-JS-004"
+  - id: "AEG-RCE-JS-004"
     name: "Function constructor with user-controlled input"
     description: >
       The Function constructor (new Function(), Function()) creates a new function
@@ -229,7 +229,7 @@ rules:
       - "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/Function"
       - "https://cwe.mitre.org/data/definitions/95.html"
 
-  - id: "CG-RCE-JS-005"
+  - id: "AEG-RCE-JS-005"
     name: "Dynamic require() or import() with user-controlled path"
     description: >
       Node.js require() and dynamic import() resolve and execute module files from

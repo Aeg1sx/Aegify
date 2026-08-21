@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A05-001
+  - id: AEG-A05-001
     name: Debug Mode Enabled in Production
     description: >
       Application debug mode is explicitly enabled in configuration files or
@@ -24,7 +24,7 @@ rules:
       Debug mode is enabled at '{callee}' (line {line}). Ensure DEBUG is set
       to False in production deployments to prevent information disclosure.
 
-  - id: CG-A05-002
+  - id: AEG-A05-002
     name: Wildcard in Allowed Hosts
     description: >
       The ALLOWED_HOSTS setting contains a wildcard entry, accepting requests
@@ -46,7 +46,7 @@ rules:
       Wildcard in allowed hosts at '{callee}' (line {line}). Specify explicit
       hostnames instead of '*' to prevent Host header injection attacks.
 
-  - id: CG-A05-004
+  - id: AEG-A05-004
     name: XML External Entity (XXE) Processing Enabled
     description: >
       XML parser is configured to process external entities or DTDs, enabling
@@ -72,7 +72,7 @@ rules:
       Use defusedxml (Python), disable external entities in parser config,
       or set FEATURE_SECURE_PROCESSING (Java).
 
-  - id: CG-A05-005
+  - id: AEG-A05-005
     name: Cookie Without Secure Flag
     description: >
       A cookie is set without the Secure flag, allowing it to be transmitted
@@ -96,7 +96,7 @@ rules:
       Cookie set at '{callee}' (line {line}) is missing the Secure flag.
       Always set Secure=True to prevent cookie transmission over HTTP.
 
-  - id: CG-A05-006
+  - id: AEG-A05-006
     name: Cookie Without HttpOnly Flag
     description: >
       A cookie is set without the HttpOnly flag, making it accessible to
@@ -119,7 +119,7 @@ rules:
       Set HttpOnly=True to prevent JavaScript access and mitigate XSS-based
       session theft.
 
-  - id: CG-A05-007
+  - id: AEG-A05-007
     name: HTTPS Not Enforced in Configuration
     description: >
       Configuration contains HTTP URLs instead of HTTPS for service endpoints,
@@ -139,7 +139,7 @@ rules:
       HTTP URL in configuration at '{callee}' (line {line}). Use HTTPS for
       all non-localhost service URLs to protect data in transit.
 
-  - id: CG-A05-008
+  - id: AEG-A05-008
     name: Default Credentials in Configuration
     description: >
       Default or well-known credentials such as admin/admin, root/root, or

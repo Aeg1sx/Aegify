@@ -3,13 +3,13 @@
 import json
 from pathlib import Path
 
-from codeguard.config import CodeGuardConfig
-from codeguard.ir import ProgramGraphBuilder
-from codeguard.models import Language
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.call_graph import CallGraphBuilder
-from codeguard.scanner.dataflow import DataflowAnalyzer, SinkPattern, TaintConfig
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.ir import ProgramGraphBuilder
+from aegify.models import Language
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.dataflow import DataflowAnalyzer, SinkPattern, TaintConfig
+from aegify.scanner.engine import ScanEngine
 
 
 def _analyze(directory: Path, config: TaintConfig | None = None):
@@ -386,7 +386,7 @@ def test_workspace_taint_crosses_repository_boundary(tmp_path: Path):
         "  - id: provider\n"
         "    path: ./provider\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.llm.enabled = False
     config.rules.severity_threshold = "low"
     config.scan.max_workers = 1
@@ -483,7 +483,7 @@ def test_scip_occurrence_disambiguates_cross_repo_taint_target(tmp_path: Path):
         "  - id: safe\n"
         "    path: ./safe-provider\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.llm.enabled = False
     config.rules.severity_threshold = "low"
     config.scan.max_workers = 1

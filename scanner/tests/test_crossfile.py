@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.call_graph import CallGraphBuilder
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.engine import ScanEngine
 
 CROSSFILE = Path(__file__).parent / "fixtures" / "crossfile"
 
@@ -65,7 +65,7 @@ class TestCrossFileCallGraph:
 
     def test_cross_file_scan_detects_vulnerability(self):
         """Full scan of crossfile should find SQL injection in query_user via routes.py."""
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         engine = ScanEngine(config=config)
@@ -75,7 +75,7 @@ class TestCrossFileCallGraph:
         assert len(result.findings) > 0
 
         # Should find SQL injection in db.py
-        sql_findings = [f for f in result.findings if f.rule_id.startswith("CG-SQL")]
+        sql_findings = [f for f in result.findings if f.rule_id.startswith("AEG-SQL")]
         assert len(sql_findings) > 0
 
         # query_products uses parameterized query, should have lower confidence or be filtered

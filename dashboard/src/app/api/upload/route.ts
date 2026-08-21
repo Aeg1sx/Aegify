@@ -15,11 +15,11 @@ async function isAuthorizedUpload(request: NextRequest): Promise<boolean> {
   const session = await auth();
   if (session?.user) return true;
 
-  const configuredToken = process.env.CODEGUARD_UPLOAD_TOKEN;
+  const configuredToken = process.env.AEGIFY_UPLOAD_TOKEN;
   const authorization = request.headers.get("authorization") || "";
   const suppliedToken = authorization.startsWith("Bearer ")
     ? authorization.slice("Bearer ".length)
-    : request.headers.get("x-codeguard-token") || "";
+    : request.headers.get("x-aegify-token") || "";
 
   if (configuredToken && suppliedToken) {
     const expected = Buffer.from(configuredToken);

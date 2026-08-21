@@ -10,29 +10,29 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import codeguard.harness
-from codeguard.cli import app
-from codeguard.config import CodeGuardConfig
-from codeguard.harness.models import (
+import aegify.harness
+from aegify.cli import app
+from aegify.config import AegifyConfig
+from aegify.harness.models import (
     VerificationArtifact,
     VerificationReport,
     VerificationStatus,
     VerificationStepResult,
 )
-from codeguard.scanner.engine import ScanEngine
-from codeguard.scanner.workspace import JvmClasspathArtifact, WorkspaceRepository
-from codeguard.semantic.jvm_bytecode import JvmBytecodeImporter, JvmClasspathSnapshot
-from codeguard.semantic.jvm_classpath import (
+from aegify.scanner.engine import ScanEngine
+from aegify.scanner.workspace import JvmClasspathArtifact, WorkspaceRepository
+from aegify.semantic.jvm_bytecode import JvmBytecodeImporter, JvmClasspathSnapshot
+from aegify.semantic.jvm_classpath import (
     JvmClasspathBundleMaterializer,
     JvmClasspathPlanner,
 )
-from codeguard.semantic.jvm_classpath_exporter import (
+from aegify.semantic.jvm_classpath_exporter import (
     ClasspathRecord,
     JvmClasspathBundleBuilder,
     JvmClasspathExporter,
 )
 
-PINNED_IMAGE = f"example.invalid/codeguard-jvm@sha256:{'c' * 64}"
+PINNED_IMAGE = f"example.invalid/aegify-jvm@sha256:{'c' * 64}"
 
 
 def _jar(path: Path, content: bytes = b"library") -> Path:
@@ -172,7 +172,7 @@ def test_maven_export_runs_offline_argv_and_builds_single_bundle(tmp_path: Path)
         output.write_text(str(jar))
         return subprocess.CompletedProcess(command, 0)
 
-    bundle = root / "codeguard-classpath.zip"
+    bundle = root / "aegify-classpath.zip"
     JvmClasspathExporter(runner).export(
         root,
         bundle,
@@ -208,7 +208,7 @@ def test_gradle_export_uses_offline_init_script_and_preserves_module(tmp_path: P
         (record_root / "api.json").write_text(json.dumps({"module": "api", "files": [str(jar)]}))
         return subprocess.CompletedProcess(command, 0)
 
-    bundle = root / "codeguard-classpath.zip"
+    bundle = root / "aegify-classpath.zip"
     JvmClasspathExporter(runner).export(
         root,
         bundle,
@@ -254,9 +254,9 @@ def test_planner_emits_one_no_network_export_per_independent_build(tmp_path: Pat
         assert step.command[:3] == [
             "python",
             "-m",
-            "codeguard.semantic.jvm_classpath_exporter",
+            "aegify.semantic.jvm_classpath_exporter",
         ]
-        assert step.outputs == ["codeguard-classpath.zip"]
+        assert step.outputs == ["aegify-classpath.zip"]
         assert all(item not in {"sh", "bash", "-c"} for item in step.command)
     with pytest.raises(ValueError, match="pinned"):
         JvmClasspathPlanner().plan(manifest, "mutable:latest")
@@ -359,7 +359,7 @@ def test_classpath_cli_execute_materializes_retained_bundle(
                 ],
             )
 
-    monkeypatch.setattr(codeguard.harness, "DockerVerificationExecutor", FakeExecutor)
+    monkeypatch.setattr(aegify.harness, "DockerVerificationExecutor", FakeExecutor)
     result = CliRunner().invoke(
         app,
         [
@@ -389,7 +389,7 @@ def test_classpath_cli_execute_materializes_retained_bundle(
         "    jvm_classpath_snapshots:\n"
         f"      - path: {snapshot}\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     scan = ScanEngine(config=config).scan_workspace(manifest)
     assert scan.status == "completed"

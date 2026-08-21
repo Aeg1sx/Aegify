@@ -1,4 +1,4 @@
-# CodeGuard SAST
+# Aegify
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -10,7 +10,7 @@ Project policies: [contributing](CONTRIBUTING.md), [security](SECURITY.md),
 [Repository-side security controls](docs/REPOSITORY_SECURITY.md) document the
 branch, tag, review, advisory, and supply-chain settings expected on GitHub.
 
-> CodeGuard now implements a normalized CFG/SSA/DFG security graph with
+> Aegify now implements a normalized CFG/SSA/DFG security graph with
 > call-site-preserving source-bounded interprocedural call/return edges, basic
 > context-bounded JVM source points-to/alias overlays, a bounded
 > flow/field/allocation-site and k-limited
@@ -56,7 +56,9 @@ branch, tag, review, advisory, and supply-chain settings expected on GitHub.
   returned-object field identity, singleton-allocation field strong updates,
   category-scoped sanitizer state, a strict JVM source/sink/propagator/sanitizer
   model pack, and SCIP-disambiguated cross-repository paths
-- **311 YAML rule definitions** with a strict executable-schema gate; 303 are enabled and executable, while 8 unsupported-language references are explicitly disabled
+- **311 YAML rule definitions** with a strict executable-schema gate; 303 are enabled,
+  all 980 declared enabled patterns are executable, and 8 unsupported-language
+  references are explicitly disabled
 - **Spring MVC/Kotlin endpoint extraction** including class and method route composition
 - **Spring/JVM framework model v2** for component/`@Bean` factories,
   `@Qualifier`/`@Primary`/name/ambiguous selection, profile/conditional evidence,
@@ -88,45 +90,45 @@ pip install -e .
 
 ```bash
 # Console output
-codeguard scan /path/to/code --severity low --no-llm
+aegify scan /path/to/code --severity low --no-llm
 
 # SARIF output
-codeguard scan /path/to/code --output sarif --output-file results.sarif --no-llm
+aegify scan /path/to/code --output sarif --output-file results.sarif --no-llm
 
-# With LLM verification (requires CODEGUARD_ANTHROPIC_API_KEY)
-codeguard scan /path/to/code --output sarif --output-file results.sarif --llm
+# With LLM verification (requires AEGIFY_ANTHROPIC_API_KEY)
+aegify scan /path/to/code --output sarif --output-file results.sarif --llm
 
 # List available rules
-codeguard rules
+aegify rules
 
 # Audit the actual executable YAML rule surface
-codeguard audit-rules ../rules --json
+aegify audit-rules ../rules --json
 
 # Scan several repositories as one workspace
-codeguard scan-workspace ../codeguard-workspace.yml \
+aegify scan-workspace ../aegify-workspace.yml \
   --output sarif --output-file results.sarif \
   --semantic-graph-file semantic-graph.jsonl \
   --program-graph-file program-graph.jsonl
 
 # Plan compiler-backed Java/Kotlin indexes per repository/build root
-codeguard index-scip-java ../codeguard-workspace.yml \
+aegify index-scip-java ../aegify-workspace.yml \
   --image ghcr.io/scip-code/scip-java@sha256:<digest>
 
 # Plan approved, offline Maven/Gradle classpath export per build root
-codeguard export-jvm-classpath ../codeguard-workspace.yml \
-  --image registry.example/codeguard-jvm-classpath@sha256:<digest>
+aegify export-jvm-classpath ../aegify-workspace.yml \
+  --image registry.example/aegify-jvm-classpath@sha256:<digest>
 
 # Resolve an isolated verification plan without executing it
-codeguard verify-plan ../examples/verification-jvm.yml /path/to/repository
+aegify verify-plan ../examples/verification-jvm.yml /path/to/repository
 
 # Plan loopback-only HTTP runtime verification
-codeguard verify-http ../examples/verification-http.yml /path/to/repository
+aegify verify-http ../examples/verification-http.yml /path/to/repository
 
 # Plan a loopback-only Playwright journey with external requests aborted
-codeguard verify-browser ../examples/verification-browser.yml /path/to/repository
+aegify verify-browser ../examples/verification-browser.yml /path/to/repository
 
 # Plan loopback interception with declarative request mutation
-codeguard verify-proxy ../examples/verification-proxy.yml /path/to/repository
+aegify verify-proxy ../examples/verification-proxy.yml /path/to/repository
 ```
 
 ### View Results
@@ -136,7 +138,7 @@ codeguard verify-proxy ../examples/verification-proxy.yml /path/to/repository
 - **DefectDojo**: Upload via CLI flag `--upload-defectdojo` or the REST API
 
 CI uploads to the dashboard use the `Authorization: Bearer <upload-token>`
-header. Keep `CODEGUARD_UPLOAD_TOKEN` separate from `AUTH_SECRET`.
+header. Keep `AEGIFY_UPLOAD_TOKEN` separate from `AUTH_SECRET`.
 
 ## Architecture
 
@@ -203,7 +205,7 @@ summaries or imported compiler/tool evidence.
 
 ## Configuration
 
-Create `.codeguard.yml` in your project root:
+Create `.aegify.yml` in your project root:
 
 ```yaml
 scan:
@@ -233,7 +235,7 @@ reporting:
 ### GitHub Actions
 
 ```yaml
-name: CodeGuard SAST
+name: Aegify
 on: [pull_request]
 
 jobs:
@@ -258,7 +260,7 @@ jobs:
 ```bash
 # Start dashboard
 # First configure AUTH_SECRET, ENCRYPTION_SECRET, an OAuth provider, and the
-# dedicated CODEGUARD_UPLOAD_TOKEN in a local ignored .env or via Vault.
+# dedicated AEGIFY_UPLOAD_TOKEN in a local ignored .env or via Vault.
 docker compose up dashboard
 
 # Run a scan
@@ -268,9 +270,9 @@ docker compose run scanner scan /scan/target --output sarif --output-file /scan/
 ## Project Structure
 
 ```
-code-security/
+Aegify/
   scanner/          Python SAST engine
-    src/codeguard/    Core scanner package
+    src/aegify/    Core scanner package
       scanner/          AST parser, call graph, dataflow, engine
       ir/               CFG/SSA/DFG/points-to program graph and queries
       semantic/         SCIP import/index plan, JVM build/type/module analysis
@@ -306,10 +308,10 @@ pytest tests/ -v
 ruff check src/ tests/
 
 # Type check
-mypy src/codeguard/
+mypy src/aegify/
 
 # Verify the rule DSL and bundled rules
-codeguard audit-rules ../rules --strict
+aegify audit-rules ../rules --strict
 ```
 
 ## Technical Documentation

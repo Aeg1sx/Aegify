@@ -57,13 +57,13 @@ jobs:
           uv run ruff check src tests
 
       - name: Type check
-        run: uv run mypy --strict src/codeguard
+        run: uv run mypy --strict src/aegify
 
       - name: Audit bundled rule DSL
-        run: uv run codeguard audit-rules ../rules --strict
+        run: uv run aegify audit-rules ../rules --strict
 
       - name: Test with coverage
-        run: uv run pytest -v --cov=codeguard --cov-report=term-missing --cov-fail-under=60
+        run: uv run pytest -v --cov=aegify --cov-report=term-missing --cov-fail-under=60
 
       - name: Build wheel
         run: uv build --wheel
@@ -71,7 +71,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: codeguard-wheel
+          name: aegify-wheel
           path: scanner/dist/*.whl
           if-no-files-found: error
           retention-days: 7
@@ -85,6 +85,8 @@ jobs:
         working-directory: dashboard
     env:
       DATABASE_URL: file:./ci.db
+      NEXT_TELEMETRY_DISABLED: "1"
+      AUTH_URL: http://localhost:3000
       AUTH_GITHUB_ID: ci-only-client-id
       AUTH_GITHUB_SECRET: ci-only-client-secret
     steps:

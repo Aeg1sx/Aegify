@@ -3,7 +3,7 @@
 import networkx as nx
 import pytest
 
-from codeguard.models import (
+from aegify.models import (
     CallSite,
     FileAST,
     FunctionDef,
@@ -12,7 +12,7 @@ from codeguard.models import (
     TaintSink,
     TaintSource,
 )
-from codeguard.rules.idor import (
+from aegify.rules.idor import (
     IDORRule,
     InsecureDirectReferenceRule,
     MassAssignmentRule,

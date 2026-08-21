@@ -152,7 +152,7 @@ export function Sidebar() {
       <div className="p-4 border-b border-border">
         <Link href="/" className="flex items-center gap-2">
           <Shield className="h-6 w-6 text-primary" />
-          <span className="font-semibold text-lg text-foreground">CodeGuard</span>
+          <span className="font-semibold text-lg text-foreground">Aegify</span>
         </Link>
         <p className="text-xs text-muted-foreground mt-1">SAST Dashboard</p>
       </div>

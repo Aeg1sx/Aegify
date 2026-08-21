@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CodeGuard SAST",
-  description: "Security findings dashboard for CodeGuard SAST scanner",
+  title: "Aegify",
+  description: "Security findings dashboard for Aegify scanner",
 };
 
 export default function RootLayout({

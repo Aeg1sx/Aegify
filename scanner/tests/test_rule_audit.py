@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from codeguard.rules.audit import audit_rules
+from aegify.rules.audit import audit_rules
 
 
 def test_audit_reports_unknown_and_non_executable_patterns(tmp_path: Path):
@@ -35,6 +35,7 @@ def test_audit_reports_unknown_and_non_executable_patterns(tmp_path: Path):
     assert report.executable_patterns == 1
     assert report.unsupported_fields["future_match"] == 1
     assert any(issue.code == "no-executable-detector" for issue in report.issues)
+    assert any(issue.code == "non-executable-pattern" for issue in report.issues)
 
 
 def test_audit_only_errors_when_all_declared_languages_are_unsupported(
@@ -133,6 +134,30 @@ rules:
     assert report.warnings == 0
     assert report.executable_patterns == 2
     assert report.executable_rules == 2
+
+
+def test_audit_rejects_partially_non_executable_rule(tmp_path: Path):
+    rules = tmp_path / "partial.yml"
+    rules.write_text(
+        """
+id: partial
+severity: medium
+languages: [javascript]
+patterns:
+  - callee_match: 'helmet\\('
+  - missing_header: "Content-Security-Policy"
+    context: response_headers
+"""
+    )
+
+    report = audit_rules(rules)
+
+    assert report.executable_rules == 1
+    assert report.executable_patterns == 1
+    assert any(
+        issue.code == "non-executable-pattern" and issue.pattern_index == 1
+        for issue in report.issues
+    )
 
 
 def test_audit_skips_explicitly_disabled_reference_rule(tmp_path: Path):

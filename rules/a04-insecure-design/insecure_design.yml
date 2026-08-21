@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A04-001
+  - id: AEG-A04-001
     name: Verbose Error Message Exposing Internals
     description: >
       Application returns detailed error information such as stack traces,
@@ -22,7 +22,7 @@ rules:
       application details. Return generic error messages to clients and log
       detailed errors server-side only.
 
-  - id: CG-A04-002
+  - id: AEG-A04-002
     name: Hardcoded Credentials in Source Code
     description: >
       Passwords, API keys, or secrets are hardcoded as string literals in
@@ -44,7 +44,7 @@ rules:
       Hardcoded credential detected at '{callee}' (line {line}). Never embed
       secrets in source code. Use environment variables or a secrets manager.
 
-  - id: CG-A04-003
+  - id: AEG-A04-003
     name: Client-Side Only Validation
     description: >
       Input validation is performed only in frontend/client-side code without
@@ -66,7 +66,7 @@ rules:
       evidence of corresponding server-side validation. Always validate input
       on the server, regardless of client-side checks.
 
-  - id: CG-A04-005
+  - id: AEG-A04-005
     name: Information Disclosure via Debug Mode
     description: >
       Debug mode is enabled in application configuration. Debug mode typically
@@ -88,7 +88,7 @@ rules:
       Debug mode enabled at '{callee}' (line {line}). Disable debug mode in
       production to prevent exposure of sensitive application internals.
 
-  - id: CG-A04-006
+  - id: AEG-A04-006
     name: Unsafe Redirect Without Validation
     description: >
       User-controlled input is used in an HTTP redirect without validating

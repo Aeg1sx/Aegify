@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-NOSQL-001"
+  - id: "AEG-NOSQL-001"
     name: "MongoDB Operator Injection"
     description: >
       Detects user-controlled input passed directly into MongoDB query operators
@@ -38,7 +38,7 @@ rules:
       - "Joi\\.(object|string|number)"
     message: "MongoDB query at line {line} accepts unsanitized user input, enabling NoSQL operator injection. An attacker may bypass authentication or exfiltrate data via malicious query operators like $gt or $ne."
 
-  - id: "CG-NOSQL-002"
+  - id: "AEG-NOSQL-002"
     name: "Redis Command Injection"
     description: >
       Detects user-controlled input concatenated or interpolated into Redis
@@ -80,7 +80,7 @@ rules:
       - "ioredis.*\\[.*\\]"
     message: "Redis command at line {line} incorporates unsanitized user input, enabling command injection. An attacker may execute arbitrary Redis commands including FLUSHALL, CONFIG SET, or EVAL with Lua payloads."
 
-  - id: "CG-NOSQL-003"
+  - id: "AEG-NOSQL-003"
     name: "CouchDB View Injection"
     description: >
       Detects user-controlled input passed into CouchDB view queries, Mango
@@ -118,7 +118,7 @@ rules:
       - "zod\\.(object|string|number)"
     message: "CouchDB query at line {line} includes unsanitized user input in a Mango selector or view parameter, enabling document exfiltration or query logic manipulation."
 
-  - id: "CG-NOSQL-004"
+  - id: "AEG-NOSQL-004"
     name: "DynamoDB Injection via Expression Attributes"
     description: >
       Detects user-controlled input interpolated into DynamoDB expression strings
@@ -160,7 +160,7 @@ rules:
       - "marshall\\("
     message: "DynamoDB expression at line {line} concatenates user input without using ExpressionAttributeValues placeholders, enabling filter logic manipulation or unauthorized data access."
 
-  - id: "CG-NOSQL-005"
+  - id: "AEG-NOSQL-005"
     name: "Elasticsearch Query Injection"
     description: >
       Detects user-controlled input injected into Elasticsearch query DSL
@@ -205,7 +205,7 @@ rules:
       - "elastic-builder"
     message: "Elasticsearch query at line {line} incorporates unsanitized user input, enabling query logic manipulation, denial of service via wildcard abuse, or Painless script injection leading to remote code execution."
 
-  - id: "CG-NOSQL-006"
+  - id: "AEG-NOSQL-006"
     name: "Cassandra CQL Injection"
     description: >
       Detects user-controlled input concatenated into Cassandra Query Language

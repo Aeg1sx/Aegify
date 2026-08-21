@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from codeguard.modelpacks import load_jvm_model_pack
+from aegify.modelpacks import load_jvm_model_pack
 
 
 def test_bundled_jvm_model_pack_is_strict_and_versioned():

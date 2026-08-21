@@ -7,7 +7,7 @@ examples, SARIF, logs, test fixtures, and Git history must not contain live
 credentials. `.env.example` contains names and development placeholders only.
 
 Local `.env*` files are ignored. Generate independent high-entropy values for
-`AUTH_SECRET`, `ENCRYPTION_SECRET`, and `CODEGUARD_UPLOAD_TOKEN`; never reuse one
+`AUTH_SECRET`, `ENCRYPTION_SECRET`, and `AEGIFY_UPLOAD_TOKEN`; never reuse one
 secret for another purpose. Rotate a value immediately if it is printed, added
 to Git, copied into an issue, or included in a scan artifact.
 

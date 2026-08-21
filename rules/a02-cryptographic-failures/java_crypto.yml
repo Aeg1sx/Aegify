@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-CRYPTO-JAVA-001"
+  - id: "AEG-CRYPTO-JAVA-001"
     name: "DES or 3DES cipher usage"
     description: >
       The application uses DES or DESede (Triple DES / 3DES) via
@@ -27,7 +27,7 @@ rules:
       - "Cipher.getInstance(\"ChaCha20-Poly1305\")"
     message: "DES or 3DES cipher detected. These algorithms are deprecated by NIST. Migrate to AES-256-GCM or ChaCha20-Poly1305."
 
-  - id: "CG-CRYPTO-JAVA-002"
+  - id: "AEG-CRYPTO-JAVA-002"
     name: "ECB cipher mode usage"
     description: >
       The application uses Electronic Codebook (ECB) mode via Cipher.getInstance()
@@ -54,7 +54,7 @@ rules:
       - "Cipher.getInstance(\"ChaCha20-Poly1305\")"
     message: "ECB mode detected (explicit or default). ECB leaks plaintext patterns. Use AES/GCM/NoPadding for authenticated encryption."
 
-  - id: "CG-CRYPTO-JAVA-003"
+  - id: "AEG-CRYPTO-JAVA-003"
     name: "Weak SecureRandom seed"
     description: >
       The application seeds java.security.SecureRandom with a fixed, predictable, or
@@ -82,7 +82,7 @@ rules:
       - "SecureRandom.getInstance(\"NativePRNGNonBlocking\")"
     message: "SecureRandom is seeded with a predictable value, or java.util.Random is used for cryptographic purposes. Use new SecureRandom() without manual seeding or SecureRandom.getInstanceStrong()."
 
-  - id: "CG-CRYPTO-JAVA-004"
+  - id: "AEG-CRYPTO-JAVA-004"
     name: "MD5 or SHA-1 MessageDigest for sensitive data"
     description: >
       The application uses MessageDigest.getInstance(\"MD5\") or
@@ -112,7 +112,7 @@ rules:
       - "SCryptUtil.scrypt(password, 65536, 8, 1)"
     message: "MD5 or SHA-1 hash function detected. These are cryptographically broken. Use SHA-256+ for integrity checks and bcrypt/scrypt/Argon2 for password hashing."
 
-  - id: "CG-CRYPTO-JAVA-005"
+  - id: "AEG-CRYPTO-JAVA-005"
     name: "RSA key size below 2048 bits"
     description: >
       The application generates an RSA key pair using KeyPairGenerator with a key size
@@ -138,7 +138,7 @@ rules:
       - "KeyPairGenerator.getInstance(\"Ed25519\")"
     message: "RSA key size is below the 2048-bit minimum. Use at least 2048 bits (preferably 4096) or migrate to ECDSA P-256 / Ed25519."
 
-  - id: "CG-CRYPTO-JAVA-006"
+  - id: "AEG-CRYPTO-JAVA-006"
     name: "Hardcoded cipher key in source code"
     description: >
       An encryption key, HMAC secret, or signing key is defined as a hardcoded string

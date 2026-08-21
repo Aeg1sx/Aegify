@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.models import ScanStatus, Severity
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.models import ScanStatus, Severity
+from aegify.scanner.engine import ScanEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -14,7 +14,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 class TestScanEngine:
     @pytest.fixture
     def engine(self):
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False  # Don't use LLM in tests
         config.rules.severity_threshold = "low"
         return ScanEngine(config=config)
@@ -61,7 +61,7 @@ class TestScanEngine:
         assert result.files_scanned == 0
 
     def test_severity_threshold_filtering(self):
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "critical"
         engine = ScanEngine(config=config)
@@ -92,7 +92,7 @@ class TestScanEngine:
 class TestScanEngineRules:
     @pytest.fixture
     def engine(self):
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         return ScanEngine(config=config)
@@ -102,29 +102,29 @@ class TestScanEngineRules:
         assert len(rules) > 0
 
         rule_ids = [r.definition.id for r in rules]
-        assert "CG-SQL-001" in rule_ids
-        assert "CG-CMD-001" in rule_ids
-        assert "CG-XSS-001" in rule_ids
+        assert "AEG-SQL-001" in rule_ids
+        assert "AEG-CMD-001" in rule_ids
+        assert "AEG-XSS-001" in rule_ids
 
     def test_disable_rule(self):
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
-        config.rules.disabled_rules = ["CG-SQL-001", "CG-SQL-002"]
+        config.rules.disabled_rules = ["AEG-SQL-001", "AEG-SQL-002"]
         engine = ScanEngine(config=config)
 
         result = engine.scan(FIXTURES / "vulnerable_app.py")
-        sql_findings = [f for f in result.findings if f.rule_id.startswith("CG-SQL")]
+        sql_findings = [f for f in result.findings if f.rule_id.startswith("AEG-SQL")]
         assert len(sql_findings) == 0
 
 
 class TestFindingDeduplication:
     def test_fingerprint_stability(self):
         """Same finding data produces same fingerprint."""
-        from codeguard.models import Finding, Severity
+        from aegify.models import Finding, Severity
 
         f1 = Finding(
-            rule_id="CG-SQL-001",
+            rule_id="AEG-SQL-001",
             rule_name="SQL Injection",
             severity=Severity.HIGH,
             confidence=0.9,
@@ -134,7 +134,7 @@ class TestFindingDeduplication:
             code_snippet="cursor.execute(query)",
         )
         f2 = Finding(
-            rule_id="CG-SQL-001",
+            rule_id="AEG-SQL-001",
             rule_name="SQL Injection",
             severity=Severity.HIGH,
             confidence=0.8,
@@ -146,10 +146,10 @@ class TestFindingDeduplication:
         assert f1.fingerprint == f2.fingerprint
 
     def test_different_findings_different_fingerprint(self):
-        from codeguard.models import Finding, Severity
+        from aegify.models import Finding, Severity
 
         f1 = Finding(
-            rule_id="CG-SQL-001",
+            rule_id="AEG-SQL-001",
             rule_name="SQL Injection",
             severity=Severity.HIGH,
             confidence=0.9,
@@ -158,7 +158,7 @@ class TestFindingDeduplication:
             line_end=10,
         )
         f2 = Finding(
-            rule_id="CG-XSS-001",
+            rule_id="AEG-XSS-001",
             rule_name="XSS",
             severity=Severity.MEDIUM,
             confidence=0.8,
@@ -170,7 +170,7 @@ class TestFindingDeduplication:
 
     def test_dedup_in_scan(self):
         """Scan should not produce duplicate fingerprints."""
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         engine = ScanEngine(config=config)

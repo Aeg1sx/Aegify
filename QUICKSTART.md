@@ -1,4 +1,4 @@
-# CodeGuard SAST - Quick Start Guide
+# Aegify - Quick Start Guide
 
 ## 1. Install Scanner
 
@@ -11,18 +11,18 @@ pip install -e .
 
 ```bash
 # Console output
-codeguard scan /path/to/your/code --severity low --no-llm
+aegify scan /path/to/your/code --severity low --no-llm
 
 # SARIF output
-codeguard scan /path/to/your/code --output sarif --output-file results.sarif --no-llm
+aegify scan /path/to/your/code --output sarif --output-file results.sarif --no-llm
 
 # List all rules
-codeguard rules
+aegify rules
 ```
 
 ## 3. View Results in GitHub Code Scanning
 
-Push SARIF to GitHub (automatic via `.github/workflows/codeguard-scan.yml`):
+Push SARIF to GitHub (automatic via `.github/workflows/aegify-scan.yml`):
 - Go to your repo → Security → Code scanning → View alerts
 - PR annotations appear automatically on pull requests
 
@@ -56,11 +56,11 @@ Wait until you see "Initializing done" in logs.
 **Option A: CLI**
 ```bash
 # Set env vars
-export CODEGUARD_REPORTING__DEFECTDOJO_URL=http://localhost:8080
-export CODEGUARD_REPORTING__DEFECTDOJO_TOKEN=<your-api-token>
+export AEGIFY_REPORTING__DEFECTDOJO_URL=http://localhost:8080
+export AEGIFY_REPORTING__DEFECTDOJO_TOKEN=<your-api-token>
 
 # Scan + upload
-codeguard scan /path/to/code --output sarif --output-file results.sarif --upload-defectdojo --no-llm
+aegify scan /path/to/code --output sarif --output-file results.sarif --upload-defectdojo --no-llm
 ```
 
 **Option B: curl**
@@ -78,7 +78,7 @@ curl -X POST "http://localhost:8080/api/v2/import-scan/" \
 
 **Option C: Python**
 ```python
-from codeguard.reporter.defectdojo import DefectDojoReporter
+from aegify.reporter.defectdojo import DefectDojoReporter
 
 reporter = DefectDojoReporter("http://localhost:8080", "YOUR_TOKEN")
 test_id = reporter.upload(scan_result, engagement_id=1)
@@ -108,7 +108,7 @@ test_id = reporter.upload(scan_result, engagement_id=1)
 
 ## 6. Configuration
 
-Create `.codeguard.yml` in your project root:
+Create `.aegify.yml` in your project root:
 
 ```yaml
 scan:
@@ -127,7 +127,7 @@ reporting:
 
 storage:
   backend: sqlite  # memory, sqlite, postgresql, s3
-  db_path: .codeguard.db
+  db_path: .aegify.db
 ```
 
 ## Stop DefectDojo

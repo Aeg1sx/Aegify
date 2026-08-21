@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.models import TaintSink, TaintSource
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.call_graph import CallGraphBuilder
-from codeguard.scanner.dataflow import DataflowAnalyzer
-from codeguard.scanner.engine import ScanEngine
-from codeguard.scanner.workspace import WorkspaceManifest
+from aegify.config import AegifyConfig
+from aegify.models import TaintSink, TaintSource
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.dataflow import DataflowAnalyzer
+from aegify.scanner.engine import ScanEngine
+from aegify.scanner.workspace import WorkspaceManifest
 
 GOLDEN_WORKSPACE = Path(__file__).parent / "fixtures" / "workspace_golden"
 
@@ -165,7 +165,7 @@ repositories:
 """
     )
 
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     result = ScanEngine(config=config).scan_workspace(manifest)
 
@@ -186,7 +186,7 @@ def test_golden_workspace_preserves_cross_repo_attack_surface_evidence(
     tmp_path: Path,
 ):
     workspace = shutil.copytree(GOLDEN_WORKSPACE, tmp_path / "workspace")
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 2
     config.llm.enabled = False
     engine = ScanEngine(config=config)
@@ -270,7 +270,7 @@ repositories:
 """
     )
 
-    result = ScanEngine(config=CodeGuardConfig()).scan_workspace(manifest)
+    result = ScanEngine(config=AegifyConfig()).scan_workspace(manifest)
 
     matching = [endpoint for endpoint in result.endpoints if endpoint.path == "/api/resource"]
     assert {endpoint.repository_id for endpoint in matching} == {"first", "second"}

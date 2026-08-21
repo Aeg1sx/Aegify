@@ -167,7 +167,7 @@ wheels = [
 ]
 
 [[package]]
-name = "codeguard-sast"
+name = "aegify-sast"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

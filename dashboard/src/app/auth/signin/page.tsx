@@ -27,7 +27,7 @@ export default function SignInPage() {
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Shield className="h-8 w-8 text-primary" />
-            <span className="text-2xl font-bold">CodeGuard</span>
+            <span className="text-2xl font-bold">Aegify</span>
           </div>
           <CardTitle className="text-lg font-normal text-muted-foreground">
             Sign in to your account

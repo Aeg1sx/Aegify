@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-RACE-001"
+  - id: "AEG-RACE-001"
     name: "TOCTOU race condition in file operations"
     description: >
       The application performs a time-of-check to time-of-use (TOCTOU) pattern where
@@ -33,7 +33,7 @@ rules:
       - "atomic_write|atomic_open"
     message: "TOCTOU race condition detected between file check and file use. Use atomic file operations or open the file directly with appropriate error handling instead of checking first."
 
-  - id: "CG-RACE-002"
+  - id: "AEG-RACE-002"
     name: "Async race condition in balance or inventory check"
     description: >
       The application checks a balance, inventory count, or quota in an asynchronous
@@ -66,7 +66,7 @@ rules:
       - "optimistic_lock|version_check"
     message: "Race condition in balance/inventory check and deduction. Use database-level locking (SELECT FOR UPDATE), optimistic locking, or atomic operations to prevent double-spending."
 
-  - id: "CG-RACE-003"
+  - id: "AEG-RACE-003"
     name: "Non-atomic read-modify-write operation"
     description: >
       The application reads a value, modifies it in application code, and writes it
@@ -99,7 +99,7 @@ rules:
       - "transaction|BEGIN|COMMIT"
     message: "Non-atomic read-modify-write detected. Use database atomic operations (UPDATE SET x = x + 1), ORM atomic expressions, or application-level locking to prevent lost updates."
 
-  - id: "CG-RACE-004"
+  - id: "AEG-RACE-004"
     name: "Missing database locking on critical section"
     description: >
       The application performs multiple dependent database operations (read then
@@ -134,7 +134,7 @@ rules:
       - "with_lock"
     message: "Critical database operations lack locking. Use SELECT FOR UPDATE, explicit transactions with appropriate isolation level, or advisory locks to prevent concurrent modification."
 
-  - id: "CG-RACE-005"
+  - id: "AEG-RACE-005"
     name: "Concurrent session modification without synchronization"
     description: >
       The application modifies session data from concurrent requests without any

@@ -3,11 +3,11 @@
 import json
 from pathlib import Path
 
-from codeguard.config import CodeGuardConfig
-from codeguard.ir import ProgramGraphQuery
-from codeguard.runtime import RuntimeEvidenceImporter
-from codeguard.scanner.engine import ScanEngine
-from codeguard.scanner.workspace import RuntimeArtifact, WorkspaceRepository
+from aegify.config import AegifyConfig
+from aegify.ir import ProgramGraphQuery
+from aegify.runtime import RuntimeEvidenceImporter
+from aegify.scanner.engine import ScanEngine
+from aegify.scanner.workspace import RuntimeArtifact, WorkspaceRepository
 
 
 def _repository(tmp_path: Path) -> WorkspaceRepository:
@@ -64,7 +64,7 @@ def test_active_proxy_evidence_imports_mutated_request_without_values(
         json.dumps(
             {
                 "contract_version": 1,
-                "producer": "codeguard-proxy-harness",
+                "producer": "aegify-proxy-harness",
                 "cases": [
                     {
                         "id": "role-boundary",
@@ -193,7 +193,7 @@ def test_runtime_gateway_request_marks_backend_endpoint_as_observed(tmp_path: Pa
         json.dumps(
             {
                 "contract_version": 1,
-                "producer": "codeguard-http-harness",
+                "producer": "aegify-http-harness",
                 "cases": [
                     {
                         "id": "orders-read",
@@ -221,7 +221,7 @@ def test_runtime_gateway_request_marks_backend_endpoint_as_observed(tmp_path: Pa
         "      - format: http-evidence-json\n"
         "        path: ./http.json\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
 
     result = ScanEngine(config=config).scan_workspace(manifest)
@@ -282,7 +282,7 @@ def test_trace_parent_path_reaches_runtime_observed_endpoint(tmp_path: Path):
         "      - format: otel-json\n"
         "        path: ./trace.json\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 

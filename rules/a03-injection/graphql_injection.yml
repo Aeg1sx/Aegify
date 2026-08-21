@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-GQL-001"
+  - id: "AEG-GQL-001"
     name: "GraphQL Query Depth Attack"
     description: >
       Detects GraphQL schema configurations and resolver implementations
@@ -47,7 +47,7 @@ rules:
       - "MaxQueryDepthRule"
     message: "GraphQL server at line {line} lacks query depth limiting, enabling denial-of-service via deeply nested queries. An attacker can craft recursive queries that cause exponential resolver execution and resource exhaustion."
 
-  - id: "CG-GQL-002"
+  - id: "AEG-GQL-002"
     name: "GraphQL Introspection Exposure in Production"
     description: >
       Detects GraphQL server configurations that leave introspection enabled
@@ -94,7 +94,7 @@ rules:
       - "GRAPHQL_INTROSPECTION.*false"
     message: "GraphQL server at line {line} has introspection enabled, exposing the complete API schema to attackers. Disable introspection in production to prevent reconnaissance of types, fields, mutations, and sensitive data structures."
 
-  - id: "CG-GQL-003"
+  - id: "AEG-GQL-003"
     name: "GraphQL Batch Query Abuse"
     description: >
       Detects GraphQL server configurations that allow unbounded batched
@@ -143,7 +143,7 @@ rules:
       - "graphql-armor"
     message: "GraphQL server at line {line} allows unbounded query batching without rate limiting or batch size restrictions. An attacker can bypass per-request rate limits by batching thousands of operations (e.g., login attempts) in a single HTTP request for credential stuffing or resource exhaustion."
 
-  - id: "CG-GQL-004"
+  - id: "AEG-GQL-004"
     name: "GraphQL Field Suggestion Information Leak"
     description: >
       Detects GraphQL server configurations that return field suggestion

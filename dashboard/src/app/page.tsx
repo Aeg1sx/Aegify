@@ -63,7 +63,7 @@ export default function DashboardPage() {
         <Shield className="h-16 w-16 text-muted-foreground" />
         <h2 className="text-xl font-semibold">No scans yet</h2>
         <p className="text-muted-foreground text-center max-w-md">
-          Upload a SARIF report from your CodeGuard scan to get started.
+          Upload a SARIF report from your Aegify scan to get started.
         </p>
         <Link
           href="/upload"

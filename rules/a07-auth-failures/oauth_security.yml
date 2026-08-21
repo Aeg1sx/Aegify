@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-OAUTH-001"
+  - id: "AEG-OAUTH-001"
     name: "Missing OAuth state parameter"
     description: >
       The application initiates an OAuth authorization flow without including a
@@ -34,7 +34,7 @@ rules:
       - "generateState|create_state_token"
     message: "OAuth flow is missing the state parameter or does not validate it on callback. Generate a cryptographic random state value, store it in the session, and verify it matches on the callback."
 
-  - id: "CG-OAUTH-002"
+  - id: "AEG-OAUTH-002"
     name: "Open redirect in OAuth callback"
     description: >
       The application's OAuth callback handler uses a user-controlled redirect_uri
@@ -66,7 +66,7 @@ rules:
       - "ALLOWED_REDIRECT_URLS"
     message: "OAuth callback uses unvalidated redirect URI. Validate redirect URIs against a strict whitelist of pre-registered URLs and reject any redirect to external or unregistered domains."
 
-  - id: "CG-OAUTH-003"
+  - id: "AEG-OAUTH-003"
     name: "OAuth token in URL fragment or query parameter"
     description: >
       The application receives or transmits OAuth access tokens or refresh tokens
@@ -97,7 +97,7 @@ rules:
       - "httpOnly.*cookie"
     message: "OAuth token is exposed in URL. Use the authorization code flow with PKCE instead of the implicit grant. Transmit tokens in HTTP headers or secure cookies, never in URLs."
 
-  - id: "CG-OAUTH-004"
+  - id: "AEG-OAUTH-004"
     name: "Insufficient OAuth scope validation"
     description: >
       The application requests overly broad OAuth scopes or does not validate

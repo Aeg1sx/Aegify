@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.call_graph import CallGraphBuilder
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

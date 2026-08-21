@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from codeguard.config import CodeGuardConfig
-from codeguard.ir import ProgramGraphQuery
-from codeguard.scanner.engine import ScanEngine
-from codeguard.semantic.jvm_dependencies import (
+from aegify.config import AegifyConfig
+from aegify.ir import ProgramGraphQuery
+from aegify.scanner.engine import ScanEngine
+from aegify.semantic.jvm_dependencies import (
     JvmArtifactCoordinate,
     JvmDependencyAnalysis,
     JvmDependencyAnalyzer,
@@ -38,7 +38,7 @@ def _write_manifest(root: Path, repositories: list[str]) -> Path:
 
 
 def _scan(manifest: Path) -> tuple[ScanEngine, object]:
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
     return engine, engine.scan_workspace(manifest)

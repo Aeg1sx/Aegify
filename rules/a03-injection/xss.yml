@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-XSS-001"
+  - id: "AEG-XSS-001"
     name: "Reflected XSS via innerHTML or dangerouslySetInnerHTML"
     description: >
       User-controlled input from HTTP request parameters, headers, or URL fragments is assigned
@@ -52,7 +52,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/79.html"
 
-  - id: "CG-XSS-002"
+  - id: "AEG-XSS-002"
     name: "Stored XSS: unsanitized database output rendered as HTML"
     description: >
       Data retrieved from a database or persistent storage is rendered directly into HTML
@@ -106,7 +106,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/79.html"
 
-  - id: "CG-XSS-003"
+  - id: "AEG-XSS-003"
     name: "DOM XSS via document.write or document.location with user input"
     description: >
       User-controlled input from URL fragments, query parameters, document.referrer, or
@@ -161,7 +161,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/79.html"
 
-  - id: "CG-XSS-004"
+  - id: "AEG-XSS-004"
     name: "React dangerouslySetInnerHTML with user-controlled data"
     description: >
       React's dangerouslySetInnerHTML prop is used with data that originates from user input,
@@ -216,7 +216,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/79.html"
 
-  - id: "CG-XSS-005"
+  - id: "AEG-XSS-005"
     name: "Template engine auto-escape disabled or bypassed"
     description: >
       Server-side template engines have their automatic HTML escaping disabled or explicitly
@@ -278,7 +278,7 @@ rules:
       - "https://docs.djangoproject.com/en/5.0/ref/utils/#django.utils.safestring.mark_safe"
       - "https://cwe.mitre.org/data/definitions/79.html"
 
-  - id: "CG-XSS-006"
+  - id: "AEG-XSS-006"
     name: "jQuery .html() or .append() with user-controlled content"
     description: >
       jQuery's .html(), .append(), .prepend(), .after(), .before(), or .replaceWith() methods
@@ -337,7 +337,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/79.html"
 
-  - id: "CG-XSS-007"
+  - id: "AEG-XSS-007"
     name: "Server-side HTML response without Content-Type or encoding"
     description: >
       An HTTP response containing user-controlled data is sent without an explicit Content-Type
@@ -393,7 +393,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/79.html"
 
-  - id: "CG-XSS-008"
+  - id: "AEG-XSS-008"
     name: "Vue v-html directive with user-controlled data"
     description: >
       Vue.js v-html directive is used to render raw HTML from data that originates from user

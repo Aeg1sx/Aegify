@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-LFI-001"
+  - id: "AEG-LFI-001"
     name: "Path traversal in file read operations"
     description: >
       User-controlled input is used to construct a file path that is then passed to a file
@@ -65,7 +65,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Path_Traversal_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/22.html"
 
-  - id: "CG-LFI-002"
+  - id: "AEG-LFI-002"
     name: "Local file inclusion via dynamic require/import path"
     description: >
       A user-controlled value is used to construct a module path for dynamic require() or
@@ -124,7 +124,7 @@ rules:
       - "https://cwe.mitre.org/data/definitions/98.html"
       - "https://nodejs.org/api/modules.html#modules_require_id"
 
-  - id: "CG-LFI-003"
+  - id: "AEG-LFI-003"
     name: "Archive extraction path traversal (Zip Slip)"
     description: >
       Archive entries (ZIP, TAR, JAR, WAR, CPIO, 7z) are extracted without validating that
@@ -181,7 +181,7 @@ rules:
       - "https://security.snyk.io/research/zip-slip-vulnerability"
       - "https://cwe.mitre.org/data/definitions/22.html"
 
-  - id: "CG-LFI-004"
+  - id: "AEG-LFI-004"
     name: "Path traversal in file upload destination"
     description: >
       User-controlled input, such as the original filename from a multipart upload or a
@@ -239,7 +239,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/22.html"
 
-  - id: "CG-LFI-005"
+  - id: "AEG-LFI-005"
     name: "Open redirect via unvalidated URL parameter"
     description: >
       A user-controlled URL parameter is used for HTTP redirection without validation against
@@ -296,7 +296,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/601.html"
 
-  - id: "CG-LFI-006"
+  - id: "AEG-LFI-006"
     name: "Directory traversal in static file serving"
     description: >
       A web application serves static files using a user-controlled path component without

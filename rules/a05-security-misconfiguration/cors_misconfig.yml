@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-CORS-001"
+  - id: "AEG-CORS-001"
     name: "Wildcard CORS origin"
     description: >
       The application configures Cross-Origin Resource Sharing (CORS) with a wildcard
@@ -25,7 +25,7 @@ rules:
       - "cors_allowed_origins"
     message: "CORS wildcard origin detected. Restrict Access-Control-Allow-Origin to specific trusted domains instead of using '*'."
 
-  - id: "CG-CORS-002"
+  - id: "AEG-CORS-002"
     name: "CORS credentials with wildcard origin"
     description: >
       The application sets Access-Control-Allow-Credentials to true while using a wildcard
@@ -49,7 +49,7 @@ rules:
       - "credentials.*false"
     message: "CORS allows credentials with wildcard or reflected origin. This enables any site to make authenticated requests on behalf of your users. Pin Access-Control-Allow-Origin to explicit trusted domains."
 
-  - id: "CG-CORS-003"
+  - id: "AEG-CORS-003"
     name: "Missing Access-Control headers in CORS configuration"
     description: >
       The application implements CORS but omits critical Access-Control response headers
@@ -77,7 +77,7 @@ rules:
       - "Access-Control-Expose-Headers"
     message: "CORS configuration is missing Access-Control-Allow-Headers or Access-Control-Expose-Headers. Explicitly declare allowed and exposed headers to prevent unintended data exposure."
 
-  - id: "CG-CORS-004"
+  - id: "AEG-CORS-004"
     name: "Overly permissive CORS methods"
     description: >
       The application allows all HTTP methods (including PUT, DELETE, PATCH) in its CORS
@@ -102,7 +102,7 @@ rules:
       - "allowedMethods\\s*=\\s*\\[\"GET\",\\s*\"POST\"\\]"
     message: "CORS allows all or excessive HTTP methods. Restrict Access-Control-Allow-Methods to the minimum set of methods required (typically GET and POST)."
 
-  - id: "CG-CORS-005"
+  - id: "AEG-CORS-005"
     name: "Null origin allowed in CORS"
     description: >
       The application whitelists the 'null' origin in its CORS configuration. The null

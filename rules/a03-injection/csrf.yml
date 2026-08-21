@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-CSRF-001"
+  - id: "AEG-CSRF-001"
     name: "State-changing endpoint without CSRF token validation"
     description: >
       A state-changing API endpoint (POST, PUT, DELETE, PATCH) that processes form submissions
@@ -66,7 +66,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
       - "https://cwe.mitre.org/data/definitions/352.html"
 
-  - id: "CG-CSRF-002"
+  - id: "AEG-CSRF-002"
     name: "SameSite=None cookie without Secure flag"
     description: >
       A cookie is set with the SameSite=None attribute but without the Secure flag. Modern
@@ -120,7 +120,7 @@ rules:
       - "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#samesitesamesite-value"
       - "https://cwe.mitre.org/data/definitions/1275.html"
 
-  - id: "CG-CSRF-003"
+  - id: "AEG-CSRF-003"
     name: "CORS with credentials and wildcard or reflected origin"
     description: >
       The application configures CORS to allow credentials (Access-Control-Allow-Credentials:

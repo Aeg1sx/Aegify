@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-SESS-001"
+  - id: "AEG-SESS-001"
     name: "Session fixation vulnerability"
     description: >
       The application does not regenerate the session identifier after successful
@@ -31,7 +31,7 @@ rules:
       - "request\\.session\\.cycle"
     message: "Session ID is not regenerated after authentication. Call session.regenerate() or equivalent immediately after successful login to prevent session fixation attacks."
 
-  - id: "CG-SESS-002"
+  - id: "AEG-SESS-002"
     name: "Missing session expiry configuration"
     description: >
       The application does not configure session timeout or expiration. Without
@@ -59,7 +59,7 @@ rules:
       - "absolute_timeout"
     message: "Session expiration is not configured. Set both idle timeout (15-30 minutes for sensitive apps) and absolute timeout (8-24 hours) to limit the window for session hijacking."
 
-  - id: "CG-SESS-003"
+  - id: "AEG-SESS-003"
     name: "Session ID exposed in URL"
     description: >
       The application transmits the session identifier as a URL parameter rather than
@@ -88,7 +88,7 @@ rules:
       - "cookie.*secure"
     message: "Session ID is transmitted in the URL. Always transport session identifiers in secure, HttpOnly cookies and never embed them in URLs, query strings, or form fields."
 
-  - id: "CG-SESS-004"
+  - id: "AEG-SESS-004"
     name: "Missing session regeneration after login"
     description: >
       The application does not explicitly regenerate the session after a privilege
@@ -117,7 +117,7 @@ rules:
       - "create_new_session"
     message: "Session is not regenerated after authentication state change. Regenerate the session ID after login, logout, role changes, and password changes."
 
-  - id: "CG-SESS-005"
+  - id: "AEG-SESS-005"
     name: "Insecure session storage"
     description: >
       The application stores session data in an insecure location such as local
@@ -148,7 +148,7 @@ rules:
       - "encrypted_session|signed_cookie"
     message: "Session data is stored insecurely. Use server-side session storage (Redis, database) with secure, HttpOnly, SameSite cookies. Never store session tokens in localStorage or sessionStorage."
 
-  - id: "CG-SESS-006"
+  - id: "AEG-SESS-006"
     name: "No concurrent session limit"
     description: >
       The application does not limit the number of concurrent active sessions per

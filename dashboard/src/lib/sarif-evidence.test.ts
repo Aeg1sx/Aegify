@@ -33,7 +33,7 @@ test("normalizes the scanner provenance contract for database insertion", () => 
   const normalized = normalizeFindingEvidence({
     provenance: {
       contract_version: 1,
-      producer: "codeguard.YAMLRule",
+      producer: "aegify.YAMLRule",
       repository_id: "orders",
       module_path: "src/OrderController.kt",
       evidence_id: "ev:1234",
@@ -45,7 +45,7 @@ test("normalizes the scanner provenance contract for database insertion", () => 
   assert.equal(normalized.modulePath, "src/OrderController.kt");
   assert.deepEqual(JSON.parse(normalized.provenance), {
     contract_version: 1,
-    producer: "codeguard.YAMLRule",
+    producer: "aegify.YAMLRule",
     repository_id: "orders",
     module_path: "src/OrderController.kt",
     evidence_id: "ev:1234",
@@ -62,7 +62,7 @@ test("legacy SARIF without provenance remains uploadable", () => {
 });
 
 test("fresh migration history persists normalized evidence with Prisma", async () => {
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), "codeguard-evidence-"));
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "aegify-evidence-"));
   const databasePath = join(temporaryDirectory, "integration.db");
   const databaseUrl = `file:${databasePath}`;
   const migrationRoot = join(process.cwd(), "prisma", "migrations");
@@ -106,7 +106,7 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     const evidence = normalizeFindingEvidence({
       provenance: {
         contract_version: 1,
-        producer: "codeguard.YAMLRule",
+        producer: "aegify.YAMLRule",
         repository_id: "orders",
         module_path: "api/OrderController.kt",
         evidence_id: "ev:integration",
@@ -115,7 +115,7 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     const finding = await prisma.finding.create({
       data: {
         scanId: scan.id,
-        ruleId: "CG-INTEGRATION-001",
+        ruleId: "AEG-INTEGRATION-001",
         ruleName: "Evidence integration",
         severity: "high",
         filePath: "api/OrderController.kt",

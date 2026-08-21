@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-RCE-GO-001"
+  - id: "AEG-RCE-GO-001"
     name: "os/exec.Command() with user-controlled input"
     description: >
       The os/exec.Command() function creates a new process with the specified command
@@ -64,7 +64,7 @@ rules:
       - "https://pkg.go.dev/os/exec#Command"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-GO-002"
+  - id: "AEG-RCE-GO-002"
     name: "syscall.Exec() with user-controlled input"
     description: >
       syscall.Exec() replaces the current process with the specified command using
@@ -124,7 +124,7 @@ rules:
       - "https://pkg.go.dev/syscall#Exec"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-GO-003"
+  - id: "AEG-RCE-GO-003"
     name: "plugin.Open() with user-controlled path"
     description: >
       The plugin.Open() function dynamically loads a Go shared library (.so file)

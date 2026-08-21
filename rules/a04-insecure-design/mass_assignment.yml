@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-MASS-001"
+  - id: "AEG-MASS-001"
     name: "Django model creation from unsanitized request data"
     description: >
       The application creates or updates a Django model instance by directly unpacking
@@ -30,7 +30,7 @@ rules:
       - "pick\\(|only\\("
     message: "Django model created/updated with unsanitized request data. Use Django Forms or DRF Serializers with explicit field whitelisting to prevent mass assignment."
 
-  - id: "CG-MASS-002"
+  - id: "AEG-MASS-002"
     name: "Express request body spread into object"
     description: >
       The application spreads or assigns req.body directly into a database model,
@@ -60,7 +60,7 @@ rules:
       - "sanitize|validate"
     message: "Request body is spread directly into a database operation. Explicitly destructure or whitelist allowed fields from req.body to prevent mass assignment attacks."
 
-  - id: "CG-MASS-003"
+  - id: "AEG-MASS-003"
     name: "Spring @ModelAttribute without field restriction"
     description: >
       A Spring MVC controller binds HTTP parameters directly to a domain model or
@@ -89,7 +89,7 @@ rules:
       - "MapStruct|ModelMapper|BeanUtils\\.copyProperties"
     message: "Spring @ModelAttribute binds directly to a domain entity. Use a DTO class or configure @InitBinder with setAllowedFields to restrict bindable properties."
 
-  - id: "CG-MASS-004"
+  - id: "AEG-MASS-004"
     enabled: false
     disabled_reason: "Reference-only Ruby rule; Ruby parsing is not supported."
     name: "Rails strong parameters bypass"
@@ -121,7 +121,7 @@ rules:
       - "ActionController::Parameters"
     message: "Model created or updated without strong parameter filtering. Always use params.require(:model).permit(:field1, :field2) to whitelist allowed attributes."
 
-  - id: "CG-MASS-005"
+  - id: "AEG-MASS-005"
     name: "Mongoose schema without strict mode"
     description: >
       A Mongoose schema is configured with strict mode disabled (strict: false),

@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-IDOR-001"
+  - id: "AEG-IDOR-001"
     name: "Direct object reference via sequential integer ID"
     description: >
       The application uses a sequential integer identifier from user input to
@@ -26,7 +26,7 @@ rules:
       - "uuid_instead_of_integer_id"
     message: "Resource retrieved by user-supplied integer ID without authorization check at line {line}. Scope all queries to the authenticated user or verify resource ownership."
 
-  - id: "CG-IDOR-002"
+  - id: "AEG-IDOR-002"
     name: "UUID-based IDOR without authorization"
     description: >
       The application uses UUIDs as resource identifiers but relies solely on
@@ -53,7 +53,7 @@ rules:
       - "row_level_security"
     message: "Resource accessed by UUID without authorization check at line {line}. UUIDs are not access control - always verify the authenticated user has permission."
 
-  - id: "CG-IDOR-003"
+  - id: "AEG-IDOR-003"
     name: "Path parameter used for file access without authorization"
     description: >
       The application uses a path parameter to serve files without verifying
@@ -78,7 +78,7 @@ rules:
       - "user_scoped_file_storage"
     message: "File served based on user-supplied path parameter without authorization at line {line}. Map files to user-owned records and verify ownership before serving."
 
-  - id: "CG-IDOR-004"
+  - id: "AEG-IDOR-004"
     name: "Horizontal privilege escalation via user ID parameter"
     description: >
       The application accepts a user identifier as a parameter and uses it to
@@ -104,7 +104,7 @@ rules:
       - "admin_only_user_parameter_access"
     message: "User-specific data accessed via user ID parameter without matching against authenticated session at line {line}. Derive user ID from session/token, never from request parameters."
 
-  - id: "CG-IDOR-005"
+  - id: "AEG-IDOR-005"
     name: "Mass assignment enabling IDOR through foreign key manipulation"
     description: >
       The application accepts user input that includes foreign key fields (user_id,
@@ -129,7 +129,7 @@ rules:
       - "override_foreign_keys_from_session"
     message: "Record created/updated with unfiltered user input that may include foreign key fields at line {line}. Filter input to an explicit allowlist and set foreign keys from the authenticated session."
 
-  - id: "CG-IDOR-006"
+  - id: "AEG-IDOR-006"
     name: "Predictable resource URL or token"
     description: >
       The application generates resource access URLs or tokens using predictable
@@ -154,7 +154,7 @@ rules:
       - "hmac_signed_url"
     message: "Resource token or URL generated using predictable values at line {line}. Use cryptographically random tokens (secrets.token_urlsafe, crypto.randomBytes) for all access tokens and shareable URLs."
 
-  - id: "CG-IDOR-007"
+  - id: "AEG-IDOR-007"
     name: "Bulk operation without per-item authorization"
     description: >
       The application processes a bulk operation where multiple resource IDs are
@@ -178,7 +178,7 @@ rules:
       - "count_verification_after_scoped_query"
     message: "Bulk operation processes user-supplied resource IDs without per-item authorization at line {line}. Scope bulk queries to the authenticated user and verify affected row count matches input count."
 
-  - id: "CG-IDOR-008"
+  - id: "AEG-IDOR-008"
     name: "API endpoint exposes internal object references in response"
     description: >
       An API endpoint returns internal object references (database IDs, file paths,

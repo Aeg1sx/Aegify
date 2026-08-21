@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A07-001
+  - id: AEG-A07-001
     name: Weak Password Requirements
     description: >
       Password validation enforces a minimum length below 8 characters or
@@ -25,7 +25,7 @@ rules:
       Weak password requirement at '{callee}' (line {line}). Enforce a minimum
       password length of 8 characters per NIST SP 800-63B guidelines.
 
-  - id: CG-A07-004
+  - id: AEG-A07-004
     name: JWT None Algorithm Accepted
     description: >
       JWT verification accepts the 'none' algorithm, which allows tokens
@@ -49,7 +49,7 @@ rules:
       the 'none' algorithm. Explicitly specify allowed algorithms like
       HS256 or RS256.
 
-  - id: CG-A07-005
+  - id: AEG-A07-005
     name: Hardcoded JWT Secret
     description: >
       JWT signing uses a hardcoded string literal as the secret key. If the
@@ -72,7 +72,7 @@ rules:
       Hardcoded JWT secret at '{callee}' (line {line}). Store JWT secrets
       in environment variables or a secrets manager, never in source code.
 
-  - id: CG-A07-006
+  - id: AEG-A07-006
     name: Session Token in URL
     description: >
       Session tokens, authentication tokens, or API keys are passed as URL
@@ -96,7 +96,7 @@ rules:
       tokens via Authorization headers or Secure/HttpOnly cookies instead
       of URL query parameters.
 
-  - id: CG-A07-007
+  - id: AEG-A07-007
     name: Missing Password Hashing
     description: >
       User passwords are stored, compared, or transmitted in plaintext
@@ -121,7 +121,7 @@ rules:
       or compare passwords in plaintext. Use bcrypt, Argon2, or scrypt with
       a per-user salt and appropriate work factor.
 
-  - id: CG-A07-008
+  - id: AEG-A07-008
     name: Permissive CORS with Credentials
     description: >
       Cross-Origin Resource Sharing (CORS) is configured to allow credentials

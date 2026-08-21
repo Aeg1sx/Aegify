@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-LOGIC-001"
+  - id: "AEG-LOGIC-001"
     name: "Client-side price manipulation"
     description: >
       The application accepts price, discount, or total amount values from client-side
@@ -29,7 +29,7 @@ rules:
       - "validate_price.*database|verify_price"
     message: "Price or amount value is accepted from client input. Always calculate prices server-side from authoritative data sources (database, catalog) and never trust client-submitted financial values."
 
-  - id: "CG-LOGIC-002"
+  - id: "AEG-LOGIC-002"
     name: "Negative quantity or amount accepted"
     description: >
       The application does not validate that quantity, amount, or count values are
@@ -62,7 +62,7 @@ rules:
       - "@Min\\(1\\)|@Positive"
     message: "Quantity or amount value is not validated as positive. Enforce server-side validation that quantities and amounts are positive integers to prevent negative value exploitation."
 
-  - id: "CG-LOGIC-003"
+  - id: "AEG-LOGIC-003"
     name: "Workflow step bypass"
     description: >
       The application implements a multi-step workflow (registration, checkout,
@@ -95,7 +95,7 @@ rules:
       - "workflow_guard|step_middleware"
     message: "Workflow steps can potentially be accessed out of order. Implement server-side state tracking to validate that all prerequisite steps are completed before allowing progression."
 
-  - id: "CG-LOGIC-004"
+  - id: "AEG-LOGIC-004"
     name: "Privilege escalation via role modification"
     description: >
       The application allows users to modify their own role, permission level, or

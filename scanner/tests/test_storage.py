@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.storage.backend import (
+from aegify.storage.backend import (
     CallRecord,
     FunctionRecord,
     GraphData,
     InMemoryBackend,
 )
-from codeguard.storage.sqlite import SQLiteBackend
+from aegify.storage.sqlite import SQLiteBackend
 
 
 class TestInMemoryBackend:

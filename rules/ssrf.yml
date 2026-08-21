@@ -1,5 +1,5 @@
 rules:
-  - id: CG-SSRF-001
+  - id: AEG-SSRF-001
     name: Server-Side Request Forgery (SSRF)
     description: >
       User-controlled input flows into a URL used for server-side HTTP requests,
@@ -17,7 +17,7 @@ rules:
       Potential SSRF: user input from '{source}' (line {source_line})
       flows to HTTP request '{sink}' (line {sink_line}).
 
-  - id: CG-SSRF-002
+  - id: AEG-SSRF-002
     name: Open Redirect
     description: >
       User-controlled input used in redirect URL without validation.

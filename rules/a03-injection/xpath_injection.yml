@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-XPATH-001"
+  - id: "AEG-XPATH-001"
     name: "XPath Query Injection"
     description: >
       Detects user-controlled input concatenated or interpolated into XPath
@@ -50,7 +50,7 @@ rules:
       - "XPathExpression\\.evaluate.*variable"
     message: "XPath query at line {line} incorporates unsanitized user input via string concatenation, enabling injection. An attacker can extract arbitrary nodes from the XML document, bypass access controls, or enumerate the document structure."
 
-  - id: "CG-XPATH-002"
+  - id: "AEG-XPATH-002"
     name: "XPath Authentication Bypass"
     description: >
       Detects XPath expressions used for authentication or authorization
@@ -95,7 +95,7 @@ rules:
       - "escapeXPath"
     message: "XPath authentication query at line {line} uses unsanitized user input for credential verification. An attacker can inject ' or '1'='1 to bypass authentication and gain unauthorized access as any user."
 
-  - id: "CG-XPATH-003"
+  - id: "AEG-XPATH-003"
     name: "XPath Blind Injection via Boolean or Error Oracle"
     description: >
       Detects patterns indicative of exploitable XPath blind injection where

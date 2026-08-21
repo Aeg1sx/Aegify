@@ -8,7 +8,7 @@ export default auth((req) => {
   // route handler, which performs a timing-safe token verification.
   if (
     pathname === "/api/upload" &&
-    process.env.CODEGUARD_UPLOAD_TOKEN &&
+    process.env.AEGIFY_UPLOAD_TOKEN &&
     req.headers.get("authorization")?.startsWith("Bearer ")
   ) {
     return NextResponse.next();

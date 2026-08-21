@@ -86,7 +86,7 @@ export async function sendSlackNotification(
         type: "header",
         text: {
           type: "plain_text",
-          text: `:shield: CodeGuard SAST - ${filtered.length} New Findings`,
+          text: `:shield: Aegify - ${filtered.length} New Findings`,
         },
       },
       {

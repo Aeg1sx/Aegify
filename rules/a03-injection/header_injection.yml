@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-HDR-001"
+  - id: "AEG-HDR-001"
     name: "CRLF Injection in HTTP Headers"
     description: >
       Detects user-controlled input written into HTTP response headers without
@@ -45,7 +45,7 @@ rules:
       - "Content-Security-Policy"
     message: "HTTP header at line {line} incorporates unsanitized user input, enabling CRLF injection. An attacker can inject arbitrary response headers for session fixation, cache poisoning, or XSS via HTTP response splitting."
 
-  - id: "CG-HDR-002"
+  - id: "AEG-HDR-002"
     name: "Host Header Injection"
     description: >
       Detects application logic that trusts the HTTP Host header for generating
@@ -97,7 +97,7 @@ rules:
       - "req\\.hostname.*===.*[\"']"
     message: "Application at line {line} uses the client-controlled Host or X-Forwarded-Host header to construct URLs or links. An attacker can exploit this for password reset token theft, web cache poisoning, or malicious redirect generation."
 
-  - id: "CG-HDR-003"
+  - id: "AEG-HDR-003"
     name: "HTTP Response Splitting"
     description: >
       Detects user-controlled input used in HTTP redirect responses or
@@ -109,7 +109,7 @@ rules:
       cross-site scripting with arbitrary Content-Type, cache poisoning where
       intermediary proxies store the malicious second response, and complete
       response hijacking. This is distinct from simple header injection
-      (CG-HDR-001) because the attacker controls an entire response including
+      (AEG-HDR-001) because the attacker controls an entire response including
       status line, headers, and body. HTTP/2 binary framing mitigates this
       for direct connections, but HTTP/1.1 downgrade through load balancers
       and proxies can re-expose the vulnerability.
@@ -147,7 +147,7 @@ rules:
       - "ALLOWED_REDIRECT|SAFE_REDIRECT"
     message: "HTTP response at line {line} includes unsanitized user input in a redirect or Location header, enabling response splitting. An attacker can inject a complete second HTTP response with arbitrary content for XSS, cache poisoning, or response hijacking."
 
-  - id: "CG-HDR-004"
+  - id: "AEG-HDR-004"
     name: "Email Header Injection"
     description: >
       Detects user-controlled input used in email header fields (To, From, CC,

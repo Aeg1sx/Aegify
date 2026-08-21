@@ -1,5 +1,5 @@
 rules:
-  - id: CG-API-001
+  - id: AEG-API-001
     name: Broken Object Level Authorization (BOLA)
     description: >
       An API endpoint retrieves or modifies an object using a user-supplied
@@ -18,7 +18,7 @@ rules:
         args_match: "(req\\.(params|query|body)\\.|request\\.(args|form|json)\\[|r\\.URL\\.Query|c\\.Param)"
     message: "Potential BOLA at '{callee}' (line {line}). Object accessed by user-supplied ID without ownership verification. Add authorization checks before accessing resources."
 
-  - id: CG-API-003
+  - id: AEG-API-003
     name: Excessive Data Exposure
     description: >
       The API response returns a full database model or all object fields
@@ -36,7 +36,7 @@ rules:
         args_match: "(\\.toObject\\(\\)|\\.toJSON\\(\\)|\\._doc|spread\\s*operator)"
     message: "Possible excessive data exposure at '{callee}' (line {line}). Return only required fields using a response DTO or serializer with explicit field selection."
 
-  - id: CG-API-005
+  - id: AEG-API-005
     name: Broken Function Level Authorization (BFLA)
     description: >
       Administrative or privileged API endpoints are accessible without
@@ -54,7 +54,7 @@ rules:
         args_match: "(admin|manage|internal|config|setting|dashboard)"
     message: "Privileged endpoint at '{callee}' (line {line}) may lack role-based authorization. Verify admin/role checks are enforced before granting access."
 
-  - id: CG-API-006
+  - id: AEG-API-006
     name: Mass Assignment in API
     description: >
       Request body data is passed directly to a model create or update
@@ -73,7 +73,7 @@ rules:
         args_match: "(\\*\\*request\\.(data|POST|json)|\\*\\*req\\.body)"
     message: "Mass assignment at '{callee}' (line {line}). Filter request input through an allowlist of permitted fields before passing to model operations."
 
-  - id: CG-API-007
+  - id: AEG-API-007
     name: Security Misconfiguration in API
     description: >
       API framework is configured with overly permissive CORS policy
@@ -94,7 +94,7 @@ rules:
         args_match: "(stack|stackTrace|traceback|internal_error|debug_info)"
     message: "API security misconfiguration at '{callee}' (line {line}). Restrict CORS origins, disable debug mode, and suppress detailed errors in production."
 
-  - id: CG-API-008
+  - id: AEG-API-008
     name: SQL Injection in API
     description: >
       User-supplied input from API request parameters is concatenated
@@ -115,7 +115,7 @@ rules:
       flows to SQL query '{sink}' (line {sink_line}). Use parameterized queries
       or an ORM to prevent injection.
 
-  - id: CG-API-009
+  - id: AEG-API-009
     name: Improper Asset Management
     description: >
       Deprecated or outdated API versions remain active in routing

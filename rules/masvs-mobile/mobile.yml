@@ -1,5 +1,5 @@
 rules:
-  - id: CG-MOB-001
+  - id: AEG-MOB-001
     name: Insecure Local Storage
     description: >
       Sensitive data such as passwords, tokens, or PII is stored in
@@ -19,7 +19,7 @@ rules:
         args_match: "(password|passwd|token|secret|apiKey|api_key|creditCard|ssn|pin|sessionId|auth)"
     message: "Sensitive data stored in insecure local storage at '{callee}' (line {line}). Use Android Keystore or iOS Keychain instead."
 
-  - id: CG-MOB-002
+  - id: AEG-MOB-002
     name: Weak TLS Configuration
     description: >
       The application uses deprecated TLS versions (1.0 or 1.1) or does not
@@ -40,7 +40,7 @@ rules:
         args_match: "(TLSv1[\"']|TLSv1\\.0|TLSv1\\.1)"
     message: "Weak TLS configuration at '{callee}' (line {line}). Enforce TLS 1.2+ and implement certificate pinning."
 
-  - id: CG-MOB-003
+  - id: AEG-MOB-003
     name: Debug Mode in Release Build
     description: >
       The application is configured with debugging enabled, which exposes
@@ -59,7 +59,7 @@ rules:
         args_match: "(true|enabled)"
     message: "Debug mode enabled at '{callee}' (line {line}). Ensure debuggable is set to false in release builds."
 
-  - id: CG-MOB-005
+  - id: AEG-MOB-005
     name: Insecure WebView Configuration
     description: >
       WebView has JavaScript enabled without restricting content loading or
@@ -82,7 +82,7 @@ rules:
         args_match: "(javaScriptEnabled\\s*=\\s*true)"
     message: "Insecure WebView configuration at '{callee}' (line {line}). Restrict JavaScript execution and file access in WebViews."
 
-  - id: CG-MOB-006
+  - id: AEG-MOB-006
     name: Clipboard Data Exposure
     description: >
       Sensitive data is copied to the system clipboard, which can be read by
@@ -101,7 +101,7 @@ rules:
         args_match: "(password|token|secret|apiKey|api_key|ssn|creditCard|pin|otp|mfa|auth)"
     message: "Sensitive data copied to clipboard at '{callee}' (line {line}). Avoid placing secrets on the clipboard or clear it promptly."
 
-  - id: CG-MOB-007
+  - id: AEG-MOB-007
     name: Insecure Data Backup
     description: >
       The Android manifest allows application data backup (allowBackup=true),
@@ -120,7 +120,7 @@ rules:
         args_match: ".*"
     message: "Insecure backup configuration at '{callee}' (line {line}). Set android:allowBackup='false' or implement a custom BackupAgent that excludes sensitive data."
 
-  - id: CG-MOB-008
+  - id: AEG-MOB-008
     name: Hardcoded API Keys in Mobile App
     description: >
       API keys, client secrets, or service credentials are hardcoded in
@@ -139,7 +139,7 @@ rules:
         args_match: "(AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,})"
     message: "Hardcoded API key detected at '{callee}' (line {line}). Store secrets server-side or use platform secure storage (Android Keystore / iOS Keychain)."
 
-  - id: CG-MOB-009
+  - id: AEG-MOB-009
     name: Missing Certificate Pinning
     description: >
       HTTP client connections are established without certificate pinning.
@@ -158,7 +158,7 @@ rules:
         args_match: "(return|//\\s*no.?op|\\{\\s*\\})"
     message: "HTTP client without certificate pinning at '{callee}' (line {line}). Implement certificate or public key pinning to prevent MITM attacks."
 
-  - id: CG-MOB-010
+  - id: AEG-MOB-010
     name: Insecure Intent Handling
     description: >
       An Android Activity, Service, or BroadcastReceiver is exported without

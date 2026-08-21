@@ -1,5 +1,5 @@
 rules:
-  - id: CG-CRYPTO-001
+  - id: AEG-CRYPTO-001
     name: Weak Hash Algorithm (MD5/SHA1)
     description: >
       MD5 or SHA1 is used for hashing. These algorithms are cryptographically
@@ -18,7 +18,7 @@ rules:
         args_match: "(MD5|SHA-1)"
     message: "Weak hash algorithm used at '{callee}' (line {line}). Use SHA-256 or stronger."
 
-  - id: CG-CRYPTO-002
+  - id: AEG-CRYPTO-002
     name: Insecure Random Number Generator
     description: >
       Non-cryptographic random number generator used in security context.
@@ -32,7 +32,7 @@ rules:
       - callee: "Math\\.random"
     message: "Insecure RNG at '{callee}' (line {line}). Use cryptographic RNG for security."
 
-  - id: CG-CRYPTO-003
+  - id: AEG-CRYPTO-003
     name: Disabled SSL/TLS Verification
     description: >
       SSL/TLS certificate verification is disabled, allowing MITM attacks.

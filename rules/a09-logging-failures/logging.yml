@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A09-001
+  - id: AEG-A09-001
     name: Sensitive Data in Logs
     description: >
       Sensitive data such as passwords, secrets, or tokens is written to log
@@ -17,7 +17,7 @@ rules:
         args_match: "(password|passwd|secret|token|bearer|authorization|credentials)"
     message: "Sensitive data may be logged at '{callee}' (line {line}). Mask or redact sensitive fields before logging."
 
-  - id: CG-A09-002
+  - id: AEG-A09-002
     name: Log Injection
     description: >
       User-controlled input flows into log statements without sanitization.
@@ -37,7 +37,7 @@ rules:
       flows to log statement '{sink}' (line {sink_line}). Sanitize input before logging
       to prevent log forging and CRLF injection.
 
-  - id: CG-A09-004
+  - id: AEG-A09-004
     name: Excessive Error Information in Logs
     description: >
       Full stack traces or detailed exception information is logged or
@@ -55,7 +55,7 @@ rules:
         args_match: "(traceback|stackTrace|stack_trace)"
     message: "Excessive error detail logged at '{callee}' (line {line}). Avoid exposing full stack traces in production logs."
 
-  - id: CG-A09-005
+  - id: AEG-A09-005
     name: Logging Credentials
     description: >
       API keys, passwords, or authentication tokens are explicitly included

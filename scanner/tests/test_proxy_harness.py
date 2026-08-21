@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.harness.proxy import ProxyVerificationExecutor, ProxyVerificationPlan
-from codeguard.harness.proxy_runner import _apply_mutations, _execute_cases
+from aegify.harness.proxy import ProxyVerificationExecutor, ProxyVerificationPlan
+from aegify.harness.proxy_runner import _apply_mutations, _execute_cases
 
 PINNED_IMAGE = f"example.invalid/proxy@sha256:{'e' * 64}"
 
@@ -70,8 +70,8 @@ def test_proxy_dry_run_stages_runner_with_no_container_network(tmp_path: Path):
     assert command[command.index("--network") :][:2] == ["--network", "none"]
     assert command[-3:] == [
         "python3",
-        ".codeguard-runtime/proxy_runner.py",
-        ".codeguard-runtime/proxy-plan.json",
+        ".aegify-runtime/proxy_runner.py",
+        ".aegify-runtime/proxy-plan.json",
     ]
 
 
@@ -102,7 +102,7 @@ def test_live_proxy_intercepts_mutates_and_emits_redacted_evidence():
                 {
                     "method": self.command,
                     "path": self.path,
-                    "probe": self.headers.get("X-CodeGuard-Probe"),
+                    "probe": self.headers.get("X-Aegify-Probe"),
                     "body": json.loads(body),
                 }
             )
@@ -123,7 +123,7 @@ def test_live_proxy_intercepts_mutates_and_emits_redacted_evidence():
     case["mutations"].append(
         {
             "kind": "header-set",
-            "name": "X-CodeGuard-Probe",
+            "name": "X-Aegify-Probe",
             "value": "owned-value",
             "match": "",
             "replacement": "",

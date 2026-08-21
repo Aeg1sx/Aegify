@@ -5,9 +5,9 @@ from textwrap import dedent
 
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.rules.yaml_rule import _parse_rule, load_yaml_rules
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.rules.yaml_rule import _parse_rule, load_yaml_rules
+from aegify.scanner.engine import ScanEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RULES_DIR = Path(__file__).parent.parent.parent / "rules"
@@ -73,16 +73,16 @@ class TestYAMLRuleLoading:
         assert len(rules) > 0
 
         rule_ids = [r.definition.id for r in rules]
-        assert "CG-SEC-001" in rule_ids  # hardcoded_secrets
-        assert "CG-CRYPTO-001" in rule_ids  # insecure_crypto
-        assert "CG-SSRF-001" in rule_ids  # ssrf
+        assert "AEG-SEC-001" in rule_ids  # hardcoded_secrets
+        assert "AEG-CRYPTO-001" in rule_ids  # insecure_crypto
+        assert "AEG-SSRF-001" in rule_ids  # ssrf
 
     def test_load_single_file(self):
         secrets_file = RULES_DIR / "hardcoded_secrets.yml"
         if not secrets_file.exists():
             pytest.skip("Rules file not found")
         rules = load_yaml_rules(secrets_file)
-        assert len(rules) == 2  # CG-SEC-001 and CG-SEC-002
+        assert len(rules) == 2  # AEG-SEC-001 and AEG-SEC-002
 
     def test_load_nonexistent_path(self):
         rules = load_yaml_rules(Path("/nonexistent/path"))
@@ -128,7 +128,7 @@ class TestYAMLRuleExecution:
         """)
         )
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         config.rules.custom_rules = str(rule_file)
@@ -144,7 +144,7 @@ class TestYAMLRuleExecution:
         if not RULES_DIR.exists():
             pytest.skip("Rules directory not found")
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         config.rules.custom_rules = str(RULES_DIR)
@@ -156,10 +156,10 @@ class TestYAMLRuleExecution:
         rule_ids = [r.definition.id for r in all_rules]
 
         # Built-in
-        assert "CG-SQL-001" in rule_ids
+        assert "AEG-SQL-001" in rule_ids
         # YAML
-        assert "CG-SEC-001" in rule_ids
-        assert "CG-CRYPTO-001" in rule_ids
+        assert "AEG-SEC-001" in rule_ids
+        assert "AEG-CRYPTO-001" in rule_ids
 
     def test_taint_yaml_rule(self, tmp_path):
         """Test taint-based YAML rule."""
@@ -179,7 +179,7 @@ class TestYAMLRuleExecution:
         """)
         )
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         config.rules.custom_rules = str(rule_file)
@@ -212,7 +212,7 @@ class TestYAMLRuleExecution:
         safe = tmp_path / "safe.py"
         safe.write_text("def login():\n    rate_limit()\n    return authenticate()\n")
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         config.rules.custom_rules = str(rule_file)
@@ -260,7 +260,7 @@ class TestYAMLRuleExecution:
             "    save_balance(balance)\n"
         )
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         config.rules.custom_rules = str(rule_file)
@@ -301,7 +301,7 @@ class TestYAMLRuleExecution:
             "    return os.system(command)\n"
         )
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         config.rules.custom_rules = str(rule_file)

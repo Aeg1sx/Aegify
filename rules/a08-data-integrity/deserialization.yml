@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-DESER-001"
+  - id: "AEG-DESER-001"
     name: "Python pickle deserialization of untrusted data"
     description: >
       The application uses pickle.loads(), pickle.load(), or cPickle to deserialize
@@ -28,7 +28,7 @@ rules:
       - "allowlist|whitelist"
     message: "Pickle deserialization can execute arbitrary code. Replace pickle with JSON, MessagePack, or Protocol Buffers. If pickle is required, implement a RestrictedUnpickler with a strict class whitelist."
 
-  - id: "CG-DESER-002"
+  - id: "AEG-DESER-002"
     name: "Java ObjectInputStream deserialization"
     description: >
       The application uses Java ObjectInputStream.readObject() or readUnshared() to
@@ -61,7 +61,7 @@ rules:
       - "allowlist|whitelist.*class"
     message: "Java ObjectInputStream deserializes untrusted data. Use JSON (Jackson, Gson) or Protocol Buffers instead. If ObjectInputStream is required, implement ObjectInputFilter with a strict class whitelist."
 
-  - id: "CG-DESER-003"
+  - id: "AEG-DESER-003"
     enabled: false
     disabled_reason: "Reference-only PHP rule; PHP parsing is not supported."
     name: "PHP unserialize on untrusted data"
@@ -92,7 +92,7 @@ rules:
       - "json_encode.*json_decode"
     message: "PHP unserialize() on untrusted data enables object injection. Use json_decode() instead. If unserialize is required, set allowed_classes to false or an explicit whitelist."
 
-  - id: "CG-DESER-004"
+  - id: "AEG-DESER-004"
     enabled: false
     disabled_reason: "Reference-only C# rule; C# parsing is not supported."
     name: ".NET BinaryFormatter deserialization"
@@ -123,7 +123,7 @@ rules:
       - "AllowedTypes|knownTypes"
     message: "BinaryFormatter is deprecated and inherently insecure. Migrate to System.Text.Json or DataContractSerializer. For Json.NET, set TypeNameHandling to None."
 
-  - id: "CG-DESER-005"
+  - id: "AEG-DESER-005"
     enabled: false
     disabled_reason: "Reference-only Ruby rule; Ruby parsing is not supported."
     name: "Ruby Marshal.load on untrusted data"
@@ -153,7 +153,7 @@ rules:
       - "signed_cookie"
     message: "Marshal.load on untrusted data can execute arbitrary code. Use JSON.parse or MessagePack for deserialization. If Marshal is needed, verify data integrity with HMAC before loading."
 
-  - id: "CG-DESER-006"
+  - id: "AEG-DESER-006"
     name: "YAML unsafe load"
     description: >
       The application uses YAML.load() (Python) or YAML.load() (Ruby) without safe

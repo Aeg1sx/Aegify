@@ -1,6 +1,6 @@
 version: 1
 name: owned-loopback-browser-smoke
-image: example.invalid/codeguard/playwright@sha256:0000000000000000000000000000000000000000000000000000000000000000
+image: example.invalid/aegify/playwright@sha256:0000000000000000000000000000000000000000000000000000000000000000
 service_command: ["java", "-jar", "application.jar"]
 base_url: http://127.0.0.1:8080
 startup_timeout_seconds: 90

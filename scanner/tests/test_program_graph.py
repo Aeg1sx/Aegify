@@ -6,11 +6,11 @@ from pathlib import Path
 import networkx as nx
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.ir import ContextQueryLimitError, ProgramGraphBuilder, ProgramGraphQuery
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.call_graph import CallGraphBuilder
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.ir import ContextQueryLimitError, ProgramGraphBuilder, ProgramGraphQuery
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.engine import ScanEngine
 
 
 def test_context_balanced_query_rejects_mismatched_return_callsite():
@@ -298,7 +298,7 @@ def test_repeated_callsites_are_preserved_in_interprocedural_cfg(tmp_path: Path)
         {"cfg", "icfg"},
     )
 
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     result = ScanEngine(config=config).scan(source)
     assert result.program_graph.interprocedural_callsites == 2
@@ -589,7 +589,7 @@ def test_declared_dependency_enables_labeled_multi_repo_reachability(tmp_path: P
         "  - id: provider\n"
         "    path: ./provider\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 
@@ -668,7 +668,7 @@ def test_scip_symbol_gives_precise_cross_repo_reachability(tmp_path: Path):
         "    path: ./provider\n"
         "    scip_index: ./provider.scip.json\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 
@@ -707,7 +707,7 @@ def test_gradle_module_dependency_enables_labeled_monorepo_reachability(
     (repository / "domain" / "build.gradle.kts").write_text("plugins {}\n")
     manifest = tmp_path / "workspace.yml"
     manifest.write_text("version: 1\nrepositories:\n  - id: commerce\n    path: ./commerce\n")
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 

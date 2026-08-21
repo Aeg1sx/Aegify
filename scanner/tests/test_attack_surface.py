@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from codeguard.models import EndpointInfo, EndpointParam
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.attack_surface import AttackSurfaceAnalyzer
-from codeguard.scanner.endpoint_detector import EndpointDetector
+from aegify.models import EndpointInfo, EndpointParam
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.attack_surface import AttackSurfaceAnalyzer
+from aegify.scanner.endpoint_detector import EndpointDetector
 
 
 def _endpoint_info(endpoint):

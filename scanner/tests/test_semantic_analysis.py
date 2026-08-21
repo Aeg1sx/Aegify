@@ -3,13 +3,13 @@
 import json
 from pathlib import Path
 
-from codeguard.config import CodeGuardConfig
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.engine import ScanEngine
-from codeguard.scanner.workspace import WorkspaceManifest
-from codeguard.semantic import SemanticAnalyzer
-from codeguard.semantic.jvm import JvmSemanticAnalyzer
-from codeguard.semantic.scip import ScipImporter
+from aegify.config import AegifyConfig
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.engine import ScanEngine
+from aegify.scanner.workspace import WorkspaceManifest
+from aegify.semantic import SemanticAnalyzer
+from aegify.semantic.jvm import JvmSemanticAnalyzer
+from aegify.semantic.scip import ScipImporter
 
 
 def test_scip_json_import_preserves_provider_roles_and_relationships(tmp_path: Path):
@@ -275,7 +275,7 @@ def test_jvm_points_to_resolves_explicit_cross_repo_factory_without_decoy(
         "  - id: decoy\n"
         "    path: ./decoy\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     config.llm.enabled = False
     engine = ScanEngine(config=config)
@@ -370,13 +370,13 @@ def test_workspace_semantic_summary_discovers_gradle_and_scip(tmp_path: Path):
     assert bundle.summary.scip_documents == 1
     assert bundle.summary.jvm_types == 1
     assert bundle.summary.providers == [
-        "codeguard-jvm-build",
-        "codeguard-jvm-source",
+        "aegify-jvm-build",
+        "aegify-jvm-source",
         "scip:scip-java",
     ]
     assert any(project.build_system == "gradle" for project in bundle.summary.build_projects)
 
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
     scan_result = engine.scan_workspace(manifest_path)
@@ -441,4 +441,4 @@ def test_workspace_imports_multiple_scip_indexes_for_independent_monorepo_builds
     )
 
     assert bundle.summary.scip_documents == 2
-    assert bundle.summary.providers == ["codeguard-jvm-source", "scip:scip-java"]
+    assert bundle.summary.providers == ["aegify-jvm-source", "scip:scip-java"]

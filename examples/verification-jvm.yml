@@ -2,7 +2,7 @@
 # verification image. Mutable tags are intentionally rejected.
 version: 1
 name: jvm-offline-tests
-image: ghcr.io/example/codeguard-jvm@sha256:0000000000000000000000000000000000000000000000000000000000000000
+image: ghcr.io/example/aegify-jvm@sha256:0000000000000000000000000000000000000000000000000000000000000000
 policy:
   network: none
   cpus: 2

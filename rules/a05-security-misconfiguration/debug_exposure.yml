@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-DEBUG-001"
+  - id: "AEG-DEBUG-001"
     name: "Debug mode enabled in production"
     description: >
       The application has debug mode enabled in a configuration that may be deployed
@@ -30,7 +30,7 @@ rules:
       - "os\\.environ\\.get\\(['\"]DEBUG['\"]"
     message: "Debug mode is enabled in a configuration file. Ensure DEBUG is set to False in production environments to prevent information disclosure and potential remote code execution."
 
-  - id: "CG-DEBUG-002"
+  - id: "AEG-DEBUG-002"
     name: "Stack trace exposure in error responses"
     description: >
       The application returns detailed stack traces or exception information in HTTP
@@ -61,7 +61,7 @@ rules:
       - "logger\\.error.*(?!response|send|render)"
     message: "Stack trace or exception details are exposed in error responses. Return generic error messages to clients and log detailed errors server-side only."
 
-  - id: "CG-DEBUG-003"
+  - id: "AEG-DEBUG-003"
     name: "Debug endpoints enabled"
     description: >
       The application exposes debug or diagnostic endpoints such as profilers, status
@@ -89,7 +89,7 @@ rules:
       - "management\\.endpoints\\.web\\.exposure\\.include.*health,info"
     message: "Debug or diagnostic endpoints are exposed. Remove or restrict debug endpoints behind authentication and ensure they are disabled in production."
 
-  - id: "CG-DEBUG-004"
+  - id: "AEG-DEBUG-004"
     name: "Verbose error messages in responses"
     description: >
       The application returns detailed error messages including internal identifiers,

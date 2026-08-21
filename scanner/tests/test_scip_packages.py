@@ -3,11 +3,11 @@
 import json
 from pathlib import Path
 
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.workspace import WorkspaceManifest
-from codeguard.semantic import SemanticAnalyzer
-from codeguard.semantic.scip import ScipImporter
-from codeguard.semantic.scip_symbol import parse_scip_symbol
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.workspace import WorkspaceManifest
+from aegify.semantic import SemanticAnalyzer
+from aegify.semantic.scip import ScipImporter
+from aegify.semantic.scip_symbol import parse_scip_symbol
 
 
 def _index(path: Path, relative: str, symbol: str, *, definition: bool) -> None:
@@ -69,7 +69,7 @@ def test_cross_repo_scip_resolution_is_exact_version_and_reports_conflict(
     manifest_path = tmp_path / "workspace.yml"
     manifest_path.write_text(
         "version: 1\n"
-        "scip_cache_dir: ./.codeguard-cache/scip\n"
+        "scip_cache_dir: ./.aegify-cache/scip\n"
         "repositories:\n"
         "  - id: consumer\n"
         "    path: ./consumer\n"

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Plus, Code } from "lucide-react";
 
-const YAML_TEMPLATE = `id: CG-CUSTOM-001
+const YAML_TEMPLATE = `id: AEG-CUSTOM-001
 name: Custom Rule Name
 description: Describe what this rule detects
 severity: medium
@@ -128,7 +128,7 @@ export default function NewRulePage() {
                   Rule ID <span className="text-red-400">*</span>
                 </label>
                 <Input
-                  placeholder="e.g. CG-CUSTOM-001"
+                  placeholder="e.g. AEG-CUSTOM-001"
                   value={form.id}
                   onChange={(e) => update("id", e.target.value)}
                 />

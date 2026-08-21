@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from codeguard.config import CodeGuardConfig
-from codeguard.models import ScanStatus
-from codeguard.scanner.engine import ScanEngine
-from codeguard.storage import InMemoryBackend
+from aegify.config import AegifyConfig
+from aegify.models import ScanStatus
+from aegify.scanner.engine import ScanEngine
+from aegify.storage import InMemoryBackend
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -13,12 +13,12 @@ FIXTURES = Path(__file__).parent / "fixtures"
 class TestParallelParsing:
     def test_parallel_scan_produces_same_results(self):
         """Parallel and sequential scans should produce equivalent results."""
-        config_seq = CodeGuardConfig()
+        config_seq = AegifyConfig()
         config_seq.llm.enabled = False
         config_seq.rules.severity_threshold = "low"
         config_seq.scan.max_workers = 1
 
-        config_par = CodeGuardConfig()
+        config_par = AegifyConfig()
         config_par.llm.enabled = False
         config_par.rules.severity_threshold = "low"
         config_par.scan.max_workers = 2
@@ -35,7 +35,7 @@ class TestParallelParsing:
 
     def test_single_file_no_parallelization(self):
         """Single file scan should work without parallelization."""
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
         config.scan.max_workers = 4
@@ -49,7 +49,7 @@ class TestParallelParsing:
 
     def test_max_workers_config(self):
         """max_workers=0 should auto-detect."""
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.scan.max_workers = 0
 
         engine = ScanEngine(config=config)
@@ -57,7 +57,7 @@ class TestParallelParsing:
         assert engine.max_workers <= 8
 
     def test_explicit_workers(self):
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.scan.max_workers = 3
 
         engine = ScanEngine(config=config)
@@ -67,7 +67,7 @@ class TestParallelParsing:
 class TestIncrementalBuild:
     def test_storage_backend_default(self):
         """Default storage backend should be InMemoryBackend."""
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
 
         engine = ScanEngine(config=config)
@@ -77,9 +77,9 @@ class TestIncrementalBuild:
         """SQLite storage backend should be created from config."""
         import tempfile
 
-        from codeguard.storage.sqlite import SQLiteBackend
+        from aegify.storage.sqlite import SQLiteBackend
 
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.storage.backend = "sqlite"
 
@@ -93,7 +93,7 @@ class TestIncrementalBuild:
 
     def test_scan_with_storage(self):
         """Scan should work with storage backend."""
-        config = CodeGuardConfig()
+        config = AegifyConfig()
         config.llm.enabled = False
         config.rules.severity_threshold = "low"
 

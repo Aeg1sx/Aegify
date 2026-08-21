@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.rules.base import get_registry
-from codeguard.rules.registry import load_builtin_rules
-from codeguard.rules.yaml_rule import load_yaml_rules
+from aegify.rules.base import get_registry
+from aegify.rules.registry import load_builtin_rules
+from aegify.rules.yaml_rule import load_yaml_rules
 
 RULES_DIR = Path(__file__).parent.parent.parent / "rules"
 
@@ -21,14 +21,14 @@ class TestExpandedYAMLRules:
         assert len(rules) >= 80, f"Expected 80+ YAML rules, got {len(rules)}"
 
     def test_all_rules_have_valid_ids(self):
-        """All rules should have IDs matching the CG-* pattern."""
+        """All rules should have IDs matching the AEG-* pattern."""
         if not RULES_DIR.exists():
             pytest.skip("rules/ directory not found")
 
         rules = load_yaml_rules(RULES_DIR)
         for rule in rules:
-            assert rule.definition.id.startswith("CG-"), (
-                f"Rule ID should start with 'CG-': {rule.definition.id}"
+            assert rule.definition.id.startswith("AEG-"), (
+                f"Rule ID should start with 'AEG-': {rule.definition.id}"
             )
 
     def test_all_rules_have_descriptions(self):

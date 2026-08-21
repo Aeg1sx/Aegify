@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-TMPL-001"
+  - id: "AEG-TMPL-001"
     name: "Jinja2 Server-Side Template Injection"
     description: >
       Detects user-controlled input rendered through Jinja2 template engine
@@ -48,7 +48,7 @@ rules:
       - "bleach\\.clean"
     message: "Jinja2 template at line {line} renders user-controlled input via Template() or render_template_string(), enabling server-side template injection. An attacker can achieve remote code execution by traversing Python MRO to access os.popen or subprocess modules."
 
-  - id: "CG-TMPL-002"
+  - id: "AEG-TMPL-002"
     name: "Handlebars Server-Side Template Injection"
     description: >
       Detects user-controlled input compiled as a Handlebars template string
@@ -92,7 +92,7 @@ rules:
       - "allowProtoMethodsByDefault\\s*:\\s*false"
     message: "Handlebars template at line {line} compiles user-controlled input as a template string. An attacker can inject helpers and prototype chain traversals to achieve remote code execution via Function constructor access."
 
-  - id: "CG-TMPL-003"
+  - id: "AEG-TMPL-003"
     name: "EJS Server-Side Template Injection"
     description: >
       Detects user-controlled input passed to EJS (Embedded JavaScript)
@@ -141,7 +141,7 @@ rules:
       - "outputFunctionName"
     message: "EJS template at line {line} renders user-controlled input as template source, enabling direct JavaScript code injection. An attacker can execute arbitrary server-side code via EJS delimiters including process.mainModule.require for command execution."
 
-  - id: "CG-TMPL-004"
+  - id: "AEG-TMPL-004"
     name: "Thymeleaf Server-Side Template Injection"
     description: >
       Detects user-controlled input used in Thymeleaf template expressions
@@ -192,7 +192,7 @@ rules:
       - "@ResponseBody"
     message: "Thymeleaf template at line {line} processes user-controlled input in SpEL expressions or view name resolution. An attacker can achieve remote code execution via SpEL preprocessing syntax __${T(java.lang.Runtime).getRuntime().exec()}__."
 
-  - id: "CG-TMPL-005"
+  - id: "AEG-TMPL-005"
     name: "Pug/Jade Server-Side Template Injection"
     description: >
       Detects user-controlled input passed to Pug (formerly Jade) template
@@ -238,7 +238,7 @@ rules:
       - "DOMPurify"
     message: "Pug/Jade template at line {line} compiles user-controlled input as template source, enabling arbitrary JavaScript execution. An attacker can inject Pug syntax for direct Node.js runtime access via global.process.mainModule.require()."
 
-  - id: "CG-TMPL-006"
+  - id: "AEG-TMPL-006"
     name: "Freemarker Server-Side Template Injection"
     description: >
       Detects user-controlled input processed by Apache FreeMarker template

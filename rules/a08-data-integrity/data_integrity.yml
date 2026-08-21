@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A08-001
+  - id: AEG-A08-001
     name: Insecure Deserialization
     description: >
       User-controlled data is deserialized without validation, potentially allowing
@@ -17,7 +17,7 @@ rules:
       Insecure deserialization: user input from '{source}' (line {source_line})
       flows to deserialization call '{sink}' (line {sink_line}).
 
-  - id: CG-A08-002
+  - id: AEG-A08-002
     name: Unsigned JWT Token
     description: >
       JWT tokens are created or accepted without proper signature verification,
@@ -37,7 +37,7 @@ rules:
         args_match: "(setSigningKey\\(null\\))"
     message: "JWT token processed without signature verification at '{callee}' (line {line}). Always verify JWT signatures."
 
-  - id: CG-A08-003
+  - id: AEG-A08-003
     name: Missing Integrity Check on Downloads
     description: >
       Files are downloaded from external sources without verifying a checksum
@@ -55,7 +55,7 @@ rules:
         args_match: "(curl|wget)\\s+.*https?://"
     message: "File downloaded without integrity check at '{callee}' (line {line}). Verify checksum or signature after download."
 
-  - id: CG-A08-004
+  - id: AEG-A08-004
     name: Unsafe YAML Load
     description: >
       Using yaml.load() without specifying SafeLoader allows arbitrary Python
@@ -74,7 +74,7 @@ rules:
       - callee: "yaml\\.unsafe_load"
     message: "Unsafe YAML loading at '{callee}' (line {line}). Use yaml.safe_load() or specify Loader=yaml.SafeLoader."
 
-  - id: CG-A08-005
+  - id: AEG-A08-005
     name: Pickle Deserialization of Untrusted Data
     description: >
       Untrusted data from an HTTP body or file is deserialized using Python's
@@ -94,7 +94,7 @@ rules:
       flows to pickle/deserialization call '{sink}' (line {sink_line}). Use JSON or a safe
       serialization format instead.
 
-  - id: CG-A08-006
+  - id: AEG-A08-006
     name: Unvalidated Redirect URL
     description: >
       User-controlled input is used to construct a redirect URL without

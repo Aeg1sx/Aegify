@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-CodeGuard is currently alpha software. Security fixes are made on the latest
+Aegify is currently alpha software. Security fixes are made on the latest
 release and the `main` branch; older releases are not guaranteed to receive
 backports.
 
@@ -41,7 +41,7 @@ to apply a fix or mitigation. This policy is not a bug bounty promise.
 ## Safe research boundary
 
 Only test systems and repositories you own or are explicitly authorized to
-assess. Do not use CodeGuard's future dynamic-validation features against third
+assess. Do not use Aegify's future dynamic-validation features against third
 party targets without permission. Proof artifacts should demonstrate the
 smallest necessary impact and must not contain live credentials or customer
 data.
@@ -50,7 +50,7 @@ data.
 
 - Configure `AUTH_SECRET` and at least one supported identity provider before
   exposing the dashboard.
-- Configure a separate `CODEGUARD_UPLOAD_TOKEN` for CI SARIF uploads.
+- Configure a separate `AEGIFY_UPLOAD_TOKEN` for CI SARIF uploads.
 - Keep the dashboard and scanner on a private network unless the deployment has
   an explicit access-control and reverse-proxy policy.
 - Run build and validation workloads in isolated, resource-limited workers.

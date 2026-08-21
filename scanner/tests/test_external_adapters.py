@@ -3,11 +3,11 @@
 import json
 from pathlib import Path
 
-from codeguard.adapters import ExternalAnalysisImporter
-from codeguard.config import CodeGuardConfig
-from codeguard.models import Severity
-from codeguard.scanner.engine import ScanEngine
-from codeguard.scanner.workspace import AnalysisArtifact, WorkspaceRepository
+from aegify.adapters import ExternalAnalysisImporter
+from aegify.config import AegifyConfig
+from aegify.models import Severity
+from aegify.scanner.engine import ScanEngine
+from aegify.scanner.workspace import AnalysisArtifact, WorkspaceRepository
 
 
 def _repository(tmp_path: Path) -> WorkspaceRepository:
@@ -195,7 +195,7 @@ def test_workspace_merges_external_finding_and_cpg_edge_into_program_graph(
         "      - format: joern-jsonl\n"
         "        path: ./joern.jsonl\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 

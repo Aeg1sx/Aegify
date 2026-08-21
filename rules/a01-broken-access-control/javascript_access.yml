@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-AC-JS-001"
+  - id: "AEG-AC-JS-001"
     name: "Express route without auth middleware"
     description: >
       An Express.js route handler is registered via app.get, app.post, or
@@ -24,7 +24,7 @@ rules:
       - "verifyToken"
     message: "Express route registered without authentication middleware. Add an auth guard to the middleware chain before the route handler."
 
-  - id: "CG-AC-JS-002"
+  - id: "AEG-AC-JS-002"
     name: "JWT token not validated before use"
     description: >
       A JSON Web Token is decoded using jwt.decode without verification, or the
@@ -50,7 +50,7 @@ rules:
       - "{ complete: true }"
     message: "JWT token is decoded without proper signature verification. Use jwt.verify with an explicit algorithm allowlist and a strong secret or public key."
 
-  - id: "CG-AC-JS-003"
+  - id: "AEG-AC-JS-003"
     name: "Session fixation vulnerability"
     description: >
       After a user successfully authenticates, the existing session ID is not
@@ -76,7 +76,7 @@ rules:
       - "session.regenerate(callback)"
     message: "Session is not regenerated after successful authentication. Call req.session.regenerate() in the login callback to prevent session fixation attacks."
 
-  - id: "CG-AC-JS-004"
+  - id: "AEG-AC-JS-004"
     name: "Missing CORS origin validation"
     description: >
       The CORS configuration reflects the request Origin header directly into the
@@ -101,7 +101,7 @@ rules:
       - "cors({ origin: allowedOrigins })"
     message: "CORS configuration reflects the request Origin without validation or uses wildcard with credentials. Validate origins against an explicit allowlist."
 
-  - id: "CG-AC-JS-005"
+  - id: "AEG-AC-JS-005"
     name: "Insecure cookie configuration"
     description: >
       A session or authentication cookie is set without the Secure, HttpOnly, or
@@ -127,7 +127,7 @@ rules:
       - "cookie: { secure: true, httpOnly: true }"
     message: "Cookie is set without Secure, HttpOnly, or SameSite attributes. Configure all three to protect against interception, XSS-based theft, and CSRF."
 
-  - id: "CG-AC-JS-006"
+  - id: "AEG-AC-JS-006"
     name: "Path traversal in express.static or file serving"
     description: >
       User-controlled input is used to construct a file path that is passed to
@@ -154,7 +154,7 @@ rules:
       - "express.static with fixed root directory"
     message: "File path constructed from user input without traversal protection. Validate the resolved path starts with the intended base directory."
 
-  - id: "CG-AC-JS-007"
+  - id: "AEG-AC-JS-007"
     name: "Unprotected admin routes"
     description: >
       Routes under an administrative path prefix (/admin, /dashboard, /manage,
@@ -181,7 +181,7 @@ rules:
       - "rbac('admin')"
     message: "Administrative route lacks role-based authorization middleware. Add an admin role check to prevent privilege escalation by regular authenticated users."
 
-  - id: "CG-AC-JS-008"
+  - id: "AEG-AC-JS-008"
     name: "Missing rate limiting on sensitive endpoint"
     description: >
       A sensitive endpoint such as login, password reset, registration, API key

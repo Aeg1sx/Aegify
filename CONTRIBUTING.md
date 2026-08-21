@@ -1,6 +1,6 @@
-# Contributing to CodeGuard
+# Contributing to Aegify
 
-CodeGuard welcomes focused fixes, language/framework models, rules, fixtures,
+Aegify welcomes focused fixes, language/framework models, rules, fixtures,
 documentation, and performance improvements. The project is alpha; changes
 should make uncertainty and evidence more visible rather than expanding claims.
 
@@ -11,7 +11,7 @@ cd scanner
 uv sync --extra dev
 .venv/bin/pytest -q
 .venv/bin/ruff check src tests
-.venv/bin/mypy --strict src/codeguard
+.venv/bin/mypy --strict src/aegify
 
 cd ../dashboard
 npm ci
@@ -25,7 +25,7 @@ Run new or changed YAML rules through the strict audit independently:
 
 ```bash
 cd scanner
-codeguard audit-rules ../rules/path/to/changed-rule.yml --strict
+aegify audit-rules ../rules/path/to/changed-rule.yml --strict
 ```
 
 The bundled rule tree must retain zero strict-audit issues. Do not add an

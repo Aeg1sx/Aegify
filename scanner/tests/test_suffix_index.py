@@ -2,13 +2,13 @@
 
 import pytest
 
-from codeguard.models import (
+from aegify.models import (
     CallSite,
     FileAST,
     FunctionDef,
     Language,
 )
-from codeguard.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.call_graph import CallGraphBuilder
 
 
 class TestSuffixIndex:

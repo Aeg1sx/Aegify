@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.harness.docker import DockerVerificationExecutor, _OutputCapture
-from codeguard.harness.models import (
+from aegify.harness.docker import DockerVerificationExecutor, _OutputCapture
+from aegify.harness.models import (
     VerificationPlan,
     VerificationStatus,
     VerificationStepResult,
 )
 
-PINNED_IMAGE = f"example.invalid/codeguard/jvm@sha256:{'a' * 64}"
+PINNED_IMAGE = f"example.invalid/aegify/jvm@sha256:{'a' * 64}"
 
 
 def make_plan(**overrides: object) -> VerificationPlan:

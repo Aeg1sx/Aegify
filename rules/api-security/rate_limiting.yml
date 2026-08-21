@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-API-RL-001"
+  - id: "AEG-API-RL-001"
     name: "Missing rate limiter middleware on API routes"
     description: >
       API route definitions do not include rate limiting middleware or
@@ -37,7 +37,7 @@ rules:
       - "distributed_rate_limiter_redis"
     message: "API routes are defined without rate limiting middleware. Apply rate limiting at the middleware level for all API endpoints, with stricter limits on authentication and sensitive operations. Use a distributed rate limiter (e.g., Redis-backed) for multi-instance deployments."
 
-  - id: "CG-API-RL-002"
+  - id: "AEG-API-RL-002"
     name: "Login endpoint without rate limiting"
     description: >
       Authentication endpoints (login, sign-in, token generation) do not
@@ -71,7 +71,7 @@ rules:
       - "ip_based_login_throttle"
     message: "Login endpoint lacks rate limiting, enabling brute force and credential stuffing attacks. Apply strict rate limits (e.g., 5 attempts per minute per IP/account) with progressive delays, account lockout after repeated failures, and CAPTCHA challenges."
 
-  - id: "CG-API-RL-003"
+  - id: "AEG-API-RL-003"
     name: "API key endpoint without request throttling"
     description: >
       Endpoints that accept API key authentication do not implement request
@@ -106,7 +106,7 @@ rules:
       - "api_gateway_throttling"
     message: "API key-authenticated endpoints lack per-key request throttling. Implement per-key rate limits and usage quotas to prevent abuse from compromised keys. Use tiered rate limits based on API key privilege level and track usage metrics for anomaly detection."
 
-  - id: "CG-API-RL-004"
+  - id: "AEG-API-RL-004"
     name: "Password reset endpoint without rate limiting"
     description: >
       Password reset or forgot-password endpoints do not have rate limiting

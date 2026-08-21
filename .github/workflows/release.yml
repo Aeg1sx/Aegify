@@ -54,7 +54,7 @@ jobs:
         with:
           path: scanner/dist
           format: cyclonedx-json
-          output-file: codeguard-sbom.cdx.json
+          output-file: aegify-sbom.cdx.json
           upload-artifact: false
 
       - name: Attest wheel provenance
@@ -68,6 +68,6 @@ jobs:
         run: >-
           gh release create "$GITHUB_REF_NAME"
           scanner/dist/*.whl
-          codeguard-sbom.cdx.json
+          aegify-sbom.cdx.json
           --verify-tag
           --generate-notes

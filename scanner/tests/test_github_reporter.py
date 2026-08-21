@@ -2,13 +2,13 @@
 
 import pytest
 
-from codeguard.models import Finding, ScanResult, ScanStatus, Severity
-from codeguard.reporter.github import GitHubReporter
+from aegify.models import Finding, ScanResult, ScanStatus, Severity
+from aegify.reporter.github import GitHubReporter
 
 
 def _make_finding(**overrides) -> Finding:
     defaults = {
-        "rule_id": "CG-SQL-001",
+        "rule_id": "AEG-SQL-001",
         "rule_name": "SQL Injection",
         "severity": Severity.HIGH,
         "confidence": 0.9,
@@ -40,22 +40,22 @@ class TestGitHubReporter:
         findings = [
             _make_finding(
                 severity=Severity.CRITICAL,
-                rule_id="CG-CMD-001",
+                rule_id="AEG-CMD-001",
                 rule_name="Command Injection",
             ),
             _make_finding(severity=Severity.HIGH),
-            _make_finding(severity=Severity.MEDIUM, rule_id="CG-XSS-001", rule_name="XSS"),
+            _make_finding(severity=Severity.MEDIUM, rule_id="AEG-XSS-001", rule_name="XSS"),
         ]
         result = _make_scan_result(findings)
         comment = reporter.generate_comment(result)
 
-        assert "CodeGuard SAST Results" in comment
+        assert "Aegify Results" in comment
         assert "CRITICAL" in comment
         assert "HIGH" in comment
         assert "MEDIUM" in comment
-        assert "CG-CMD-001" in comment
-        assert "CG-SQL-001" in comment
-        assert "CG-XSS-001" in comment
+        assert "AEG-CMD-001" in comment
+        assert "AEG-SQL-001" in comment
+        assert "AEG-XSS-001" in comment
         assert "42 files" in comment
 
     def test_generate_comment_no_findings(self, reporter):

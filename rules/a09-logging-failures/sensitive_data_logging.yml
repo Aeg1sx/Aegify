@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-LOG-DATA-001"
+  - id: "AEG-LOG-DATA-001"
     name: "Personally identifiable information in log output"
     description: >
       Personally identifiable information (PII) such as email addresses, phone
@@ -29,7 +29,7 @@ rules:
       - "audit_log_separation"
     message: "PII data (email, phone, SSN, address, or other personal identifiers) is being written to application logs. Implement PII redaction filters or use structured logging with field-level masking to prevent uncontrolled PII exposure in log aggregation systems."
 
-  - id: "CG-LOG-DATA-002"
+  - id: "AEG-LOG-DATA-002"
     name: "Authentication token or session ID in log output"
     description: >
       Authentication tokens (JWT, OAuth bearer tokens, API keys, session
@@ -61,7 +61,7 @@ rules:
       - "log_field_allowlist"
     message: "Authentication tokens or session identifiers are being logged. This exposes credential material in log storage systems. Implement token redaction filters that mask all but the last 4 characters, or use a log field allowlist to prevent credential leakage."
 
-  - id: "CG-LOG-DATA-003"
+  - id: "AEG-LOG-DATA-003"
     name: "Password or credential in log message"
     description: >
       A password, secret, or credential value is included in a log message.
@@ -94,7 +94,7 @@ rules:
       - "log_field_denylist"
     message: "A password or credential value is being written to logs. This stores sensitive authentication material in plaintext within log infrastructure. Implement credential scrubbing filters that replace password fields with [REDACTED] before any log output."
 
-  - id: "CG-LOG-DATA-004"
+  - id: "AEG-LOG-DATA-004"
     name: "Credit card or payment data in log output"
     description: >
       Credit card numbers, CVV codes, or other payment card data are written

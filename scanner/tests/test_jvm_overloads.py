@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-from codeguard.config import CodeGuardConfig
-from codeguard.ir import ProgramGraphBuilder
-from codeguard.scanner.ast_parser import ASTParser
-from codeguard.scanner.call_graph import CallGraphBuilder
-from codeguard.scanner.dataflow import DataflowAnalyzer
-from codeguard.scanner.engine import ScanEngine
+from aegify.config import AegifyConfig
+from aegify.ir import ProgramGraphBuilder
+from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.call_graph import CallGraphBuilder
+from aegify.scanner.dataflow import DataflowAnalyzer
+from aegify.scanner.engine import ScanEngine
 
 
 def test_java_workspace_overloads_have_distinct_descriptor_ids(tmp_path: Path):
@@ -67,7 +67,7 @@ def test_java_call_graph_resolves_overload_by_parameter_and_literal_type(
     assert builder.overload_calls_resolved == 2
     assert builder.overload_calls_ambiguous == 0
 
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.llm.enabled = False
     config.scan.max_workers = 1
     scan = ScanEngine(config=config).scan(tmp_path)

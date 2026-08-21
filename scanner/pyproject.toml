@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "codeguard-sast"
+name = "aegify-sast"
 version = "0.1.0"
 description = "Next-gen SAST tool with Call Graph analysis, Dataflow tracking, and LLM-augmented verification"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-authors = [{ name = "CodeGuard Team" }]
+authors = [{ name = "Aegify Team" }]
 
 dependencies = [
     "tree-sitter>=0.24.0",
@@ -50,15 +50,15 @@ storage-s3 = [
 ]
 
 [project.scripts]
-codeguard = "codeguard.cli:app"
+aegify = "aegify.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/codeguard"]
-artifacts = ["src/codeguard/py.typed"]
+packages = ["src/aegify"]
+artifacts = ["src/aegify/py.typed"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"../rules" = "codeguard/bundled_rules"
-"src/codeguard/modelpacks/jvm.yml" = "codeguard/modelpacks/jvm.yml"
+"../rules" = "aegify/bundled_rules"
+"src/aegify/modelpacks/jvm.yml" = "aegify/modelpacks/jvm.yml"
 
 [tool.ruff]
 target-version = "py312"

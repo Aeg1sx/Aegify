@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A02-001
+  - id: AEG-A02-001
     name: Hardcoded Cryptographic Key
     description: >
       A cryptographic key, secret, or password is hardcoded as a string
@@ -20,7 +20,7 @@ rules:
       must be loaded from environment variables, a secrets manager, or a
       secure vault -- never embedded in source code.
 
-  - id: CG-A02-002
+  - id: AEG-A02-002
     name: Weak Hash Algorithm MD5
     description: >
       MD5 is used as a hash function. MD5 is cryptographically broken and
@@ -42,7 +42,7 @@ rules:
       cryptographically broken. Use SHA-256 or stronger for integrity
       checks, and bcrypt/argon2/scrypt for password hashing.
 
-  - id: CG-A02-003
+  - id: AEG-A02-003
     name: Weak Hash Algorithm SHA-1
     description: >
       SHA-1 is used as a hash function. SHA-1 has known collision
@@ -65,7 +65,7 @@ rules:
       collision vulnerabilities. Migrate to SHA-256 or SHA-3 for
       security-sensitive hashing.
 
-  - id: CG-A02-004
+  - id: AEG-A02-004
     name: Insecure Random Number Generator for Cryptographic Use
     description: >
       A non-cryptographic pseudo-random number generator (PRNG) is used in
@@ -86,7 +86,7 @@ rules:
       {sink_line}. Use a cryptographically secure PRNG: secrets (Python),
       crypto.randomBytes (Node.js), SecureRandom (Java), or crypto/rand (Go).
 
-  - id: CG-A02-005
+  - id: AEG-A02-005
     name: Missing TLS Certificate Verification
     description: >
       TLS/SSL certificate verification is explicitly disabled, allowing
@@ -110,7 +110,7 @@ rules:
       allows man-in-the-middle attacks. Always verify TLS certificates in
       production environments.
 
-  - id: CG-A02-006
+  - id: AEG-A02-006
     name: Weak Cipher Mode ECB
     description: >
       Electronic Codebook (ECB) mode is used for block cipher encryption.
@@ -130,7 +130,7 @@ rules:
       plaintext patterns in ciphertext. Use GCM (authenticated encryption),
       CBC with HMAC, or CTR mode instead.
 
-  - id: CG-A02-007
+  - id: AEG-A02-007
     name: Insufficient RSA Key Length
     description: >
       An RSA key is generated with fewer than 2048 bits. Keys shorter than
@@ -153,7 +153,7 @@ rules:
       size is below the recommended minimum of 2048 bits. Use at least
       2048-bit keys (3072-bit recommended for long-term security).
 
-  - id: CG-A02-008
+  - id: AEG-A02-008
     name: Cleartext Password Storage
     description: >
       A password is stored or persisted in cleartext without hashing. Stored
@@ -175,7 +175,7 @@ rules:
       value is persisted without hashing. Use bcrypt, argon2, or scrypt to
       hash passwords before storage.
 
-  - id: CG-A02-009
+  - id: AEG-A02-009
     name: Deprecated Cipher DES or 3DES
     description: >
       DES (56-bit key) or Triple DES (168-bit effective, 112-bit security)
@@ -197,7 +197,7 @@ rules:
       3DES are cryptographically weak and deprecated. Migrate to AES-256-GCM
       or ChaCha20-Poly1305 for symmetric encryption.
 
-  - id: CG-A02-010
+  - id: AEG-A02-010
     name: Sensitive Data Stored Without Encryption
     description: >
       Sensitive data (credit card numbers, SSNs, health records, personal

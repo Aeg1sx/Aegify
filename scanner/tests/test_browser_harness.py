@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.harness.browser import BrowserVerificationExecutor, BrowserVerificationPlan
+from aegify.harness.browser import BrowserVerificationExecutor, BrowserVerificationPlan
 
 PINNED_IMAGE = f"example.invalid/browser@sha256:{'d' * 64}"
 
@@ -66,6 +66,6 @@ def test_browser_plan_stages_playwright_runner_with_no_container_network(
     assert command[command.index("--network") :][:2] == ["--network", "none"]
     assert command[-3:] == [
         "python3",
-        ".codeguard-runtime/browser_runner.py",
-        ".codeguard-runtime/browser-plan.json",
+        ".aegify-runtime/browser_runner.py",
+        ".aegify-runtime/browser-plan.json",
     ]

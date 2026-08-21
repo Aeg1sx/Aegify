@@ -78,7 +78,7 @@ export default function UploadPage() {
       <div>
         <h1 className="text-2xl font-bold">Upload SARIF</h1>
         <p className="text-muted-foreground">
-          Import scan results from CodeGuard CLI
+          Import scan results from Aegify CLI
         </p>
       </div>
 
@@ -161,7 +161,7 @@ export default function UploadPage() {
         <CardContent>
           <div className="bg-muted rounded-md p-4 font-mono text-sm space-y-2">
             <p className="text-muted-foreground"># Generate SARIF output</p>
-            <p>codeguard scan ./src --output sarif -f results.sarif</p>
+            <p>aegify scan ./src --output sarif -f results.sarif</p>
             <p className="text-muted-foreground mt-4"># Upload via curl</p>
             <p>
               curl -X POST http://localhost:3000/api/upload \

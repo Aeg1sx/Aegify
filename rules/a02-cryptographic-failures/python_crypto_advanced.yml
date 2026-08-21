@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-CRYPTO-PY-001"
+  - id: "AEG-CRYPTO-PY-001"
     name: "PyCrypto weak cipher usage"
     description: >
       The application uses DES, Blowfish, RC2, RC4, or ARC4 ciphers from the
@@ -24,7 +24,7 @@ rules:
       - "from Cryptodome.Cipher import ChaCha20_Poly1305"
     message: "Weak cipher algorithm detected (DES, Blowfish, RC4, or 3DES). Replace with AES-256-GCM or ChaCha20-Poly1305 for authenticated encryption."
 
-  - id: "CG-CRYPTO-PY-002"
+  - id: "AEG-CRYPTO-PY-002"
     name: "MD5 or SHA1 used for password hashing"
     description: >
       The application uses hashlib.md5() or hashlib.sha1() to hash passwords or
@@ -51,7 +51,7 @@ rules:
       - "from passlib.hash import argon2"
     message: "MD5 or SHA-1 used for password hashing. Use bcrypt, Argon2, or PBKDF2 with SHA-256 and at least 600,000 iterations for password storage."
 
-  - id: "CG-CRYPTO-PY-003"
+  - id: "AEG-CRYPTO-PY-003"
     name: "os.urandom used where secrets module is preferred"
     description: >
       The application uses os.urandom() to generate tokens, session IDs, API keys,
@@ -78,7 +78,7 @@ rules:
       - "import secrets"
     message: "os.urandom() used for security token generation. Prefer the secrets module (secrets.token_hex, secrets.token_urlsafe) for clearer intent and safer formatting."
 
-  - id: "CG-CRYPTO-PY-004"
+  - id: "AEG-CRYPTO-PY-004"
     name: "ECB cipher mode usage"
     description: >
       The application uses Electronic Codebook (ECB) mode for symmetric encryption.
@@ -104,7 +104,7 @@ rules:
       - "AES.new(key, AES.MODE_CBC, iv=iv) # with HMAC"
     message: "ECB cipher mode leaks plaintext patterns. Use AES-GCM, AES-CCM, or AES-CTR with a unique nonce for each encryption operation."
 
-  - id: "CG-CRYPTO-PY-005"
+  - id: "AEG-CRYPTO-PY-005"
     name: "RSA key size below 2048 bits"
     description: >
       The application generates an RSA key pair with fewer than 2048 bits. RSA keys
@@ -130,7 +130,7 @@ rules:
       - "Ed25519PrivateKey.generate()"
     message: "RSA key size is below 2048 bits. Generate keys with at least 2048 bits (preferably 4096) or migrate to Ed25519/ECDSA P-256."
 
-  - id: "CG-CRYPTO-PY-006"
+  - id: "AEG-CRYPTO-PY-006"
     name: "Hardcoded initialization vector or nonce"
     description: >
       A cryptographic initialization vector (IV) or nonce is hardcoded as a fixed
@@ -157,7 +157,7 @@ rules:
       - "nonce = secrets.token_bytes(12)"
     message: "Hardcoded IV or nonce detected. Generate a unique random IV/nonce for each encryption operation using os.urandom() or let the cipher generate one automatically."
 
-  - id: "CG-CRYPTO-PY-007"
+  - id: "AEG-CRYPTO-PY-007"
     name: "Missing HMAC validation on ciphertext"
     description: >
       The application decrypts ciphertext using a non-AEAD cipher mode (CBC, CTR,
@@ -185,7 +185,7 @@ rules:
       - "HMAC.new(mac_key, ciphertext, SHA256).verify(mac_tag)"
     message: "Ciphertext decrypted without integrity verification. Use an AEAD mode (GCM/CCM/EAX) or implement Encrypt-then-MAC with HMAC-SHA256 verification before decryption."
 
-  - id: "CG-CRYPTO-PY-008"
+  - id: "AEG-CRYPTO-PY-008"
     name: "Weak key derivation function parameters"
     description: >
       The application uses PBKDF2 with fewer than 600,000 iterations, or uses an

@@ -1,6 +1,6 @@
 {
   "contract_version": 1,
-  "producer": "codeguard-http-harness",
+  "producer": "aegify-http-harness",
   "cases": [
     {
       "id": "orders-read",

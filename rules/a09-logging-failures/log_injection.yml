@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-LOG-INJ-001"
+  - id: "AEG-LOG-INJ-001"
     name: "CRLF injection in log output"
     description: >
       User-controlled input containing carriage return (\r) or line feed (\n)
@@ -27,7 +27,7 @@ rules:
       - "input_newline_stripping"
     message: "User-controlled input flows into log output without CRLF sanitization, enabling log injection attacks that can forge audit trails and corrupt log integrity."
 
-  - id: "CG-LOG-INJ-002"
+  - id: "AEG-LOG-INJ-002"
     name: "Format string injection in log message"
     description: >
       User-supplied input is used directly in a log format string rather than
@@ -58,7 +58,7 @@ rules:
       - "log_message_template"
     message: "User input is interpolated directly into a log format string instead of being passed as a logging parameter. Use parameterized logging (e.g., logger.info('User action: %s', user_input)) to prevent format string attacks."
 
-  - id: "CG-LOG-INJ-003"
+  - id: "AEG-LOG-INJ-003"
     name: "ANSI escape sequence injection in logs"
     description: >
       User-controlled input containing ANSI escape codes (ESC sequences

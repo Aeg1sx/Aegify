@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-AC-GO-001"
+  - id: "AEG-AC-GO-001"
     name: "HTTP handler without auth middleware"
     description: >
       A Go net/http handler function is registered via http.HandleFunc or
@@ -25,7 +25,7 @@ rules:
       - "r.Use(AuthMiddleware)"
     message: "HTTP handler registered without authentication middleware wrapper. Wrap the handler with an auth middleware function to enforce authentication."
 
-  - id: "CG-AC-GO-002"
+  - id: "AEG-AC-GO-002"
     name: "Gorilla/mux unprotected routes"
     description: >
       A gorilla/mux router registers route handlers without applying authentication
@@ -52,7 +52,7 @@ rules:
       - "negroni.New(negroni.HandlerFunc(AuthMiddleware))"
     message: "Gorilla/mux route handlers lack authentication middleware. Use router.Use(AuthMiddleware) or wrap individual handlers with an auth guard."
 
-  - id: "CG-AC-GO-003"
+  - id: "AEG-AC-GO-003"
     name: "Chi router missing auth middleware"
     description: >
       A go-chi/chi router group or route registers handlers for sensitive paths
@@ -81,7 +81,7 @@ rules:
       - "r.With(AuthRequired).Get(\"/protected\", handler)"
     message: "Chi router route or group lacks authentication middleware. Apply auth middleware via r.Use() at the router or group level to protect sensitive endpoints."
 
-  - id: "CG-AC-GO-004"
+  - id: "AEG-AC-GO-004"
     name: "Missing tenant scope in GORM queries"
     description: >
       A GORM database query retrieves records without applying a tenant or

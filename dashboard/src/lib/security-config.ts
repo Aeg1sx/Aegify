@@ -4,6 +4,23 @@ function completePair(left: string | undefined, right: string | undefined): bool
   return Boolean(left && right);
 }
 
+function validAuthOrigin(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      !url.username &&
+      !url.password &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function dashboardAuthConfigured(environment: Environment): boolean {
   const providerConfigured =
     completePair(environment.AUTH_GITHUB_ID, environment.AUTH_GITHUB_SECRET) ||
@@ -22,6 +39,11 @@ export function productionSecurityErrors(environment: Environment): string[] {
   if (!dashboardAuthConfigured(environment)) {
     errors.push("a complete GitHub or GitLab OAuth provider is required");
   }
+  if (!environment.AUTH_URL) {
+    errors.push("AUTH_URL is required");
+  } else if (!validAuthOrigin(environment.AUTH_URL)) {
+    errors.push("AUTH_URL must be an HTTP(S) origin without credentials or a path");
+  }
   return errors;
 }
 
@@ -36,6 +58,6 @@ export function anonymousUploadAllowed(environment: Environment): boolean {
   return (
     environment.NODE_ENV !== "production" &&
     !environment.AUTH_SECRET &&
-    !environment.CODEGUARD_UPLOAD_TOKEN
+    !environment.AEGIFY_UPLOAD_TOKEN
   );
 }

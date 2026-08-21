@@ -8,22 +8,22 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.config import CodeGuardConfig
-from codeguard.ir.query import ProgramGraphQuery
-from codeguard.models import (
+from aegify.config import AegifyConfig
+from aegify.ir.query import ProgramGraphQuery
+from aegify.models import (
     CallSite,
     FileAST,
     ImportInfo,
     Language,
     SemanticRelationship,
 )
-from codeguard.scanner.engine import ScanEngine
-from codeguard.scanner.workspace import JvmClasspathArtifact, WorkspaceRepository
-from codeguard.semantic.jvm_bytecode import (
+from aegify.scanner.engine import ScanEngine
+from aegify.scanner.workspace import JvmClasspathArtifact, WorkspaceRepository
+from aegify.semantic.jvm_bytecode import (
     JvmBytecodeImporter,
     JvmClasspathSnapshotEntry,
 )
-from codeguard.semantic.jvm_dependencies import JvmArtifactCoordinate
+from aegify.semantic.jvm_dependencies import JvmArtifactCoordinate
 
 
 def _u2(value: int) -> bytes:
@@ -648,7 +648,7 @@ def test_classpath_snapshot_imports_hashed_bytecode_signature_and_calls(
         "    jvm_classpath_snapshots:\n"
         "      - path: ./evidence/classpath.json\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 
@@ -788,7 +788,7 @@ def test_lambda_metafactory_invokedynamic_reaches_implementation_method(tmp_path
         "    jvm_classpath_snapshots:\n"
         "      - path: ./evidence/classpath-invokedynamic.json\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 
@@ -1206,7 +1206,7 @@ def test_source_to_sink_paths_follow_all_bytecode_interface_candidates(
         "    jvm_classpath_snapshots:\n"
         "      - path: ./evidence/classpath.json\n"
     )
-    config = CodeGuardConfig()
+    config = AegifyConfig()
     config.scan.max_workers = 1
     engine = ScanEngine(config=config)
 

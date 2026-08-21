@@ -1,6 +1,6 @@
 version: 1
 name: owned-loopback-proxy-mutation
-image: example.invalid/codeguard/proxy@sha256:0000000000000000000000000000000000000000000000000000000000000000
+image: example.invalid/aegify/proxy@sha256:0000000000000000000000000000000000000000000000000000000000000000
 service_command: ["java", "-jar", "application.jar"]
 base_url: http://127.0.0.1:8080
 startup_timeout_seconds: 90
@@ -21,7 +21,7 @@ cases:
         name: debug
         value: "true"
       - kind: header-set
-        name: X-CodeGuard-Probe
+        name: X-Aegify-Probe
         value: owned-fixture
     expected_status: [400, 403, 422]
   - id: alternate-route

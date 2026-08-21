@@ -59,7 +59,7 @@ dist/
 .idea/
 .vscode/
 .claude/settings.local.json
-.codeguard-session.md
+.aegify-session.md
 *.swp
 *.swo
 

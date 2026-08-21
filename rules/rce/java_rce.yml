@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-RCE-JAVA-001"
+  - id: "AEG-RCE-JAVA-001"
     name: "Runtime.exec() with user-controlled input"
     description: >
       Runtime.getRuntime().exec() executes an external process on the host system.
@@ -54,7 +54,7 @@ rules:
       - "https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Runtime.html#exec(java.lang.String)"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-JAVA-002"
+  - id: "AEG-RCE-JAVA-002"
     name: "ProcessBuilder with user-controlled arguments"
     description: >
       ProcessBuilder provides a more structured API for creating operating system
@@ -112,7 +112,7 @@ rules:
       - "https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/ProcessBuilder.html"
       - "https://cwe.mitre.org/data/definitions/78.html"
 
-  - id: "CG-RCE-JAVA-003"
+  - id: "AEG-RCE-JAVA-003"
     name: "JNDI lookup with user-controlled input (Log4Shell pattern)"
     description: >
       Java Naming and Directory Interface (JNDI) lookups with user-controlled input
@@ -177,7 +177,7 @@ rules:
       - "https://cwe.mitre.org/data/definitions/917.html"
       - "https://logging.apache.org/log4j/2.x/security.html"
 
-  - id: "CG-RCE-JAVA-004"
+  - id: "AEG-RCE-JAVA-004"
     name: "ScriptEngine.eval() with user-controlled input"
     description: >
       The javax.script.ScriptEngine API allows execution of scripts written in various
@@ -237,7 +237,7 @@ rules:
       - "https://docs.oracle.com/en/java/javase/17/docs/api/java.scripting/javax/script/ScriptEngine.html"
       - "https://cwe.mitre.org/data/definitions/94.html"
 
-  - id: "CG-RCE-JAVA-005"
+  - id: "AEG-RCE-JAVA-005"
     name: "Reflection invoke with user-controlled class or method names"
     description: >
       Java reflection APIs (Class.forName(), Method.invoke(), Constructor.newInstance())

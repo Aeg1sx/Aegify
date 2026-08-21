@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.harness.http import HttpVerificationExecutor, HttpVerificationPlan
-from codeguard.harness.http_runner import _request
+from aegify.harness.http import HttpVerificationExecutor, HttpVerificationPlan
+from aegify.harness.http_runner import _request
 
 PINNED_IMAGE = f"example.invalid/http@sha256:{'c' * 64}"
 
@@ -46,8 +46,8 @@ def test_http_dry_run_stages_runner_and_keeps_container_network_disabled(
     assert command[command.index("--network") :][:2] == ["--network", "none"]
     assert command[-3:] == [
         "python3",
-        ".codeguard-runtime/http_runner.py",
-        ".codeguard-runtime/http-plan.json",
+        ".aegify-runtime/http_runner.py",
+        ".aegify-runtime/http-plan.json",
     ]
 
 

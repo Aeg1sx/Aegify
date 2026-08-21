@@ -1,5 +1,5 @@
 rules:
-  - id: CG-A03-001
+  - id: AEG-A03-001
     name: LDAP Injection
     description: >
       User-controlled input flows into an LDAP query filter without
@@ -21,7 +21,7 @@ rules:
       {source_line}) flows into LDAP query '{sink}' (line {sink_line})
       without proper escaping or parameterization.
 
-  - id: CG-A03-002
+  - id: AEG-A03-002
     name: XPath Injection
     description: >
       User-controlled input is concatenated into an XPath expression without
@@ -43,7 +43,7 @@ rules:
       {source_line}) flows into XPath expression '{sink}' (line
       {sink_line}) without sanitization.
 
-  - id: CG-A03-003
+  - id: AEG-A03-003
     name: NoSQL Injection
     description: >
       User-controlled input is passed directly into a NoSQL query (MongoDB,
@@ -68,7 +68,7 @@ rules:
       {source_line}) flows into NoSQL query '{sink}' (line {sink_line}).
       Validate input types and sanitize query operators ($gt, $ne, $where).
 
-  - id: CG-A03-004
+  - id: AEG-A03-004
     name: Server-Side Template Injection (SSTI)
     description: >
       User-controlled input is embedded directly into a server-side template
@@ -91,7 +91,7 @@ rules:
       (line {sink_line}). Use pre-compiled templates with parameterized
       values instead of string interpolation.
 
-  - id: CG-A03-005
+  - id: AEG-A03-005
     name: Expression Language Injection
     description: >
       User-controlled input is evaluated as an Expression Language (EL),
@@ -117,7 +117,7 @@ rules:
       (line {sink_line}). Never evaluate user-controlled strings as
       expressions.
 
-  - id: CG-A03-006
+  - id: AEG-A03-006
     name: OS Command Injection via shell=True
     description: >
       User-controlled input is passed to a system command executed with
@@ -145,7 +145,7 @@ rules:
       subprocess.run with a list argument (shell=False) and validate input
       against an allowlist.
 
-  - id: CG-A03-007
+  - id: AEG-A03-007
     name: Code Injection via eval or exec
     description: >
       User-controlled input is passed to eval(), exec(), or equivalent
@@ -175,7 +175,7 @@ rules:
       pass user-controlled data to eval/exec. Use ast.literal_eval for
       Python literals or JSON.parse for structured data.
 
-  - id: CG-A03-008
+  - id: AEG-A03-008
     name: HTTP Header Injection
     description: >
       User-controlled input is placed into an HTTP response header without
@@ -200,7 +200,7 @@ rules:
       {source_line}) flows into response header '{sink}' (line {sink_line})
       without CRLF sanitization. Strip or reject \\r and \\n characters.
 
-  - id: CG-A03-009
+  - id: AEG-A03-009
     name: Log Injection
     description: >
       User-controlled input is written to application logs without
@@ -227,7 +227,7 @@ rules:
       without sanitization. Use structured/parameterized logging and strip
       newline characters from user input.
 
-  - id: CG-A03-010
+  - id: AEG-A03-010
     name: XML External Entity Injection (XXE)
     description: >
       User-controlled XML input is parsed with a configuration that allows
@@ -257,7 +257,7 @@ rules:
       entity resolution. Use defusedxml (Python), disable DTDs (Java), or
       configure parsers to reject external entities.
 
-  - id: CG-A03-011
+  - id: AEG-A03-011
     name: Regular Expression Denial of Service (ReDoS)
     description: >
       User-controlled input is compiled or used as a regular expression
@@ -284,7 +284,7 @@ rules:
       {sink_line}). Use a safe regex engine (RE2), apply timeouts, or
       validate patterns against a known-safe allowlist.
 
-  - id: CG-A03-012
+  - id: AEG-A03-012
     name: Format String Vulnerability
     description: >
       User-controlled input is used as a format string in printf-style

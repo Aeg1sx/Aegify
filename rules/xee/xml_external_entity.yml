@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-XEE-001"
+  - id: "AEG-XEE-001"
     name: "Python lxml.etree with external entity processing enabled"
     description: >
       The lxml library's etree.parse() and etree.fromstring() functions process XML
@@ -56,7 +56,7 @@ rules:
       - "https://lxml.de/parsing.html#parser-options"
       - "https://cwe.mitre.org/data/definitions/611.html"
 
-  - id: "CG-XEE-002"
+  - id: "AEG-XEE-002"
     name: "Python xml.etree.ElementTree/xml.sax with user input"
     description: >
       Python's standard library XML modules (xml.etree.ElementTree, xml.sax, xml.dom,
@@ -115,7 +115,7 @@ rules:
       - "https://pypi.org/project/defusedxml/"
       - "https://cwe.mitre.org/data/definitions/611.html"
 
-  - id: "CG-XEE-003"
+  - id: "AEG-XEE-003"
     name: "Java SAXParser without secure processing features"
     description: >
       Java's SAXParser (javax.xml.parsers.SAXParserFactory) processes XML documents
@@ -175,7 +175,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#jaxp-documentbuilderfactory-saxparserfactory-and-dom4j"
       - "https://cwe.mitre.org/data/definitions/611.html"
 
-  - id: "CG-XEE-004"
+  - id: "AEG-XEE-004"
     name: "Java DocumentBuilderFactory without secure processing"
     description: >
       Java's DocumentBuilderFactory (javax.xml.parsers) creates DOM parsers that load
@@ -238,7 +238,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#jaxp-documentbuilderfactory-saxparserfactory-and-dom4j"
       - "https://cwe.mitre.org/data/definitions/611.html"
 
-  - id: "CG-XEE-005"
+  - id: "AEG-XEE-005"
     enabled: false
     disabled_reason: "Reference-only C# rule; C# parsing is not supported."
     name: ".NET XmlDocument with unsafe DTD processing"
@@ -293,7 +293,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#net"
       - "https://cwe.mitre.org/data/definitions/611.html"
 
-  - id: "CG-XEE-006"
+  - id: "AEG-XEE-006"
     enabled: false
     disabled_reason: "Reference-only C# rule; C# parsing is not supported."
     name: ".NET XmlReader/XmlTextReader with unsafe settings"
@@ -351,7 +351,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#xmltextreader"
       - "https://cwe.mitre.org/data/definitions/611.html"
 
-  - id: "CG-XEE-007"
+  - id: "AEG-XEE-007"
     enabled: false
     disabled_reason: "Reference-only PHP rule; PHP parsing is not supported."
     name: "PHP simplexml_load_string/file with external entities"
@@ -411,7 +411,7 @@ rules:
       - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#php"
       - "https://cwe.mitre.org/data/definitions/611.html"
 
-  - id: "CG-XEE-008"
+  - id: "AEG-XEE-008"
     enabled: false
     disabled_reason: "Reference-only PHP rule; PHP parsing is not supported."
     name: "PHP DOMDocument with external entity processing"

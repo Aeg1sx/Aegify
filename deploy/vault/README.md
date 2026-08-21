@@ -2,13 +2,13 @@
 
 These files are reviewed templates, not a deployed Vault configuration.
 
-- `policies/codeguard-dashboard.hcl` grants read-only access to one KV v2 path.
-- `templates/codeguard.env.ctmpl` shows Vault Agent rendering the dashboard's
+- `policies/aegify-dashboard.hcl` grants read-only access to one KV v2 path.
+- `templates/aegify.env.ctmpl` shows Vault Agent rendering the dashboard's
 environment variables.
 
 The production dashboard fails closed unless the secret payload supplies
 `AUTH_SECRET`, `ENCRYPTION_SECRET`, and one complete GitHub or GitLab OAuth
-client pair. `CODEGUARD_UPLOAD_TOKEN` remains a separate machine credential.
+client pair. `AEGIFY_UPLOAD_TOKEN` remains a separate machine credential.
 
 Bind the production auth role to the exact repository and protected ref. For a
 GitHub OIDC/JWT flow, validate issuer, audience, repository owner, repository,

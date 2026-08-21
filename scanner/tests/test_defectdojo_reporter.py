@@ -3,13 +3,13 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from codeguard.models import (
+from aegify.models import (
     Finding,
     ScanResult,
     ScanStatus,
     Severity,
 )
-from codeguard.reporter.defectdojo import DefectDojoReporter
+from aegify.reporter.defectdojo import DefectDojoReporter
 
 
 class TestDefectDojoReporter:
@@ -39,7 +39,7 @@ class TestDefectDojoReporter:
 
         assert b"product_name" not in body
 
-    @patch("codeguard.reporter.defectdojo.urlopen")
+    @patch("aegify.reporter.defectdojo.urlopen")
     def test_upload_success(self, mock_urlopen):
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps({"test": 42}).encode()
@@ -52,7 +52,7 @@ class TestDefectDojoReporter:
             status=ScanStatus.COMPLETED,
             findings=[
                 Finding(
-                    rule_id="CG-SQL-001",
+                    rule_id="AEG-SQL-001",
                     rule_name="SQL Injection",
                     severity=Severity.CRITICAL,
                     confidence=0.9,
@@ -77,7 +77,7 @@ class TestDefectDojoReporter:
         assert request.get_method() == "POST"
         assert request.full_url == "http://localhost:8080/api/v2/import-scan/"
 
-    @patch("codeguard.reporter.defectdojo.urlopen")
+    @patch("aegify.reporter.defectdojo.urlopen")
     def test_upload_failure_returns_none(self, mock_urlopen):
         from urllib.error import HTTPError
 

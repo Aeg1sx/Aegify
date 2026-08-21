@@ -1,6 +1,6 @@
 # Build from the repository root. All three base images are intentionally
 # required as digest-pinned build args; the resulting image must also be used
-# by CodeGuard as name@sha256:<digest>.
+# by Aegify as name@sha256:<digest>.
 ARG PYTHON_BASE
 ARG GRADLE_BASE
 ARG MAVEN_BASE
@@ -15,7 +15,7 @@ RUN mkdir -p /root/.m2/repository && \
       org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get \
       -Dartifact=org.apache.maven.plugins:maven-dependency-plugin:3.8.1
 
-FROM ${PYTHON_BASE} AS codeguard_builder
+FROM ${PYTHON_BASE} AS aegify_builder
 WORKDIR /build/scanner
 COPY scanner/pyproject.toml scanner/README.md ./
 COPY scanner/src/ src/
@@ -26,10 +26,10 @@ FROM ${PYTHON_BASE}
 
 COPY --from=gradle_runtime /opt/java/openjdk /opt/java/openjdk
 COPY --from=gradle_runtime /opt/gradle /opt/gradle
-COPY --from=gradle_runtime /home/gradle/.gradle /opt/codeguard-cache/gradle
+COPY --from=gradle_runtime /home/gradle/.gradle /opt/aegify-cache/gradle
 COPY --from=maven_runtime /usr/share/maven /usr/share/maven
-COPY --from=maven_runtime /root/.m2/repository /opt/codeguard-cache/m2
-COPY --from=codeguard_builder /wheels /wheels
+COPY --from=maven_runtime /root/.m2/repository /opt/aegify-cache/m2
+COPY --from=aegify_builder /wheels /wheels
 
 ENV JAVA_HOME=/opt/java/openjdk
 ENV GRADLE_HOME=/opt/gradle
@@ -40,4 +40,4 @@ RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
 
 WORKDIR /workspace
 ENTRYPOINT []
-CMD ["python", "-m", "codeguard.semantic.jvm_classpath_exporter", "--help"]
+CMD ["python", "-m", "aegify.semantic.jvm_classpath_exporter", "--help"]

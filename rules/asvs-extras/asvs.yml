@@ -1,5 +1,5 @@
 rules:
-  - id: CG-ASVS-001
+  - id: AEG-ASVS-001
     name: Session Timeout Not Configured
     description: >
       The application session does not have an explicit timeout or expiry
@@ -19,7 +19,7 @@ rules:
         args_match: "^(?!.*exp)(?!.*expiresIn)(?!.*expires_in)(?!.*expires_delta)(?!.*ttl).*$"
     message: "Session or token created without timeout at '{callee}' (line {line}). Configure session expiry and idle timeout to limit the window for session hijacking."
 
-  - id: CG-ASVS-004
+  - id: AEG-ASVS-004
     name: Insecure Session Storage
     description: >
       Session tokens or authentication state is stored in localStorage or

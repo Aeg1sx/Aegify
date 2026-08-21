@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-BOLA-001"
+  - id: "AEG-BOLA-001"
     name: "Broken object-level authorization in REST endpoint"
     description: >
       A REST API endpoint retrieves a resource by an identifier supplied in
@@ -35,7 +35,7 @@ rules:
       - "tenant_isolation_filter"
     message: "REST endpoint retrieves a resource by user-supplied ID without verifying the authenticated user's authorization to access that object. Implement object-level authorization checks that verify ownership or permission before returning any resource."
 
-  - id: "CG-BOLA-002"
+  - id: "AEG-BOLA-002"
     name: "Missing ownership check on resource modification"
     description: >
       A resource update or deletion operation uses a user-supplied identifier
@@ -71,7 +71,7 @@ rules:
       - "row_level_security"
     message: "Resource modification operation retrieves and mutates an object by user-supplied ID without ownership verification. Always scope database queries to the authenticated user or verify ownership before any update or delete operation."
 
-  - id: "CG-BOLA-003"
+  - id: "AEG-BOLA-003"
     name: "Direct database query by user-supplied identifier without authorization"
     description: >
       A database query uses a user-supplied identifier (from URL path, query
@@ -104,7 +104,7 @@ rules:
       - "query_builder_with_user_scope"
     message: "Database query uses user-supplied ID as the sole lookup criterion without scoping to the authenticated user. Add user/tenant scoping to all database queries that accept external identifiers (e.g., WHERE id = ? AND user_id = ?)."
 
-  - id: "CG-BOLA-004"
+  - id: "AEG-BOLA-004"
     name: "GraphQL node query without authorization check"
     description: >
       A GraphQL resolver for node/object queries retrieves objects by their
@@ -145,7 +145,7 @@ rules:
       - "dataloader_with_auth_check"
     message: "GraphQL resolver retrieves objects by ID without authorization checks. Implement per-node authorization in all resolvers using the viewer pattern or authorization middleware. Ensure every node query verifies the requesting user has permission to access the specific object."
 
-  - id: "CG-BOLA-005"
+  - id: "AEG-BOLA-005"
     name: "Nested resource access without parent authorization"
     description: >
       An API endpoint accesses a nested/child resource using a parent

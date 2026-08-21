@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from codeguard.models import Language
-from codeguard.scanner.ast_parser import ASTParser, detect_language
-from codeguard.scanner.call_graph import CallGraphBuilder
+from aegify.models import Language
+from aegify.scanner.ast_parser import ASTParser, detect_language
+from aegify.scanner.call_graph import CallGraphBuilder
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

@@ -1,4 +1,4 @@
-name: "Aegify SAST"
+name: "Aegify"
 description: "White-box SAST for pull requests with optional LLM verification"
 author: "Aegify maintainers"
 
@@ -44,10 +44,10 @@ outputs:
     value: ${{ steps.scan.outputs.findings-count }}
   sarif-file:
     description: "Path to the SARIF results file"
-    value: "codeguard-results.sarif"
+    value: "aegify-results.sarif"
   comment-file:
     description: "Path to the PR comment markdown file"
-    value: "codeguard-pr-comment.md"
+    value: "aegify-pr-comment.md"
 
 runs:
   using: "composite"
@@ -57,7 +57,7 @@ runs:
       with:
         python-version: "3.12"
 
-    - name: Install CodeGuard
+    - name: Install Aegify
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
@@ -73,8 +73,8 @@ runs:
       id: scan
       shell: bash
       env:
-        CODEGUARD_ANTHROPIC_API_KEY: ${{ inputs.llm-api-key }}
-        CODEGUARD_LLM__BASE_URL: ${{ inputs.llm-base-url }}
+        AEGIFY_ANTHROPIC_API_KEY: ${{ inputs.llm-api-key }}
+        AEGIFY_LLM__BASE_URL: ${{ inputs.llm-base-url }}
         GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         INPUT_LLM_ENABLED: ${{ inputs.llm-enabled }}
         INPUT_MAX_RELATED: ${{ inputs.max-related-files }}
@@ -84,7 +84,7 @@ runs:
         case "$INPUT_SEVERITY" in critical|high|medium|low) ;; *) exit 2 ;; esac
         case "$INPUT_MAX_RELATED" in ''|*[!0-9]*) exit 2 ;; esac
         if [ "$INPUT_LLM_ENABLED" = "true" ]; then
-          test -n "$CODEGUARD_ANTHROPIC_API_KEY"
+          test -n "$AEGIFY_ANTHROPIC_API_KEY"
           llm_flag="--llm"
         elif [ "$INPUT_LLM_ENABLED" = "false" ]; then
           llm_flag="--no-llm"
@@ -92,22 +92,22 @@ runs:
           exit 2
         fi
 
-        codeguard scan-pr . \
+        aegify scan-pr . \
           --severity "$INPUT_SEVERITY" \
           --model "$INPUT_MODEL" \
           --max-related "$INPUT_MAX_RELATED" \
           "$llm_flag" \
-          --output-file codeguard-results.sarif \
-          --comment-file codeguard-pr-comment.md \
+          --output-file aegify-results.sarif \
+          --comment-file aegify-pr-comment.md \
           -v
-        findings_count="$(python3 -c 'import json; print(len(json.load(open("codeguard-results.sarif", encoding="utf-8")).get("runs", [{}])[0].get("results", [])))')"
+        findings_count="$(python3 -c 'import json; print(len(json.load(open("aegify-results.sarif", encoding="utf-8")).get("runs", [{}])[0].get("results", [])))')"
         echo "findings-count=$findings_count" >> "$GITHUB_OUTPUT"
 
     - name: Upload SARIF to GitHub Code Scanning
       if: inputs.upload-sarif == 'true' && always()
       uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
       with:
-        sarif_file: codeguard-results.sarif
+        sarif_file: aegify-results.sarif
 
     - name: Post PR comment
       if: inputs.post-comment == 'true' && github.event_name == 'pull_request' && always()
@@ -115,7 +115,7 @@ runs:
       with:
         script: |
           const fs = require('fs');
-          const commentPath = 'codeguard-pr-comment.md';
+          const commentPath = 'aegify-pr-comment.md';
 
           if (!fs.existsSync(commentPath)) {
             console.log('No comment file found, skipping');
@@ -123,7 +123,7 @@ runs:
           }
 
           const body = fs.readFileSync(commentPath, 'utf8');
-          const marker = '<!-- codeguard-pr-comment -->';
+          const marker = '<!-- aegify-pr-comment -->';
           const { owner, repo } = context.repo;
           const issue_number = context.issue.number;
 

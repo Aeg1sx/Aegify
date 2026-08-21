@@ -1,5 +1,5 @@
 rules:
-  - id: "CG-DEP-001"
+  - id: "AEG-DEP-001"
     name: "Known vulnerable lodash patterns"
     description: >
       The application uses lodash functions with known prototype pollution or ReDoS
@@ -29,7 +29,7 @@ rules:
       - "structuredClone"
     message: "Vulnerable lodash version or pattern detected. Update lodash to >=4.17.21 and prefer importing individual functions (lodash/merge) to reduce attack surface."
 
-  - id: "CG-DEP-002"
+  - id: "AEG-DEP-002"
     name: "jQuery DOM-based XSS patterns"
     description: >
       The application uses jQuery methods known to enable DOM-based cross-site
@@ -61,7 +61,7 @@ rules:
       - "createTextNode"
     message: "jQuery DOM XSS pattern detected. Use .text() instead of .html() for user content. If HTML is required, sanitize with DOMPurify before insertion."
 
-  - id: "CG-DEP-003"
+  - id: "AEG-DEP-003"
     name: "Log4j JNDI injection pattern"
     description: >
       The application uses Apache Log4j 2.x to log user-controlled input, which may
@@ -91,7 +91,7 @@ rules:
       - "JndiLookup.*classpath"
     message: "Potential Log4Shell (CVE-2021-44228) vulnerability. Update Log4j to >=2.17.1, set log4j2.formatMsgNoLookups=true, or remove JndiLookup class from the classpath."
 
-  - id: "CG-DEP-004"
+  - id: "AEG-DEP-004"
     name: "Spring4Shell pattern"
     description: >
       The application uses Spring Framework with ClassLoader-accessible data binding
@@ -122,7 +122,7 @@ rules:
       - "spring-boot.*2\\.6\\.6|spring-boot.*2\\.(6\\.[6-9]|[7-9])"
     message: "Potential Spring4Shell (CVE-2022-22965) vulnerability. Update Spring Framework to >=5.3.18 or Spring Boot to >=2.6.6. Add @InitBinder to disallow 'class.*' property binding."
 
-  - id: "CG-DEP-005"
+  - id: "AEG-DEP-005"
     name: "Unsafe eval in npm package usage"
     description: >
       The application uses npm packages or patterns that invoke eval(), Function(),
