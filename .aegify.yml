@@ -2,11 +2,31 @@ scan:
   languages: [python, javascript, typescript, java, kotlin, go, rust, swift]
   exclude:
     - "tests/**"
+    - "**/test/**"
+    - "**/tests/**"
+    - "**/__tests__/**"
+    - "**/src/test/**"
+    - "**/src/testFixtures/**"
     - "vendor/**"
+    - "**/vendor/**"
     - "node_modules/**"
+    - "**/node_modules/**"
     - ".git/**"
+    - "**/.git/**"
+    - ".gradle/**"
+    - "**/.gradle/**"
     - "__pycache__/**"
+    - "**/__pycache__/**"
     - "venv/**"
+    - "**/venv/**"
+    - ".venv/**"
+    - "**/.venv/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/target/**"
+    - "**/.next/**"
+    - "**/generated/**"
+    - "**/__generated__/**"
 
 rules:
   severity_threshold: medium

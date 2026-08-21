@@ -81,3 +81,21 @@ class TestASTParser:
     def test_parse_unsupported_file(self, parser):
         result = parser.parse_file(Path("style.css"))
         assert result is None
+
+    def test_collect_files_excludes_nested_dependency_environments(self, parser, tmp_path):
+        source = tmp_path / "src" / "app.py"
+        vendored = tmp_path / "service" / ".venv" / "lib" / "dependency.py"
+        node_dependency = tmp_path / "web" / "node_modules" / "package" / "index.js"
+        source.parent.mkdir(parents=True)
+        vendored.parent.mkdir(parents=True)
+        node_dependency.parent.mkdir(parents=True)
+        source.write_text("print('app')\n")
+        vendored.write_text("print('dependency')\n")
+        node_dependency.write_text("export const dependency = true;\n")
+
+        files = parser._collect_files(
+            tmp_path,
+            {"**/.venv/**", "**/node_modules/**"},
+        )
+
+        assert files == [source]

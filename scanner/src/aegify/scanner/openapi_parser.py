@@ -31,6 +31,18 @@ _OPENAPI_FILENAMES = {
 }
 
 _OPENAPI_DIR_NAMES = {"swagger", "openapi", "api-docs", "specs"}
+_IGNORED_DIR_NAMES = {
+    ".git",
+    ".gradle",
+    ".next",
+    ".venv",
+    "build",
+    "dist",
+    "node_modules",
+    "target",
+    "venv",
+    "vendor",
+}
 
 HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
 
@@ -45,7 +57,11 @@ def find_openapi_files(target: Path) -> list[Path]:
         return results
 
     for path in target.rglob("*"):
-        if path.is_file() and _is_openapi_file(path):
+        if (
+            path.is_file()
+            and not any(part in _IGNORED_DIR_NAMES for part in path.parts)
+            and _is_openapi_file(path)
+        ):
             results.append(path)
 
     return results
@@ -57,7 +73,7 @@ def _is_openapi_file(path: Path) -> bool:
 
     # Check filename match
     if name in _OPENAPI_FILENAMES:
-        return True
+        return _has_openapi_marker(path)
 
     # Check if in a swagger/openapi directory
     if any(part.lower() in _OPENAPI_DIR_NAMES for part in path.parts):

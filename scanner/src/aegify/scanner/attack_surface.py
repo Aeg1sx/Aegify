@@ -246,7 +246,20 @@ class AttackSurfaceAnalyzer:
     @staticmethod
     def _ignored_path(path: Path) -> bool:
         return any(
-            part in {"node_modules", "build", "dist", ".git", ".gradle"} for part in path.parts
+            part
+            in {
+                ".git",
+                ".gradle",
+                ".next",
+                ".venv",
+                "build",
+                "dist",
+                "node_modules",
+                "target",
+                "venv",
+                "vendor",
+            }
+            for part in path.parts
         )
 
     def _parse_gateway_yaml(

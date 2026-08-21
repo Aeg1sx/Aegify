@@ -3,6 +3,9 @@ name: Code scanning
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
   schedule:
     - cron: "17 18 * * 1"
   workflow_dispatch:

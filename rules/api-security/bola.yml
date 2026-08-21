@@ -171,6 +171,7 @@ rules:
         match: "def\\s+\\w+\\(.*\\).*:\\s*\\n.*?(user_id|userId|parent_id|parentId).*=.*(params|args|kwargs|request).*\\n.*?(child|order|item|resource|record).*=.*\\b(get|find|filter|query)\\b"
         negative_match: "(verify.*parent|check.*owner|authorize.*parent|user.*==.*current_user|parent_user.*==)"
         multiline: true
+        scope: "function"
       - pattern_type: "sequence"
         steps:
           - match: "(parent_id|userId|user_id|account_id)\\s*=\\s*(req\\.|request\\.|params|args|kwargs|ctx\\.)"

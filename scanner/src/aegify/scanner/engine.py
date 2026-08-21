@@ -747,6 +747,13 @@ class ScanEngine:
         skipped_rules = 0
         max_per_rule = self.config.scan.max_findings_per_rule
         for idx, rule in enumerate(enabled_rules):
+            rule_started = time.monotonic()
+            logger.debug(
+                "Evaluating rule %d/%d: %s",
+                idx + 1,
+                total_rules,
+                rule.definition.id,
+            )
             if idx > 0 and idx % 50 == 0:
                 logger.info(
                     "Phase 6: Evaluated %d/%d rules (%d findings so far, %d skipped)",
@@ -777,6 +784,14 @@ class ScanEngine:
                 findings = rule.evaluate(filtered_asts, call_graph, taint_flows)
             else:
                 findings = rule.evaluate(file_asts, call_graph, taint_flows)
+            rule_elapsed = time.monotonic() - rule_started
+            if rule_elapsed >= 2.0:
+                logger.warning(
+                    "Rule %s required %.2fs across %d candidate files",
+                    rule.definition.id,
+                    rule_elapsed,
+                    len(filtered_asts) if rule.definition.languages else len(file_asts),
+                )
             # Cap findings per rule to prevent memory explosion
             if len(findings) > max_per_rule:
                 findings = sorted(findings, key=lambda f: -f.confidence)[:max_per_rule]
