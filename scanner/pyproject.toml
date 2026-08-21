@@ -1,0 +1,80 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codeguard-sast"
+version = "0.1.0"
+description = "Next-gen SAST tool with Call Graph analysis, Dataflow tracking, and LLM-augmented verification"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [{ name = "CodeGuard Team" }]
+
+dependencies = [
+    "tree-sitter>=0.24.0",
+    "tree-sitter-python>=0.23.0",
+    "tree-sitter-javascript>=0.23.0",
+    "tree-sitter-java>=0.23.0",
+    "tree-sitter-go>=0.23.0",
+    "tree-sitter-typescript>=0.23.0",
+    "tree-sitter-rust>=0.24.0",
+    "tree-sitter-kotlin>=1.1.0",
+    "tree-sitter-swift>=0.0.1",
+    "networkx>=3.4",
+    "anthropic>=0.42.0",
+    "typer>=0.15.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "aiofiles>=24.1.0",
+    "rich>=13.9.0",
+    "pyyaml>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "types-networkx>=3.4.0",
+    "types-PyYAML>=6.0.0",
+]
+storage-pg = [
+    "psycopg[binary]>=3.1.0",
+]
+storage-s3 = [
+    "boto3>=1.34.0",
+    "msgpack>=1.0.0",
+]
+
+[project.scripts]
+codeguard = "codeguard.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codeguard"]
+artifacts = ["src/codeguard/py.typed"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"../rules" = "codeguard/bundled_rules"
+"src/codeguard/modelpacks/jvm.yml" = "codeguard/modelpacks/jvm.yml"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["boto3", "psycopg"]
+ignore_missing_imports = true

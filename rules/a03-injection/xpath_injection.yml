@@ -1,0 +1,142 @@
+rules:
+  - id: "CG-XPATH-001"
+    name: "XPath Query Injection"
+    description: >
+      Detects user-controlled input concatenated or interpolated into XPath
+      query expressions without proper sanitization. XPath is used to navigate
+      and query XML documents, and its expression syntax supports string
+      manipulation, boolean logic, and node traversal operations. An attacker
+      can inject XPath metacharacters such as single quotes, double quotes,
+      square brackets, and boolean operators (or, and) to modify the query
+      structure. This can result in unauthorized data extraction from XML
+      data stores, bypassing access controls on XML-backed applications,
+      or information disclosure about the XML document structure. Common
+      vulnerable patterns include building XPath queries with string
+      concatenation for user lookup, configuration retrieval, or XML
+      database queries.
+    severity: critical
+    confidence: 0.90
+    languages: [python, java, javascript, typescript, csharp, php, ruby]
+    cwe_id: 643
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(xpath|selectNodes|selectSingleNode|evaluate|select|find)\\s*\\(\\s*[\"'`].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "[\"'`]//.*\\[.*=\\s*[\"'`]\\s*[\"'`]\\s*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "f[\"']//.*\\[.*=\\s*['\"]\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "String\\.format\\s*\\([\"']//.*\\[.*=.*%s"
+        context_match: "xpath|xml|XPath|XML|selectNodes"
+      - pattern: "(XPathFactory|XPathExpression|document\\.evaluate).*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "etree\\.(XPath|xpath)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query, form_input]
+      sink_types: [xpath_query]
+      sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath|XPathExpression|etree\\.xpath)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+        - "String\\.Format"
+        - "%s.*%"
+    defense_patterns:
+      - "XPathVariable"
+      - "setXPathVariableResolver"
+      - "parameterized.*xpath"
+      - "compile\\(.*\\$"
+      - "escapeXPath"
+      - "xpath_escape"
+      - "replace\\(.*['\"].*['\"]"
+      - "lxml\\.etree\\.XPath.*variable"
+      - "XPathExpression\\.evaluate.*variable"
+    message: "XPath query at line {line} incorporates unsanitized user input via string concatenation, enabling injection. An attacker can extract arbitrary nodes from the XML document, bypass access controls, or enumerate the document structure."
+
+  - id: "CG-XPATH-002"
+    name: "XPath Authentication Bypass"
+    description: >
+      Detects XPath expressions used for authentication or authorization
+      decisions that incorporate user-controlled input without parameterization.
+      A common pattern in XML-backed applications is to authenticate users by
+      querying an XML document with an expression like
+      //users/user[username='INPUT' and password='INPUT']. An attacker can
+      inject a payload such as ' or '1'='1 into the username field and
+      a similar payload into the password field to create an always-true
+      condition that returns all user nodes, effectively bypassing
+      authentication. This pattern is especially dangerous because it
+      directly leads to unauthorized access without requiring knowledge
+      of valid credentials.
+    severity: critical
+    confidence: 0.93
+    languages: [python, java, javascript, typescript, csharp, php, ruby]
+    cwe_id: 643
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(xpath|selectNodes|selectSingleNode|evaluate)\\s*\\(.*[\"'`].*(user|login|auth|account|credential).*\\[.*(name|user|login|email|id).*=.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "[\"'`]//(users|accounts|members|credentials)/.*\\[.*(username|password|email|token|pass).*=.*[\"'`]\\s*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(and|or)\\s+(password|pass|pwd|secret)\\s*=\\s*['\"].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "xpath|xml|XPath|selectNodes"
+      - pattern: "f[\"']//(users|accounts).*\\[.*=\\s*['\"]\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b.*and.*=\\s*['\"]\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, form_input]
+      sink_types: [xpath_query, authentication]
+      sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath).*\\b(user|login|auth|password|credential)\\b"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+    defense_patterns:
+      - "XPathVariable"
+      - "setXPathVariableResolver"
+      - "parameterized"
+      - "bcrypt|argon2|scrypt|pbkdf2"
+      - "password_hash|hash_password"
+      - "use_database_auth"
+      - "LDAP_AUTH|OAUTH|SAML"
+      - "escapeXPath"
+    message: "XPath authentication query at line {line} uses unsanitized user input for credential verification. An attacker can inject ' or '1'='1 to bypass authentication and gain unauthorized access as any user."
+
+  - id: "CG-XPATH-003"
+    name: "XPath Blind Injection via Boolean or Error Oracle"
+    description: >
+      Detects patterns indicative of exploitable XPath blind injection where
+      application responses differ based on XPath query truthiness or errors,
+      and user input flows into those queries. Blind XPath injection occurs
+      when the application does not directly display query results but reveals
+      information through behavioral differences such as different HTTP status
+      codes, response sizes, error messages, or timing variations. An attacker
+      can use functions like string-length(), substring(), count(), and
+      starts-with() along with boolean operators to extract data one character
+      at a time. Unlike SQL blind injection, XPath can access the entire
+      XML document structure because there are no permission boundaries within
+      the document, making the impact potentially more severe.
+    severity: high
+    confidence: 0.82
+    languages: [python, java, javascript, typescript, csharp, php]
+    cwe_id: 643
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(xpath|selectNodes|evaluate)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b.*\\)\\s*\\.?(length|count|size|text|nodeValue)"
+      - pattern: "(xpath|selectNodes|evaluate)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "if\\s*\\(|\\?|ternary|bool|true|false|exists|count|length|len\\("
+      - pattern: "(try|catch|except|rescue|begin).*\\b(xpath|selectNodes|evaluate)\\b.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "(error|exception|message|status|response|redirect)"
+      - pattern: "(string-length|substring|count|starts-with|contains|normalize-space)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [xpath_query]
+      sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath|XPathExpression)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+    defense_patterns:
+      - "XPathVariable"
+      - "setXPathVariableResolver"
+      - "parameterized.*xpath"
+      - "escapeXPath"
+      - "generic_error_response"
+      - "uniform_response"
+      - "constant_time_compare"
+      - "rate_limit"
+    message: "XPath query at line {line} uses user input in a context where boolean or error-based inference is possible. An attacker can extract the full XML document contents character by character using blind injection techniques with functions like substring() and string-length()."

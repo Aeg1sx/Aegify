@@ -1,0 +1,128 @@
+rules:
+  - id: CG-A01-002
+    name: Horizontal Privilege Escalation via User ID Parameter
+    description: >
+      A user-supplied ID parameter (from query string, path, or body) is used
+      directly to fetch or modify user records without verifying that the
+      authenticated user owns the requested resource. An attacker can change
+      the ID to access or modify other users' data.
+    severity: high
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    defense_patterns: ["ownership_check", "belongs_to", "current_user", "authorize_resource"]
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(User\\.find|User\\.get|findById|getUser|user_repo\\.get|SELECT.*WHERE.*id\\s*=)"
+    message: >
+      Potential horizontal privilege escalation: user-controlled input
+      '{source}' (line {source_line}) is used to look up a user record at
+      '{sink}' (line {sink_line}) without an ownership or authorization check.
+
+  - id: CG-A01-003
+    name: Directory Listing Enabled
+    description: >
+      Server configuration enables directory listing (autoindex, directory
+      browsing), which can expose file structure, backup files, and sensitive
+      resources to attackers performing reconnaissance.
+    severity: low
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 548
+    owasp_category: "A01:2021-Broken Access Control"
+    defense_patterns: ["autoindex off", "directory_listing: false", "DirectoryListingModule"]
+    patterns:
+      - callee_match: "(autoindex|directory_listing|DirectoryBrowsing|serveIndex|directoryListing)"
+        args_match: "(on|true|True|enable)"
+    message: >
+      Directory listing is enabled at line {sink_line}. This exposes the
+      file structure and may reveal sensitive files to unauthorized users.
+
+  - id: CG-A01-004
+    name: CORS Wildcard Origin
+    description: >
+      The Access-Control-Allow-Origin header is set to '*', permitting any
+      origin to make cross-origin requests. When combined with credentials
+      this can lead to data exfiltration from authenticated sessions.
+    severity: medium
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 942
+    owasp_category: "A01:2021-Broken Access Control"
+    defense_patterns: ["origin_whitelist", "allowed_origins", "validate_origin"]
+    patterns:
+      - callee_match: "(cors|CORS|CrossOrigin)"
+        args_match: "(origin\\s*[:=]\\s*['\"]\\*['\"]|allow_all_origins\\s*=\\s*True|origins\\s*=\\s*\\[?['\"]\\*['\"])"
+    message: >
+      CORS wildcard origin detected at line {sink_line}. Setting
+      Access-Control-Allow-Origin to '*' allows any website to make
+      cross-origin requests to this application.
+
+  - id: CG-A01-006
+    name: Forced Browsing via Predictable Resource IDs
+    description: >
+      Resources are accessed using sequential numeric IDs or other predictable
+      identifiers without authorization checks. An attacker can enumerate
+      resource IDs to access data belonging to other users or tenants.
+    severity: medium
+    confidence: 0.5
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 425
+    owasp_category: "A01:2021-Broken Access Control"
+    defense_patterns: ["uuid", "authorize_resource", "ownership_check", "access_control"]
+    patterns:
+      - callee_match: "(findById|get_by_id|find_by_id|getById)"
+        missing_guard: "(authorize|check_permission|verify_owner)"
+    message: >
+      Predictable resource ID in route at line {sink_line} without
+      authorization verification. An attacker could enumerate IDs to access
+      resources belonging to other users.
+
+  - id: CG-A01-007
+    name: Unrestricted File Upload Type
+    description: >
+      A file upload handler accepts files without validating the file type,
+      extension, or MIME type. An attacker can upload executable files
+      (e.g., .php, .jsp, .py, .exe) to achieve remote code execution on
+      the server.
+    severity: high
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 434
+    owasp_category: "A01:2021-Broken Access Control"
+    defense_patterns: ["allowed_extensions", "content_type_check", "file_type_validation", "ALLOWED_TYPES"]
+    patterns:
+      - callee_match: "(upload|save_file|store_file|multer|FileUpload|MultipartFile|formidable|busboy)"
+        missing_check: "(allowed_extensions|content_type|file_type|mime_type|ALLOWED_TYPES|fileFilter|accept)"
+      - callee_match: "(request\\.files|req\\.file|req\\.files)"
+        missing_check: "(mimetype|content_type|extension|endswith)"
+    message: >
+      Unrestricted file upload at line {sink_line}. The upload handler does
+      not validate file type, extension, or MIME type, potentially allowing
+      upload of executable or malicious files.
+
+  - id: CG-A01-008
+    name: Privilege Escalation via Role Manipulation
+    description: >
+      User-controlled input containing role or privilege fields (e.g., role,
+      is_admin, permissions) is accepted in a request body and used to update
+      user records without server-side validation. An attacker can escalate
+      their own privileges to admin or other elevated roles.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 269
+    owasp_category: "A01:2021-Broken Access Control"
+    defense_patterns: ["whitelist_fields", "allowed_params", "strong_params", "exclude_fields", "readonly_fields"]
+    taint:
+      source_types: [http_body]
+      sink_pattern: "(update|save|create|patch|put|assign|merge|Object\\.assign|spread)"
+    patterns:
+      - callee_match: "(Object\\.assign|\\.\\.\\.|mass_assignment|update_attributes|from_dict)"
+        args_match: "(req\\.body|request\\.data|request\\.json|request\\.POST|params)"
+        missing_guard: "(permit|whitelist|allowed_fields|pick|pluck|exclude)"
+    message: >
+      Potential privilege escalation: user-supplied role/permission field
+      '{source}' (line {source_line}) flows into a user update operation
+      '{sink}' (line {sink_line}) without field-level access control.

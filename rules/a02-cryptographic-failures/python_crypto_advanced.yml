@@ -1,0 +1,214 @@
+rules:
+  - id: "CG-CRYPTO-PY-001"
+    name: "PyCrypto weak cipher usage"
+    description: >
+      The application uses DES, Blowfish, RC2, RC4, or ARC4 ciphers from the
+      PyCrypto or PyCryptodome library. These ciphers have known cryptographic
+      weaknesses: DES has a 56-bit key length vulnerable to brute force, RC4 has
+      statistical biases exploitable in TLS and WPA, and Blowfish has a 64-bit block
+      size susceptible to birthday attacks. Migrate to AES-256 with GCM or CCM mode
+      for authenticated encryption.
+    severity: critical
+    confidence: 0.95
+    languages: [python]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "from Crypto\\.Cipher import (DES|Blowfish|ARC4|DES3|RC2)"
+      - callee_match: "from Cryptodome\\.Cipher import (DES|Blowfish|ARC4|DES3|RC2)"
+      - callee_match: "(DES|Blowfish|ARC4|DES3|RC2)\\.new\\("
+    defense_patterns:
+      - "from Crypto.Cipher import AES"
+      - "AES.new(key, AES.MODE_GCM)"
+      - "from Cryptodome.Cipher import AES"
+      - "from Cryptodome.Cipher import ChaCha20_Poly1305"
+    message: "Weak cipher algorithm detected (DES, Blowfish, RC4, or 3DES). Replace with AES-256-GCM or ChaCha20-Poly1305 for authenticated encryption."
+
+  - id: "CG-CRYPTO-PY-002"
+    name: "MD5 or SHA1 used for password hashing"
+    description: >
+      The application uses hashlib.md5() or hashlib.sha1() to hash passwords or
+      other security-sensitive credentials. MD5 and SHA-1 are fast general-purpose
+      hash functions that are unsuitable for password storage because their speed
+      enables brute-force and rainbow table attacks. MD5 is also cryptographically
+      broken with known collision attacks. Use a purpose-built password hashing
+      algorithm such as bcrypt, scrypt, Argon2, or PBKDF2 with a high iteration count.
+    severity: critical
+    confidence: 0.90
+    languages: [python]
+    cwe_id: 328
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "hashlib\\.(md5|sha1)\\("
+        context_check: "(password|passwd|credential|secret|token|pin)"
+      - callee_match: "hashlib\\.new\\(['\"]md5['\"]|hashlib\\.new\\(['\"]sha1['\"]"
+        context_check: "(password|passwd|credential)"
+      - regex_match: "md5\\(.*password|sha1\\(.*password"
+    defense_patterns:
+      - "bcrypt.hashpw(password, bcrypt.gensalt())"
+      - "argon2.PasswordHasher().hash(password)"
+      - "hashlib.pbkdf2_hmac('sha256', password, salt, 600000)"
+      - "from passlib.hash import argon2"
+    message: "MD5 or SHA-1 used for password hashing. Use bcrypt, Argon2, or PBKDF2 with SHA-256 and at least 600,000 iterations for password storage."
+
+  - id: "CG-CRYPTO-PY-003"
+    name: "os.urandom used where secrets module is preferred"
+    description: >
+      The application uses os.urandom() to generate tokens, session IDs, API keys,
+      or other security-sensitive random values instead of the secrets module (Python
+      3.6+). While os.urandom() is cryptographically secure, the secrets module
+      provides higher-level convenience functions (token_hex, token_urlsafe,
+      token_bytes) that are purpose-built for security use cases and produce
+      properly-formatted output. Using secrets makes the security intent explicit and
+      reduces the risk of encoding or formatting errors.
+    severity: low
+    confidence: 0.70
+    languages: [python]
+    cwe_id: 330
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "os\\.urandom\\("
+        context_check: "(token|session|api_key|secret|nonce|csrf)"
+      - callee_match: "base64\\.b64encode\\(os\\.urandom"
+        context_check: "(token|key|secret)"
+    defense_patterns:
+      - "secrets.token_hex(32)"
+      - "secrets.token_urlsafe(32)"
+      - "secrets.token_bytes(32)"
+      - "import secrets"
+    message: "os.urandom() used for security token generation. Prefer the secrets module (secrets.token_hex, secrets.token_urlsafe) for clearer intent and safer formatting."
+
+  - id: "CG-CRYPTO-PY-004"
+    name: "ECB cipher mode usage"
+    description: >
+      The application uses Electronic Codebook (ECB) mode for symmetric encryption.
+      ECB encrypts each block independently with the same key, producing identical
+      ciphertext blocks for identical plaintext blocks. This leaks patterns in the
+      data and is famously illustrated by the ECB penguin image. ECB provides no
+      semantic security and must never be used for encrypting data longer than a
+      single block. Use GCM, CCM, or CTR mode with a unique nonce instead.
+    severity: critical
+    confidence: 0.95
+    languages: [python]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "AES\\.new\\(.*MODE_ECB"
+      - callee_match: "DES\\.new\\(.*MODE_ECB"
+      - callee_match: "DES3\\.new\\(.*MODE_ECB"
+      - attribute_match: "mode\\s*=\\s*(AES|DES|DES3)\\.MODE_ECB"
+    defense_patterns:
+      - "AES.new(key, AES.MODE_GCM, nonce=nonce)"
+      - "AES.new(key, AES.MODE_CCM, nonce=nonce)"
+      - "AES.new(key, AES.MODE_CTR, nonce=nonce)"
+      - "AES.new(key, AES.MODE_CBC, iv=iv) # with HMAC"
+    message: "ECB cipher mode leaks plaintext patterns. Use AES-GCM, AES-CCM, or AES-CTR with a unique nonce for each encryption operation."
+
+  - id: "CG-CRYPTO-PY-005"
+    name: "RSA key size below 2048 bits"
+    description: >
+      The application generates an RSA key pair with fewer than 2048 bits. RSA keys
+      below 2048 bits are considered cryptographically weak by NIST, ENISA, and BSI
+      standards. A 1024-bit RSA key can be factored with sufficient computational
+      resources, and 512-bit keys have been publicly factored. Generate RSA keys with
+      at least 2048 bits, preferably 3072 or 4096 bits for long-term security. Consider
+      migrating to Ed25519 or ECDSA P-256 for better performance with equivalent
+      security.
+    severity: critical
+    confidence: 0.92
+    languages: [python]
+    cwe_id: 326
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "RSA\\.generate\\(\\s*(512|768|1024)"
+      - callee_match: "rsa\\.generate_private_key\\(.*key_size\\s*=\\s*(512|768|1024)"
+      - regex_match: "generate_private_key.*key_size\\s*=\\s*(512|768|1024)"
+    defense_patterns:
+      - "RSA.generate(4096)"
+      - "rsa.generate_private_key(public_exponent=65537, key_size=4096)"
+      - "rsa.generate_private_key(public_exponent=65537, key_size=3072)"
+      - "Ed25519PrivateKey.generate()"
+    message: "RSA key size is below 2048 bits. Generate keys with at least 2048 bits (preferably 4096) or migrate to Ed25519/ECDSA P-256."
+
+  - id: "CG-CRYPTO-PY-006"
+    name: "Hardcoded initialization vector or nonce"
+    description: >
+      A cryptographic initialization vector (IV) or nonce is hardcoded as a fixed
+      byte string, hex literal, or constant variable. IVs and nonces must be unique
+      for every encryption operation with the same key. Reusing an IV with CBC mode
+      enables chosen-plaintext attacks, and reusing a nonce with GCM mode catastrophically
+      breaks confidentiality and authenticity by revealing the XOR of plaintexts and
+      enabling forgery. Generate a fresh random IV/nonce using os.urandom() or the
+      cipher's built-in nonce generation for each encryption.
+    severity: critical
+    confidence: 0.88
+    languages: [python]
+    cwe_id: 329
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - regex_match: "(iv|nonce|IV|NONCE)\\s*=\\s*(b['\"]|bytes\\.fromhex|bytearray\\(\\[)"
+      - callee_match: "AES\\.new\\(.*iv\\s*=\\s*b['\"]"
+      - callee_match: "AES\\.new\\(.*nonce\\s*=\\s*b['\"]"
+      - attribute_match: "STATIC_IV|FIXED_IV|CONSTANT_NONCE|DEFAULT_IV"
+    defense_patterns:
+      - "nonce = os.urandom(12)  # for GCM"
+      - "iv = os.urandom(16)  # for CBC"
+      - "cipher = AES.new(key, AES.MODE_GCM)  # auto-generates nonce"
+      - "nonce = secrets.token_bytes(12)"
+    message: "Hardcoded IV or nonce detected. Generate a unique random IV/nonce for each encryption operation using os.urandom() or let the cipher generate one automatically."
+
+  - id: "CG-CRYPTO-PY-007"
+    name: "Missing HMAC validation on ciphertext"
+    description: >
+      The application decrypts ciphertext using a non-AEAD cipher mode (CBC, CTR,
+      CFB, OFB) without first verifying an HMAC or other message authentication code.
+      Without integrity verification, an attacker can modify the ciphertext and exploit
+      padding oracle attacks (CBC) or bit-flipping attacks (CTR/CFB) to decrypt or
+      forge data. Either use an AEAD mode (GCM, CCM, EAX) that provides built-in
+      authentication, or implement Encrypt-then-MAC with HMAC-SHA256 and verify the
+      MAC before decrypting.
+    severity: high
+    confidence: 0.82
+    languages: [python]
+    cwe_id: 353
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "(AES\\.new\\(.*MODE_CBC|AES\\.new\\(.*MODE_CTR|AES\\.new\\(.*MODE_CFB)"
+        block_missing: "(hmac\\.compare_digest|HMAC\\.verify|mac\\.verify|tag)"
+      - callee_match: "cipher\\.decrypt\\("
+        context_check: "MODE_(CBC|CTR|CFB|OFB)"
+        missing_check: "(hmac|HMAC|verify|digest|authenticate)"
+    defense_patterns:
+      - "AES.new(key, AES.MODE_GCM, nonce=nonce)"
+      - "hmac.compare_digest(computed_mac, received_mac)"
+      - "cipher.decrypt_and_verify(ciphertext, tag)"
+      - "HMAC.new(mac_key, ciphertext, SHA256).verify(mac_tag)"
+    message: "Ciphertext decrypted without integrity verification. Use an AEAD mode (GCM/CCM/EAX) or implement Encrypt-then-MAC with HMAC-SHA256 verification before decryption."
+
+  - id: "CG-CRYPTO-PY-008"
+    name: "Weak key derivation function parameters"
+    description: >
+      The application uses PBKDF2 with fewer than 600,000 iterations, or uses an
+      outdated KDF such as simple SHA-256 hashing of a password, or calls
+      hashlib.pbkdf2_hmac with SHA-1 as the hash algorithm. OWASP recommends at least
+      600,000 iterations for PBKDF2-HMAC-SHA256 (as of 2023), and SHA-1 in PBKDF2
+      is deprecated in favor of SHA-256. Prefer Argon2id or scrypt for new
+      implementations, as they provide resistance to GPU and ASIC attacks.
+    severity: high
+    confidence: 0.85
+    languages: [python]
+    cwe_id: 916
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "hashlib\\.pbkdf2_hmac\\("
+        argument_check:
+          iterations_below: 600000
+      - callee_match: "PBKDF2\\(.*count\\s*=\\s*\\d{1,5}[^0-9]"
+      - callee_match: "hashlib\\.pbkdf2_hmac\\(['\"]sha1['\"]"
+      - callee_match: "pbkdf2_sha256\\.using\\(rounds\\s*=\\s*\\d{1,4}[^0-9]"
+    defense_patterns:
+      - "hashlib.pbkdf2_hmac('sha256', password, salt, 600000)"
+      - "argon2.PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)"
+      - "Scrypt(salt=salt, length=32, n=2**17, r=8, p=1)"
+      - "PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=600000)"
+    message: "Weak KDF parameters detected. Use PBKDF2 with at least 600,000 iterations and SHA-256, or migrate to Argon2id or scrypt for stronger password-based key derivation."

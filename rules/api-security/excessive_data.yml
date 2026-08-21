@@ -1,0 +1,143 @@
+rules:
+  - id: "CG-API-DATA-001"
+    name: "SELECT * query result exposed through API response"
+    description: >
+      A database query using SELECT * (or ORM equivalent that fetches all
+      columns) has its results sent directly in an API response without field
+      filtering or serialization through a schema. SELECT * retrieves every
+      column in the table, which may include internal fields (created_at,
+      updated_at, is_deleted), sensitive data (password_hash,
+      internal_notes, admin_flags), and fields added by future schema
+      migrations. This violates the data minimization principle and
+      creates an ever-expanding data leak surface as the database schema
+      evolves.
+    severity: high
+    confidence: 0.82
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 213
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern_type: "sequence"
+        steps:
+          - match: "(SELECT\\s+\\*|Model\\.objects\\.all\\(|findAll\\(\\{?\\}?\\)|find\\(\\{?\\}?\\)|\\w+\\.all\\b|fetchAll|getAll)"
+          - match: "(jsonify|json\\.dumps|res\\.json|response\\.json|JsonResponse|Response\\(|return.*json|render.*json|c\\.JSON|ctx\\.JSON)"
+        condition: "no_serializer_between_steps"
+        negative_match: "(Serializer|Schema|DTO|Transformer|Presenter|select\\(|only\\(|values\\(|pluck\\(|map\\(|pick\\()"
+      - pattern_type: "regex"
+        match: "(cursor\\.execute|db\\.query|db\\.run|connection\\.execute)\\(['\"]\\s*SELECT\\s+\\*\\s+FROM"
+      - pattern_type: "regex"
+        match: "(objects\\.all\\(\\)|find\\(\\{\\}\\)|findAll\\(\\)).*\\n.*?(jsonify|res\\.json|JsonResponse|Response|to_json|as_json)"
+        negative_match: "(serializer|schema|dto|values_list|only|select|fields=)"
+        multiline: true
+    defense_patterns:
+      - "explicit_column_selection"
+      - "response_serializer_schema"
+      - "dto_pattern"
+      - "field_allowlist_in_query"
+      - "api_response_transformer"
+    message: "SELECT * query results are returned directly in API responses without field filtering. Use explicit column selection in queries and serialize responses through DTOs or schema objects that define exactly which fields are included in the API output."
+
+  - id: "CG-API-DATA-002"
+    name: "Full user object serialized in API response"
+    description: >
+      A complete user model object is serialized and returned in an API
+      response without field filtering. User objects typically contain
+      sensitive fields such as password hashes, security questions, MFA
+      secrets, internal role flags, login attempt counts, IP addresses,
+      and personal information that should never be exposed through APIs.
+      Even if the password hash is excluded, fields like is_admin,
+      failed_login_count, or last_ip reveal security-relevant information.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 213
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern_type: "regex"
+        match: "(jsonify|json\\.dumps|res\\.json|JsonResponse|Response|to_json|as_json|JSON\\.stringify|gson\\.toJson|ObjectMapper\\.writeValue)\\(.*\\b(user|current_user|request\\.user|auth\\.user|account|profile|member)\\b\\s*[,)]"
+        negative_match: "(Serializer|Schema|DTO|to_dict\\(|select|only|exclude|fields=|pick\\(|omit\\()"
+      - pattern_type: "regex"
+        match: "return\\s+.*\\b(user|current_user|account)\\b\\.(to_json|to_dict|as_dict|__dict__|model_dump|dict\\(\\))"
+        negative_match: "(exclude=|include=|fields=|only=|exclude_fields|by_alias)"
+      - pattern_type: "regex"
+        match: "res\\.(json|send)\\(\\s*\\{.*user:\\s*(user|req\\.user|request\\.user|currentUser|foundUser)\\s*[,}]"
+        negative_match: "(pick\\(|omit\\(|sanitize|filter|toPublicJSON|toSafeObject|getPublicProfile)"
+    defense_patterns:
+      - "user_response_serializer"
+      - "public_profile_dto"
+      - "field_level_serialization_control"
+      - "sensitive_field_exclusion_list"
+      - "view_model_pattern"
+    message: "A complete user object is returned in the API response without field filtering. Create a dedicated response DTO or serializer that explicitly defines the public-safe fields (e.g., id, display_name, avatar_url) and excludes sensitive fields (password_hash, email, mfa_secret, internal flags)."
+
+  - id: "CG-API-DATA-003"
+    name: "Debug or stack trace information in production API response"
+    description: >
+      Error handling code returns detailed debug information, stack traces,
+      or internal error messages in API responses without checking the
+      runtime environment. In production, this exposes internal file paths,
+      framework versions, database schema details, third-party service
+      endpoints, and code structure that enables targeted attacks. Debug
+      information disclosure is a reconnaissance goldmine for attackers
+      planning further exploitation.
+    severity: high
+    confidence: 0.84
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 209
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern_type: "regex"
+        match: "(except|catch).*:\\s*\\n.*?(jsonify|res\\.json|JsonResponse|Response|json\\.dumps|res\\.send|res\\.status)\\(.*\\b(traceback|stack|stackTrace|str\\(e\\)|e\\.message|err\\.message|error\\.message|exception|exc_info|format_exc)\\b"
+        negative_match: "(DEBUG|development|NODE_ENV|FLASK_ENV|RAILS_ENV|APP_ENV|settings\\.DEBUG)"
+        multiline: true
+      - pattern_type: "regex"
+        match: "(traceback\\.format_exc|traceback\\.print_exc|e\\.printStackTrace|err\\.stack|error\\.stack).*\\n.*?(return|response|res\\.|jsonify|JsonResponse)"
+        negative_match: "(if.*DEBUG|if.*development|if.*dev_mode|unless.*production)"
+        multiline: true
+      - pattern_type: "regex"
+        match: "(app\\.config|DEBUG|FLASK_DEBUG|settings\\.DEBUG)\\s*=\\s*(True|1|['\"]true['\"])"
+        context: "production_config"
+    defense_patterns:
+      - "environment_aware_error_handling"
+      - "generic_error_response_in_production"
+      - "error_id_with_server_side_logging"
+      - "centralized_exception_handler"
+      - "debug_mode_environment_check"
+    message: "Detailed error information (stack traces, exception messages, internal paths) is returned in API responses without environment checks. Return generic error messages with a correlation ID in production, and log the full details server-side. Only expose debug information when explicitly in development mode."
+
+  - id: "CG-API-DATA-004"
+    name: "Internal database identifiers exposed in API response"
+    description: >
+      Internal database identifiers (auto-increment integer IDs, internal
+      sequence numbers, or database-specific identifiers) are exposed in
+      API responses. Sequential integer IDs reveal total record counts,
+      creation order, and growth rate. They enable enumeration attacks
+      (incrementing IDs to discover resources), competitor intelligence
+      (estimating customer counts), and BOLA attacks (predicting valid
+      IDs to access unauthorized resources). UUIDs or opaque identifiers
+      should be used for external-facing resource references.
+    severity: medium
+    confidence: 0.68
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 200
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "regex"
+        match: "(jsonify|res\\.json|JsonResponse|json\\.dumps|to_json|as_json|JSON\\.stringify)\\(.*\\b(id|pk|_id|user_id|order_id|account_id|internal_id|db_id)\\b\\s*[:=]\\s*\\b(\\w+)\\.(id|pk|_id)"
+        negative_match: "(uuid|ulid|public_id|external_id|slug|hashid|nanoid)"
+      - pattern_type: "regex"
+        match: "['\"]id['\"]\\s*:\\s*(self|obj|instance|record|model|row|entity)\\.(id|pk|_id)\\b"
+        negative_match: "(uuid|public_id|external_id|hashid)"
+      - pattern_type: "negative_check"
+        description: "Model serialization without ID obfuscation"
+        match: "class\\s+\\w+Serializer.*:\\s*\\n.*class\\s+Meta.*:\\s*\\n.*fields\\s*=.*['\"]id['\"]"
+        must_contain: "(UUIDField|public_id|external_id|HashidField|SlugField)"
+        scope: "class"
+        multiline: true
+    defense_patterns:
+      - "uuid_external_identifiers"
+      - "hashid_obfuscation"
+      - "opaque_id_mapping"
+      - "public_id_field_pattern"
+      - "id_translation_layer"
+    message: "Internal sequential database IDs are exposed in API responses, enabling enumeration and resource discovery attacks. Use UUIDs, ULIDs, or HashIDs for all external-facing resource identifiers. Maintain an internal mapping between public and private identifiers."

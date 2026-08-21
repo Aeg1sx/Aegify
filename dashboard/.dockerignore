@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+*.db
+*.db-journal
+**/.env*
+.vault-token
+vault-data
+secrets
+*.sarif
+*.scip
+*.log
+.DS_Store

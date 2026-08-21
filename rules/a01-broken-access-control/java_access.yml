@@ -1,0 +1,159 @@
+rules:
+  - id: "CG-AC-JAVA-001"
+    name: "Spring endpoint without @PreAuthorize"
+    description: >
+      A Spring MVC or Spring WebFlux controller method mapped with @GetMapping,
+      @PostMapping, @PutMapping, @DeleteMapping, or @RequestMapping does not have a
+      method-level security annotation such as @PreAuthorize, @Secured, or
+      @RolesAllowed. Without method-level authorization, the endpoint relies solely on
+      URL-pattern security rules in the SecurityFilterChain, which are brittle and
+      prone to misconfiguration. Method-level security provides defense in depth.
+    severity: high
+    confidence: 0.85
+    languages: [java]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - annotation_match: "@(GetMapping|PostMapping|PutMapping|DeleteMapping|RequestMapping)"
+        missing_annotation: "(@PreAuthorize|@Secured|@RolesAllowed|@PermitAll)"
+        class_context: "@(RestController|Controller)"
+    defense_patterns:
+      - "@PreAuthorize(\"hasRole('ADMIN')\")"
+      - "@PreAuthorize(\"isAuthenticated()\")"
+      - "@Secured(\"ROLE_USER\")"
+      - "@RolesAllowed(\"ADMIN\")"
+    message: "Spring controller endpoint lacks method-level authorization annotation. Add @PreAuthorize, @Secured, or @RolesAllowed to enforce access control at the method level."
+
+  - id: "CG-AC-JAVA-002"
+    name: "Apache Shiro missing role or permission check"
+    description: >
+      A controller or service method that performs a privileged operation does not
+      include an Apache Shiro authorization check via @RequiresRoles,
+      @RequiresPermissions, or a programmatic Subject.isPermitted() / Subject.hasRole()
+      call. Shiro-protected applications must verify authorization for every sensitive
+      operation to prevent unauthorized access by authenticated but unprivileged users.
+    severity: high
+    confidence: 0.82
+    languages: [java]
+    cwe_id: 285
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - annotation_match: "@(RequestMapping|GetMapping|PostMapping)"
+        missing_annotation: "(@RequiresRoles|@RequiresPermissions|@RequiresAuthentication)"
+        class_context: "import org\\.apache\\.shiro"
+      - callee_match: "(SecurityUtils\\.getSubject\\(\\)|currentUser)"
+        missing_check: "(isPermitted|hasRole|checkPermission|checkRole)"
+    defense_patterns:
+      - "@RequiresRoles(\"admin\")"
+      - "@RequiresPermissions(\"resource:write\")"
+      - "subject.isPermitted(\"resource:write\")"
+      - "subject.checkRole(\"admin\")"
+    message: "Shiro-protected endpoint is missing an authorization check. Add @RequiresRoles, @RequiresPermissions, or a programmatic permission check."
+
+  - id: "CG-AC-JAVA-003"
+    name: "Servlet without authentication filter"
+    description: >
+      A Java Servlet mapped via @WebServlet or web.xml is not protected by an
+      authentication filter in the filter chain. The servlet's doGet, doPost, or
+      service method processes requests without verifying that the caller is
+      authenticated. Servlets handling sensitive resources must be behind an
+      authentication filter or must explicitly validate the session/credentials.
+    severity: high
+    confidence: 0.80
+    languages: [java]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - class_match: "class\\s+\\w+\\s+extends\\s+HttpServlet"
+        method_match: "(doGet|doPost|doPut|doDelete|service)\\("
+        missing_check: "(request\\.getUserPrincipal|request\\.getSession.*getAttribute.*user|request\\.isUserInRole|SecurityContext)"
+      - annotation_match: "@WebServlet"
+        missing_filter: "(AuthenticationFilter|LoginFilter|SecurityFilter)"
+    defense_patterns:
+      - "request.getUserPrincipal()"
+      - "request.isUserInRole(\"admin\")"
+      - "request.getSession().getAttribute(\"authenticatedUser\")"
+      - "SecurityContextHolder.getContext().getAuthentication()"
+    message: "Servlet processes requests without authentication verification. Add an auth filter to the filter chain or check credentials within the servlet."
+
+  - id: "CG-AC-JAVA-004"
+    name: "JPA query without tenant scope"
+    description: >
+      A JPA or Hibernate query in a multi-tenant application retrieves entities without
+      filtering by the current tenant's identifier. Using EntityManager.find(),
+      CriteriaQuery, JPQL, or Spring Data repository methods without a tenant
+      predicate allows cross-tenant data access. Every query against tenant-scoped
+      entities must include a tenant filter or use Hibernate's @Filter annotation with
+      tenant-aware session configuration.
+    severity: critical
+    confidence: 0.78
+    languages: [java]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "entityManager\\.(find|createQuery|createNamedQuery)\\("
+        missing_check: "(tenantId|organizationId|orgId|tenant_id)"
+      - callee_match: "repository\\.findAll\\(\\)|repository\\.findById\\("
+        missing_check: "(tenantId|TenantContext|@Filter.*tenant)"
+      - regex_match: "SELECT\\s+\\w+\\s+FROM\\s+\\w+\\s+(WHERE(?!.*tenant)|(?!.*WHERE))"
+    defense_patterns:
+      - "@FilterDef(name=\"tenantFilter\")"
+      - "criteriaBuilder.equal(root.get(\"tenantId\"), currentTenantId)"
+      - "entityManager.createQuery(\"... WHERE e.tenantId = :tid\")"
+      - "TenantContext.getCurrentTenantId()"
+    message: "JPA query does not scope results to the current tenant. Add a tenant filter predicate to prevent cross-tenant data leakage."
+
+  - id: "CG-AC-JAVA-005"
+    name: "Spring CORS misconfiguration"
+    description: >
+      A Spring Security or Spring MVC CORS configuration uses
+      allowedOrigins(\"*\") or setAllowedOrigins with a wildcard in combination
+      with allowCredentials(true), or reflects the Origin header without validation.
+      This permits any website to make authenticated cross-origin requests to the
+      application, enabling cross-site data theft. CORS origins must be explicitly
+      enumerated.
+    severity: high
+    confidence: 0.90
+    languages: [java]
+    cwe_id: 346
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "allowedOrigins\\(\"\\*\"\\)"
+        context_check: "allowCredentials\\(true\\)"
+      - callee_match: "setAllowedOrigins\\(Arrays\\.asList\\(\"\\*\"\\)\\)"
+      - callee_match: "@CrossOrigin\\(origins\\s*=\\s*\"\\*\""
+        context_check: "allowCredentials\\s*=\\s*\"true\""
+      - callee_match: "addAllowedOrigin\\(\"\\*\"\\)"
+    defense_patterns:
+      - "allowedOrigins(\"https://trusted-app.example.com\")"
+      - "setAllowedOrigins(List.of(\"https://app.example.com\"))"
+      - "@CrossOrigin(origins = \"https://app.example.com\")"
+      - "allowedOriginPatterns(\"https://*.example.com\")"
+    message: "Spring CORS allows all origins with credentials. Restrict allowedOrigins to a specific list of trusted domains."
+
+  - id: "CG-AC-JAVA-006"
+    name: "Missing CSRF protection in Spring Security"
+    description: >
+      Spring Security's CSRF protection is explicitly disabled via
+      csrf().disable() or csrf(csrf -> csrf.disable()) in the security configuration.
+      Disabling CSRF protection on applications that serve browser-based clients
+      allows attackers to forge cross-site requests that perform state-changing
+      operations using the victim's authenticated session. CSRF should only be disabled
+      for stateless APIs that exclusively use token-based authentication without
+      cookies.
+    severity: high
+    confidence: 0.88
+    languages: [java]
+    cwe_id: 352
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "\\.csrf\\(\\)\\.disable\\(\\)"
+      - callee_match: "\\.csrf\\(csrf\\s*->\\s*csrf\\.disable\\(\\)\\)"
+      - callee_match: "\\.csrf\\(AbstractHttpConfigurer::disable\\)"
+      - callee_match: "http\\.csrf\\(\\w+ -> \\w+\\.disable\\(\\)\\)"
+    defense_patterns:
+      - ".csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))"
+      - ".csrf(withDefaults())"
+      - "CsrfTokenRepository"
+      - "_csrf token in forms"
+    message: "CSRF protection is disabled in Spring Security configuration. Re-enable CSRF with a token repository unless this is a stateless API using only token-based auth."

@@ -1,0 +1,179 @@
+rules:
+  - id: "CG-CSRF-001"
+    name: "State-changing endpoint without CSRF token validation"
+    description: >
+      A state-changing API endpoint (POST, PUT, DELETE, PATCH) that processes form submissions
+      or accepts application/x-www-form-urlencoded content does not validate a CSRF token or
+      use an alternative CSRF mitigation (SameSite cookies, custom request headers, origin
+      verification). Without CSRF protection, an attacker can create a malicious page that
+      submits forged requests to the application using the victim's authenticated session.
+      This can lead to unauthorized fund transfers, password changes, email modifications,
+      and other state-changing actions performed without the user's knowledge. CSRF is
+      especially dangerous in banking, e-commerce, and social media applications where
+      state-changing operations have significant real-world consequences.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 352
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "Express POST route without CSRF middleware"
+        match: "(app|router)\\.(post|put|delete|patch)\\s*\\("
+        must_contain: "(csrf|csurf|csrfProtection|lusca\\.csrf|helmet\\.csrf|csrfToken|_csrf|anti-csrf|xsrf)"
+        scope: "file"
+      - pattern_type: "negative_check"
+        description: "Django view without CSRF protection"
+        match: "(@csrf_exempt|def\\s+\\w+.*request.*POST)"
+        must_contain: "(csrf_token|csrfmiddlewaretoken|CsrfViewMiddleware|csrf_protect)"
+      - pattern: "@csrf_exempt"
+        description: "Django CSRF protection explicitly disabled"
+      - pattern_type: "negative_check"
+        description: "Flask POST route without CSRF validation"
+        match: "@app\\.route.*methods.*POST|@app\\.route.*methods.*PUT|@app\\.route.*methods.*DELETE"
+        must_contain: "(CSRFProtect|csrf\\.validate|csrf_token|flask_wtf\\.csrf|FlaskForm|validate_on_submit)"
+        scope: "file"
+      - pattern_type: "negative_check"
+        description: "Spring controller without CSRF"
+        match: "(@PostMapping|@PutMapping|@DeleteMapping|@PatchMapping)"
+        must_contain: "(CsrfToken|_csrf|csrf\\(\\)|csrfTokenRepository|CookieCsrfTokenRepository)"
+        scope: "file"
+      - pattern: "csrf\\s*[=:(]\\s*(disable|disabled|false|False|off)"
+        description: "CSRF protection explicitly disabled in security configuration"
+      - pattern: "http\\.csrf\\(\\)\\.disable\\(\\)|http\\.csrf\\(\\w*\\s*->\\s*\\w*\\.disable\\(\\)\\)"
+        description: "Spring Security CSRF protection disabled"
+    defense_patterns:
+      - "csrf|csurf|csrfProtection"
+      - "csrfToken|csrf_token|_csrf"
+      - "SameSite\\s*[=:]\\s*(Strict|Lax)"
+      - "Origin.*header.*check|Referer.*header.*check"
+      - "X-Requested-With|X-CSRF-Token|X-XSRF-Token"
+      - "double_submit_cookie"
+      - "synchronizer_token"
+      - "CookieCsrfTokenRepository"
+      - "FlaskForm|validate_on_submit"
+    fix_suggestion: >
+      Implement CSRF protection using one or more of the following: (1) Synchronizer token
+      pattern - generate a random CSRF token per session, include it in forms as a hidden
+      field, and validate it on the server for every state-changing request. (2) Double submit
+      cookie - set a random value in both a cookie and a request parameter, and verify they
+      match. (3) Set SameSite=Strict or SameSite=Lax on session cookies. (4) Verify the
+      Origin and Referer headers match expected values. Use framework-provided CSRF middleware:
+      csurf for Express, CsrfViewMiddleware for Django, CSRFProtect for Flask, or Spring
+      Security's built-in CSRF support.
+    message: "Missing CSRF protection: state-changing endpoint at line {line} does not validate CSRF tokens. Implement synchronizer token pattern, double submit cookies, or SameSite cookie attributes."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/352.html"
+
+  - id: "CG-CSRF-002"
+    name: "SameSite=None cookie without Secure flag"
+    description: >
+      A cookie is set with the SameSite=None attribute but without the Secure flag. Modern
+      browsers require that cookies with SameSite=None must also have the Secure flag set,
+      otherwise the cookie is rejected entirely. SameSite=None explicitly opts the cookie
+      into being sent with cross-site requests, which removes a critical CSRF defense layer.
+      If the cookie is a session cookie or authentication token, setting SameSite=None without
+      a deliberate cross-site use case unnecessarily expands the attack surface. Even when
+      cross-site delivery is required (e.g., for third-party integrations or SSO), the Secure
+      flag must be present to prevent the cookie from being sent over unencrypted HTTP
+      connections where it can be intercepted.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 1275
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "SameSite\\s*[=:]\\s*['\"]?None['\"]?"
+        missing_check: "(Secure|secure\\s*[=:]\\s*(true|True))"
+        description: "SameSite=None without Secure flag"
+      - pattern: "(set-cookie|Set-Cookie|setCookie|set_cookie|res\\.cookie|response\\.set_cookie).*SameSite=None"
+        missing_check: "(Secure|secure\\s*[=:]\\s*true|; Secure)"
+        description: "Set-Cookie with SameSite=None but missing Secure"
+      - pattern: "cookie\\s*[=:]\\s*\\{[^}]*samesite\\s*[=:]\\s*['\"]?none['\"]?[^}]*\\}"
+        missing_check: "(secure\\s*[=:]\\s*true)"
+        description: "Cookie options object with SameSite=None without secure=true"
+      - pattern: "(SESSION_COOKIE_SAMESITE|CSRF_COOKIE_SAMESITE)\\s*=\\s*['\"]None['\"]"
+        missing_check: "(SESSION_COOKIE_SECURE|CSRF_COOKIE_SECURE)\\s*=\\s*True"
+        description: "Django session/CSRF cookie with SameSite=None without Secure"
+    taint:
+      source_types: [configuration]
+      sink_types: [cookie_setting]
+      sink_pattern: "(set-cookie|setCookie|set_cookie|res\\.cookie|response\\.set_cookie|addCookie|http\\.SetCookie)"
+    defense_patterns:
+      - "Secure\\s*[=:]\\s*(true|True)"
+      - "; Secure"
+      - "secure\\s*[=:]\\s*true"
+      - "SameSite\\s*[=:]\\s*['\"]?(Strict|Lax)"
+      - "SESSION_COOKIE_SECURE\\s*=\\s*True"
+      - "__Secure-"
+      - "__Host-"
+    fix_suggestion: >
+      Always set the Secure flag alongside SameSite=None: res.cookie('session', value,
+      { sameSite: 'none', secure: true, httpOnly: true }). If cross-site cookie delivery
+      is not needed, use SameSite=Lax (default in modern browsers) or SameSite=Strict for
+      maximum CSRF protection. Use the __Host- or __Secure- cookie name prefix for additional
+      protection. Audit all cookies to determine if SameSite=None is actually required for
+      the application's functionality.
+    message: "Cookie at line {line} sets SameSite=None without the Secure flag. Modern browsers reject this combination. Add the Secure flag or use SameSite=Lax/Strict if cross-site delivery is not required."
+    references:
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#samesitesamesite-value"
+      - "https://cwe.mitre.org/data/definitions/1275.html"
+
+  - id: "CG-CSRF-003"
+    name: "CORS with credentials and wildcard or reflected origin"
+    description: >
+      The application configures CORS to allow credentials (Access-Control-Allow-Credentials:
+      true) while either using a wildcard origin (*) or dynamically reflecting the requesting
+      Origin header without validation. While browsers block the exact combination of
+      credentials + wildcard origin, many frameworks work around this by reflecting the
+      requesting origin in the Access-Control-Allow-Origin response header when credentials
+      are enabled. This effectively makes the CORS policy equivalent to a wildcard for
+      authenticated requests, allowing any website to make cross-origin API calls with the
+      victim's cookies, authorization headers, and TLS certificates. This is a critical
+      vulnerability that enables cross-site data theft and CSRF-like attacks that bypass
+      traditional CSRF defenses.
+    severity: critical
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 942
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "(credentials\\s*[=:]\\s*(true|True))"
+        args_match: "(origin\\s*[=:]\\s*(true|True|\\*|req\\.headers\\.origin|request\\.headers\\.get\\(['\"]origin|request\\.META\\.get\\(['\"]HTTP_ORIGIN|r\\.Header\\.Get\\(['\"]Origin))"
+        description: "CORS credentials enabled with reflected or wildcard origin"
+      - multi_match:
+          - "Access-Control-Allow-Credentials.*true"
+          - "Access-Control-Allow-Origin.*req\\.headers|Access-Control-Allow-Origin.*request\\.headers|Access-Control-Allow-Origin.*Origin|Access-Control-Allow-Origin.*\\*"
+        description: "Response headers enabling credentials with reflected origin"
+      - pattern: "origin\\s*[=:]\\s*(true|True)"
+        args_match: "credentials\\s*[=:]\\s*(true|True)"
+        description: "CORS middleware reflecting all origins with credentials"
+      - pattern: "(res\\.setHeader|response\\.setHeader|set_header|Header\\(\\)\\.Set|addHeader)\\s*\\(['\"]Access-Control-Allow-Origin['\"]\\s*,\\s*(req|request)\\."
+        description: "Origin header reflected directly in CORS response"
+      - pattern: "cors\\s*\\(\\s*\\{[^}]*origin\\s*:\\s*(true|req\\.|function|\\(req)"
+        args_match: "credentials\\s*:\\s*true"
+        description: "Express CORS with dynamic origin and credentials"
+    taint:
+      source_types: [http_header]
+      sink_types: [http_response_header]
+      sink_pattern: "(Access-Control-Allow-Origin|cors\\(|addCorsMappings|CorsConfiguration)"
+    defense_patterns:
+      - "origin\\s*[=:]\\s*\\[.*specific_domain"
+      - "allowedOrigins\\s*[=:(]\\s*(?!.*\\*|.*true)"
+      - "origin_whitelist|trusted_origins|cors_allowed_origins"
+      - "origin.*===.*expected|origin.*includes.*trusted"
+      - "credentials\\s*[=:]\\s*(false|False)"
+    fix_suggestion: >
+      When credentials are enabled, always validate the Origin header against a strict
+      allowlist of trusted domains and only reflect origins that match. Never set origin
+      to true or reflect the Origin header unconditionally. Example: cors({ origin:
+      ['https://app.example.com', 'https://admin.example.com'], credentials: true }).
+      If credentials are not needed for cross-origin requests, disable
+      Access-Control-Allow-Credentials. Implement a proper origin validation function
+      that checks against an allowlist and rejects unknown origins.
+    message: "CORS credential leak: credentials are enabled with wildcard or reflected origin at line {line}. Any website can make authenticated cross-origin requests to this API. Pin Access-Control-Allow-Origin to specific trusted domains."
+    references:
+      - "https://portswigger.net/web-security/cors"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/942.html"

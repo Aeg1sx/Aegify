@@ -1,0 +1,186 @@
+rules:
+  - id: "CG-RCE-GO-001"
+    name: "os/exec.Command() with user-controlled input"
+    description: >
+      The os/exec.Command() function creates a new process with the specified command
+      and arguments. While Go's exec.Command() does not invoke a shell by default
+      (unlike many other languages), it is still vulnerable when user-controlled data
+      determines the binary path or arguments. An attacker can specify an arbitrary
+      binary to execute, inject malicious arguments that alter command behavior
+      (argument injection), or exploit path traversal to execute uploaded files.
+      When combined with sh -c or bash -c as the command, full shell injection
+      becomes possible.
+    severity: critical
+    confidence: 0.9
+    languages: [go]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "exec\\.Command\\s*\\("
+        args_match: "(r\\.URL|r\\.Form|r\\.PostForm|r\\.Body|r\\.Header|c\\.Param|c\\.Query|c\\.PostForm|c\\.GetHeader|ctx\\.Query|ctx\\.Param|ctx\\.FormValue|request|input|user|param|query|vars|mux\\.Vars)"
+      - pattern: "exec\\.Command\\s*\\(\\s*\"(sh|bash|cmd|powershell)\"\\s*,\\s*\"(-c|/c)\""
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param|query|\\+|fmt\\.Sprintf)"
+        description: "exec.Command with shell invocation and user-controlled argument"
+      - pattern: "exec\\.Command\\s*\\(.*fmt\\.Sprintf"
+        description: "exec.Command with fmt.Sprintf formatted arguments"
+      - pattern: "exec\\.Command\\s*\\(.*\\+.*\\)"
+        description: "exec.Command with string concatenation in arguments"
+      - pattern: "exec\\.CommandContext\\s*\\("
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param|query)"
+        description: "exec.CommandContext with user-controlled arguments"
+      - pattern: "cmd\\.Args\\s*=\\s*append\\s*\\(.*cmd\\.Args"
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param)"
+        description: "Dynamic argument appending with user input"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, grpc_field, cli_argument, environment_variable]
+      sink_types: [os_command]
+      sink_pattern: "exec\\.(Command|CommandContext)"
+      propagation:
+        - through: "string_concatenation"
+        - through: "fmt_sprintf"
+        - through: "strings_join"
+        - through: "variable_assignment"
+        - through: "slice_append"
+        - through: "function_parameter"
+    defense_patterns:
+      - "allowlist"
+      - "whitelist"
+      - "regexp\\.MustCompile\\s*\\(\\s*`\\^\\[a-zA-Z"
+      - "filepath\\.Base"
+      - "filepath\\.Clean"
+      - "strings\\.ContainsAny.*[;&|$`]"
+      - "shellescape\\.Quote"
+      - "exec\\.LookPath"
+    fix_suggestion: >
+      Never pass user input as the command name in exec.Command(). Maintain a strict
+      allowlist of permitted commands and map user input to predefined command
+      configurations. Validate all arguments against permitted character sets using
+      regexp.MustCompile(`^[a-zA-Z0-9._-]+$`). Never use "sh", "-c" with user input.
+      Use filepath.Base() to strip path components from user-supplied filenames.
+      Consider using the shellescape package for argument sanitization when shell
+      invocation is unavoidable.
+    message: "exec.Command() called with potentially user-controlled input at line {line}. Command injection through binary path or argument manipulation enables arbitrary process execution."
+    references:
+      - "https://pkg.go.dev/os/exec#Command"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-GO-002"
+    name: "syscall.Exec() with user-controlled input"
+    description: >
+      syscall.Exec() replaces the current process with the specified command using
+      the execve(2) system call. Unlike os/exec.Command() which creates a child
+      process, syscall.Exec() replaces the running Go process entirely. This is
+      particularly dangerous because: (1) it bypasses any Go-level cleanup or defer
+      statements, (2) the replacement process inherits all file descriptors,
+      environment variables, and privileges of the Go process, and (3) there is no
+      parent process to monitor or terminate the executed command. When user input
+      controls the binary path or arguments, the attacker gains complete control
+      over process execution.
+    severity: critical
+    confidence: 0.95
+    languages: [go]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "syscall\\.Exec\\s*\\("
+        args_match: "(r\\.URL|r\\.Form|r\\.PostForm|r\\.Body|r\\.Header|c\\.Param|c\\.Query|ctx\\.Query|ctx\\.Param|request|input|user|param|query|os\\.Args|fmt\\.Sprintf|\\+)"
+      - pattern: "syscall\\.Exec\\s*\\(.*fmt\\.Sprintf"
+        description: "syscall.Exec with formatted string arguments"
+      - pattern: "unix\\.Exec\\s*\\("
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param|query)"
+        description: "golang.org/x/sys/unix.Exec variant"
+      - pattern: "syscall\\.ForkExec\\s*\\("
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param|query)"
+        description: "syscall.ForkExec with user-controlled arguments"
+      - pattern: "syscall\\.StartProcess\\s*\\("
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param|query)"
+        description: "syscall.StartProcess with user-controlled arguments"
+    taint:
+      source_types: [http_param, http_body, http_header, cli_argument, environment_variable, grpc_field]
+      sink_types: [os_command]
+      sink_pattern: "syscall\\.(Exec|ForkExec|StartProcess)|unix\\.Exec"
+      propagation:
+        - through: "string_concatenation"
+        - through: "fmt_sprintf"
+        - through: "slice_literal"
+        - through: "variable_assignment"
+        - through: "function_parameter"
+    defense_patterns:
+      - "allowlist"
+      - "whitelist"
+      - "regexp\\.MustCompile"
+      - "filepath\\.Base"
+      - "exec\\.LookPath"
+      - "os/exec\\.Command"
+    fix_suggestion: >
+      Avoid syscall.Exec() in web-facing applications entirely. Use os/exec.Command()
+      which creates a child process that can be monitored and terminated. If
+      syscall.Exec() is necessary (e.g., for process supervisors), hardcode the
+      binary path and validate all arguments against strict allowlists. Never
+      derive the executable path from user input. Prefer exec.LookPath() with
+      a fixed command name over user-supplied paths.
+    message: "syscall.Exec() called with potentially user-controlled input at line {line}. This replaces the current process entirely, granting the attacker full control over execution with inherited privileges."
+    references:
+      - "https://pkg.go.dev/syscall#Exec"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-GO-003"
+    name: "plugin.Open() with user-controlled path"
+    description: >
+      The plugin.Open() function dynamically loads a Go shared library (.so file)
+      at runtime and executes its init() functions. When the plugin path is derived
+      from user input, an attacker who can upload or place a malicious .so file on
+      the file system can achieve arbitrary code execution with the full privileges
+      of the Go process. The loaded plugin runs in the same address space as the
+      host application with unrestricted access to memory, goroutines, and all
+      imported packages. Plugins cannot be unloaded, making this a permanent
+      compromise of the process.
+    severity: critical
+    confidence: 0.9
+    languages: [go]
+    cwe_id: 94
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "plugin\\.Open\\s*\\("
+        args_match: "(r\\.URL|r\\.Form|r\\.PostForm|r\\.Body|r\\.Header|c\\.Param|c\\.Query|ctx\\.Query|ctx\\.Param|request|input|user|param|query|os\\.Args|fmt\\.Sprintf|\\+)"
+      - pattern: "plugin\\.Open\\s*\\(.*fmt\\.Sprintf"
+        description: "plugin.Open with formatted path string"
+      - pattern: "plugin\\.Open\\s*\\(.*\\+.*\\)"
+        description: "plugin.Open with concatenated path"
+      - pattern: "plugin\\.Open\\s*\\(.*filepath\\.Join"
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param)"
+        description: "plugin.Open with filepath.Join containing user input"
+      - pattern: "p\\.Lookup\\s*\\("
+        args_match: "(r\\.|c\\.|ctx\\.|request|input|user|param)"
+        description: "Plugin symbol lookup with user-controlled name"
+    taint:
+      source_types: [http_param, http_body, file_upload, cli_argument, environment_variable]
+      sink_types: [code_execution, dynamic_library_load]
+      sink_pattern: "plugin\\.Open"
+      propagation:
+        - through: "string_concatenation"
+        - through: "fmt_sprintf"
+        - through: "filepath_join"
+        - through: "variable_assignment"
+        - through: "function_parameter"
+    defense_patterns:
+      - "allowlist"
+      - "whitelist"
+      - "filepath\\.Clean.*filepath\\.Abs.*strings\\.HasPrefix"
+      - "filepath\\.Base"
+      - "cryptographic.*signature.*verification"
+      - "checksum.*verify"
+      - "hmac\\.Equal"
+      - "ed25519\\.Verify"
+    fix_suggestion: >
+      Never derive plugin paths from user input. Maintain a hardcoded registry of
+      permitted plugins and map user selections to predefined paths. If dynamic
+      plugin loading is required, implement cryptographic signature verification
+      (e.g., ed25519 or HMAC-SHA256) on the .so file before loading. Restrict
+      the plugin directory with file system permissions and validate that resolved
+      paths stay within the expected directory using filepath.Abs() and
+      strings.HasPrefix(). Consider using a plugin registry with checksums.
+    message: "plugin.Open() called with potentially user-controlled path at line {line}. Loading a malicious shared library enables unrestricted code execution in the host process address space."
+    references:
+      - "https://pkg.go.dev/plugin#Open"
+      - "https://cwe.mitre.org/data/definitions/94.html"

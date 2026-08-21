@@ -1,0 +1,181 @@
+rules:
+  - id: CG-MOB-001
+    name: Insecure Local Storage
+    description: >
+      Sensitive data such as passwords, tokens, or PII is stored in
+      unencrypted local storage mechanisms (SharedPreferences on Android,
+      UserDefaults on iOS). Use the Android Keystore or iOS Keychain for
+      sensitive data at rest.
+    severity: high
+    confidence: 0.75
+    languages: [kotlin, java, swift]
+    cwe_id: 922
+    owasp_category: "A04:2021-Insecure Design"
+    masvs_category: "MASVS-STORAGE-1"
+    patterns:
+      - callee: "(getSharedPreferences|SharedPreferences\\.Editor|edit\\(\\)\\.(putString|putInt|putBoolean))"
+        args_match: "(password|passwd|token|secret|api_key|apiKey|credit_card|ssn|pin|session_id|auth)"
+      - callee: "(UserDefaults\\.standard\\.set|UserDefaults\\.standard\\.setValue)"
+        args_match: "(password|passwd|token|secret|apiKey|api_key|creditCard|ssn|pin|sessionId|auth)"
+    message: "Sensitive data stored in insecure local storage at '{callee}' (line {line}). Use Android Keystore or iOS Keychain instead."
+
+  - id: CG-MOB-002
+    name: Weak TLS Configuration
+    description: >
+      The application uses deprecated TLS versions (1.0 or 1.1) or does not
+      enforce certificate pinning, leaving network communications vulnerable
+      to downgrade attacks and man-in-the-middle interception.
+    severity: high
+    confidence: 0.8
+    languages: [kotlin, java, swift]
+    cwe_id: 326
+    owasp_category: "A02:2021-Cryptographic Failures"
+    masvs_category: "MASVS-NETWORK-1"
+    patterns:
+      - callee: "(SSLContext\\.getInstance|SSLSocketFactory|TrustManagerFactory)"
+        args_match: "(TLSv1[^.]|TLSv1\\.0|TLSv1\\.1|SSLv3|SSLv2)"
+      - callee: "(URLSessionConfiguration|ATS|NSAppTransportSecurity)"
+        args_match: "(NSAllowsArbitraryLoads\\s*=\\s*true|NSExceptionAllowsInsecureHTTPLoads)"
+      - callee: "(setEnabledProtocols|setProtocols)"
+        args_match: "(TLSv1[\"']|TLSv1\\.0|TLSv1\\.1)"
+    message: "Weak TLS configuration at '{callee}' (line {line}). Enforce TLS 1.2+ and implement certificate pinning."
+
+  - id: CG-MOB-003
+    name: Debug Mode in Release Build
+    description: >
+      The application is configured with debugging enabled, which exposes
+      detailed error information, enables runtime inspection, and can allow
+      an attacker to bypass security controls.
+    severity: high
+    confidence: 0.85
+    languages: [kotlin, java, swift]
+    cwe_id: 489
+    owasp_category: "A05:2021-Security Misconfiguration"
+    masvs_category: "MASVS-RESILIENCE-2"
+    patterns:
+      - callee: ".*"
+        args_match: "(android:debuggable\\s*=\\s*[\"']true[\"']|isDebuggable\\s*=\\s*true|debuggable\\s+true)"
+      - callee: "(BuildConfig\\.DEBUG|isDebugMode|setDebuggable)"
+        args_match: "(true|enabled)"
+    message: "Debug mode enabled at '{callee}' (line {line}). Ensure debuggable is set to false in release builds."
+
+  - id: CG-MOB-005
+    name: Insecure WebView Configuration
+    description: >
+      WebView has JavaScript enabled without restricting content loading or
+      JavaScript interface exposure. This can allow cross-site scripting,
+      arbitrary code execution, or data exfiltration through injected scripts.
+    severity: high
+    confidence: 0.8
+    languages: [kotlin, java, swift]
+    cwe_id: 749
+    owasp_category: "A03:2021-Injection"
+    masvs_category: "MASVS-PLATFORM-2"
+    patterns:
+      - callee: "(WebSettings\\.setJavaScriptEnabled|webView\\.settings\\.javaScriptEnabled|getSettings\\(\\)\\.setJavaScriptEnabled)"
+        args_match: "(true)"
+      - callee: "(addJavascriptInterface|webView\\.addJavascriptInterface)"
+        args_match: ".*"
+      - callee: "(setAllowFileAccess|setAllowUniversalAccessFromFileURLs|setAllowFileAccessFromFileURLs)"
+        args_match: "(true)"
+      - callee: "(WKWebViewConfiguration|WKPreferences)"
+        args_match: "(javaScriptEnabled\\s*=\\s*true)"
+    message: "Insecure WebView configuration at '{callee}' (line {line}). Restrict JavaScript execution and file access in WebViews."
+
+  - id: CG-MOB-006
+    name: Clipboard Data Exposure
+    description: >
+      Sensitive data is copied to the system clipboard, which can be read by
+      any application on the device. On Android, clipboard data is accessible
+      to all apps; on iOS, apps can read the pasteboard.
+    severity: medium
+    confidence: 0.7
+    languages: [kotlin, java, swift]
+    cwe_id: 200
+    owasp_category: "A04:2021-Insecure Design"
+    masvs_category: "MASVS-STORAGE-2"
+    patterns:
+      - callee: "(ClipboardManager\\.setPrimaryClip|ClipData\\.newPlainText|clipboard\\.setPrimaryClip)"
+        args_match: "(password|token|secret|api_key|apiKey|ssn|credit_card|pin|otp|mfa|auth)"
+      - callee: "(UIPasteboard\\.general\\.string|UIPasteboard\\.general\\.setValue|pasteboard\\.string)"
+        args_match: "(password|token|secret|apiKey|api_key|ssn|creditCard|pin|otp|mfa|auth)"
+    message: "Sensitive data copied to clipboard at '{callee}' (line {line}). Avoid placing secrets on the clipboard or clear it promptly."
+
+  - id: CG-MOB-007
+    name: Insecure Data Backup
+    description: >
+      The Android manifest allows application data backup (allowBackup=true),
+      which lets users or attackers extract application data including databases,
+      shared preferences, and files via ADB backup.
+    severity: medium
+    confidence: 0.85
+    languages: [kotlin, java]
+    cwe_id: 921
+    owasp_category: "A04:2021-Insecure Design"
+    masvs_category: "MASVS-STORAGE-2"
+    patterns:
+      - callee: ".*"
+        args_match: "(android:allowBackup\\s*=\\s*[\"']true[\"']|allowBackup\\s*=\\s*true)"
+      - callee: "(BackupAgent|BackupAgentHelper|onBackup|onRestore)"
+        args_match: ".*"
+    message: "Insecure backup configuration at '{callee}' (line {line}). Set android:allowBackup='false' or implement a custom BackupAgent that excludes sensitive data."
+
+  - id: CG-MOB-008
+    name: Hardcoded API Keys in Mobile App
+    description: >
+      API keys, client secrets, or service credentials are hardcoded in
+      mobile application source code. Mobile apps can be decompiled, and
+      any embedded secrets are trivially extractable by attackers.
+    severity: critical
+    confidence: 0.85
+    languages: [kotlin, java, swift]
+    cwe_id: 798
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    masvs_category: "MASVS-STORAGE-1"
+    patterns:
+      - callee: ".*"
+        args_match: "(API_KEY|api_key|apiKey|GOOGLE_API_KEY|MAPS_API_KEY|AWS_ACCESS_KEY|aws_secret|FIREBASE_KEY|client_secret|clientSecret)\\s*=\\s*[\"'][A-Za-z0-9_\\-]{8,}[\"']"
+      - callee: ".*"
+        args_match: "(AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,})"
+    message: "Hardcoded API key detected at '{callee}' (line {line}). Store secrets server-side or use platform secure storage (Android Keystore / iOS Keychain)."
+
+  - id: CG-MOB-009
+    name: Missing Certificate Pinning
+    description: >
+      HTTP client connections are established without certificate pinning.
+      Without pinning, a compromised or rogue CA can issue fraudulent
+      certificates, enabling man-in-the-middle attacks on encrypted traffic.
+    severity: medium
+    confidence: 0.6
+    languages: [kotlin, java, swift]
+    cwe_id: 295
+    owasp_category: "A02:2021-Cryptographic Failures"
+    masvs_category: "MASVS-NETWORK-2"
+    patterns:
+      - callee: "(OkHttpClient\\.Builder|OkHttpClient|HttpURLConnection|URLSession\\.shared|Alamofire\\.Session)"
+        args_match: "^(?!.*CertificatePinner)(?!.*certificatePinner)(?!.*TrustManager)(?!.*ServerTrustPolicy)(?!.*pinnedCertificates).*$"
+      - callee: "(X509TrustManager|checkServerTrusted)"
+        args_match: "(return|//\\s*no.?op|\\{\\s*\\})"
+    message: "HTTP client without certificate pinning at '{callee}' (line {line}). Implement certificate or public key pinning to prevent MITM attacks."
+
+  - id: CG-MOB-010
+    name: Insecure Intent Handling
+    description: >
+      An Android Activity, Service, or BroadcastReceiver is exported without
+      requiring a permission. Exported components can be invoked by any
+      application on the device, potentially exposing sensitive functionality
+      or data.
+    severity: high
+    confidence: 0.8
+    languages: [kotlin, java]
+    cwe_id: 926
+    owasp_category: "A01:2021-Broken Access Control"
+    masvs_category: "MASVS-PLATFORM-1"
+    patterns:
+      - callee: ".*"
+        args_match: "(android:exported\\s*=\\s*[\"']true[\"'])(?!.*android:permission)"
+      - callee: "(registerReceiver|sendBroadcast|sendOrderedBroadcast)"
+        args_match: "^(?!.*permission)(?!.*setPackage).*$"
+      - callee: "(Intent|startActivity|startService|bindService)"
+        args_match: "(setAction|setComponent).*(?!.*addCategory.*LAUNCHER)"
+    message: "Exported component without permission protection at '{callee}' (line {line}). Add android:permission or set android:exported='false' for internal components."

@@ -1,0 +1,302 @@
+rules:
+  - id: "CG-RCE-JAVA-001"
+    name: "Runtime.exec() with user-controlled input"
+    description: >
+      Runtime.getRuntime().exec() executes an external process on the host system.
+      When the command string or array includes user-controlled data, an attacker
+      can inject additional commands or arguments. On Windows, the single-string
+      overload passes through cmd.exe, enabling shell metacharacter injection. On
+      Unix, while the single-string overload uses StringTokenizer splitting (not a
+      shell), the attacker can still control which binary is executed and its arguments.
+      Combined with argument injection (e.g., injecting flags into curl or tar), this
+      enables data exfiltration and arbitrary file operations.
+    severity: critical
+    confidence: 0.95
+    languages: [java]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "Runtime\\.getRuntime\\s*\\(\\s*\\)\\.exec\\s*\\("
+        args_match: "(request|getParameter|getHeader|getCookies|getInputStream|getReader|getQueryString|PathVariable|RequestParam|RequestBody|input|user|param)"
+      - pattern: "Runtime\\.getRuntime\\s*\\(\\s*\\)\\.exec\\s*\\(.*\\+"
+        description: "Runtime.exec() with string concatenation"
+      - pattern: "Runtime\\.getRuntime\\s*\\(\\s*\\)\\.exec\\s*\\(\\s*String\\.format"
+        description: "Runtime.exec() with String.format() interpolation"
+      - pattern: "runtime\\.exec\\s*\\("
+        args_match: "(request|getParameter|getHeader|getCookies|getInputStream|input|user|param)"
+        description: "Runtime.exec() via variable reference"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, jndi_lookup, database_read]
+      sink_types: [os_command]
+      sink_pattern: "Runtime\\.getRuntime\\s*\\(\\s*\\)\\.exec|runtime\\.exec"
+      propagation:
+        - through: "string_concatenation"
+        - through: "string_format"
+        - through: "string_builder"
+        - through: "variable_assignment"
+        - through: "method_parameter"
+    defense_patterns:
+      - "ProcessBuilder"
+      - "allowlist"
+      - "whitelist"
+      - "Pattern\\.matches\\s*\\(\\s*\"\\^\\[a-zA-Z"
+      - "StringUtils\\.isAlphanumeric"
+      - "CommandLine\\.parse"
+      - "commons-exec"
+    fix_suggestion: >
+      Replace Runtime.exec() with ProcessBuilder which separates the command from
+      arguments naturally: new ProcessBuilder("cmd", arg1, arg2).start().
+      Validate all user input against a strict allowlist of permitted characters
+      and values. Use Apache Commons Exec for safer command execution with timeouts
+      and proper stream handling. Never construct command strings via concatenation.
+    message: "Runtime.exec() called with potentially user-controlled input at line {line}. Command injection enables arbitrary process execution on the application server."
+    references:
+      - "https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Runtime.html#exec(java.lang.String)"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-JAVA-002"
+    name: "ProcessBuilder with user-controlled arguments"
+    description: >
+      ProcessBuilder provides a more structured API for creating operating system
+      processes compared to Runtime.exec(). While it separates command and arguments
+      into a list, it is still vulnerable when user-controlled data is inserted into
+      the command list without validation. An attacker can control which binary is
+      executed, inject malicious arguments (argument injection), or manipulate the
+      working directory and environment variables. With redirectErrorStream or
+      inheritIO, process output may leak sensitive information.
+    severity: high
+    confidence: 0.85
+    languages: [java]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "new\\s+ProcessBuilder\\s*\\("
+        args_match: "(request|getParameter|getHeader|getCookies|getInputStream|getReader|PathVariable|RequestParam|RequestBody|input|user|param)"
+      - pattern: "ProcessBuilder.*\\.command\\s*\\("
+        args_match: "(request|getParameter|getHeader|getCookies|input|user|param)"
+        description: "ProcessBuilder.command() with user-controlled arguments"
+      - pattern: "new\\s+ProcessBuilder\\s*\\(.*\\+.*\\)"
+        description: "ProcessBuilder with concatenated command components"
+      - pattern: "ProcessBuilder.*\\.environment\\s*\\(\\s*\\)\\.put\\s*\\("
+        args_match: "(request|getParameter|input|user|param)"
+        description: "ProcessBuilder environment manipulation with user input"
+      - pattern: "new\\s+ProcessBuilder\\s*\\(\\s*Arrays\\.asList\\s*\\("
+        args_match: "(request|getParameter|input|user|param)"
+        description: "ProcessBuilder with Arrays.asList containing user input"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, database_read]
+      sink_types: [os_command]
+      sink_pattern: "(new\\s+)?ProcessBuilder"
+      propagation:
+        - through: "string_concatenation"
+        - through: "list_add"
+        - through: "arrays_as_list"
+        - through: "variable_assignment"
+        - through: "method_parameter"
+    defense_patterns:
+      - "allowlist"
+      - "whitelist"
+      - "Pattern\\.matches"
+      - "StringUtils\\.isAlphanumeric"
+      - "Paths\\.get.*normalize.*startsWith"
+      - "commons-exec"
+      - "CommandLine"
+    fix_suggestion: >
+      Validate all user-supplied arguments against strict allowlists of permitted
+      values. Use enum types or lookup maps to translate user input to predefined
+      command arguments. Ensure the command binary path is hardcoded and not
+      user-controllable. Use Apache Commons Exec for additional safety features
+      including execution timeouts and watchdog processes.
+    message: "ProcessBuilder constructed with potentially user-controlled arguments at line {line}. Argument injection can alter command behavior or execute unintended binaries."
+    references:
+      - "https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/ProcessBuilder.html"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-JAVA-003"
+    name: "JNDI lookup with user-controlled input (Log4Shell pattern)"
+    description: >
+      Java Naming and Directory Interface (JNDI) lookups with user-controlled input
+      enable an attacker to force the application to connect to an attacker-controlled
+      server and load malicious Java classes. This is the vulnerability class behind
+      Log4Shell (CVE-2021-44228). Through LDAP, RMI, or DNS JNDI references, the
+      attacker's server can instruct the victim application to instantiate arbitrary
+      Java classes, leading to remote code execution. JNDI injection affects not only
+      direct lookup() calls but any framework or library that performs JNDI resolution
+      internally (Log4j, Spring, JMS, JDBC connection strings).
+    severity: critical
+    confidence: 0.95
+    languages: [java]
+    cwe_id: 917
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(InitialContext|InitialDirContext|InitialLdapContext).*\\.lookup\\s*\\("
+        args_match: "(request|getParameter|getHeader|getCookies|getInputStream|input|user|param|\\+|format|concat)"
+      - pattern: "\\.lookup\\s*\\(.*\\$\\{"
+        description: "JNDI lookup with expression language interpolation"
+      - pattern: "ctx\\.lookup\\s*\\("
+        args_match: "(request|getParameter|getHeader|input|user|param|\\+)"
+        description: "Context lookup via variable reference"
+      - pattern: "JndiTemplate.*\\.lookup\\s*\\("
+        args_match: "(request|getParameter|getHeader|input|user|param)"
+        description: "Spring JndiTemplate lookup with user input"
+      - pattern: "JdbcTemplate.*DataSource.*jndi"
+        args_match: "(request|getParameter|input|user|param)"
+        description: "JDBC DataSource via JNDI with user-controlled name"
+      - pattern: "(?:ldap://|rmi://|dns://|iiop://)"
+        context: "lookup|InitialContext|log"
+        description: "Hardcoded JNDI protocol URLs in lookup contexts"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, log_message, jms_message]
+      sink_types: [jndi_lookup]
+      sink_pattern: "\\.lookup\\s*\\("
+      propagation:
+        - through: "string_concatenation"
+        - through: "string_format"
+        - through: "log_message"
+        - through: "expression_language"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "com\\.sun\\.jndi\\.ldap\\.object\\.trustURLCodebase.*false"
+      - "com\\.sun\\.jndi\\.rmi\\.object\\.trustURLCodebase.*false"
+      - "log4j2\\.formatMsgNoLookups.*true"
+      - "allowlist"
+      - "JndiManager\\.isJndiEnabled"
+      - "LOG4J_FORMAT_MSG_NO_LOOKUPS"
+      - "nolookups"
+      - "JndiLookup.*remove"
+    fix_suggestion: >
+      Disable JNDI lookup in logging frameworks (log4j2.formatMsgNoLookups=true).
+      Set system properties com.sun.jndi.ldap.object.trustURLCodebase=false and
+      com.sun.jndi.rmi.object.trustURLCodebase=false. Upgrade Log4j to 2.17.1+.
+      Never pass user input to JNDI lookup() methods. Use allowlists for JNDI
+      names when lookups are required. Remove the JndiLookup class from Log4j
+      classpath if the feature is not needed.
+    message: "JNDI lookup with potentially user-controlled input at line {line}. JNDI injection enables remote class loading and arbitrary code execution (Log4Shell attack class)."
+    references:
+      - "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-44228"
+      - "https://cwe.mitre.org/data/definitions/917.html"
+      - "https://logging.apache.org/log4j/2.x/security.html"
+
+  - id: "CG-RCE-JAVA-004"
+    name: "ScriptEngine.eval() with user-controlled input"
+    description: >
+      The javax.script.ScriptEngine API allows execution of scripts written in various
+      languages (JavaScript via Nashorn/GraalJS, Groovy, Python via Jython, Ruby via
+      JRuby) within the JVM. The eval() method compiles and executes a script string
+      with access to Java classes and the application's classpath. When the script
+      content includes user-controlled input, an attacker can invoke arbitrary Java
+      methods including Runtime.exec(), file I/O, and network operations, achieving
+      full remote code execution within the JVM.
+    severity: critical
+    confidence: 0.9
+    languages: [java]
+    cwe_id: 94
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "ScriptEngine.*\\.eval\\s*\\("
+        args_match: "(request|getParameter|getHeader|getCookies|getInputStream|getReader|input|user|param|\\+|format|concat)"
+      - pattern: "ScriptEngineManager.*\\.getEngineByName.*\\.eval\\s*\\("
+        args_match: "(request|getParameter|input|user|param)"
+        description: "ScriptEngine obtained by name with user-controlled eval"
+      - pattern: "Compilable.*\\.compile\\s*\\("
+        args_match: "(request|getParameter|input|user|param)"
+        description: "Script compilation with user-controlled source"
+      - pattern: "GroovyShell.*\\.evaluate\\s*\\("
+        args_match: "(request|getParameter|input|user|param)"
+        description: "Groovy script evaluation with user input"
+      - pattern: "GroovyClassLoader.*\\.parseClass\\s*\\("
+        args_match: "(request|getParameter|input|user|param)"
+        description: "Groovy class loading from user-controlled source"
+    taint:
+      source_types: [http_param, http_body, http_header, database_read, file_read]
+      sink_types: [code_execution]
+      sink_pattern: "ScriptEngine.*\\.eval|GroovyShell.*\\.evaluate|GroovyClassLoader.*\\.parseClass"
+      propagation:
+        - through: "string_concatenation"
+        - through: "string_format"
+        - through: "reader_wrapper"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "SandboxTransformer"
+      - "SecureASTCustomizer"
+      - "CompilerConfiguration.*addCompilationCustomizers"
+      - "ClassFilter"
+      - "allowlist"
+      - "ScriptContext.*SCOPE"
+      - "setClassFilter"
+    fix_suggestion: >
+      Avoid evaluating user-controlled scripts entirely. If script evaluation is
+      required, use GraalVM with host access disabled and class filtering enabled.
+      For Groovy, apply SecureASTCustomizer and SandboxTransformer to restrict
+      available classes and methods. Implement a strict allowlist of permitted
+      operations and classes. Consider using a purpose-built expression language
+      (SpEL with SimpleEvaluationContext, JEXL with sandboxing) instead of a
+      full scripting engine.
+    message: "ScriptEngine.eval() called with potentially user-controlled script at line {line}. Script injection enables arbitrary Java method invocation and full RCE within the JVM."
+    references:
+      - "https://docs.oracle.com/en/java/javase/17/docs/api/java.scripting/javax/script/ScriptEngine.html"
+      - "https://cwe.mitre.org/data/definitions/94.html"
+
+  - id: "CG-RCE-JAVA-005"
+    name: "Reflection invoke with user-controlled class or method names"
+    description: >
+      Java reflection APIs (Class.forName(), Method.invoke(), Constructor.newInstance())
+      allow dynamic class loading and method invocation at runtime. When the class name,
+      method name, or arguments are derived from user input, an attacker can instantiate
+      arbitrary classes and invoke arbitrary methods, effectively bypassing all compile-time
+      access controls. This enables execution of dangerous methods like Runtime.exec(),
+      loading of attacker-controlled classes, and manipulation of private fields to
+      compromise application security invariants.
+    severity: critical
+    confidence: 0.85
+    languages: [java]
+    cwe_id: 470
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "Class\\.forName\\s*\\("
+        args_match: "(request|getParameter|getHeader|getCookies|input|user|param|\\+|format|concat)"
+      - pattern: "\\.getMethod\\s*\\("
+        args_match: "(request|getParameter|getHeader|input|user|param|\\+)"
+        description: "Method lookup with user-controlled method name"
+      - pattern: "\\.getDeclaredMethod\\s*\\("
+        args_match: "(request|getParameter|getHeader|input|user|param|\\+)"
+        description: "Declared method lookup with user-controlled name"
+      - pattern: "\\.invoke\\s*\\("
+        context: "getParameter|getHeader|request|input|user|param"
+        description: "Reflection invoke in context of user-controlled data"
+      - pattern: "\\.newInstance\\s*\\("
+        context: "Class\\.forName.*getParameter|Class\\.forName.*request|Class\\.forName.*input"
+        description: "Instantiation of user-controlled class"
+      - pattern: "ClassLoader.*\\.loadClass\\s*\\("
+        args_match: "(request|getParameter|input|user|param|\\+)"
+        description: "Dynamic class loading with user-controlled name"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, database_read, configuration_file]
+      sink_types: [reflection_invocation]
+      sink_pattern: "Class\\.forName|getMethod|getDeclaredMethod|invoke|newInstance|loadClass"
+      propagation:
+        - through: "string_concatenation"
+        - through: "string_format"
+        - through: "variable_assignment"
+        - through: "method_parameter"
+        - through: "map_get"
+    defense_patterns:
+      - "allowlist"
+      - "whitelist"
+      - "allowedClasses\\.contains"
+      - "instanceof"
+      - "class\\.getPackage.*startsWith"
+      - "SecurityManager"
+      - "MethodHandles\\.lookup"
+    fix_suggestion: >
+      Never derive class names, method names, or constructor arguments from user
+      input without validation against a strict allowlist. Use the Factory or
+      Strategy pattern with a predefined registry of permitted classes:
+      Map<String, Supplier<Handler>> registry. Validate that resolved classes
+      belong to expected packages using getPackage().getName().startsWith().
+      Consider using MethodHandles API which respects access controls more
+      consistently than reflection.
+    message: "Reflection API used with potentially user-controlled class/method name at line {line}. Unsafe reflection enables instantiation of arbitrary classes and invocation of any method."
+    references:
+      - "https://cwe.mitre.org/data/definitions/470.html"
+      - "https://owasp.org/www-community/vulnerabilities/Unsafe_use_of_Reflection"

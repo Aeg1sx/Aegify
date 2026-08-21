@@ -1,0 +1,201 @@
+rules:
+  - id: "CG-AC-PY-001"
+    name: "Django view without login_required"
+    description: >
+      A Django function-based view is defined and mapped to a URL pattern but does
+      not use the @login_required decorator or an equivalent authentication guard.
+      Unauthenticated users may access sensitive views, leading to unauthorized data
+      exposure or state-changing operations performed without identity verification.
+    severity: high
+    confidence: 0.90
+    languages: [python]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "path\\(.*,\\s*\\w+_view"
+        missing_check: "(login_required|permission_required|user_passes_test)"
+      - decorator_absent:
+          function_pattern: "def\\s+\\w+_view\\(request"
+          expected_decorator: "@login_required"
+    defense_patterns:
+      - "@login_required"
+      - "@permission_required"
+      - "@user_passes_test"
+      - "LoginRequiredMixin"
+    message: "Django view function lacks @login_required or equivalent authentication decorator. Unauthenticated users can access this endpoint."
+
+  - id: "CG-AC-PY-002"
+    name: "Flask route without authentication"
+    description: >
+      A Flask route handler is registered via @app.route or @blueprint.route without
+      any authentication check such as @login_required from Flask-Login, a custom auth
+      decorator, or an explicit current_user verification within the handler body.
+      This permits unauthenticated access to the endpoint.
+    severity: high
+    confidence: 0.85
+    languages: [python]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "@(app|blueprint)\\.route\\("
+        missing_check: "(login_required|@auth|current_user\\.is_authenticated|jwt_required|token_required)"
+    defense_patterns:
+      - "@login_required"
+      - "@jwt_required"
+      - "@token_required"
+      - "current_user.is_authenticated"
+    message: "Flask route handler is missing an authentication decorator or explicit auth check. The endpoint is accessible without credentials."
+
+  - id: "CG-AC-PY-003"
+    name: "DRF viewset without permission class"
+    description: >
+      A Django REST Framework ViewSet or APIView subclass does not define a
+      permission_classes attribute or leaves it set to AllowAny. Without an explicit
+      permission policy, the default project-wide setting applies, which may be
+      overly permissive. Every viewset should declare its own permission_classes to
+      enforce the principle of least privilege.
+    severity: high
+    confidence: 0.88
+    languages: [python]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - class_match: "class\\s+\\w+(ViewSet|APIView)\\(.*\\):"
+        missing_attribute: "permission_classes"
+      - attribute_match: "permission_classes\\s*=\\s*\\[\\s*AllowAny\\s*\\]"
+    defense_patterns:
+      - "permission_classes = [IsAuthenticated"
+      - "permission_classes = [IsAdminUser"
+      - "permission_classes = [DjangoModelPermissions"
+      - "permission_classes = [DjangoObjectPermissions"
+    message: "DRF ViewSet or APIView does not declare permission_classes or uses AllowAny. Enforce explicit permission policies on every view."
+
+  - id: "CG-AC-PY-004"
+    name: "Django IDOR via unscoped primary key lookup"
+    description: >
+      A Django view retrieves an object using a primary key or ID supplied directly
+      from user input (URL parameter, query string, or request body) without verifying
+      that the requesting user owns or has permission to access that object. This
+      constitutes an Insecure Direct Object Reference (IDOR) vulnerability that allows
+      attackers to enumerate and access other users' data by manipulating the ID value.
+    severity: critical
+    confidence: 0.82
+    languages: [python]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - taint:
+          source: "(request\\.GET\\.get|request\\.POST\\.get|kwargs\\[.pk.\\]|kwargs\\[.id.\\])"
+          sink: "(Model\\.objects\\.get\\(pk=|Model\\.objects\\.get\\(id=|\\.objects\\.get\\(pk=|\\.objects\\.get\\(id=)"
+          missing_sanitizer: "(request\\.user|owner=|user=request\\.user|get_object_or_404.*user)"
+    defense_patterns:
+      - ".objects.get(pk=pk, user=request.user)"
+      - ".objects.filter(user=request.user).get(pk="
+      - "get_object_or_404(Model, pk=pk, owner=request.user)"
+      - "self.request.user"
+    message: "Object retrieved by user-supplied primary key without ownership verification. Validate that the requesting user has access to the referenced object."
+
+  - id: "CG-AC-PY-005"
+    name: "SQLAlchemy query without tenant filter"
+    description: >
+      A SQLAlchemy query is executed against a multi-tenant table without applying a
+      tenant or organization scope filter. In SaaS applications, every database query
+      against tenant-scoped data must include a filter on the tenant identifier to
+      prevent cross-tenant data leakage. Missing this filter allows a user from one
+      tenant to read or modify another tenant's data.
+    severity: critical
+    confidence: 0.78
+    languages: [python]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "session\\.query\\(\\w+\\)\\.(filter|filter_by|all|first|one)"
+        missing_check: "(tenant_id|organization_id|org_id|company_id)"
+      - callee_match: "db\\.session\\.query\\(\\w+\\)\\."
+        missing_check: "(tenant_id|organization_id|org_id)"
+    defense_patterns:
+      - ".filter(Model.tenant_id == current_tenant_id)"
+      - ".filter_by(tenant_id=g.tenant_id)"
+      - ".filter(Model.organization_id == current_org.id)"
+      - "@tenant_scoped"
+    message: "SQLAlchemy query does not include a tenant scope filter. In multi-tenant applications, every query must be scoped to the current tenant to prevent cross-tenant data access."
+
+  - id: "CG-AC-PY-006"
+    name: "Unsafe file path construction from user input"
+    description: >
+      A file path is constructed using user-supplied input (query parameters, form
+      data, URL path segments) concatenated or formatted directly into an os.path.join,
+      open(), or pathlib.Path call without proper sanitization. An attacker can inject
+      path traversal sequences (../) to read or write files outside the intended
+      directory, potentially accessing sensitive system files or overwriting critical
+      application data.
+    severity: critical
+    confidence: 0.88
+    languages: [python]
+    cwe_id: 22
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - taint:
+          source: "(request\\.GET|request\\.POST|request\\.args|request\\.form|request\\.FILES)"
+          sink: "(os\\.path\\.join|open\\(|pathlib\\.Path|shutil\\.(copy|move)|send_file)"
+          missing_sanitizer: "(os\\.path\\.abspath|os\\.path\\.realpath|secure_filename|\\.resolve\\(\\)\\.relative_to)"
+      - regex_match: "os\\.path\\.join\\(.*request\\.(GET|POST|args|form)\\["
+    defense_patterns:
+      - "secure_filename(filename)"
+      - "os.path.realpath(path).startswith(allowed_dir)"
+      - "Path(path).resolve().relative_to(base_dir)"
+      - "os.path.abspath(path).startswith(UPLOAD_DIR)"
+    message: "File path constructed from user input without path traversal protection. Use secure_filename(), realpath validation, or Path.resolve().relative_to() to constrain file access."
+
+  - id: "CG-AC-PY-007"
+    name: "Missing CSRF protection on state-changing view"
+    description: >
+      A Django or Flask view that handles POST, PUT, PATCH, or DELETE requests has
+      CSRF protection explicitly disabled via @csrf_exempt or by omitting CSRF token
+      validation. This allows an attacker to forge cross-site requests that perform
+      state-changing operations on behalf of an authenticated victim. CSRF protection
+      should only be disabled on endpoints that exclusively serve non-browser API
+      clients with token-based authentication.
+    severity: high
+    confidence: 0.85
+    languages: [python]
+    cwe_id: 352
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - decorator_match: "@csrf_exempt"
+        context_check: "def\\s+\\w+\\(request"
+      - attribute_match: "WTF_CSRF_ENABLED\\s*=\\s*False"
+      - attribute_match: "CSRFProtect.*enabled\\s*=\\s*False"
+    defense_patterns:
+      - "{% csrf_token %}"
+      - "CSRFProtect(app)"
+      - "@csrf_protect"
+      - "CsrfViewMiddleware"
+    message: "CSRF protection is explicitly disabled on a state-changing view. Re-enable CSRF validation or verify this endpoint is exclusively used by non-browser API clients with token auth."
+
+  - id: "CG-AC-PY-008"
+    name: "Insecure direct object reference in Django REST serializer"
+    description: >
+      A Django REST Framework serializer or view uses a user-supplied identifier to
+      look up related objects in a PrimaryKeyRelatedField, SlugRelatedField, or manual
+      queryset without filtering by the current user's ownership or permissions. This
+      allows an authenticated user to reference and associate objects belonging to
+      other users by manipulating the ID or slug values in the request payload.
+    severity: high
+    confidence: 0.80
+    languages: [python]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "PrimaryKeyRelatedField\\(queryset=\\w+\\.objects\\.all\\(\\)"
+        missing_check: "(user=|owner=|filter\\(user)"
+      - callee_match: "SlugRelatedField\\(queryset=\\w+\\.objects\\.all\\(\\)"
+        missing_check: "(user=|owner=|filter\\(user)"
+      - callee_match: "get_queryset.*return.*\\.objects\\.all\\(\\)"
+        missing_check: "(request\\.user|self\\.request\\.user)"
+    defense_patterns:
+      - "queryset=Model.objects.filter(user=self.request.user)"
+      - "get_queryset returns user-scoped queryset"
+      - "def validate_<field>(self, value): check ownership"
+      - "perform_create sets owner to request.user"
+    message: "DRF serializer uses unscoped queryset in related field lookup. Filter the queryset by the current user to prevent IDOR via related object references."

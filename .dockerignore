@@ -1,0 +1,11 @@
+# The root build context is used only by scanner/Dockerfile. Keep the context
+# allowlisted so local credentials, Git metadata, dashboards, and evidence can
+# never be copied into a scanner build layer.
+**
+!scanner/
+!scanner/pyproject.toml
+!scanner/README.md
+!scanner/src/
+!scanner/src/**
+!rules/
+!rules/**

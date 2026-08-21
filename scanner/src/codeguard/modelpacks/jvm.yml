@@ -1,0 +1,76 @@
+schema_version: 1
+pack_version: "2026.08.1"
+ecosystem: jvm
+models:
+  - id: java.lang.stringbuilder.append
+    role: propagator
+    languages: [java, kotlin]
+    callee: append
+    receiver_types: [java.lang.StringBuilder, java.lang.StringBuffer]
+    inputs: [arguments]
+    outputs: [receiver]
+
+  - id: java.lang.stringbuilder.tostring
+    role: propagator
+    languages: [java, kotlin]
+    callee: toString
+    receiver_types: [java.lang.StringBuilder, java.lang.StringBuffer]
+    inputs: [receiver]
+    outputs: [return]
+
+  - id: java.lang.string.format
+    role: propagator
+    languages: [java, kotlin]
+    callee: format
+    receiver_types: [java.lang.String]
+    inputs: [arguments]
+    outputs: [return]
+
+  - id: java.util.objects.tostring
+    role: propagator
+    languages: [java, kotlin]
+    callee: toString
+    receiver_types: [java.util.Objects]
+    inputs: [arguments]
+    outputs: [return]
+
+  - id: java.lang.system.getenv
+    role: source
+    languages: [java, kotlin]
+    callee: getenv
+    receiver_types: [java.lang.System]
+    outputs: [return]
+    source_type: environment_variable
+
+  - id: java.lang.system.getproperty
+    role: source
+    languages: [java, kotlin]
+    callee: getProperty
+    receiver_types: [java.lang.System]
+    outputs: [return]
+    source_type: system_property
+
+  - id: java.lang.processbuilder.command
+    role: sink
+    languages: [java, kotlin]
+    callee: command
+    receiver_types: [java.lang.ProcessBuilder]
+    sink_type: os_command
+    argument_index: 0
+
+  - id: org.owasp.esapi.encoder.encodeforhtml
+    role: sanitizer
+    languages: [java, kotlin]
+    callee: encodeForHTML
+    inputs: [arguments]
+    outputs: [return]
+    sanitizes: [xss]
+
+  - id: org.springframework.web.util.htmlutils.htmlescape
+    role: sanitizer
+    languages: [java, kotlin]
+    callee: htmlEscape
+    receiver_types: [org.springframework.web.util.HtmlUtils]
+    inputs: [arguments]
+    outputs: [return]
+    sanitizes: [xss]

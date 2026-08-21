@@ -1,0 +1,59 @@
+# Repository security baseline
+
+This document records the GitHub-side controls that complement the files in
+the repository. Repository administrators should compare the live settings to
+this baseline after ownership, plan, or GitHub feature changes.
+
+## Main branch ruleset
+
+Target the default branch `main` and enable:
+
+- pull requests for all changes;
+- one approving review and CODEOWNERS review;
+- dismissal of stale approvals and approval of the most recent reviewable push;
+- resolution of all review conversations;
+- required status checks with branches required to be up to date;
+- required signed commits and linear history;
+- blocked force pushes and branch deletion.
+
+The required pull-request checks are:
+
+- `Scanner / Python 3.12`;
+- `Dashboard / Node 22`;
+- `Scanner container`;
+- `Dependency review`;
+- `Gitleaks`;
+- `zizmor`.
+
+CodeQL, the Aegify self-scan, OpenSSF Scorecard, and release workflows run on
+trusted `main`, schedules, or protected tags. Where GitHub code-scanning merge
+protection is available, block merges that introduce high or critical alerts.
+
+The project currently has one maintainer. The repository administrator is the
+only emergency bypass actor; normal work still goes through pull requests.
+Audit and remove this bypass after a second active maintainer can provide
+independent approval.
+
+## Release tag ruleset
+
+Target `v*`. Restrict creation, update, and deletion to maintainers, require a
+signed annotated tag, and do not allow force updates. The release workflow
+verifies the tag, builds from the locked dependency graph, emits a CycloneDX
+SBOM, and records a GitHub artifact attestation.
+
+## Security features
+
+Keep these repository controls enabled:
+
+- dependency graph, Dependabot alerts, and Dependabot security updates;
+- secret scanning and push protection, including contributors where supported;
+- private vulnerability reporting and the Security Advisory workflow;
+- CodeQL default or advanced setup using the committed workflow;
+- GitHub Actions restricted to selected verified actions where this does not
+  block the full-SHA actions committed here;
+- read-only workflow token permissions by default and approval for first-time
+  external contributors.
+
+Do not store deployment secrets in repository or Dependabot secrets when OIDC
+or a workload identity can issue a short-lived credential. See
+[SECRETS_MANAGEMENT.md](SECRETS_MANAGEMENT.md).

@@ -1,0 +1,177 @@
+rules:
+  - id: "CG-SESS-001"
+    name: "Session fixation vulnerability"
+    description: >
+      The application does not regenerate the session identifier after successful
+      authentication. An attacker can set a known session ID in the victim's browser
+      (via URL, cookie injection, or a subdomain) before the victim logs in. Once the
+      victim authenticates, the attacker uses the pre-set session ID to hijack the
+      authenticated session.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 384
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - multi_match:
+          - "login|authenticate|sign_in|signIn|doLogin"
+          - "session|cookie"
+        missing_match:
+          - "regenerate|rotate|invalidate|new_session|reset_session|changeSessionId"
+      - sequence_match:
+          - "authenticate|verify_password|check_credentials"
+          - "session\\[|req\\.session\\.|request\\.session"
+        missing_pattern: "session\\.regenerate|session_id.*=|regenerate_session|changeSessionId"
+    defense_patterns:
+      - "session\\.regenerate"
+      - "regenerate_session_id"
+      - "session\\.invalidate.*new.*session"
+      - "changeSessionId"
+      - "reset_session"
+      - "request\\.session\\.cycle"
+    message: "Session ID is not regenerated after authentication. Call session.regenerate() or equivalent immediately after successful login to prevent session fixation attacks."
+
+  - id: "CG-SESS-002"
+    name: "Missing session expiry configuration"
+    description: >
+      The application does not configure session timeout or expiration. Without
+      session expiry, abandoned sessions remain valid indefinitely, increasing
+      the window of opportunity for session hijacking through stolen session
+      tokens, shared computers, or network interception.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 613
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - callee_match: "session|SessionMiddleware|express-session|cookie_session"
+        missing_args: "maxAge|expires|timeout|SESSION_COOKIE_AGE|idle_timeout"
+      - file_match: "settings\\.py|config\\.py"
+        missing_pattern: "SESSION_COOKIE_AGE|SESSION_EXPIRE"
+      - file_match: "session.*config|web\\.xml"
+        missing_pattern: "timeout|maxAge|max-age|session-timeout"
+    defense_patterns:
+      - "maxAge"
+      - "SESSION_COOKIE_AGE"
+      - "session-timeout"
+      - "expires"
+      - "idle_timeout"
+      - "absolute_timeout"
+    message: "Session expiration is not configured. Set both idle timeout (15-30 minutes for sensitive apps) and absolute timeout (8-24 hours) to limit the window for session hijacking."
+
+  - id: "CG-SESS-003"
+    name: "Session ID exposed in URL"
+    description: >
+      The application transmits the session identifier as a URL parameter rather than
+      in a cookie. Session IDs in URLs are logged in browser history, web server logs,
+      proxy logs, and the Referer header, making them accessible to anyone with access
+      to these logs or to third-party sites linked from the application.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 598
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - callee_match: "redirect|url_for|href|navigate"
+        args_match: "session_id|sessionid|JSESSIONID|PHPSESSID|sid="
+      - assignment_match: "url|link|href|redirect"
+        value_match: "\\?.*session|&.*session_id|\\?.*sid=|;jsessionid="
+      - callee_match: "res\\.redirect|redirect_to|sendRedirect"
+        args_match: "session_id|token=|sid="
+      - config_match: "use_cookies"
+        value_match: "0|false|off"
+    defense_patterns:
+      - "cookie_only"
+      - "use_only_cookies"
+      - "SESSION_COOKIE"
+      - "httpOnly.*true"
+      - "cookie.*secure"
+    message: "Session ID is transmitted in the URL. Always transport session identifiers in secure, HttpOnly cookies and never embed them in URLs, query strings, or form fields."
+
+  - id: "CG-SESS-004"
+    name: "Missing session regeneration after login"
+    description: >
+      The application does not explicitly regenerate the session after a privilege
+      level change (login, role change, password change). Reusing the same session
+      token across authentication boundaries allows attackers with a pre-authentication
+      session token to maintain access after the user upgrades their session.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 384
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - sequence_match:
+          - "login|authenticate|sign_in|verify_password"
+          - "session\\[.user|session\\.user|session\\.authenticated|session\\.loggedIn"
+        missing_pattern: "regenerate|cycle|invalidate|new_session|changeSessionId"
+      - callee_match: "login|authenticate"
+        context: "session"
+        missing_sibling: "regenerate|cycle_session|reset_session"
+    defense_patterns:
+      - "session\\.regenerate"
+      - "regenerate_session_id"
+      - "cycle_session"
+      - "changeSessionId"
+      - "session\\.invalidate"
+      - "create_new_session"
+    message: "Session is not regenerated after authentication state change. Regenerate the session ID after login, logout, role changes, and password changes."
+
+  - id: "CG-SESS-005"
+    name: "Insecure session storage"
+    description: >
+      The application stores session data in an insecure location such as local
+      storage, session storage (accessible to XSS), unencrypted cookies, or
+      temporary files with weak permissions. Insecure session storage allows
+      attackers to steal or tamper with session data through XSS, local file
+      access, or shared hosting attacks.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 539
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - callee_match: "localStorage\\.setItem|sessionStorage\\.setItem"
+        args_match: "session|token|auth|jwt|user"
+      - assignment_match: "document\\.cookie"
+        missing_context: "secure|httpOnly|HttpOnly"
+      - callee_match: "res\\.cookie|set_cookie|setCookie"
+        args_match: "session|token|auth"
+        missing_args: "httpOnly|secure|HttpOnly"
+      - callee_match: "FileSessionHandler|file_session|session\\.save_path"
+        args_match: "/tmp|/var/tmp|temp"
+    defense_patterns:
+      - "httpOnly.*true|HttpOnly"
+      - "secure.*true|Secure"
+      - "sameSite.*strict|SameSite.*Strict"
+      - "RedisSessionStore|MemcachedSession"
+      - "encrypted_session|signed_cookie"
+    message: "Session data is stored insecurely. Use server-side session storage (Redis, database) with secure, HttpOnly, SameSite cookies. Never store session tokens in localStorage or sessionStorage."
+
+  - id: "CG-SESS-006"
+    name: "No concurrent session limit"
+    description: >
+      The application does not limit the number of concurrent active sessions per
+      user account. Without concurrent session limits, a compromised account can
+      be accessed from multiple locations simultaneously without detection, and
+      the legitimate user cannot invalidate attacker sessions by logging in.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 613
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - multi_match:
+          - "login|authenticate|create_session|sign_in"
+        missing_match:
+          - "max_sessions|session_limit|concurrent_session|active_sessions|invalidate_other"
+      - callee_match: "session\\.create|create_session|new_session"
+        missing_context: "count_sessions|check_session_limit|revoke_previous"
+    defense_patterns:
+      - "max_sessions"
+      - "concurrent_session_limit"
+      - "invalidate_other_sessions"
+      - "revoke_previous_sessions"
+      - "session_count.*<|active_sessions.*limit"
+      - "ConcurrentSessionControlStrategy"
+    message: "No concurrent session limit is enforced. Implement a maximum session limit per user and provide the ability to view and revoke active sessions."

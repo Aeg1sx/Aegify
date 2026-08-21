@@ -1,0 +1,312 @@
+rules:
+  - id: "CG-RCE-PY-001"
+    name: "eval() with user-controlled input"
+    description: >
+      The eval() built-in function interprets a string as Python code and executes it.
+      When called with user-controlled input (HTTP parameters, form data, request bodies),
+      an attacker can inject arbitrary Python expressions that execute with the privileges
+      of the application process. This can lead to full remote code execution, data
+      exfiltration, file system access, and lateral movement within the infrastructure.
+    severity: critical
+    confidence: 0.9
+    languages: [python]
+    cwe_id: 95
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "eval"
+        args_match: "(request|input|param|query|body|form|data|user|args|kwargs|environ|headers|cookies)"
+      - callee: "eval"
+        args_match: "\\bget\\s*\\("
+      - pattern: "eval\\s*\\(\\s*f['\"]"
+        description: "eval() with f-string interpolation containing potential user input"
+      - pattern: "eval\\s*\\(\\s*['\"].*%s"
+        description: "eval() with string formatting that may include user input"
+      - pattern: "eval\\s*\\(.*\\.format\\s*\\("
+        description: "eval() with .format() string interpolation"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, environment_variable]
+      sink_types: [code_execution]
+      sink_pattern: "eval"
+      propagation:
+        - through: "string_concatenation"
+        - through: "format_string"
+        - through: "f_string"
+        - through: "percent_format"
+        - through: "str_join"
+    defense_patterns:
+      - "ast\\.literal_eval"
+      - "json\\.loads"
+      - "int\\s*\\("
+      - "float\\s*\\("
+      - "allowlist"
+      - "whitelist"
+      - "sanitize"
+      - "validate_expression"
+    fix_suggestion: >
+      Replace eval() with ast.literal_eval() for safe evaluation of literal expressions,
+      json.loads() for JSON data, or implement a purpose-built parser. If dynamic
+      evaluation is absolutely required, use a sandboxed environment with restricted
+      builtins and enforce strict input validation against an allowlist.
+    message: "eval() called with potentially user-controlled input at line {line}. An attacker can execute arbitrary Python code through crafted input strings."
+    references:
+      - "https://docs.python.org/3/library/functions.html#eval"
+      - "https://cwe.mitre.org/data/definitions/95.html"
+      - "https://owasp.org/Top10/A03_2021-Injection/"
+
+  - id: "CG-RCE-PY-002"
+    name: "exec() with user-controlled input"
+    description: >
+      The exec() built-in function executes dynamically created Python statements.
+      Unlike eval(), exec() can execute multi-line code blocks including imports,
+      function definitions, and system calls. When supplied with user-controlled input,
+      an attacker gains the ability to execute arbitrary Python code, install backdoors,
+      modify application state, access the file system, and pivot to other systems.
+    severity: critical
+    confidence: 0.9
+    languages: [python]
+    cwe_id: 95
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "exec"
+        args_match: "(request|input|param|query|body|form|data|user|args|kwargs|environ|headers|cookies)"
+      - callee: "exec"
+        args_match: "\\bget\\s*\\("
+      - pattern: "exec\\s*\\(\\s*f['\"]"
+        description: "exec() with f-string interpolation"
+      - pattern: "exec\\s*\\(\\s*compile\\s*\\("
+        description: "exec() with compile() on potentially tainted code"
+      - pattern: "exec\\s*\\(.*\\.read\\s*\\(\\s*\\)"
+        description: "exec() reading content from potentially tainted file or stream"
+    taint:
+      source_types: [http_param, http_body, http_header, file_read, database_read]
+      sink_types: [code_execution]
+      sink_pattern: "exec"
+      propagation:
+        - through: "string_concatenation"
+        - through: "format_string"
+        - through: "file_read"
+        - through: "compile"
+    defense_patterns:
+      - "ast\\.literal_eval"
+      - "restricted_globals"
+      - "__builtins__.*None"
+      - "RestrictedPython"
+      - "sandbox"
+    fix_suggestion: >
+      Avoid exec() entirely when processing user input. Use structured data formats
+      (JSON, YAML) with safe parsers, implement a domain-specific language with a
+      purpose-built interpreter, or use RestrictedPython if dynamic execution is
+      unavoidable. Always restrict __builtins__ and available globals/locals.
+    message: "exec() called with potentially user-controlled input at line {line}. This allows execution of arbitrary multi-statement Python code."
+    references:
+      - "https://docs.python.org/3/library/functions.html#exec"
+      - "https://cwe.mitre.org/data/definitions/95.html"
+
+  - id: "CG-RCE-PY-003"
+    name: "subprocess with shell=True and user input"
+    description: >
+      Using subprocess functions (Popen, call, check_output, check_call, run) with
+      shell=True passes the command string through the system shell (/bin/sh on Unix).
+      When the command string includes user-controlled data, an attacker can inject
+      shell metacharacters (;, |, &&, $(), backticks) to chain arbitrary commands.
+      This is the most common Python RCE vector in web applications.
+    severity: critical
+    confidence: 0.95
+    languages: [python]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "subprocess\\.(Popen|call|check_output|check_call|run)\\s*\\(.*shell\\s*=\\s*True"
+        args_match: "(request|input|param|query|body|form|data|user|args|kwargs|environ|f['\"]|\\+|format|%s)"
+      - pattern: "subprocess\\.(Popen|call|check_output|check_call|run)\\s*\\(\\s*f['\"].*shell\\s*=\\s*True"
+        description: "subprocess with shell=True and f-string command"
+      - pattern: "subprocess\\.(Popen|call|check_output|check_call|run)\\s*\\(.*\\.format\\(.*shell\\s*=\\s*True"
+        description: "subprocess with shell=True and .format() command"
+      - pattern: "subprocess\\.(Popen|call|check_output|check_call|run)\\s*\\(.*%s.*shell\\s*=\\s*True"
+        description: "subprocess with shell=True and percent-format command"
+    taint:
+      source_types: [http_param, http_body, http_header, environment_variable, file_read]
+      sink_types: [os_command]
+      sink_pattern: "subprocess\\.(Popen|call|check_output|check_call|run)"
+      propagation:
+        - through: "string_concatenation"
+        - through: "format_string"
+        - through: "f_string"
+        - through: "list_append"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "shell\\s*=\\s*False"
+      - "shlex\\.quote"
+      - "shlex\\.split"
+      - "pipes\\.quote"
+      - "subprocess\\..*\\(\\s*\\["
+      - "allowlist"
+      - "re\\.match\\s*\\(\\s*['\"]\\^\\[a-zA-Z"
+    fix_suggestion: >
+      Remove shell=True and pass the command as a list of arguments:
+      subprocess.run(["cmd", arg1, arg2]) instead of subprocess.run(f"cmd {arg1} {arg2}", shell=True).
+      If shell=True is absolutely required, sanitize all user input with shlex.quote()
+      and validate against a strict allowlist of permitted characters.
+    message: "subprocess called with shell=True and potentially user-controlled arguments at line {line}. Shell injection allows arbitrary command execution via metacharacters."
+    references:
+      - "https://docs.python.org/3/library/subprocess.html#security-considerations"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-PY-004"
+    name: "os.system() with user-controlled input"
+    description: >
+      os.system() executes a command string in a subshell, inheriting all shell
+      features including command chaining, piping, and variable expansion. The function
+      provides no mechanism to separate command from arguments, making it inherently
+      vulnerable to injection when any part of the command string originates from
+      user input. Unlike subprocess with shell=False, os.system() always invokes the
+      shell and cannot be used safely with untrusted input.
+    severity: critical
+    confidence: 0.95
+    languages: [python]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "os.system"
+        args_match: "(request|input|param|query|body|form|data|user|args|kwargs|environ|headers|cookies)"
+      - pattern: "os\\.system\\s*\\(\\s*f['\"]"
+        description: "os.system() with f-string containing potential user input"
+      - pattern: "os\\.system\\s*\\(.*\\+.*\\)"
+        description: "os.system() with string concatenation"
+      - pattern: "os\\.system\\s*\\(.*\\.format\\s*\\("
+        description: "os.system() with .format() interpolation"
+      - pattern: "os\\.system\\s*\\(.*%s"
+        description: "os.system() with percent-format interpolation"
+    taint:
+      source_types: [http_param, http_body, http_header, file_read, database_read, environment_variable]
+      sink_types: [os_command]
+      sink_pattern: "os\\.system"
+      propagation:
+        - through: "string_concatenation"
+        - through: "format_string"
+        - through: "f_string"
+        - through: "percent_format"
+    defense_patterns:
+      - "subprocess\\.run\\s*\\(\\s*\\["
+      - "shlex\\.quote"
+      - "shlex\\.split"
+      - "allowlist"
+      - "re\\.fullmatch"
+    fix_suggestion: >
+      Replace os.system() with subprocess.run() using a list of arguments and
+      shell=False (the default). For example: subprocess.run(["ls", "-la", directory])
+      instead of os.system(f"ls -la {directory}"). Always validate and sanitize user
+      input even when using subprocess with shell=False.
+    message: "os.system() called with potentially user-controlled input at line {line}. Shell metacharacter injection enables arbitrary command execution."
+    references:
+      - "https://docs.python.org/3/library/os.html#os.system"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-PY-005"
+    name: "os.popen() with user-controlled input"
+    description: >
+      os.popen() opens a pipe to or from a command string executed through the system
+      shell. Like os.system(), it provides no safe argument passing mechanism and is
+      vulnerable to command injection. The function is additionally dangerous because
+      its return value (a file object) encourages reading command output, which may
+      lead developers to build more complex command pipelines with user input.
+    severity: critical
+    confidence: 0.9
+    languages: [python]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "os.popen"
+        args_match: "(request|input|param|query|body|form|data|user|args|kwargs|environ|headers|cookies)"
+      - pattern: "os\\.popen\\s*\\(\\s*f['\"]"
+        description: "os.popen() with f-string containing potential user input"
+      - pattern: "os\\.popen\\s*\\(.*\\+.*\\)"
+        description: "os.popen() with string concatenation"
+      - pattern: "os\\.popen\\s*\\(.*\\.format\\s*\\("
+        description: "os.popen() with .format() interpolation"
+    taint:
+      source_types: [http_param, http_body, http_header, file_read, environment_variable]
+      sink_types: [os_command]
+      sink_pattern: "os\\.popen"
+      propagation:
+        - through: "string_concatenation"
+        - through: "format_string"
+        - through: "f_string"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "subprocess\\.run\\s*\\(\\s*\\["
+      - "subprocess\\.Popen\\s*\\(\\s*\\["
+      - "shlex\\.quote"
+      - "shlex\\.split"
+    fix_suggestion: >
+      Replace os.popen() with subprocess.run() or subprocess.Popen() using list
+      arguments and shell=False. Capture output with subprocess.run(cmd, capture_output=True).
+      Validate all user-supplied components against strict allowlists.
+    message: "os.popen() called with potentially user-controlled input at line {line}. Command injection through shell metacharacters enables arbitrary code execution."
+    references:
+      - "https://docs.python.org/3/library/os.html#os.popen"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-PY-006"
+    name: "pickle.loads() with untrusted data"
+    description: >
+      Python's pickle module can serialize and deserialize arbitrary Python objects.
+      The deserialization process (pickle.loads, pickle.load, Unpickler) can execute
+      arbitrary code by design through the __reduce__ and __reduce_ex__ dunder methods.
+      An attacker who controls the pickled byte stream can craft a payload that executes
+      system commands, establishes reverse shells, or performs any action the application
+      process is authorized to do. This is a deserialization vulnerability that cannot
+      be mitigated by input validation alone.
+    severity: critical
+    confidence: 0.95
+    languages: [python]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee: "pickle.loads"
+        args_match: "(request|input|param|query|body|form|data|user|socket|recv|read|download|fetch|redis|cache|session|cookie|celery)"
+      - callee: "pickle.load"
+        args_match: "(request|input|param|query|body|form|data|user|socket|open|urlopen|BytesIO)"
+      - pattern: "pickle\\.loads\\s*\\(\\s*base64\\.b64decode"
+        description: "pickle.loads() on base64-decoded data, common in web contexts"
+      - pattern: "pickle\\.loads\\s*\\(.*\\.body"
+        description: "pickle.loads() on request body"
+      - pattern: "Unpickler\\s*\\("
+        args_match: "(request|input|param|query|body|form|data|user|socket)"
+      - pattern: "cPickle\\.(loads|load)\\s*\\("
+        description: "cPickle (Python 2 variant) deserialization"
+      - pattern: "shelve\\.open\\s*\\("
+        description: "shelve uses pickle internally for serialization"
+      - pattern: "joblib\\.load\\s*\\("
+        args_match: "(request|input|param|query|body|form|data|user|download|fetch|url)"
+        description: "joblib.load() uses pickle internally"
+    taint:
+      source_types: [http_body, http_param, file_read, network_socket, cache_read, message_queue]
+      sink_types: [deserialization]
+      sink_pattern: "pickle\\.(loads|load)|Unpickler|cPickle\\.(loads|load)|shelve\\.open|joblib\\.load"
+      propagation:
+        - through: "base64_decode"
+        - through: "zlib_decompress"
+        - through: "network_receive"
+        - through: "file_read"
+        - through: "cache_get"
+    defense_patterns:
+      - "json\\.loads"
+      - "hmac\\.compare_digest"
+      - "RestrictedUnpickler"
+      - "find_class.*raise"
+      - "allowed_classes"
+      - "fickling"
+      - "pickletools\\.dis"
+      - "signing\\.loads"
+    fix_suggestion: >
+      Replace pickle with a safe serialization format such as JSON, MessagePack, or
+      Protocol Buffers. If pickle is required for internal use, implement HMAC signature
+      verification before deserialization and create a RestrictedUnpickler subclass
+      that overrides find_class() to only allow explicitly permitted classes. Never
+      deserialize pickle data from untrusted sources regardless of validation.
+    message: "pickle deserialization of potentially untrusted data at line {line}. Crafted pickle payloads execute arbitrary code during deserialization without any additional vulnerability."
+    references:
+      - "https://docs.python.org/3/library/pickle.html#restricting-globals"
+      - "https://cwe.mitre.org/data/definitions/502.html"
+      - "https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures/"

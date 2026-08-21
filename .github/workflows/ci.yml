@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scanner:
+    name: Scanner / Python 3.12
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: scanner
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.26"
+          enable-cache: true
+          cache-dependency-glob: scanner/uv.lock
+
+      - name: Verify lockfile and install dependencies
+        run: |
+          uv lock --check
+          uv sync --locked --extra dev
+
+      - name: Lint and format check
+        run: |
+          uv run ruff format --check src tests
+          uv run ruff check src tests
+
+      - name: Type check
+        run: uv run mypy --strict src/codeguard
+
+      - name: Audit bundled rule DSL
+        run: uv run codeguard audit-rules ../rules --strict
+
+      - name: Test with coverage
+        run: uv run pytest -v --cov=codeguard --cov-report=term-missing --cov-fail-under=60
+
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: codeguard-wheel
+          path: scanner/dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  dashboard:
+    name: Dashboard / Node 22
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: dashboard
+    env:
+      DATABASE_URL: file:./ci.db
+      AUTH_SECRET: ci-only-auth-secret-not-used-outside-the-ephemeral-runner
+      ENCRYPTION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      AUTH_GITHUB_ID: ci-only-client-id
+      AUTH_GITHUB_SECRET: ci-only-client-secret
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Generate Prisma client
+        run: npx --no-install prisma generate
+
+      - name: Apply migrations to a fresh database
+        run: npx --no-install prisma migrate deploy
+
+      - name: Test
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+  container:
+    name: Scanner container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build scanner image
+        run: docker build --pull --file scanner/Dockerfile --tag aegify-scanner:ci .
+
+      - name: Smoke test scanner image
+        run: docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges aegify-scanner:ci --help

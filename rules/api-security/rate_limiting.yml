@@ -1,0 +1,141 @@
+rules:
+  - id: "CG-API-RL-001"
+    name: "Missing rate limiter middleware on API routes"
+    description: >
+      API route definitions do not include rate limiting middleware or
+      decorators. Without rate limiting, endpoints are vulnerable to brute
+      force attacks, credential stuffing, denial of service, resource
+      exhaustion, and scraping. Rate limiting is a fundamental API security
+      control listed in the OWASP API Security Top 10 and is required by
+      most API security standards.
+    severity: medium
+    confidence: 0.72
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 770
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "Express/Fastify route without rate limiting middleware"
+        match: "(app|router)\\.(get|post|put|patch|delete)\\(['\"]/(api|v[0-9])"
+        must_contain: "(rateLimit|rateLimiter|rate_limit|throttle|slowDown|express-rate-limit|@nestjs/throttler|RateLimitGuard)"
+        scope: "file"
+      - pattern_type: "negative_check"
+        description: "Django/Flask API view without rate limiting"
+        match: "(@app\\.route|@api_view|class\\s+\\w+View|class\\s+\\w+APIView|class\\s+\\w+ViewSet)"
+        must_contain: "(@ratelimit|@throttle_classes|throttle_classes|RateThrottle|Ratelimit|limiter\\.limit)"
+        scope: "file"
+      - pattern_type: "negative_check"
+        description: "Go HTTP handler without rate limiting"
+        match: "(http\\.HandleFunc|mux\\.Handle|router\\.(GET|POST|PUT|DELETE)|gin\\.(GET|POST|PUT|DELETE))"
+        must_contain: "(RateLimiter|rateLimiter|Throttle|limiter|tollbooth|rate\\.NewLimiter)"
+        scope: "file"
+    defense_patterns:
+      - "global_rate_limit_middleware"
+      - "per_endpoint_rate_limits"
+      - "sliding_window_rate_limiter"
+      - "api_gateway_rate_limiting"
+      - "distributed_rate_limiter_redis"
+    message: "API routes are defined without rate limiting middleware. Apply rate limiting at the middleware level for all API endpoints, with stricter limits on authentication and sensitive operations. Use a distributed rate limiter (e.g., Redis-backed) for multi-instance deployments."
+
+  - id: "CG-API-RL-002"
+    name: "Login endpoint without rate limiting"
+    description: >
+      Authentication endpoints (login, sign-in, token generation) do not
+      have rate limiting applied. Login endpoints are the primary target
+      for credential stuffing and brute force attacks. Without rate limiting,
+      attackers can attempt thousands of credential combinations per second,
+      making even strong passwords vulnerable to automated attacks. This is
+      a critical gap in the OWASP API Security Top 10 API4:2023 category.
+    severity: critical
+    confidence: 0.88
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 307
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "Login route without rate limiting"
+        match: "(app|router)\\.(post|put)\\(['\"].*/(login|signin|sign-in|authenticate|token|auth/login|sessions)/?['\"]"
+        must_contain: "(rateLimit|rateLimiter|rate_limit|throttle|slowDown|brute_force|loginLimiter|authLimiter)"
+      - pattern_type: "negative_check"
+        description: "Django/Flask login view without throttle"
+        match: "(@app\\.route.*/(login|signin|auth).*methods.*POST|class\\s+Login\\w*(View|APIView)|def\\s+(login|authenticate|sign_in))"
+        must_contain: "(@ratelimit|@throttle_classes|throttle_classes|AnonRateThrottle|limiter\\.limit)"
+      - pattern_type: "regex"
+        match: "def\\s+(login|authenticate|sign_in|create_token|get_token)\\(.*\\).*:(?!.*(@ratelimit|rate_limit|throttle))"
+        multiline: true
+    defense_patterns:
+      - "login_specific_rate_limit"
+      - "progressive_delay_on_failure"
+      - "account_lockout_policy"
+      - "captcha_after_failures"
+      - "ip_based_login_throttle"
+    message: "Login endpoint lacks rate limiting, enabling brute force and credential stuffing attacks. Apply strict rate limits (e.g., 5 attempts per minute per IP/account) with progressive delays, account lockout after repeated failures, and CAPTCHA challenges."
+
+  - id: "CG-API-RL-003"
+    name: "API key endpoint without request throttling"
+    description: >
+      Endpoints that accept API key authentication do not implement request
+      throttling or quota enforcement. Without per-key rate limiting,
+      compromised or leaked API keys can be used for unlimited resource
+      consumption, data exfiltration, and denial of service. Per-key
+      throttling is essential for multi-tenant API platforms to ensure
+      fair usage and prevent abuse by any single consumer.
+    severity: medium
+    confidence: 0.70
+    languages: [python, javascript, java, go, ruby]
+    cwe_id: 770
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "API key authentication without per-key throttling"
+        match: "(api_key|apiKey|x-api-key|API_KEY).*=.*(request\\.(headers|query|params)|req\\.(headers|query|params|get)|getHeader)"
+        must_contain: "(throttle|rate_limit|quota|usage_limit|key_limiter|per_key_rate)"
+        scope: "file"
+      - pattern_type: "regex"
+        match: "(authenticate_api_key|verify_api_key|check_api_key|validateApiKey|ApiKeyAuth)(?!.*throttle|.*rate_limit|.*quota)"
+      - pattern_type: "negative_check"
+        description: "API key middleware without quota tracking"
+        match: "(ApiKey|api_key)\\w*(Middleware|Guard|Filter|Interceptor|Auth)"
+        must_contain: "(quota|throttle|rate_limit|usage_track|request_count)"
+        scope: "class"
+    defense_patterns:
+      - "per_key_rate_limiting"
+      - "api_quota_management"
+      - "usage_tracking_per_key"
+      - "tiered_rate_limits"
+      - "api_gateway_throttling"
+    message: "API key-authenticated endpoints lack per-key request throttling. Implement per-key rate limits and usage quotas to prevent abuse from compromised keys. Use tiered rate limits based on API key privilege level and track usage metrics for anomaly detection."
+
+  - id: "CG-API-RL-004"
+    name: "Password reset endpoint without rate limiting"
+    description: >
+      Password reset or forgot-password endpoints do not have rate limiting
+      applied. Without rate limiting, attackers can enumerate valid email
+      addresses through response timing or content differences, flood
+      users with reset emails (mail bombing), and exhaust email sending
+      quotas. Additionally, if reset tokens are short or predictable,
+      lack of rate limiting enables brute-force guessing of valid tokens.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 307
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "Password reset route without rate limiting"
+        match: "(app|router)\\.(post|put)\\(['\"].*/(reset-password|forgot-password|password-reset|password/reset|account/recover|forgot_password)/?['\"]"
+        must_contain: "(rateLimit|rateLimiter|rate_limit|throttle|slowDown|resetLimiter)"
+      - pattern_type: "negative_check"
+        description: "Password reset handler without throttle"
+        match: "(def|function|func)\\s+(reset_password|forgot_password|password_reset|send_reset|request_reset|initiate_reset)"
+        must_contain: "(@ratelimit|rate_limit|throttle|limiter|RateLimit)"
+      - pattern_type: "regex"
+        match: "class\\s+(Password|Forgot|Reset)\\w*(View|Controller|Handler|Endpoint)(?!.*throttle|.*rate_limit|.*RateLimit)"
+        multiline: true
+    defense_patterns:
+      - "reset_endpoint_rate_limit"
+      - "per_email_reset_cooldown"
+      - "constant_time_response"
+      - "reset_token_expiration"
+      - "captcha_on_reset_request"
+    message: "Password reset endpoint lacks rate limiting, enabling email enumeration, mail bombing, and reset token brute-force attacks. Apply strict rate limits (e.g., 3 requests per hour per email/IP), use constant-time responses to prevent enumeration, and enforce CAPTCHA for repeated requests."

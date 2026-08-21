@@ -1,0 +1,116 @@
+name: Code scanning
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 18 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-scanning-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: CodeQL / ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # Upload CodeQL SARIF to code scanning.
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          category: /language:${{ matrix.language }}
+
+  aegify:
+    name: Aegify self-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # Upload Aegify SARIF to code scanning.
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.26"
+          enable-cache: true
+          cache-dependency-glob: scanner/uv.lock
+
+      - name: Install from lockfile
+        working-directory: scanner
+        run: uv sync --locked
+
+      - name: Run deterministic self-scan
+        id: scan
+        working-directory: scanner
+        run: |
+          set +e
+          uv run codeguard scan .. --no-llm --severity medium --output sarif --output-file ../aegify-results.sarif
+          scan_status="$?"
+          set -e
+          echo "exit-code=$scan_status" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          sarif_file: aegify-results.sarif
+          category: aegify/self-scan
+
+      - name: Upload scan evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: aegify-self-scan
+          path: aegify-results.sarif
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce self-scan result
+        if: always()
+        env:
+          SCAN_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        run: |
+          case "$SCAN_EXIT_CODE" in 0) ;; 1) exit 1 ;; *) exit 2 ;; esac

@@ -1,0 +1,165 @@
+rules:
+  - id: "CG-RACE-001"
+    name: "TOCTOU race condition in file operations"
+    description: >
+      The application performs a time-of-check to time-of-use (TOCTOU) pattern where
+      a file attribute (existence, permissions, size) is checked in a separate operation
+      from the file use. An attacker can exploit the race window between the check and
+      use by replacing the file with a symlink, modifying its contents, or altering
+      its permissions to gain unauthorized access or execute arbitrary code.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, java, go, c, cpp]
+    cwe_id: 367
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - sequence_match:
+          - "os\\.path\\.exists|os\\.access|os\\.stat|Path\\.exists|Files\\.exists"
+          - "open\\(|read\\(|write\\(|Path\\.read|Files\\.read|Files\\.write"
+        max_lines_between: 10
+      - sequence_match:
+          - "fs\\.existsSync|fs\\.accessSync|fs\\.statSync"
+          - "fs\\.readFileSync|fs\\.writeFileSync|fs\\.createReadStream"
+        max_lines_between: 10
+      - sequence_match:
+          - "access\\(|stat\\("
+          - "fopen\\(|open\\("
+        max_lines_between: 10
+    defense_patterns:
+      - "try.*open.*except.*FileNotFoundError"
+      - "O_CREAT|O_EXCL"
+      - "createNewFile.*&&"
+      - "lockf|flock|FileLock"
+      - "atomic_write|atomic_open"
+    message: "TOCTOU race condition detected between file check and file use. Use atomic file operations or open the file directly with appropriate error handling instead of checking first."
+
+  - id: "CG-RACE-002"
+    name: "Async race condition in balance or inventory check"
+    description: >
+      The application checks a balance, inventory count, or quota in an asynchronous
+      or concurrent context without holding a lock through the deduction. Multiple
+      concurrent requests can pass the check simultaneously before any deduction is
+      applied, leading to double-spending, overselling, or quota bypass attacks.
+    severity: critical
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 362
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - sequence_match:
+          - "balance|inventory|stock|quota|credits|tokens"
+          - "if.*>=|if.*>|if.*sufficient"
+          - "balance.*-=|inventory.*-=|stock.*-=|UPDATE.*SET.*=.*-"
+        max_lines_between: 15
+      - multi_match:
+          - "async|await|Promise"
+          - "balance|inventory|stock"
+          - "subtract|deduct|decrement|withdraw"
+        missing_match:
+          - "lock|mutex|semaphore|synchronized|FOR UPDATE"
+    defense_patterns:
+      - "SELECT.*FOR UPDATE"
+      - "SERIALIZABLE"
+      - "lock|mutex|semaphore"
+      - "synchronized"
+      - "atomic|compare_and_swap"
+      - "optimistic_lock|version_check"
+    message: "Race condition in balance/inventory check and deduction. Use database-level locking (SELECT FOR UPDATE), optimistic locking, or atomic operations to prevent double-spending."
+
+  - id: "CG-RACE-003"
+    name: "Non-atomic read-modify-write operation"
+    description: >
+      The application reads a value, modifies it in application code, and writes it
+      back in separate operations without synchronization. Concurrent requests can
+      read the same stale value, apply conflicting modifications, and overwrite each
+      other's results, leading to data corruption or lost updates.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go, ruby]
+    cwe_id: 362
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - sequence_match:
+          - "SELECT|find|findOne|get|load|read"
+          - "\\+\\s*=|\\-\\s*=|\\+\\s*1|\\-\\s*1|\\+=|\\-="
+          - "UPDATE|save|update|put|write|store"
+        max_lines_between: 20
+      - multi_match:
+          - "\\.get\\(|findById|SELECT"
+          - "\\.|\\[.*\\]\\s*=|\\+=|\\-="
+          - "\\.save\\(|update\\(|UPDATE"
+        missing_match:
+          - "lock|atomic|transaction|synchronized"
+    defense_patterns:
+      - "F\\(|Atomic|atomic"
+      - "UPDATE.*SET.*=.*\\+|UPDATE.*SET.*=.*-"
+      - "findOneAndUpdate|findAndModify"
+      - "$inc|$set"
+      - "compare_and_swap|compareAndSet"
+      - "transaction|BEGIN|COMMIT"
+    message: "Non-atomic read-modify-write detected. Use database atomic operations (UPDATE SET x = x + 1), ORM atomic expressions, or application-level locking to prevent lost updates."
+
+  - id: "CG-RACE-004"
+    name: "Missing database locking on critical section"
+    description: >
+      The application performs multiple dependent database operations (read then
+      conditional write) without row-level locking or transaction isolation.
+      Concurrent transactions can interleave, violating business invariants such
+      as unique constraints, balance limits, or state machine transitions.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go, ruby]
+    cwe_id: 362
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - sequence_match:
+          - "SELECT|find|findOne|query|fetch"
+          - "if|unless|guard"
+          - "INSERT|UPDATE|DELETE|save|create|destroy"
+        max_lines_between: 20
+        missing_pattern: "FOR UPDATE|LOCK|transaction|atomic|serializable"
+      - multi_match:
+          - "await.*find|await.*get|await.*query"
+          - "if.*===|if.*!==|if.*==|if.*!="
+          - "await.*save|await.*update|await.*create"
+        missing_match:
+          - "session|transaction|lock"
+    defense_patterns:
+      - "FOR UPDATE"
+      - "LOCK IN SHARE MODE"
+      - "transaction"
+      - "atomic"
+      - "SERIALIZABLE"
+      - "advisory_lock"
+      - "with_lock"
+    message: "Critical database operations lack locking. Use SELECT FOR UPDATE, explicit transactions with appropriate isolation level, or advisory locks to prevent concurrent modification."
+
+  - id: "CG-RACE-005"
+    name: "Concurrent session modification without synchronization"
+    description: >
+      The application modifies session data from concurrent requests without any
+      synchronization mechanism. When multiple requests from the same user are
+      processed simultaneously (e.g., parallel AJAX calls), session modifications
+      can overwrite each other, leading to privilege escalation, cart manipulation,
+      or authentication state corruption.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 362
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - multi_match:
+          - "session\\[|req\\.session\\.|request\\.session\\.|Session|HttpSession"
+          - "=\\s*(?!.*==)"
+        context: "async|concurrent|parallel|thread|worker"
+      - sequence_match:
+          - "session\\.get|session\\[|getSession"
+          - "session\\[.*\\]\\s*=|session\\.set|session\\.put|setAttribute"
+        context: "async|await|thread|concurrent"
+    defense_patterns:
+      - "session_lock"
+      - "session\\.regenerate"
+      - "synchronized.*session"
+      - "redis.*session.*lock"
+      - "session_mutex"
+    message: "Session data is modified without synchronization across concurrent requests. Implement session-level locking or use atomic session operations to prevent data corruption."

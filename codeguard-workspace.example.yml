@@ -1,0 +1,42 @@
+version: 1
+name: example-platform
+
+repositories:
+  - id: edge-gateway
+    path: ./services/gateway
+    role: gateway
+
+  - id: user-service
+    path: ./services/users
+    role: spring-service
+    depends_on: []
+    # One index for a normal multi-module build:
+    # scip_index: ./evidence/users/index.scip
+    # Or several independent build roots in one monorepo:
+    # scip_indexes:
+    #   - ./evidence/users-api/index.scip
+    #   - ./evidence/users-batch/index.scip
+    # Retained compiler classpath manifest. Co-located JARs are SHA-256
+    # verified, parsed without execution, and scoped to build modules.
+    # jvm_classpath_snapshots:
+    #   - path: ./evidence/users/classpath.json
+    # analysis_artifacts:
+    #   - format: sarif
+    #     path: ./evidence/users/codeql.sarif
+    #   - format: semgrep-json
+    #     path: ./evidence/users/semgrep.json
+    #   - format: joern-jsonl
+    #     path: ./evidence/users/joern.jsonl
+
+  - id: web-frontend
+    path: ./apps/web
+    role: frontend
+    exclude:
+      - "**/storybook-static/**"
+    # runtime_artifacts:
+    #   - format: browser-evidence-json
+    #     path: ./evidence/web/browser-evidence.json
+    #   - format: proxy-evidence-json
+    #     path: ./evidence/web/proxy-evidence.json
+    #   - format: otel-json
+    #     path: ./evidence/web/otel.json

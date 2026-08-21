@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/Aeg1sx/Aegify/security/advisories/new
+    about: Do not disclose vulnerabilities or secrets in a public issue.
+  - name: Usage questions and discussions
+    url: https://github.com/Aeg1sx/Aegify/discussions
+    about: Ask questions that do not contain private code, credentials, or exploit details.

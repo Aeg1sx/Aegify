@@ -1,0 +1,292 @@
+rules:
+  - id: "CG-RCE-JS-001"
+    name: "child_process.exec() with user-controlled input"
+    description: >
+      The child_process.exec() function in Node.js spawns a shell and executes a
+      command string within it. When the command string incorporates user-controlled
+      data (query parameters, request bodies, headers), an attacker can inject shell
+      metacharacters to chain arbitrary commands. Unlike execFile() or spawn(), exec()
+      always invokes a shell interpreter, making it inherently vulnerable to injection.
+      The function also buffers the entire output in memory, creating a potential DoS
+      vector with large command outputs.
+    severity: critical
+    confidence: 0.95
+    languages: [javascript, typescript]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "child_process\\.exec\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user|args|process\\.argv|process\\.env)"
+      - pattern: "exec\\s*\\(\\s*`"
+        context: "require.*child_process|import.*child_process"
+        description: "child_process.exec() with template literal interpolation"
+      - pattern: "exec\\s*\\(.*\\+.*\\)"
+        context: "require.*child_process|import.*child_process"
+        description: "child_process.exec() with string concatenation"
+      - pattern: "execSync\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user)"
+        description: "Synchronous variant with same shell injection risk"
+      - pattern: "promisify\\s*\\(\\s*(child_process\\.)?exec\\s*\\)"
+        description: "Promisified exec() retains all shell injection vulnerabilities"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, websocket_message, cli_argument]
+      sink_types: [os_command]
+      sink_pattern: "(child_process\\.)?exec(Sync)?\\s*\\("
+      propagation:
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "variable_assignment"
+        - through: "array_join"
+        - through: "destructuring"
+    defense_patterns:
+      - "execFile\\s*\\("
+      - "spawn\\s*\\("
+      - "shell:\\s*false"
+      - "escapeshellarg"
+      - "shell-escape"
+      - "shell-quote"
+      - "allowlist"
+      - "whitelist"
+      - "\\.match\\s*\\(\\s*/\\^\\[a-zA-Z"
+    fix_suggestion: >
+      Replace child_process.exec() with child_process.execFile() or child_process.spawn()
+      which pass arguments as an array without invoking a shell. For example:
+      spawn("ls", ["-la", userDir]) instead of exec(`ls -la ${userDir}`).
+      If shell features are required, use the shell-quote or shell-escape package
+      to sanitize all user-supplied arguments.
+    message: "child_process.exec() called with potentially user-controlled input at line {line}. Shell metacharacter injection enables arbitrary command execution on the server."
+    references:
+      - "https://nodejs.org/api/child_process.html#child_processexeccommand-options-callback"
+      - "https://cwe.mitre.org/data/definitions/78.html"
+
+  - id: "CG-RCE-JS-002"
+    name: "vm.runInNewContext() with user-controlled code"
+    description: >
+      The vm module in Node.js provides APIs for compiling and running code within
+      V8 virtual machine contexts. Despite the name, vm contexts are NOT a security
+      sandbox. An attacker who controls the code string can escape the context using
+      techniques like this.constructor.constructor('return process')().exit() to access
+      the Node.js process object and execute arbitrary system commands. The vm module
+      documentation explicitly warns against using it for running untrusted code.
+    severity: critical
+    confidence: 0.9
+    languages: [javascript, typescript]
+    cwe_id: 94
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "vm\\.(runInNewContext|runInThisContext|runInContext|createContext|compileFunction)\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user|data)"
+      - pattern: "new\\s+vm\\.Script\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user|data)"
+        description: "vm.Script constructor with user-controlled code"
+      - pattern: "vm\\.run"
+        args_match: "\\$\\{|\\+|concat|template"
+        description: "vm execution with interpolated strings"
+      - pattern: "new\\s+vm\\.SourceTextModule\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|input|user)"
+        description: "ESM module evaluation with user input"
+    taint:
+      source_types: [http_param, http_body, websocket_message, database_read]
+      sink_types: [code_execution]
+      sink_pattern: "vm\\.(runInNewContext|runInThisContext|runInContext|compileFunction|Script)"
+      propagation:
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "vm2"
+      - "isolated-vm"
+      - "safe-eval"
+      - "sandbox"
+      - "quickjs"
+      - "allowlist"
+    fix_suggestion: >
+      Do not use the vm module to execute untrusted code. Use the isolated-vm package
+      which provides true V8 isolate-level sandboxing, or use a WebAssembly-based
+      sandbox. If evaluation is required, use a restricted expression parser like
+      expr-eval or mathjs for mathematical expressions only. For complex sandboxing
+      needs, consider running untrusted code in a separate container or serverless
+      function with minimal permissions.
+    message: "vm module used with potentially user-controlled code at line {line}. The vm module does NOT provide a security sandbox; context escapes allow full process access."
+    references:
+      - "https://nodejs.org/api/vm.html#vm-executing-javascript"
+      - "https://cwe.mitre.org/data/definitions/94.html"
+
+  - id: "CG-RCE-JS-003"
+    name: "eval() with user-controlled input"
+    description: >
+      The eval() function in JavaScript evaluates a string as code in the current
+      execution context with full access to the scope chain, global objects, and
+      Node.js APIs. In a browser context, this enables XSS and data theft. In a
+      Node.js context, this enables full remote code execution including file system
+      access, network operations, and process control. Server-side eval() with user
+      input is consistently ranked among the most dangerous code patterns.
+    severity: critical
+    confidence: 0.9
+    languages: [javascript, typescript]
+    cwe_id: 95
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "eval"
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user|data|window\\.location|document\\.URL|document\\.referrer|localStorage|sessionStorage)"
+        missing_check: "(JSON\\.parse|parseInt|parseFloat|Number\\(|allowlist|sanitize|validate|whitelist)"
+      - pattern: "eval\\s*\\(\\s*`"
+        description: "eval() with template literal interpolation"
+      - pattern: "eval\\s*\\(.*\\+.*\\)"
+        description: "eval() with string concatenation"
+      - pattern: "eval\\s*\\(\\s*atob\\s*\\("
+        description: "eval() on base64-decoded data"
+      - pattern: "eval\\s*\\(\\s*decodeURIComponent\\s*\\("
+        description: "eval() on URL-decoded data"
+      - pattern: "setTimeout\\s*\\(\\s*['\"`]"
+        description: "setTimeout with string argument acts like eval()"
+      - pattern: "setInterval\\s*\\(\\s*['\"`]"
+        description: "setInterval with string argument acts like eval()"
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie, websocket_message, url_fragment, local_storage, query_string]
+      sink_types: [code_execution]
+      sink_pattern: "eval|setTimeout\\s*\\(\\s*['\"`]|setInterval\\s*\\(\\s*['\"`]"
+      propagation:
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "base64_decode"
+        - through: "url_decode"
+        - through: "json_parse_value"
+    defense_patterns:
+      - "JSON\\.parse"
+      - "parseInt"
+      - "parseFloat"
+      - "Number\\("
+      - "allowlist"
+      - "DOMPurify"
+      - "Content-Security-Policy.*script-src"
+      - "expr-eval"
+      - "mathjs"
+    fix_suggestion: >
+      Replace eval() with JSON.parse() for data parsing, or use a safe expression
+      evaluator library (expr-eval, mathjs) for mathematical expressions. For
+      setTimeout/setInterval, always pass function references instead of strings.
+      Implement Content-Security-Policy headers with script-src directives to prevent
+      eval() usage in browser contexts. In Node.js, use isolated-vm for safe evaluation.
+    message: "eval() called with potentially user-controlled input at line {line}. Server-side (Node.js): enables full RCE including file system access and process control. Client-side (browser): enables XSS, data exfiltration, and session hijacking."
+    references:
+      - "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval#never_use_direct_eval!"
+      - "https://cwe.mitre.org/data/definitions/95.html"
+
+  - id: "CG-RCE-JS-004"
+    name: "Function constructor with user-controlled input"
+    description: >
+      The Function constructor (new Function(), Function()) creates a new function
+      from a string of code, similar to eval() but in the global scope rather than
+      the local scope. It is sometimes used to bypass Content-Security-Policy
+      restrictions on eval() or as an obfuscation technique. When the code string
+      contains user-controlled input, an attacker can inject arbitrary JavaScript
+      that executes with full privileges of the application context.
+    severity: critical
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 95
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "new\\s+Function\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user|data|\\+|`)"
+      - pattern: "Function\\s*\\(.*\\)\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|input|user|data)"
+        description: "Immediately invoked Function constructor"
+      - pattern: "Function\\s*\\(\\s*`"
+        description: "Function constructor with template literal"
+      - pattern: "Function\\s*\\(.*\\+.*\\)"
+        description: "Function constructor with string concatenation"
+      - pattern: "\\[\\s*\\]\\s*\\.constructor\\.constructor\\s*\\("
+        description: "Indirect Function constructor access for sandbox escape"
+      - pattern: "this\\.constructor\\.constructor\\s*\\("
+        description: "Sandbox escape via constructor chain"
+    taint:
+      source_types: [http_param, http_body, websocket_message, local_storage, database_read]
+      sink_types: [code_execution]
+      sink_pattern: "(new\\s+)?Function\\s*\\(|constructor\\.constructor\\s*\\("
+      propagation:
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "variable_assignment"
+        - through: "array_element"
+    defense_patterns:
+      - "Content-Security-Policy.*unsafe-eval"
+      - "Object\\.freeze"
+      - "Object\\.seal"
+      - "Proxy"
+      - "allowlist"
+      - "isolated-vm"
+    fix_suggestion: >
+      Avoid the Function constructor entirely for user-controlled input. Use predefined
+      function references, lookup tables, or strategy patterns to select behavior
+      dynamically. For mathematical expressions, use a safe parser like expr-eval.
+      Implement CSP headers without 'unsafe-eval' to prevent Function constructor
+      usage in browser contexts. Freeze prototype chains to prevent constructor
+      chain escapes in sandboxed environments.
+    message: "Function constructor called with potentially user-controlled code string at line {line}. This is functionally equivalent to eval() and enables arbitrary code execution."
+    references:
+      - "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/Function"
+      - "https://cwe.mitre.org/data/definitions/95.html"
+
+  - id: "CG-RCE-JS-005"
+    name: "Dynamic require() or import() with user-controlled path"
+    description: >
+      Node.js require() and dynamic import() resolve and execute module files from
+      the file system. When the module path includes user-controlled input, an
+      attacker can perform path traversal to load arbitrary JavaScript files, including
+      files they may have uploaded or files containing sensitive data. Combined with
+      require('child_process'), an attacker can directly access OS command execution.
+      Dynamic imports also enable loading of native addon modules (.node files) which
+      execute compiled C/C++ code.
+    severity: critical
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 98
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "require\\s*\\(\\s*`"
+        description: "require() with template literal path"
+      - pattern: "require\\s*\\(.*\\+.*\\)"
+        description: "require() with concatenated path"
+      - pattern: "require\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user|data|process\\.argv|process\\.env)"
+      - pattern: "import\\s*\\(\\s*`"
+        description: "Dynamic import() with template literal path"
+      - pattern: "import\\s*\\(.*\\+.*\\)"
+        description: "Dynamic import() with concatenated path"
+      - pattern: "import\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|input|user|data)"
+      - pattern: "require\\s*\\(\\s*['\"]child_process['\"]\\s*\\)\\s*\\."
+        args_match: "(req\\.|request\\.|params|query|body|input|user|data)"
+        description: "Direct child_process require with user-controlled arguments"
+    taint:
+      source_types: [http_param, http_body, http_header, cli_argument, environment_variable]
+      sink_types: [code_execution, file_inclusion]
+      sink_pattern: "(require|import)\\s*\\("
+      propagation:
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "path_join"
+        - through: "path_resolve"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "path\\.basename"
+      - "path\\.normalize.*includes.*\\.\\."
+      - "allowlist"
+      - "whitelist"
+      - "resolve.*startsWith"
+      - "Object\\.keys.*modules.*includes"
+      - "--experimental-permission"
+      - "policy\\.json"
+    fix_suggestion: >
+      Never construct require() or import() paths from user input. Use a mapping
+      object or switch statement to translate user input to predefined module
+      references: const modules = { 'a': moduleA, 'b': moduleB }; modules[input].
+      If dynamic loading is required, validate the resolved path starts with an
+      expected directory using path.resolve() and startsWith(). Enable Node.js
+      permission model (--experimental-permission) to restrict file system access.
+    message: "Dynamic require() or import() with potentially user-controlled module path at line {line}. Path traversal enables loading of arbitrary JavaScript files for code execution."
+    references:
+      - "https://nodejs.org/api/modules.html#modules_require_id"
+      - "https://cwe.mitre.org/data/definitions/98.html"

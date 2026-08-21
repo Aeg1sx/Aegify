@@ -1,0 +1,43 @@
+rules:
+  - id: CG-ASVS-001
+    name: Session Timeout Not Configured
+    description: >
+      The application session does not have an explicit timeout or expiry
+      configured. Sessions that never expire allow attackers to reuse
+      stolen session tokens indefinitely, increasing the impact of session
+      hijacking attacks.
+    severity: medium
+    confidence: 0.6
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 613
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    asvs_category: "V3.3 Session Timeout"
+    patterns:
+      - callee: "(session|Session|SessionMiddleware|express-session|cookie-session|SessionConfig)"
+        args_match: "^(?!.*expire)(?!.*timeout)(?!.*maxAge)(?!.*max_age)(?!.*ttl)(?!.*idle)(?!.*lifetime).*$"
+      - callee: "(jwt\\.sign|jwt\\.encode|create_access_token|createToken|sign)"
+        args_match: "^(?!.*exp)(?!.*expiresIn)(?!.*expires_in)(?!.*expires_delta)(?!.*ttl).*$"
+    message: "Session or token created without timeout at '{callee}' (line {line}). Configure session expiry and idle timeout to limit the window for session hijacking."
+
+  - id: CG-ASVS-004
+    name: Insecure Session Storage
+    description: >
+      Session tokens or authentication state is stored in localStorage or
+      in cookies without the Secure and HttpOnly flags. localStorage is
+      accessible to JavaScript (XSS-exploitable), and cookies without
+      Secure/HttpOnly flags can be stolen via script injection or
+      transmitted over unencrypted connections.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 539
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    asvs_category: "V3.4 Cookie-based Session Management"
+    patterns:
+      - callee: "(localStorage\\.setItem|sessionStorage\\.setItem|window\\.localStorage)"
+        args_match: "(token|session|auth|jwt|access_token|refresh_token|credential|session_id)"
+      - callee: "(set_cookie|res\\.cookie|setCookie|addCookie|Cookie)"
+        args_match: "^(?!.*secure)(?!.*httponly)(?!.*HttpOnly)(?!.*Secure).*$"
+      - callee: "(document\\.cookie)"
+        args_match: "(session|token|auth|jwt)"
+    message: "Insecure session storage at '{callee}' (line {line}). Use HttpOnly, Secure cookies for session tokens. Avoid localStorage for sensitive authentication data."

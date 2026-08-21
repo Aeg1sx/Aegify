@@ -1,0 +1,360 @@
+rules:
+  - id: "CG-LFI-001"
+    name: "Path traversal in file read operations"
+    description: >
+      User-controlled input is used to construct a file path that is then passed to a file
+      read operation (fs.readFile, open(), os.Open, Files.readAllBytes) without validation
+      against directory traversal sequences. An attacker can use ../ sequences or absolute
+      paths to read arbitrary files on the server, including /etc/passwd, application
+      configuration files with database credentials, private keys, and source code. This
+      vulnerability is particularly severe in containerized environments where secrets are
+      often mounted as files.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 22
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(fs\\.readFile(Sync)?|fs\\.createReadStream|fs\\.promises\\.readFile)\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|headers|input|user|data)"
+        description: "Node.js file read with user-controlled path"
+      - pattern: "(open|io\\.open|builtins\\.open)\\s*\\("
+        args_match: "(request\\.|req\\.|input|user|param|query|form|data|args)"
+        description: "Python open() with user-controlled path"
+      - pattern: "(os\\.Open|os\\.ReadFile|ioutil\\.ReadFile)\\s*\\("
+        args_match: "(r\\.|request\\.|params|query|mux\\.Vars|c\\.Param|c\\.Query|ctx\\.)"
+        description: "Go file read with user-controlled path"
+      - pattern: "(Files\\.(readAllBytes|readAllLines|readString|newInputStream|newBufferedReader)|FileInputStream|BufferedReader.*FileReader)\\s*\\("
+        args_match: "(request\\.|req\\.|getParameter|getHeader|getPathInfo|input|user|param)"
+        description: "Java file read with user-controlled path"
+      - pattern: "(path\\.join|path\\.resolve|os\\.path\\.join|filepath\\.Join|Paths\\.get)\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|input|user|data|getParameter)"
+        description: "Path construction with user-controlled segments"
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_types: [file_read]
+      sink_pattern: "(fs\\.(readFile|createReadStream|promises\\.readFile)|open\\(|io\\.open|os\\.(Open|ReadFile)|ioutil\\.ReadFile|Files\\.(readAllBytes|readAllLines|readString)|FileInputStream|BufferedReader)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "path_join"
+        - through: "path_resolve"
+        - through: "string_concatenation"
+        - through: "template_literal"
+    defense_patterns:
+      - "path\\.resolve.*startsWith"
+      - "path\\.normalize"
+      - "path\\.basename"
+      - "os\\.path\\.basename"
+      - "os\\.path\\.realpath"
+      - "filepath\\.Clean"
+      - "filepath\\.Abs.*strings\\.HasPrefix"
+      - "Paths\\.get.*normalize.*startsWith"
+      - "chroot"
+      - "allowlist"
+      - "\\.includes.*\\.\\./"
+      - "\\.\\..*reject|\\.\\..*deny|\\.\\..*block"
+    fix_suggestion: >
+      Resolve the user-supplied path to an absolute path using path.resolve() (Node.js),
+      os.path.realpath() (Python), filepath.Abs() (Go), or Paths.get().normalize() (Java),
+      then verify it starts with the expected base directory using startsWith(). Use
+      path.basename() to extract only the filename when directory traversal is not needed.
+      Maintain an allowlist of permitted filenames or paths. Never pass user input directly
+      to file operations without normalization and prefix validation.
+    message: "Path traversal: user input from '{source}' (line {source_line}) flows into file operation '{sink}' (line {sink_line}) without path validation. Resolve and verify the path starts with an expected base directory."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Path_Traversal_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/22.html"
+
+  - id: "CG-LFI-002"
+    name: "Local file inclusion via dynamic require/import path"
+    description: >
+      A user-controlled value is used to construct a module path for dynamic require() or
+      import() calls. Unlike standard file reads, module loading also executes the loaded
+      file's code, making this a potential remote code execution vector. An attacker can use
+      path traversal to load arbitrary JavaScript or Python modules, including modules that
+      execute side effects on import. In Node.js, loading a malicious .node native addon
+      allows execution of arbitrary compiled code. This vulnerability is especially dangerous
+      in plugin or theme systems that load modules based on user selection.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript]
+    cwe_id: 98
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "require\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|input|user|data|process\\.argv|\\+|`|concat)"
+        description: "Node.js require() with user-controlled path"
+      - pattern: "import\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|input|user|data|\\+|`|concat)"
+        description: "Dynamic import() with user-controlled path"
+      - pattern: "__import__\\s*\\("
+        args_match: "(request\\.|req\\.|input|user|param|query|form|data|args)"
+        description: "Python __import__() with user-controlled module name"
+      - pattern: "importlib\\.(import_module|__import__)\\s*\\("
+        args_match: "(request\\.|req\\.|input|user|param|query|form|data|args)"
+        description: "Python importlib with user-controlled module name"
+      - pattern: "(require|import)\\s*\\(.*\\$\\{"
+        description: "Dynamic module loading with template literal interpolation"
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_types: [code_execution, file_inclusion]
+      sink_pattern: "(require|import|__import__|importlib\\.import_module)\\s*\\("
+      propagation:
+        - through: "variable_assignment"
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "path_join"
+    defense_patterns:
+      - "allowlist"
+      - "whitelist"
+      - "path\\.basename"
+      - "Object\\.keys.*modules"
+      - "switch.*case"
+      - "\\bmap\\b.*modules"
+      - "resolve.*startsWith"
+    fix_suggestion: >
+      Never construct module paths from user input. Use a mapping object or switch statement
+      to translate user-provided identifiers to predefined module references:
+      const plugins = { 'chart': require('./plugins/chart'), 'table': require('./plugins/table') };
+      const plugin = plugins[userInput]. If dynamic module names are unavoidable, validate
+      the input against a strict allowlist and use path.basename() to strip directory
+      traversal sequences.
+    message: "Local file inclusion: user input from '{source}' (line {source_line}) flows into dynamic module loading at '{sink}' (line {sink_line}). Module loading executes code on import. Use a mapping object instead of dynamic paths."
+    references:
+      - "https://cwe.mitre.org/data/definitions/98.html"
+      - "https://nodejs.org/api/modules.html#modules_require_id"
+
+  - id: "CG-LFI-003"
+    name: "Archive extraction path traversal (Zip Slip)"
+    description: >
+      Archive entries (ZIP, TAR, JAR, WAR, CPIO, 7z) are extracted without validating that
+      the entry paths resolve within the intended destination directory. A malicious archive
+      can contain entries with names like ../../etc/cron.d/malicious or
+      ../../../root/.ssh/authorized_keys that traverse outside the extraction directory and
+      overwrite critical system files. This vulnerability, known as Zip Slip, has been found
+      in numerous widely-used libraries and build tools. It is particularly dangerous in CI/CD
+      pipelines and deployment systems that extract user-uploaded archives.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 22
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(zipfile\\.ZipFile|ZipFile).*\\.(extractall|extract)\\s*\\("
+        description: "Python zipfile extraction without path validation"
+      - pattern: "(tarfile\\.open|TarFile).*\\.(extractall|extract)\\s*\\("
+        description: "Python tarfile extraction without path validation"
+      - pattern: "(yauzl|adm-zip|unzipper|decompress|extract-zip|tar\\.extract|tar\\.x)\\s*"
+        args_match: "(req\\.|request\\.|upload|file|input|user|data|body)"
+        description: "Node.js archive extraction library with user-provided archive"
+      - pattern: "(ZipInputStream|ZipFile|JarFile|JarInputStream|TarArchiveInputStream).*\\.(getNextEntry|entries)"
+        missing_check: "(normalize|getCanonicalPath|startsWith|resolve)"
+        description: "Java archive extraction without entry path validation"
+      - pattern: "(archive/zip|archive/tar).*\\.(Open|NewReader)"
+        missing_check: "(filepath\\.Clean|filepath\\.Abs|strings\\.HasPrefix|filepath\\.Rel)"
+        description: "Go archive extraction without path sanitization"
+    taint:
+      source_types: [http_body, file_upload]
+      sink_types: [file_write, file_extract]
+      sink_pattern: "(extractall|extract\\(|getNextEntry|entries|unzip|decompress|tar\\.(extract|x))"
+      propagation:
+        - through: "variable_assignment"
+        - through: "archive_entry_name"
+    defense_patterns:
+      - "os\\.path\\.realpath.*startsWith"
+      - "getCanonicalPath.*startsWith"
+      - "filepath\\.Clean.*HasPrefix"
+      - "path\\.resolve.*startsWith"
+      - "\\.name.*\\.\\./"
+      - "normalize.*startsWith"
+      - "entry\\.getName.*\\.\\..*reject"
+      - "data_filter"
+    fix_suggestion: >
+      Before extracting each archive entry, resolve the destination path and verify it starts
+      with the intended extraction directory. In Python, use tarfile.data_filter (3.12+) or
+      manually check: dest = os.path.realpath(os.path.join(extract_dir, entry.name));
+      assert dest.startswith(os.path.realpath(extract_dir)). In Java, use
+      new File(destDir, entry.getName()).getCanonicalPath().startsWith(destDir.getCanonicalPath()).
+      Reject entries with absolute paths or .. components.
+    message: "Zip Slip: archive extraction at '{sink}' (line {sink_line}) does not validate entry paths against directory traversal. Malicious archives can overwrite files outside the extraction directory."
+    references:
+      - "https://security.snyk.io/research/zip-slip-vulnerability"
+      - "https://cwe.mitre.org/data/definitions/22.html"
+
+  - id: "CG-LFI-004"
+    name: "Path traversal in file upload destination"
+    description: >
+      User-controlled input, such as the original filename from a multipart upload or a
+      filename parameter, is used to construct the destination path for saving uploaded files
+      without sanitization. An attacker can manipulate the filename to include path traversal
+      sequences (../), overwriting critical files such as application code, configuration files,
+      or SSH authorized_keys. This can lead to remote code execution if the attacker overwrites
+      executable files (e.g., .php, .jsp, .py) in a web-accessible directory, or to denial
+      of service by overwriting essential configuration.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 22
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(file\\.save|file\\.mv|fs\\.writeFile(Sync)?|fs\\.rename(Sync)?|fs\\.createWriteStream|fs\\.promises\\.writeFile)\\s*\\("
+        args_match: "(file\\.name|file\\.filename|filename|originalname|originalFilename|req\\.file|multer|upload|body\\.(filename|path)|formData)"
+        description: "File save with user-controlled destination filename"
+      - pattern: "(os\\.path\\.join|path\\.join|filepath\\.Join|Paths\\.get)\\s*\\(.*"
+        args_match: "(file\\.filename|filename|original_filename|originalname|upload|request\\.files)"
+        description: "Path construction using uploaded filename"
+      - pattern: "(shutil\\.copy|shutil\\.move|os\\.rename|copyfile)\\s*\\("
+        args_match: "(file\\.filename|filename|request\\.files|upload|original_filename)"
+        description: "Python file copy/move with user-controlled filename"
+      - pattern: "(Files\\.copy|Files\\.move|FileOutputStream)\\s*\\("
+        args_match: "(getOriginalFilename|getSubmittedFileName|filename|upload)"
+        description: "Java file write with user-controlled upload filename"
+    taint:
+      source_types: [http_body, file_upload]
+      sink_types: [file_write]
+      sink_pattern: "(file\\.(save|mv)|fs\\.(writeFile|rename|createWriteStream)|shutil\\.(copy|move)|os\\.rename|Files\\.(copy|move)|FileOutputStream|os\\.Create)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "path_join"
+        - through: "string_concatenation"
+        - through: "template_literal"
+    defense_patterns:
+      - "path\\.basename"
+      - "os\\.path\\.basename"
+      - "filepath\\.Base"
+      - "Paths\\.get.*getFileName"
+      - "secure_filename"
+      - "uuid|crypto\\.randomUUID|nanoid"
+      - "allowlist.*extension"
+      - "resolve.*startsWith"
+    fix_suggestion: >
+      Never use the user-supplied filename directly for the destination path. Extract only the
+      base filename using path.basename() (Node.js), os.path.basename() (Python), or
+      filepath.Base() (Go). Preferably, generate a random filename using UUID or crypto.randomUUID()
+      and append a validated extension from an allowlist. Use werkzeug.utils.secure_filename()
+      in Flask applications. Verify the resolved destination path starts with the intended
+      upload directory.
+    message: "Path traversal in upload: user-controlled filename from '{source}' (line {source_line}) flows into file write at '{sink}' (line {sink_line}). Use path.basename() or generate a random filename to prevent directory traversal."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/22.html"
+
+  - id: "CG-LFI-005"
+    name: "Open redirect via unvalidated URL parameter"
+    description: >
+      A user-controlled URL parameter is used for HTTP redirection without validation against
+      a trusted domain allowlist. An attacker can craft a link that appears to come from the
+      legitimate application but redirects the victim to a phishing site, malware distribution
+      page, or OAuth token-stealing endpoint. Open redirects are commonly chained with OAuth
+      flows to steal authorization codes, and they are listed as a distinct vulnerability class
+      in the OWASP Top 10. While sometimes considered low-severity in isolation, open redirects
+      are high-value targets for social engineering and OAuth exploitation.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 601
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(res\\.redirect|response\\.redirect|redirect|sendRedirect|http\\.Redirect)\\s*\\("
+        args_match: "(req\\.(query|params|body)|request\\.(args|form|GET|POST|json)|r\\.URL\\.Query|getParameter|c\\.(Query|Param))"
+        description: "HTTP redirect with user-controlled URL"
+      - pattern: "Location\\s*[=:]"
+        args_match: "(req\\.|request\\.|params|query|body|input|user|getParameter)"
+        description: "Location header set from user input"
+      - pattern: "(res\\.setHeader|response\\.setHeader|set_header|Header\\(\\)\\.Set|addHeader)\\s*\\("
+        args_match: "Location.*req\\.|Location.*request\\.|Location.*params|Location.*query|Location.*getParameter"
+        description: "Location header via setHeader with user input"
+      - pattern: "(HttpResponseRedirect|RedirectResponse|RedirectView)\\s*\\("
+        args_match: "(request\\.(GET|POST|args|form|json)|req\\.(query|params|body)|getParameter)"
+        description: "Framework redirect response with user-controlled URL"
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_types: [http_redirect]
+      sink_pattern: "(redirect|sendRedirect|http\\.Redirect|HttpResponseRedirect|RedirectResponse|Location\\s*[=:])"
+      propagation:
+        - through: "variable_assignment"
+        - through: "string_concatenation"
+        - through: "template_literal"
+    defense_patterns:
+      - "allowlist"
+      - "whitelist"
+      - "trusted_domains"
+      - "url\\.startsWith\\s*\\(\\s*['\"]/"
+      - "new\\s+URL.*\\.host.*===|new\\s+URL.*\\.hostname.*==="
+      - "urlparse.*\\.netloc"
+      - "relative_url_only"
+      - "url\\.parse.*host"
+    fix_suggestion: >
+      Validate redirect URLs against an allowlist of trusted domains. For same-site redirects,
+      ensure the URL starts with / and does not contain // (to prevent protocol-relative
+      redirects). Parse the URL using the URL constructor (Node.js), urlparse (Python), or
+      net/url (Go) and verify the hostname matches a trusted list. Never redirect to raw
+      user-supplied URLs. Use indirect redirect mapping with numeric identifiers instead of
+      raw URLs when possible.
+    message: "Open redirect: user input from '{source}' (line {source_line}) flows into redirect at '{sink}' (line {sink_line}) without URL validation. Validate against a trusted domain allowlist."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/601.html"
+
+  - id: "CG-LFI-006"
+    name: "Directory traversal in static file serving"
+    description: >
+      A web application serves static files using a user-controlled path component without
+      restricting access to the intended static file directory. Functions like res.sendFile(),
+      res.download(), send_file(), or manual file serving with open/read do not inherently
+      prevent directory traversal. An attacker can manipulate the path to access files outside
+      the web root, including application source code, environment variables, database
+      credentials, and private keys. This is especially common in custom file download
+      endpoints and CDN proxy implementations.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 22
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(res\\.sendFile|res\\.download|response\\.sendFile)\\s*\\("
+        args_match: "(req\\.(params|query|body)|path\\.join.*req|path\\.resolve.*req|`.*\\$\\{.*req)"
+        description: "Express sendFile/download with user-controlled path"
+      - pattern: "(send_file|send_from_directory)\\s*\\("
+        args_match: "(request\\.(args|form|json)|req\\.|input|user|param|query)"
+        description: "Flask send_file with user-controlled path"
+      - pattern: "http\\.ServeFile\\s*\\("
+        args_match: "(r\\.|request\\.|mux\\.Vars|query|param|c\\.Param)"
+        description: "Go http.ServeFile with user-controlled path"
+      - pattern: "(StreamingResponse|FileResponse|FileSystemResource|InputStreamResource)\\s*\\("
+        args_match: "(request\\.|getParameter|getPathInfo|input|user|param)"
+        description: "Framework file response with user-controlled path"
+      - pattern: "static.*root.*req\\."
+        description: "Static file middleware with dynamic root based on request"
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_types: [file_read, file_serve]
+      sink_pattern: "(sendFile|download|send_file|send_from_directory|ServeFile|StreamingResponse|FileResponse|FileSystemResource)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "path_join"
+        - through: "path_resolve"
+        - through: "string_concatenation"
+        - through: "template_literal"
+    defense_patterns:
+      - "express\\.static"
+      - "root\\s*:"
+      - "path\\.resolve.*startsWith"
+      - "path\\.normalize"
+      - "path\\.basename"
+      - "os\\.path\\.realpath.*startsWith"
+      - "filepath\\.Clean.*HasPrefix"
+      - "send_from_directory"
+      - "allowlist"
+    fix_suggestion: >
+      Use framework-provided static file middleware (express.static(), Flask's
+      send_from_directory()) which handle path traversal prevention. When using
+      res.sendFile(), always pass the root option to restrict file access:
+      res.sendFile(filename, { root: '/path/to/static' }). Resolve the full path
+      and verify it starts with the expected base directory. Use path.basename() to
+      extract only the filename when serving from a flat directory. Never construct
+      file paths with user input without normalization and prefix validation.
+    message: "Directory traversal: user input from '{source}' (line {source_line}) flows into static file serving at '{sink}' (line {sink_line}). Use framework static middleware or validate resolved paths against a base directory."
+    references:
+      - "https://expressjs.com/en/4x/api.html#res.sendFile"
+      - "https://cwe.mitre.org/data/definitions/22.html"

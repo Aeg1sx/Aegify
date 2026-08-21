@@ -1,0 +1,15 @@
+version: 1
+name: commerce-golden
+repositories:
+  - id: web
+    path: ./web
+    role: frontend
+    runtime_artifacts:
+      - format: http-evidence-json
+        path: ./web/http-evidence.json
+  - id: edge-gateway
+    path: ./gateway
+    role: gateway
+  - id: orders
+    path: ./orders
+    role: service

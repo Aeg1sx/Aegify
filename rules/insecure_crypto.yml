@@ -1,0 +1,47 @@
+rules:
+  - id: CG-CRYPTO-001
+    name: Weak Hash Algorithm (MD5/SHA1)
+    description: >
+      MD5 or SHA1 is used for hashing. These algorithms are cryptographically
+      broken and should not be used for security purposes.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, java, go]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee: "(md5|sha1|MD5|SHA1)"
+      - callee: "hashlib\\.(md5|sha1)"
+      - callee: "crypto\\.createHash"
+        args_match: "(md5|sha1)"
+      - callee: "MessageDigest\\.getInstance"
+        args_match: "(MD5|SHA-1)"
+    message: "Weak hash algorithm used at '{callee}' (line {line}). Use SHA-256 or stronger."
+
+  - id: CG-CRYPTO-002
+    name: Insecure Random Number Generator
+    description: >
+      Non-cryptographic random number generator used in security context.
+      Use secrets module (Python) or crypto.randomBytes (Node.js) instead.
+    severity: medium
+    confidence: 0.6
+    languages: [python, javascript]
+    cwe_id: 330
+    patterns:
+      - callee: "random\\.(random|randint|choice|randrange)"
+      - callee: "Math\\.random"
+    message: "Insecure RNG at '{callee}' (line {line}). Use cryptographic RNG for security."
+
+  - id: CG-CRYPTO-003
+    name: Disabled SSL/TLS Verification
+    description: >
+      SSL/TLS certificate verification is disabled, allowing MITM attacks.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript]
+    cwe_id: 295
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee: "(get|post|put|delete|request|fetch)"
+        args_match: '(verify\s*=\s*False|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED)'
+    message: "SSL/TLS verification disabled at '{callee}' (line {line})."

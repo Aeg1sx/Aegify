@@ -1,0 +1,34 @@
+rules:
+  - id: CG-SSRF-001
+    name: Server-Side Request Forgery (SSRF)
+    description: >
+      User-controlled input flows into a URL used for server-side HTTP requests,
+      potentially allowing access to internal services or cloud metadata.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, java, go]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery"
+    defense_patterns: ["allowlist", "whitelist", "validate_url", "urlparse"]
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(requests\\.(get|post|put)|fetch|http\\.get|urllib\\.request|HttpClient|http\\.Do)"
+    message: >
+      Potential SSRF: user input from '{source}' (line {source_line})
+      flows to HTTP request '{sink}' (line {sink_line}).
+
+  - id: CG-SSRF-002
+    name: Open Redirect
+    description: >
+      User-controlled input used in redirect URL without validation.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, java]
+    cwe_id: 601
+    owasp_category: "A01:2021-Broken Access Control"
+    taint:
+      source_types: [http_param]
+      sink_pattern: "(redirect|location\\.href|window\\.location|sendRedirect)"
+    message: >
+      Potential open redirect: user input from '{source}' (line {source_line})
+      flows to redirect at '{sink}' (line {sink_line}).

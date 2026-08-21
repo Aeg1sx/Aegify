@@ -1,0 +1,163 @@
+rules:
+  - id: CG-A05-001
+    name: Debug Mode Enabled in Production
+    description: >
+      Application debug mode is explicitly enabled in configuration files or
+      settings modules. When deployed to production, debug mode exposes detailed
+      error pages with stack traces, environment variables, source code paths,
+      and database queries to end users.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java]
+    cwe_id: 489
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee: ".*"
+        args_match: 'DEBUG\s*=\s*True'
+      - callee: ".*"
+        args_match: '(debug|DEBUG)\s*[:=]\s*(true|True|1|"true")'
+      - callee: "(app\\.run|settings|config)"
+        args_match: "debug\\s*=\\s*True"
+      - callee: "(SpringApplication|application\\.properties)"
+        args_match: "(server\\.error\\.include-stacktrace\\s*=\\s*always|spring\\.devtools\\.restart\\.enabled\\s*=\\s*true)"
+    message: >
+      Debug mode is enabled at '{callee}' (line {line}). Ensure DEBUG is set
+      to False in production deployments to prevent information disclosure.
+
+  - id: CG-A05-002
+    name: Wildcard in Allowed Hosts
+    description: >
+      The ALLOWED_HOSTS setting contains a wildcard entry, accepting requests
+      with any Host header. This enables Host header injection attacks, cache
+      poisoning, and may bypass virtual host routing security controls.
+    severity: medium
+    confidence: 0.9
+    languages: [python, javascript, typescript]
+    cwe_id: 16
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee: ".*"
+        args_match: 'ALLOWED_HOSTS\s*=\s*\[\s*["\x27]\*["\x27]\s*\]'
+      - callee: ".*"
+        args_match: '(allowedHosts|allowed_hosts|ALLOWED_HOSTS)\s*[:=]\s*\[\s*["\x27]\*["\x27]'
+      - callee: ".*"
+        args_match: '(cors_origins|CORS_ORIGINS|allowedOrigins)\s*[:=]\s*\[\s*["\x27]\*["\x27]'
+    message: >
+      Wildcard in allowed hosts at '{callee}' (line {line}). Specify explicit
+      hostnames instead of '*' to prevent Host header injection attacks.
+
+  - id: CG-A05-004
+    name: XML External Entity (XXE) Processing Enabled
+    description: >
+      XML parser is configured to process external entities or DTDs, enabling
+      XXE attacks. Attackers can read local files, perform SSRF, or cause
+      denial of service via entity expansion (billion laughs attack).
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, java, go]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    defense_patterns: ["defusedxml", "resolve_entities=False", "FEATURE_SECURE_PROCESSING", "disallow-doctype-decl", "NoEntityResolver"]
+    patterns:
+      - callee: "(etree\\.parse|etree\\.fromstring|etree\\.iterparse|minidom\\.parse|minidom\\.parseString|sax\\.parse)"
+        args_match: ".*"
+      - callee: "(xml2js\\.parseString|DOMParser|XMLReader|SAXParser)"
+        args_match: ".*"
+      - callee: "(DocumentBuilderFactory|SAXParserFactory|XMLInputFactory)"
+        args_match: ".*"
+      - callee: "(XMLReader|xml\\.NewDecoder|xml\\.Unmarshal)"
+        args_match: ".*"
+    message: >
+      XML parsing at '{callee}' (line {line}) may be vulnerable to XXE.
+      Use defusedxml (Python), disable external entities in parser config,
+      or set FEATURE_SECURE_PROCESSING (Java).
+
+  - id: CG-A05-005
+    name: Cookie Without Secure Flag
+    description: >
+      A cookie is set without the Secure flag, allowing it to be transmitted
+      over unencrypted HTTP connections. Session tokens and sensitive cookies
+      sent over HTTP can be intercepted via network sniffing or MITM attacks.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 614
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee: "(set_cookie|Set-Cookie|setCookie|res\\.cookie|response\\.set_cookie)"
+        args_match: "(?!.*[Ss]ecure\\s*[=:]\\s*[Tt]rue).*"
+      - callee: "(Cookie|NewCookie|http\\.Cookie)"
+        args_match: "(?!.*[Ss]ecure\\s*[=:]\\s*[Tt]true).*"
+      - callee: ".*"
+        args_match: 'Set-Cookie:(?!.*;\s*[Ss]ecure).*'
+      - callee: "(SESSION_COOKIE_SECURE|session\\.cookie_secure)"
+        args_match: "(False|false|0)"
+    message: >
+      Cookie set at '{callee}' (line {line}) is missing the Secure flag.
+      Always set Secure=True to prevent cookie transmission over HTTP.
+
+  - id: CG-A05-006
+    name: Cookie Without HttpOnly Flag
+    description: >
+      A cookie is set without the HttpOnly flag, making it accessible to
+      client-side JavaScript. If an XSS vulnerability exists, attackers can
+      steal session cookies via document.cookie to hijack user sessions.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 1004
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee: "(set_cookie|Set-Cookie|setCookie|res\\.cookie|response\\.set_cookie)"
+        args_match: "(?!.*[Hh]ttp[Oo]nly\\s*[=:]\\s*[Tt]rue).*"
+      - callee: "(Cookie|NewCookie|http\\.Cookie)"
+        args_match: "(?!.*[Hh]ttp[Oo]nly).*"
+      - callee: "(SESSION_COOKIE_HTTPONLY|session\\.cookie_httponly)"
+        args_match: "(False|false|0)"
+    message: >
+      Cookie set at '{callee}' (line {line}) is missing the HttpOnly flag.
+      Set HttpOnly=True to prevent JavaScript access and mitigate XSS-based
+      session theft.
+
+  - id: CG-A05-007
+    name: HTTPS Not Enforced in Configuration
+    description: >
+      Configuration contains HTTP URLs instead of HTTPS for service endpoints,
+      API base URLs, or callback URIs. Unencrypted HTTP connections expose
+      data in transit to interception and tampering.
+    severity: low
+    confidence: 0.6
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 319
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee: ".*"
+        args_match: '(BASE_URL|API_URL|CALLBACK_URL|WEBHOOK_URL|SERVICE_URL|ENDPOINT|DATABASE_URL|REDIS_URL|BROKER_URL)\s*[:=]\s*["\x27]http://(?!localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\])'
+      - callee: ".*"
+        args_match: '(base_url|api_url|callback_url|webhook_url|service_url)\s*[:=]\s*["\x27]http://(?!localhost|127\\.0\\.0\\.1)'
+    message: >
+      HTTP URL in configuration at '{callee}' (line {line}). Use HTTPS for
+      all non-localhost service URLs to protect data in transit.
+
+  - id: CG-A05-008
+    name: Default Credentials in Configuration
+    description: >
+      Default or well-known credentials such as admin/admin, root/root, or
+      test/test are present in configuration files or source code. Default
+      credentials are among the first combinations attempted by attackers
+      and automated scanning tools.
+    severity: critical
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go, kotlin, swift]
+    cwe_id: 1392
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee: ".*"
+        args_match: '(username|user|login)\s*[:=]\s*["\x27](admin|root|administrator|sa|postgres|mysql|test|guest|default)["\x27]\s*.*(password|passwd|pwd|pass)\s*[:=]\s*["\x27](admin|root|password|123456|12345678|pass|test|guest|default|changeme|toor)["\x27]'
+      - callee: ".*"
+        args_match: '(password|passwd|pwd)\s*[:=]\s*["\x27](admin|root|password|123456|12345678|qwerty|letmein|welcome|monkey|dragon|master|changeme|toor)["\x27]'
+      - callee: "(connect|createConnection|createPool|DriverManager\\.getConnection)"
+        args_match: '(root|admin|sa|postgres).*["\x27](root|admin|password|123456|changeme)["\x27]'
+    message: >
+      Default credentials detected at '{callee}' (line {line}). Replace with
+      strong, unique credentials managed through a secrets manager or vault.

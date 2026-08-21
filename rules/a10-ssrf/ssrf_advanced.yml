@@ -1,0 +1,174 @@
+rules:
+  - id: "CG-SSRF-ADV-001"
+    name: "DNS rebinding attack vector in URL fetch"
+    description: >
+      A URL is fetched based on user input after a DNS resolution check, but
+      the actual HTTP request performs a second DNS resolution that may return
+      a different IP address (DNS rebinding). An attacker registers a domain
+      with a short TTL that alternates between a permitted public IP and an
+      internal/private IP. The initial DNS check passes validation, but the
+      subsequent HTTP request resolves to the internal target. This bypasses
+      IP-based SSRF protections entirely.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, java, go, ruby]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery (SSRF)"
+    patterns:
+      - pattern_type: "sequence"
+        steps:
+          - match: "(socket\\.getaddrinfo|dns\\.resolve|dns\\.lookup|InetAddress\\.getByName|net\\.LookupHost|Resolv\\.getaddress)\\(.*\\b(url|host|domain|target)\\b"
+          - match: "(requests\\.(get|post|put|delete|patch|head)|fetch|axios\\.(get|post)|http\\.(get|request)|urllib\\.request\\.urlopen|HttpClient|http\\.Get)\\(.*\\b(url|host|domain|target)\\b"
+        condition: "steps[0].variable == steps[1].variable"
+      - pattern_type: "regex"
+        match: "def\\s+\\w*(fetch|request|proxy|forward|redirect)\\w*.*:\\s*\\n.*?(gethostbyname|getaddrinfo|resolve|lookup).*\\n.*?(requests|fetch|axios|urllib|http\\.(get|request))"
+        multiline: true
+    defense_patterns:
+      - "pin_dns_resolution"
+      - "resolve_then_connect_to_ip"
+      - "disable_dns_cache_for_ssrf_checks"
+      - "custom_dns_resolver_with_pinning"
+      - "ssrf_proxy_with_connection_level_checks"
+    message: "URL fetching performs DNS resolution separately from the HTTP request, creating a DNS rebinding window. An attacker can bypass IP validation by using a domain that resolves to different addresses on subsequent lookups. Pin DNS resolution by connecting directly to the resolved IP address."
+
+  - id: "CG-SSRF-ADV-002"
+    name: "HTTP redirect chain following with user-supplied URL"
+    description: >
+      An HTTP client follows redirects automatically when fetching a
+      user-supplied URL. Even if the initial URL passes SSRF validation
+      (points to an allowed external host), the server at that URL can issue
+      a 301/302/307/308 redirect to an internal resource (e.g.,
+      http://127.0.0.1/admin, http://169.254.169.254/). Most HTTP client
+      libraries follow redirects by default, effectively bypassing the
+      initial URL validation.
+    severity: high
+    confidence: 0.82
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery (SSRF)"
+    patterns:
+      - pattern_type: "taint"
+        source: "(request\\.(args|params|query|body|form|json|GET|POST)|req\\.(params|query|body)|@RequestParam|@PathVariable|ctx\\.Query|r\\.URL\\.Query)"
+        sink: "(requests\\.(get|post|head|put|patch|delete)|fetch|axios\\.(get|post)|urllib\\.request\\.urlopen|HttpClient\\.send|http\\.Get|Net::HTTP\\.get|file_get_contents|curl_exec)"
+        sanitizers: ["allow_redirects=False", "redirect: 'manual'", "followRedirects: false", "maxRedirects: 0", "CheckRedirect", "setFollowRedirects(false)"]
+      - pattern_type: "regex"
+        match: "requests\\.(get|post|head|put)\\(.*\\b(url|uri|target|endpoint|link|href)\\b(?!.*allow_redirects\\s*=\\s*False)"
+      - pattern_type: "regex"
+        match: "fetch\\(.*\\b(url|uri|target|endpoint|link|href)\\b(?!.*redirect\\s*:\\s*['\"]manual['\"])"
+      - pattern_type: "regex"
+        match: "axios\\.(get|post)\\(.*\\b(url|uri|target|endpoint)\\b(?!.*maxRedirects\\s*:\\s*0)"
+    defense_patterns:
+      - "disable_automatic_redirects"
+      - "validate_each_redirect_target"
+      - "redirect_allowlist"
+      - "max_redirect_limit"
+      - "ssrf_aware_http_client"
+    message: "HTTP client follows redirects automatically when fetching user-supplied URLs. An attacker can bypass initial URL validation by hosting a redirect to internal resources. Disable automatic redirect following and validate each redirect target against SSRF protections before following."
+
+  - id: "CG-SSRF-ADV-003"
+    name: "Cloud instance metadata service access"
+    description: >
+      User-controlled input is used to construct a URL that could target
+      cloud provider metadata endpoints (169.254.169.254, fd00:ec2::254,
+      metadata.google.internal, 100.100.100.200). The instance metadata
+      service (IMDS) exposes IAM credentials, instance identity tokens,
+      user-data scripts, and network configuration. Accessing these endpoints
+      via SSRF is the primary technique used in cloud-based attacks to
+      escalate from SSRF to full account compromise (as demonstrated in the
+      2019 Capital One breach).
+    severity: critical
+    confidence: 0.92
+    languages: [python, javascript, java, go, ruby, php, csharp]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery (SSRF)"
+    patterns:
+      - pattern_type: "taint"
+        source: "(request\\.(args|params|query|body|form|json)|req\\.(params|query|body)|@RequestParam|ctx\\.Query|r\\.FormValue)"
+        sink: "(requests\\.(get|post)|fetch|axios\\.(get|post)|urllib|HttpClient|http\\.(Get|Do)|Net::HTTP|curl|file_get_contents)"
+        propagators: ["url_join", "urljoin", "format", "concat", "+", "f-string", "template_literal"]
+        sanitizers: ["block_metadata_ip", "ssrf_filter", "url_allowlist"]
+      - pattern_type: "regex"
+        match: "(169\\.254\\.169\\.254|fd00:ec2::254|metadata\\.google\\.internal|metadata\\.azure\\.com|100\\.100\\.100\\.200)"
+      - pattern_type: "negative_check"
+        description: "Missing metadata IP blocklist in URL validation"
+        match: "def\\s+\\w*(validate|check|verify|sanitize)_url"
+        must_contain: "(169\\.254\\.169\\.254|metadata|link.local|IMDS)"
+    defense_patterns:
+      - "imds_v2_enforcement"
+      - "metadata_ip_blocklist"
+      - "network_level_metadata_firewall"
+      - "url_scheme_and_host_validation"
+      - "egress_proxy_with_ssrf_protection"
+    message: "User-controlled URL input could target cloud metadata endpoints (169.254.169.254). Successful SSRF to IMDS can expose IAM credentials and enable full cloud account compromise. Block metadata IP ranges at the application and network level, and enforce IMDSv2 (token-required) on all cloud instances."
+
+  - id: "CG-SSRF-ADV-004"
+    name: "Internal and private IP range access via user-supplied URL"
+    description: >
+      User-controlled input is used to construct a URL that is fetched by the
+      server without validation against private and reserved IP ranges.
+      Attackers can probe and access internal services by supplying URLs
+      targeting RFC 1918 addresses (10.0.0.0/8, 172.16.0.0/12,
+      192.168.0.0/16), loopback (127.0.0.0/8), link-local
+      (169.254.0.0/16), and other reserved ranges. This enables port
+      scanning, service discovery, and exploitation of internal services
+      that lack authentication because they are not exposed to the internet.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, java, go, ruby, php, csharp]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery (SSRF)"
+    patterns:
+      - pattern_type: "taint"
+        source: "(request\\.(args|params|query|body|form|json)|req\\.(params|query|body)|@RequestParam|ctx\\.Query|r\\.FormValue|getParameter)"
+        sink: "(requests\\.(get|post|put|delete|head)|fetch|axios|urllib|HttpClient|http\\.(Get|Do|NewRequest)|Net::HTTP|curl_exec|file_get_contents|WebClient)"
+        sanitizers: ["is_public_ip", "validate_not_private", "ip_allowlist", "ssrf_protection", "block_private_ranges"]
+      - pattern_type: "negative_check"
+        description: "URL fetching function without private IP validation"
+        match: "def\\s+\\w*(fetch|get|request|download|proxy|load|import)_?(url|resource|content|data|page|file)?"
+        must_contain: "(is_private|private_ip|reserved|internal|127\\.|10\\.|172\\.16|192\\.168|0\\.0\\.0\\.0)"
+      - pattern_type: "regex"
+        match: "(requests|fetch|axios|http|urllib|curl)\\.(get|post|request|urlopen|exec)\\(\\s*(url|uri|target|endpoint|link)\\s*[,)]"
+        negative_match: "(ssrf|private|internal|allowlist|whitelist|validate).*\\b(url|uri|target|endpoint|link)\\b"
+    defense_patterns:
+      - "private_ip_range_blocklist"
+      - "dns_resolution_with_ip_check"
+      - "egress_proxy"
+      - "network_segmentation"
+      - "url_allowlist_with_domain_validation"
+    message: "User-supplied URL is fetched without validation against private and reserved IP ranges. Implement IP range validation after DNS resolution to block access to RFC 1918, loopback, and link-local addresses. Use an egress proxy for all server-side HTTP requests."
+
+  - id: "CG-SSRF-ADV-005"
+    name: "URL scheme bypass using non-HTTP protocols"
+    description: >
+      User-supplied URL input is not restricted to HTTP/HTTPS schemes,
+      allowing exploitation via alternative URL schemes such as file://
+      (local file read), gopher:// (arbitrary TCP payloads), dict://
+      (Redis/Memcached command injection), ftp:// (internal FTP access),
+      ldap:// (LDAP injection), or jar:// (Java-specific file access).
+      The gopher:// scheme is particularly dangerous as it allows
+      construction of arbitrary TCP packets, enabling attacks against
+      Redis, Memcached, SMTP, and other internal services.
+    severity: critical
+    confidence: 0.88
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery (SSRF)"
+    patterns:
+      - pattern_type: "taint"
+        source: "(request\\.(args|params|query|body|form|json)|req\\.(params|query|body)|@RequestParam|ctx\\.Query|r\\.FormValue)"
+        sink: "(requests\\.(get|post)|urllib\\.request\\.urlopen|urlopen|curl_exec|file_get_contents|HttpClient|http\\.Get|open-uri)"
+        sanitizers: ["url_scheme_allowlist", "validate_http_scheme", "restrict_to_https"]
+      - pattern_type: "negative_check"
+        description: "URL handling without scheme validation"
+        match: "(requests\\.(get|post)|fetch|axios|urllib|curl|file_get_contents|HttpClient)\\.(get|post|request|urlopen|exec|send)\\("
+        must_contain: "(scheme|protocol|https?://|startswith.*http|url\\.scheme)"
+      - pattern_type: "regex"
+        match: "(urlopen|requests\\.get|curl_exec|file_get_contents|HttpClient\\.send)\\(.*\\b(url|uri|target|endpoint)\\b"
+        negative_match: "(url\\.startswith\\(['\"]https?://|urlparse.*scheme.*in.*\\[|protocol\\s*===?\\s*['\"]https?['\"])"
+    defense_patterns:
+      - "url_scheme_allowlist_http_https_only"
+      - "urlparse_scheme_validation"
+      - "protocol_enforcement_middleware"
+      - "input_url_normalization"
+      - "disable_non_http_protocols_in_client"
+    message: "User-supplied URL is not validated for scheme, allowing non-HTTP protocols (file://, gopher://, dict://, ldap://). Restrict URL schemes to https:// only (or http:// and https:// if required). Parse the URL and validate the scheme before any network request."

@@ -1,0 +1,263 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Project {
+  id             String    @id @default(cuid())
+  name           String
+  repositoryUrl  String    @default("")
+  defaultBranch  String    @default("main")
+  description    String    @default("")
+  color          String    @default("#6366f1")
+  provider       String    @default("") // "github" | "gitlab" | ""
+  providerRepoId String    @default("") // GitHub/GitLab numeric ID (string)
+  ownerSlug      String    @default("") // "owner/repo" (GitHub) / "group/project" (GitLab)
+  archived       Boolean   @default(false)
+  archivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  scans Scan[]
+
+  @@index([name])
+  @@index([userId])
+  @@index([archived])
+}
+
+model Scan {
+  id                String   @id @default(cuid())
+  repository        String   @default("")
+  branch            String   @default("")
+  commitSha         String   @default("")
+  status            String   @default("completed") // pending, running, completed, failed
+  scanType          String   @default("sast") // sast, llm-quick, llm-deep
+  filesScanned      Int      @default(0)
+  duration          Float    @default(0)
+  workspaceSnapshot String   @default("")
+  createdAt         DateTime @default(now())
+
+  // Progress tracking for running scans
+  progressPhase     Int       @default(0)
+  progressPhaseName String    @default("")
+  progressPercent   Float     @default(0)
+  progressMessage   String    @default("")
+  progressEta       Float? // estimated seconds remaining
+  progressUpdatedAt DateTime?
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  findings   Finding[]
+  graphNodes CallGraphNode[]
+  graphEdges CallGraphEdge[]
+  endpoints  Endpoint[]
+  llmJobs    LlmJob[]
+
+  @@index([createdAt])
+  @@index([repository])
+  @@index([projectId])
+}
+
+model Finding {
+  id             String   @id @default(cuid())
+  scanId         String
+  ruleId         String
+  ruleName       String
+  severity       String // critical, high, medium, low
+  confidence     Float    @default(0.8)
+  status         String   @default("open") // open, triaged, confirmed, in_progress, false_positive, fixed
+  source         String   @default("sast") // sast, llm
+  filePath       String
+  lineStart      Int
+  lineEnd        Int
+  codeSnippet    String   @default("")
+  message        String
+  cweId          Int?
+  owaspCategory  String?
+  taintFlow      String? // JSON string of taint flow
+  callChain      String? // JSON string of call chain
+  defenseContext String? // JSON string of defense context
+  remediation    String?
+  llmAnalysis    String? // JSON string of LLM analysis result
+  evidenceId     String   @default("")
+  repositoryId   String   @default("")
+  modulePath     String   @default("")
+  provenance     String   @default("{}") // JSON evidence producer contract
+  createdAt      DateTime @default(now())
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([severity])
+  @@index([status])
+  @@index([ruleId])
+  @@index([filePath])
+  @@index([source])
+  @@index([evidenceId])
+  @@index([repositoryId])
+}
+
+model Rule {
+  id            String   @id
+  name          String
+  severity      String
+  cweId         Int?
+  owaspCategory String?
+  languages     String   @default("") // comma-separated
+  enabled       Boolean  @default(true)
+  findingCount  Int      @default(0)
+  yamlContent   String   @default("") // YAML rule definition (patterns, etc.)
+  description   String   @default("")
+  sourceFile    String   @default("") // tracks which YAML file this rule came from
+  updatedAt     DateTime @default(now()) @updatedAt
+}
+
+model Setting {
+  key       String   @id
+  value     String // encrypted for sensitive values
+  encrypted Boolean  @default(false)
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model CallGraphNode {
+  id              String  @id @default(cuid())
+  scanId          String
+  qualifiedName   String
+  filePath        String
+  lineStart       Int     @default(0)
+  lineEnd         Int     @default(0)
+  nodeType        String  @default("function") // function, method, entry_point, sink, module
+  hasFinding      Boolean @default(false)
+  findingSeverity String? // highest severity finding on this node
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  outEdges CallGraphEdge[] @relation("SourceNode")
+  inEdges  CallGraphEdge[] @relation("TargetNode")
+
+  @@unique([scanId, qualifiedName])
+  @@index([scanId])
+}
+
+model CallGraphEdge {
+  id           String @id @default(cuid())
+  scanId       String
+  sourceNodeId String
+  targetNodeId String
+  callSiteLine Int    @default(0)
+
+  scan       Scan          @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  sourceNode CallGraphNode @relation("SourceNode", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode CallGraphNode @relation("TargetNode", fields: [targetNodeId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
+}
+
+model Endpoint {
+  id                      String  @id @default(cuid())
+  scanId                  String
+  path                    String
+  method                  String
+  handlerFunction         String
+  filePath                String
+  lineStart               Int     @default(0)
+  lineEnd                 Int     @default(0)
+  framework               String  @default("")
+  authRequired            Boolean @default(false)
+  parameters              String  @default("[]") // JSON
+  middleware              String  @default("[]") // JSON
+  repositoryId            String  @default("")
+  calledByFrontend        Boolean @default(false)
+  frontendCallCount       Int     @default(0)
+  frontendEvidence        String  @default("[]") // JSON evidence with file and line
+  exposedViaGateway       Boolean @default(false)
+  gatewayRouteIds         String  @default("[]") // JSON
+  gatewayEvidence         String  @default("[]") // JSON evidence with route source
+  runtimeObserved         Boolean @default(false)
+  runtimeObservationCount Int     @default(0)
+  runtimeEvidence         String  @default("[]") // JSON redacted HTTP/browser/trace evidence
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, repositoryId, path, method])
+  @@index([scanId])
+}
+
+model LlmJob {
+  id             String    @id @default(cuid())
+  scanId         String
+  mode           String // "quick" | "deep"
+  status         String    @default("pending") // pending, running, completed, failed
+  totalFindings  Int       @default(0)
+  reviewedCount  Int       @default(0)
+  falsePositives Int       @default(0)
+  currentBatch   Int       @default(0)
+  totalBatches   Int       @default(0)
+  errorMessage   String    @default("")
+  createdAt      DateTime  @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([scanId])
+  @@index([createdAt])
+}
+
+// Auth.js (NextAuth v5) models
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  projects      Project[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

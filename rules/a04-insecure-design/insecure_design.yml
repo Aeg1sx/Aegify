@@ -1,0 +1,109 @@
+rules:
+  - id: CG-A04-001
+    name: Verbose Error Message Exposing Internals
+    description: >
+      Application returns detailed error information such as stack traces,
+      tracebacks, or internal paths in HTTP responses. This exposes internal
+      architecture details that aid attackers in crafting targeted exploits.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 209
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - callee: "(render|send|jsonify|Response|res\\.send|res\\.json)"
+        args_match: "(traceback\\.format_exc|traceback\\.print_exc|stack_trace|stackTrace|e\\.getMessage|err\\.stack|debug\\.PrintStack|runtime\\.Stack)"
+      - callee: "(HttpResponse|JsonResponse|make_response)"
+        args_match: "(traceback|stacktrace|stack_trace|format_exc)"
+      - callee: "res\\.(status|json|send)"
+        args_match: "(error\\.stack|err\\.stack|exception\\.message)"
+    message: >
+      Verbose error message at '{callee}' (line {line}) may expose internal
+      application details. Return generic error messages to clients and log
+      detailed errors server-side only.
+
+  - id: CG-A04-002
+    name: Hardcoded Credentials in Source Code
+    description: >
+      Passwords, API keys, or secrets are hardcoded as string literals in
+      source code. This exposes credentials in version control history and
+      compiled artifacts. Use environment variables, vault services, or
+      dedicated secrets managers instead.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, kotlin, swift]
+    cwe_id: 798
+    owasp_category: "A04:2021-Insecure Design"
+    defense_patterns: ["os.environ", "os.getenv", "process.env", "vault", "secrets_manager", "keychain"]
+    patterns:
+      - callee: ".*"
+        args_match: '(password|passwd|pwd|secret|secret_key|api_key|apikey|api_secret|private_key|access_token|auth_token)\s*=\s*["\x27][A-Za-z0-9+/=_\-!@#$%^&*]{8,}["\x27]'
+      - callee: ".*"
+        args_match: '(PASSWORD|SECRET|API_KEY|PRIVATE_KEY|ACCESS_TOKEN)\s*[:=]\s*["\x27][^"\x27]{8,}["\x27]'
+    message: >
+      Hardcoded credential detected at '{callee}' (line {line}). Never embed
+      secrets in source code. Use environment variables or a secrets manager.
+
+  - id: CG-A04-003
+    name: Client-Side Only Validation
+    description: >
+      Input validation is performed only in frontend/client-side code without
+      corresponding server-side validation. Attackers can bypass client-side
+      checks by sending requests directly to the API, leading to injection,
+      data corruption, or business logic bypass.
+    severity: medium
+    confidence: 0.5
+    languages: [javascript, typescript]
+    cwe_id: 602
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - callee: "(document\\.getElementById|querySelector|\\$).*\\.(checkValidity|reportValidity|setCustomValidity)"
+      - callee: "(addEventListener|on[Ss]ubmit|onInput|onChange)"
+        args_match: "(validate|isValid|check[A-Z]|verify|pattern\\.test|regex\\.test|match)"
+      - callee: "(HTMLFormElement|form)\\.checkValidity"
+    message: >
+      Client-side validation detected at '{callee}' (line {line}) without
+      evidence of corresponding server-side validation. Always validate input
+      on the server, regardless of client-side checks.
+
+  - id: CG-A04-005
+    name: Information Disclosure via Debug Mode
+    description: >
+      Debug mode is enabled in application configuration. Debug mode typically
+      exposes detailed error pages, stack traces, environment variables, and
+      internal paths. This must be disabled in production environments.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java]
+    cwe_id: 215
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - callee: ".*"
+        args_match: '(DEBUG\s*=\s*True|debug\s*[:=]\s*true|DEBUG_MODE\s*=\s*(True|true|1|"1"))'
+      - callee: "(app\\.run|app\\.config|createServer|express)"
+        args_match: "(debug\\s*=\\s*True|debug\\s*:\\s*true)"
+      - callee: "(Flask|Django|FastAPI|Express)"
+        args_match: "(debug\\s*=\\s*True|debug\\s*:\\s*true)"
+    message: >
+      Debug mode enabled at '{callee}' (line {line}). Disable debug mode in
+      production to prevent exposure of sensitive application internals.
+
+  - id: CG-A04-006
+    name: Unsafe Redirect Without Validation
+    description: >
+      User-controlled input is used in an HTTP redirect without validating
+      the destination URL. Attackers can craft links that redirect users to
+      malicious sites for phishing or credential theft.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 601
+    owasp_category: "A04:2021-Insecure Design"
+    defense_patterns: ["url_has_allowed_host_and_scheme", "is_safe_url", "validate_redirect", "allowlist", "whitelist", "urlparse"]
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_pattern: "(redirect|sendRedirect|res\\.redirect|location\\.href|window\\.location|http\\.Redirect|Header\\(\\s*[\"']Location)"
+    message: >
+      Potential open redirect: user input from '{source}' (line {source_line})
+      flows to redirect at '{sink}' (line {sink_line}). Validate redirect
+      destinations against an allowlist of trusted domains.

@@ -1,0 +1,41 @@
+scan:
+  languages: [python, javascript, typescript, java, kotlin, go, rust, swift]
+  exclude:
+    - "tests/**"
+    - "vendor/**"
+    - "node_modules/**"
+    - ".git/**"
+    - "__pycache__/**"
+    - "venv/**"
+
+rules:
+  severity_threshold: medium
+  disabled_rules: []
+
+llm:
+  enabled: false
+  model: claude-opus-4-6
+  token_budget: 100000
+  verify_threshold: 0.7
+
+reporting:
+  sarif: true
+  github_comment: true
+
+context:
+  auth_patterns:
+    - "@auth_required"
+    - "@login_required"
+    - "requireAuth"
+    - "@permission_required"
+    - "@jwt_required"
+  sanitizer_patterns:
+    - "parameterized"
+    - "escape"
+    - "sanitize"
+    - "clean"
+    - "validate"
+    - "html.escape"
+    - "bleach.clean"
+    - "shlex.quote"
+    - "DOMPurify"

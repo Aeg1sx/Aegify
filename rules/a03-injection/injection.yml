@@ -1,0 +1,314 @@
+rules:
+  - id: CG-A03-001
+    name: LDAP Injection
+    description: >
+      User-controlled input flows into an LDAP query filter without
+      sanitization. An attacker can manipulate the LDAP filter to bypass
+      authentication, enumerate directory entries, or extract sensitive
+      attributes from the directory service.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 90
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["ldap_escape", "escape_filter_chars", "parameterized_filter", "ldap_sanitize"]
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(ldap\\.search|ldap_search|search_s|search_ext_s|LdapConnection\\.search|DirContext\\.search|ldap\\.Search)"
+      sink_types: [ldap_query]
+    message: >
+      Potential LDAP injection: user input from '{source}' (line
+      {source_line}) flows into LDAP query '{sink}' (line {sink_line})
+      without proper escaping or parameterization.
+
+  - id: CG-A03-002
+    name: XPath Injection
+    description: >
+      User-controlled input is concatenated into an XPath expression without
+      sanitization. An attacker can alter the query logic to bypass
+      authentication, extract unauthorized data, or enumerate XML document
+      structure.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 643
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["xpath_escape", "parameterized_xpath", "XPathExpression", "precompiled_xpath"]
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(xpath|XPath\\.evaluate|selectNodes|selectSingleNode|etree\\.XPath|xml\\.xpath|xmlDoc\\.evaluate)"
+      sink_types: [xpath_query]
+    message: >
+      Potential XPath injection: user input from '{source}' (line
+      {source_line}) flows into XPath expression '{sink}' (line
+      {sink_line}) without sanitization.
+
+  - id: CG-A03-003
+    name: NoSQL Injection
+    description: >
+      User-controlled input is passed directly into a NoSQL query (MongoDB,
+      CouchDB, etc.) without type validation or sanitization. An attacker
+      can inject query operators ($gt, $ne, $regex, $where) to bypass
+      authentication or extract unauthorized data.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 943
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["type_check", "sanitize_input", "mongo_sanitize", "express_mongo_sanitize", "validate_schema"]
+    patterns:
+      - callee_match: "(find|findOne|find_one|findOneAndUpdate|updateOne|updateMany|deleteOne|deleteMany|aggregate|collection\\.find|db\\.collection)"
+        args_match: "(req\\.body|req\\.query|req\\.params|request\\.data|request\\.json|request\\.args|request\\.form)"
+      - callee_match: "(\\$where|\\$regex|\\$gt|\\$ne|\\$exists)"
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(collection\\.(find|update|delete|aggregate|insert)|db\\.(find|update|remove))"
+    message: >
+      Potential NoSQL injection: user input from '{source}' (line
+      {source_line}) flows into NoSQL query '{sink}' (line {sink_line}).
+      Validate input types and sanitize query operators ($gt, $ne, $where).
+
+  - id: CG-A03-004
+    name: Server-Side Template Injection (SSTI)
+    description: >
+      User-controlled input is embedded directly into a server-side template
+      string that is then rendered. An attacker can inject template
+      directives to execute arbitrary code on the server, read sensitive
+      files, or perform full system compromise.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 1336
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["autoescape", "sandbox", "safe_template", "escape_html", "template_from_file"]
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(render_template_string|Template\\(|Jinja2|from_string|nunjucks\\.renderString|ejs\\.render|pug\\.render|handlebars\\.compile|FreeMarker|VelocityEngine|StringTemplateGroup)"
+      sink_types: [template_render]
+    message: >
+      Potential server-side template injection: user input from '{source}'
+      (line {source_line}) flows into template rendering at '{sink}'
+      (line {sink_line}). Use pre-compiled templates with parameterized
+      values instead of string interpolation.
+
+  - id: CG-A03-005
+    name: Expression Language Injection
+    description: >
+      User-controlled input is evaluated as an Expression Language (EL),
+      SpEL, OGNL, or MVEL expression. An attacker can execute arbitrary
+      code, access internal objects, or read sensitive system properties
+      through crafted expressions.
+    severity: high
+    confidence: 0.8
+    languages: [java, kotlin, python, javascript, typescript]
+    cwe_id: 917
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["expression_whitelist", "sandbox", "disable_el", "static_context"]
+    patterns:
+      - callee_match: "(SpelExpressionParser|ExpressionFactory|ValueExpression|OgnlUtil|Ognl\\.getValue|MvelExpression|ScriptEngine\\.eval)"
+        args_match: "(request|req|params|input|user)"
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(parseExpression|evaluateExpression|getValue|createValueExpression|Ognl\\.getValue|MVEL\\.eval)"
+      sink_types: [code_exec]
+    message: >
+      Potential Expression Language injection: user input from '{source}'
+      (line {source_line}) flows into EL/SpEL/OGNL evaluation at '{sink}'
+      (line {sink_line}). Never evaluate user-controlled strings as
+      expressions.
+
+  - id: CG-A03-006
+    name: OS Command Injection via shell=True
+    description: >
+      User-controlled input is passed to a system command executed with
+      shell=True or through a shell interpreter. An attacker can chain
+      additional commands using shell metacharacters (;, |, &&, ||, $(),
+      backticks) to execute arbitrary OS commands.
+    severity: critical
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 78
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["shell=False", "shlex.quote", "subprocess.run with list", "parameterized_command", "allowlist"]
+    taint:
+      source_types: [http_param, http_body, http_header, cli_arg]
+      sink_pattern: "(subprocess\\.(call|run|Popen|check_output|check_call)|os\\.(system|popen|exec)|child_process\\.(exec|execSync)|Runtime\\.getRuntime\\(\\)\\.exec|exec\\.Command)"
+      sink_types: [os_command]
+    patterns:
+      - callee_match: "(subprocess\\.(call|run|Popen|check_output|check_call))"
+        args_match: "shell\\s*=\\s*True"
+      - callee_match: "(os\\.system|os\\.popen|child_process\\.exec|child_process\\.execSync)"
+        args_match: "(request|req|input|user|param|arg|query|\\+|f['\"]|format|%s|\\.join)"
+    message: >
+      OS command injection: user input from '{source}' (line {source_line})
+      flows into shell command '{sink}' (line {sink_line}). Use
+      subprocess.run with a list argument (shell=False) and validate input
+      against an allowlist.
+
+  - id: CG-A03-007
+    name: Code Injection via eval or exec
+    description: >
+      User-controlled input is passed to eval(), exec(), or equivalent
+      dynamic code execution functions. An attacker can execute arbitrary
+      code in the application's runtime context, leading to full system
+      compromise.
+    severity: critical
+    confidence: 0.9
+    languages: [python, java, go, kotlin]
+    cwe_id: 94
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["ast.literal_eval", "json.loads", "sandbox", "restricted_exec", "safe_eval"]
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie]
+      sink_pattern: "(eval|exec|compile|execfile|__import__|Function\\(|setTimeout\\(.*string|setInterval\\(.*string|vm\\.runInContext|vm\\.runInNewContext)"
+      sink_types: [code_exec]
+    patterns:
+      - callee: "\\beval\\b"
+        args_match: "(request|req|input|user|param|query|body|data|args)"
+      - callee: "\\bexec\\b"
+        args_match: "(request|req|input|user|param|query|body|data|args)"
+      - callee_match: "(new Function|Function\\()"
+        args_match: "(request|req|input|user|param|query|body)"
+    message: >
+      Code injection: user input from '{source}' (line {source_line})
+      flows into dynamic code execution '{sink}' (line {sink_line}). Never
+      pass user-controlled data to eval/exec. Use ast.literal_eval for
+      Python literals or JSON.parse for structured data.
+
+  - id: CG-A03-008
+    name: HTTP Header Injection
+    description: >
+      User-controlled input is placed into an HTTP response header without
+      sanitization of carriage return (\\r) and line feed (\\n) characters.
+      An attacker can inject additional headers or split the HTTP response
+      to perform cache poisoning, session fixation, or cross-site scripting.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 113
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["strip_newlines", "header_sanitize", "encode_header", "validate_header_value"]
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_pattern: "(set_header|setHeader|addHeader|response\\.headers|Header\\.Set|Header\\.Add|setResponseHeader|add_header)"
+    patterns:
+      - callee_match: "(set_header|setHeader|addHeader|response\\.headers\\[|Header\\.(Set|Add)|add_header|header\\()"
+        args_match: "(request|req|input|user|param|query|body)"
+        missing_check: "(replace.*\\\\r|replace.*\\\\n|strip|sanitize|encode)"
+    message: >
+      Potential HTTP header injection: user input from '{source}' (line
+      {source_line}) flows into response header '{sink}' (line {sink_line})
+      without CRLF sanitization. Strip or reject \\r and \\n characters.
+
+  - id: CG-A03-009
+    name: Log Injection
+    description: >
+      User-controlled input is written to application logs without
+      sanitization of newline characters or log-special sequences. An
+      attacker can forge log entries, corrupt log analysis, inject false
+      audit trails, or exploit log viewers via ANSI escape codes.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 117
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["log_sanitize", "strip_newlines", "structured_logging", "parameterized_logging"]
+    taint:
+      source_types: [http_param, http_body, http_header, http_cookie]
+      sink_pattern: "(logger\\.(info|warn|error|debug|warning|critical)|console\\.(log|warn|error|info)|log\\.(Info|Warn|Error|Debug|Printf|Println)|LOG\\.(info|warn|error|debug))"
+      sink_types: [log_injection]
+    patterns:
+      - callee_match: "(logger\\.|logging\\.|console\\.|log\\.)"
+        args_match: "(request|req|input|user|param|query|body|header|cookie)"
+        missing_check: "(sanitize|strip|replace|escape|structured|parameterized|%s|\\{\\})"
+    message: >
+      Potential log injection: user input from '{source}' (line
+      {source_line}) flows into log statement '{sink}' (line {sink_line})
+      without sanitization. Use structured/parameterized logging and strip
+      newline characters from user input.
+
+  - id: CG-A03-010
+    name: XML External Entity Injection (XXE)
+    description: >
+      User-controlled XML input is parsed with a configuration that allows
+      external entity resolution. An attacker can read local files, perform
+      SSRF, cause denial of service via recursive entity expansion (Billion
+      Laughs), or exfiltrate data via out-of-band channels.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 611
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["disable_external_entities", "defusedxml", "XMLConstants.FEATURE_SECURE_PROCESSING", "disallow-doctype-decl"]
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(etree\\.parse|etree\\.fromstring|minidom\\.parse|xml\\.sax\\.parse|SAXParser|DocumentBuilder|XMLReader|parseString|DOMParser|xml\\.NewDecoder|xml\\.Unmarshal)"
+      sink_types: [xml_parse]
+    patterns:
+      - callee_match: "(etree\\.(parse|fromstring|iterparse)|minidom\\.parse(String)?|xml\\.sax\\.(parse|make_parser)|pulldom\\.parse)"
+        missing_check: "(defusedxml|resolve_entities\\s*=\\s*False|forbid_dtd|forbid_entities)"
+      - callee_match: "(DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|XMLReader)"
+        missing_check: "(FEATURE_SECURE_PROCESSING|disallow-doctype-decl|SUPPORT_DTD.*false|IS_SUPPORTING_EXTERNAL_ENTITIES.*false)"
+      - callee_match: "(DOMParser|xml2js|fast-xml-parser|libxmljs)"
+        missing_check: "(noent.*false|dtd.*false|entities.*false)"
+    message: >
+      Potential XXE: user-supplied XML from '{source}' (line {source_line})
+      is parsed at '{sink}' (line {sink_line}) without disabling external
+      entity resolution. Use defusedxml (Python), disable DTDs (Java), or
+      configure parsers to reject external entities.
+
+  - id: CG-A03-011
+    name: Regular Expression Denial of Service (ReDoS)
+    description: >
+      User-controlled input is compiled or used as a regular expression
+      pattern. A crafted regex with catastrophic backtracking (nested
+      quantifiers, overlapping alternations) can cause the regex engine to
+      consume excessive CPU, leading to denial of service.
+    severity: medium
+    confidence: 0.65
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 1333
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["re2", "regex_timeout", "fixed_pattern", "escape_regex", "re.escape", "regex_allowlist"]
+    patterns:
+      - callee_match: "(re\\.compile|re\\.match|re\\.search|re\\.findall|new RegExp|Pattern\\.compile|regexp\\.Compile|regexp\\.MustCompile)"
+        args_match: "(request|req|input|user|param|query|body|data|args)"
+      - callee_match: "(RegExp|re\\.compile|Pattern\\.compile)"
+        args_match: "(\\+|format|f['\"]|%s|concat|\\$\\{)"
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(re\\.(compile|match|search|findall|sub)|new RegExp|Pattern\\.compile|regexp\\.(Compile|MustCompile|Match))"
+    message: >
+      Potential ReDoS: user input from '{source}' (line {source_line})
+      is used to construct a regular expression at '{sink}' (line
+      {sink_line}). Use a safe regex engine (RE2), apply timeouts, or
+      validate patterns against a known-safe allowlist.
+
+  - id: CG-A03-012
+    name: Format String Vulnerability
+    description: >
+      User-controlled input is used as a format string in printf-style
+      formatting functions. An attacker can read from or write to arbitrary
+      memory locations (in native languages), cause crashes, or leak
+      sensitive information from the stack or process memory.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go, rust, kotlin, swift]
+    cwe_id: 134
+    owasp_category: "A03:2021-Injection"
+    defense_patterns: ["hardcoded_format", "parameterized_format", "template_literal"]
+    patterns:
+      - callee_match: "(printf|sprintf|fprintf|snprintf|fmt\\.Sprintf|fmt\\.Fprintf|fmt\\.Printf|String\\.format|format!)"
+        args_match: "(request|req|input|user|param|query|body|data|args)"
+      - callee_match: "(logging\\.(info|warn|error|debug|warning)|logger\\.(info|warn|error|debug))"
+        args_match: "(request|req|input|user|param|query|body)"
+      - callee_match: "(\\.format\\()"
+        missing_check: "(sanitize|escape|validate)"
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_pattern: "(printf|sprintf|fprintf|snprintf|fmt\\.(Sprintf|Fprintf|Printf)|String\\.format|format!)"
+    message: >
+      Format string vulnerability: user input from '{source}' (line
+      {source_line}) is used as a format string in '{sink}' (line
+      {sink_line}). Never use user-controlled data as a format string.
+      Pass user input as a format argument, not the format string itself.

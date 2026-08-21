@@ -1,0 +1,288 @@
+rules:
+  - id: "CG-TMPL-001"
+    name: "Jinja2 Server-Side Template Injection"
+    description: >
+      Detects user-controlled input rendered through Jinja2 template engine
+      without proper sandboxing or using unsafe patterns. Jinja2 SSTI occurs
+      when user input is passed to Template() constructor or render_template_string()
+      instead of being passed as a template variable to a pre-compiled template.
+      An attacker can exploit Python's Method Resolution Order (MRO) to escape
+      the Jinja2 sandbox by traversing __mro__, __subclasses__(), __globals__,
+      and __builtins__ to reach dangerous classes like os.popen or subprocess.Popen.
+      Classic payloads include {{config}} to leak Flask configuration secrets,
+      {{''.__class__.__mro__[2].__subclasses__()}} to enumerate available classes,
+      and chaining to os.popen() for remote code execution. Even Jinja2's
+      SandboxedEnvironment has known bypasses via Jinja2 internal objects.
+    severity: critical
+    confidence: 0.94
+    languages: [python]
+    cwe_id: 1336
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "Template"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+        context_match: "jinja2|Jinja2|flask"
+      - callee: "render_template_string"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - pattern: "Template\\s*\\(\\s*[\"'`].*\\{\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "Template\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "render_template_string\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "Environment\\(\\)\\.(from_string|parse)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query, form_input]
+      sink_types: [template_render]
+      sink_pattern: "(Template\\(|render_template_string|from_string|Environment.*parse)"
+      propagation:
+        - "string_concat"
+        - "f_string"
+        - "format\\("
+        - "%s.*%"
+    defense_patterns:
+      - "render_template\\("
+      - "SandboxedEnvironment"
+      - "ImmutableSandboxedEnvironment"
+      - "autoescape\\s*=\\s*True"
+      - "select_autoescape"
+      - "Markup\\.escape"
+      - "jinja2\\.escape"
+      - "bleach\\.clean"
+    message: "Jinja2 template at line {line} renders user-controlled input via Template() or render_template_string(), enabling server-side template injection. An attacker can achieve remote code execution by traversing Python MRO to access os.popen or subprocess modules."
+
+  - id: "CG-TMPL-002"
+    name: "Handlebars Server-Side Template Injection"
+    description: >
+      Detects user-controlled input compiled as a Handlebars template string
+      rather than passed as safe context data. Handlebars.compile() or
+      Handlebars.precompile() with user-controlled input allows an attacker
+      to inject Handlebars expressions and helpers. While Handlebars is
+      generally more restrictive than other template engines, custom helpers
+      and prototype pollution can be chained to achieve code execution.
+      The {{lookup}} helper combined with prototype pollution allows accessing
+      constructor.constructor to reach Function(), enabling arbitrary code
+      execution. Known payloads include
+      {{#with "s" as |string|}}{{#with "e"}}{{#with split as |conslist|}}{{this.pop}}{{this.push (lookup string.sub "constructor")}}{{this.pop}}{{#with string.split as |codelist|}}{{this.pop}}{{this.push "return require('child_process').execSync('id');"}}{{this.pop}}{{#each conslist}}{{#with (string.sub.apply 0 codelist)}}{{this}}{{/with}}{{/each}}{{/with}}{{/with}}{{/with}}{{/with}}.
+    severity: critical
+    confidence: 0.89
+    languages: [javascript, typescript]
+    cwe_id: 1336
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "Handlebars.compile"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - callee: "Handlebars.precompile"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - pattern: "handlebars\\.(compile|precompile)\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "hbs\\.(compile|precompile)\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "Handlebars\\.registerHelper.*\\b(req|request|input|param|query|body|form|data|user)\\b.*(?:eval|Function|exec)"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [template_render]
+      sink_pattern: "(Handlebars\\.(compile|precompile)|hbs\\.(compile|precompile))"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "assignment"
+    defense_patterns:
+      - "Handlebars\\.SafeString"
+      - "Handlebars\\.escapeExpression"
+      - "Handlebars\\.Utils\\.escapeExpression"
+      - "noEscape\\s*:\\s*false"
+      - "strict\\s*:\\s*true"
+      - "allowProtoPropertiesByDefault\\s*:\\s*false"
+      - "allowProtoMethodsByDefault\\s*:\\s*false"
+    message: "Handlebars template at line {line} compiles user-controlled input as a template string. An attacker can inject helpers and prototype chain traversals to achieve remote code execution via Function constructor access."
+
+  - id: "CG-TMPL-003"
+    name: "EJS Server-Side Template Injection"
+    description: >
+      Detects user-controlled input passed to EJS (Embedded JavaScript)
+      template rendering functions as template source code rather than as
+      data context. EJS uses <% %> delimiters for JavaScript execution and
+      <%= %> for expression output. When user input is passed to ejs.render()
+      or ejs.compile() as the template string parameter, an attacker can
+      inject arbitrary JavaScript code within EJS delimiters for direct
+      server-side code execution. Payloads are straightforward since EJS
+      provides direct JavaScript execution context, allowing
+      <%- global.process.mainModule.require('child_process').execSync('id') %>
+      for immediate remote code execution. EJS also supports include
+      directives that can be abused for local file inclusion.
+    severity: critical
+    confidence: 0.91
+    languages: [javascript, typescript]
+    cwe_id: 1336
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "ejs.render"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - callee: "ejs.compile"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - callee: "ejs.renderFile"
+        args_match: "(req|request|input|param|query|body|form|data|user).*filename"
+      - pattern: "ejs\\.(render|compile)\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "res\\.render\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "ejs|EJS"
+      - pattern: "(settings|options)\\s*\\[\\s*[\"']view engine[\"']\\s*\\].*ejs"
+        context_match: "\\b(req|request|input|param|query|body|form|data|user)\\b.*render"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [template_render]
+      sink_pattern: "(ejs\\.(render|compile|renderFile)|res\\.render)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "assignment"
+    defense_patterns:
+      - "res\\.render\\(\\s*[\"']"
+      - "ejs\\.renderFile\\(\\s*[\"']"
+      - "escape\\s*:\\s*true"
+      - "rmWhitespace"
+      - "client\\s*:\\s*true"
+      - "localsName"
+      - "outputFunctionName"
+    message: "EJS template at line {line} renders user-controlled input as template source, enabling direct JavaScript code injection. An attacker can execute arbitrary server-side code via EJS delimiters including process.mainModule.require for command execution."
+
+  - id: "CG-TMPL-004"
+    name: "Thymeleaf Server-Side Template Injection"
+    description: >
+      Detects user-controlled input used in Thymeleaf template expressions
+      or dynamically constructed template names in Spring applications.
+      Thymeleaf processes Spring Expression Language (SpEL) within its
+      attribute processors, and user input that flows into template
+      expressions can lead to SpEL injection. The __${expression}__
+      preprocessing syntax is evaluated before standard expression parsing,
+      and if an attacker controls preprocessed expressions, arbitrary SpEL
+      execution occurs. Payloads include
+      __${T(java.lang.Runtime).getRuntime().exec('id')}__ for direct command
+      execution. Additionally, when Spring MVC controller methods return
+      user-controlled strings as view names, Thymeleaf resolves them as
+      template paths, potentially enabling template injection through
+      crafted view name expressions.
+    severity: critical
+    confidence: 0.90
+    languages: [java, kotlin]
+    cwe_id: 1336
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "return\\s+\\b(request|param|input|query|body|form|data|user|httpServletRequest)\\b\\.get"
+        context_match: "@(GetMapping|PostMapping|RequestMapping|Controller)"
+      - pattern: "__\\$\\{.*\\b(request|param|input|query|body|form|data|user)\\b.*\\}__"
+      - pattern: "templateEngine\\.process\\s*\\(.*\\b(request|param|input|query|body|form|data|user)\\b"
+      - pattern: "SpringTemplateEngine.*process\\s*\\(.*\\b(request|param|input|query|body|form|data|user)\\b"
+      - pattern: "th:(text|utext|value|href|action|fragment)\\s*=.*\\$\\{.*\\b(param|request|session)\\b"
+        context_match: "__\\$\\{"
+      - pattern: "new\\s+Context\\(\\).*setVariable.*\\b(request|param|input|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query, spring_path_variable]
+      sink_types: [template_render]
+      sink_pattern: "(templateEngine\\.process|return.*\\+|th:(utext|text).*__\\$\\{)"
+      propagation:
+        - "string_concat"
+        - "String\\.format"
+        - "request\\.getParameter"
+        - "@RequestParam"
+        - "@PathVariable"
+    defense_patterns:
+      - "redirect:"
+      - "forward:"
+      - "HtmlUtils\\.htmlEscape"
+      - "th:text"
+      - "\\#strings\\.escapeXml"
+      - "ContentNegotiationConfigurer"
+      - "ViewResolver.*setPrefix"
+      - "@ResponseBody"
+    message: "Thymeleaf template at line {line} processes user-controlled input in SpEL expressions or view name resolution. An attacker can achieve remote code execution via SpEL preprocessing syntax __${T(java.lang.Runtime).getRuntime().exec()}__."
+
+  - id: "CG-TMPL-005"
+    name: "Pug/Jade Server-Side Template Injection"
+    description: >
+      Detects user-controlled input passed to Pug (formerly Jade) template
+      compilation functions as template source code. Pug supports unbuffered
+      JavaScript code via the - prefix and buffered code via = prefix, making
+      it trivially exploitable when user input is compiled as a template.
+      The pug.compile() and pug.render() functions accept template strings
+      that are compiled into JavaScript functions, and injecting Pug syntax
+      like -var x=global.process.mainModule.require('child_process').execSync('id')
+      provides direct access to Node.js runtime. Pug also supports include
+      directives for local file inclusion and mixin definitions that can be
+      abused to inject reusable malicious code blocks.
+    severity: critical
+    confidence: 0.90
+    languages: [javascript, typescript]
+    cwe_id: 1336
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee: "pug.compile"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - callee: "pug.render"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - callee: "pug.compileClient"
+        args_match: "(req|request|input|param|query|body|form|data|user)"
+      - pattern: "pug\\.(compile|render|compileClient|compileFile)\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "jade\\.(compile|render|compileClient)\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "res\\.render\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "pug|jade|view engine.*pug|view engine.*jade"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [template_render]
+      sink_pattern: "(pug\\.(compile|render|compileClient|compileFile)|jade\\.(compile|render))"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "assignment"
+    defense_patterns:
+      - "pug\\.compileFile\\(\\s*[\"']"
+      - "res\\.render\\(\\s*[\"']"
+      - "pug\\.render\\(\\s*[\"'].*\\{.*locals"
+      - "self\\s*:\\s*true"
+      - "sanitize|escape|encode"
+      - "DOMPurify"
+    message: "Pug/Jade template at line {line} compiles user-controlled input as template source, enabling arbitrary JavaScript execution. An attacker can inject Pug syntax for direct Node.js runtime access via global.process.mainModule.require()."
+
+  - id: "CG-TMPL-006"
+    name: "Freemarker Server-Side Template Injection"
+    description: >
+      Detects user-controlled input processed by Apache FreeMarker template
+      engine as template source code. FreeMarker is widely used in Java
+      applications and supports the freemarker.template.utility.Execute
+      class for command execution, the ObjectConstructor for arbitrary
+      object instantiation, and the JythonRuntime for Python code execution.
+      An attacker can inject FreeMarker interpolation syntax ${expression}
+      with payloads like
+      ${"freemarker.template.utility.Execute"?new()("id")} for command
+      execution or <#assign ex="freemarker.template.utility.Execute"?new()>
+      ${ex("whoami")} for staged exploitation. FreeMarker also provides
+      the ?api built-in that exposes the full Java API of wrapped objects
+      and the ?new built-in for instantiating arbitrary Java classes,
+      making it exceptionally dangerous when user input reaches the
+      template engine.
+    severity: critical
+    confidence: 0.91
+    languages: [java, kotlin]
+    cwe_id: 1336
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "new\\s+Template\\s*\\(.*\\b(request|param|input|query|body|form|data|user|httpServletRequest)\\b.*(?:StringReader|Reader)"
+      - pattern: "Template\\s*\\.\\s*process\\s*\\(.*\\b(request|param|input|query|body|form|data|user)\\b"
+      - pattern: "configuration\\.(getTemplate|setTemplateLoader).*\\b(request|param|input|query|body|form|data|user)\\b"
+      - pattern: "StringTemplateLoader.*putTemplate.*\\b(request|param|input|query|body|form|data|user)\\b"
+      - pattern: "freemarkerConfig.*Template.*\\b(request|param|input|query|body|form|data|user)\\b"
+      - pattern: "FreeMarkerTemplateUtils\\.processTemplateIntoString.*\\b(request|param|input|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query, spring_path_variable]
+      sink_types: [template_render]
+      sink_pattern: "(Template\\.process|processTemplateIntoString|new\\s+Template.*Reader)"
+      propagation:
+        - "string_concat"
+        - "String\\.format"
+        - "request\\.getParameter"
+        - "@RequestParam"
+        - "new\\s+StringReader"
+    defense_patterns:
+      - "Configuration\\.setNewBuiltinClassResolver\\(.*SAFER"
+      - "TemplateClassResolver\\.SAFER_RESOLVER"
+      - "TemplateClassResolver\\.ALLOWS_NOTHING_RESOLVER"
+      - "new_builtin_class_resolver.*safer"
+      - "api_builtin_enabled\\s*=\\s*false"
+      - "freemarker\\.core\\.Configurable.*setApiBuiltinEnabled\\(false\\)"
+      - "setAutoEscapingPolicy.*ENABLE_IF_SUPPORTED"
+    message: "FreeMarker template at line {line} processes user-controlled input as template source. An attacker can achieve remote code execution via the Execute class (${'freemarker.template.utility.Execute'?new()('cmd')}), arbitrary object instantiation via ObjectConstructor, or Java API access via the ?api built-in."

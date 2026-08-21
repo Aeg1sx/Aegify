@@ -1,0 +1,128 @@
+rules:
+  - id: "CG-CORS-001"
+    name: "Wildcard CORS origin"
+    description: >
+      The application configures Cross-Origin Resource Sharing (CORS) with a wildcard
+      origin ('*'), allowing any domain to make cross-origin requests. This can expose
+      sensitive API endpoints to malicious third-party websites, enabling data exfiltration
+      and unauthorized API access via the victim's browser session.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java]
+    cwe_id: 942
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "cors\\("
+        args_match: "origin.*\\*"
+      - callee_match: "add_header|set_header|setHeader"
+        args_match: "Access-Control-Allow-Origin.*\\*"
+      - assignment_match: "ACCESS_CONTROL_ALLOW_ORIGIN"
+        value_match: "\\*"
+    defense_patterns:
+      - "specific_origin"
+      - "allowedOrigins\\s*=\\s*\\[(?!.*\\*)"
+      - "origin_whitelist"
+      - "cors_allowed_origins"
+    message: "CORS wildcard origin detected. Restrict Access-Control-Allow-Origin to specific trusted domains instead of using '*'."
+
+  - id: "CG-CORS-002"
+    name: "CORS credentials with wildcard origin"
+    description: >
+      The application sets Access-Control-Allow-Credentials to true while using a wildcard
+      origin. While browsers block this combination, some frameworks reflect the requesting
+      origin when credentials are enabled, effectively bypassing CORS protections. This
+      allows any origin to make authenticated cross-origin requests and access responses.
+    severity: critical
+    confidence: 0.95
+    languages: [python, javascript, typescript, java]
+    cwe_id: 942
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "cors\\("
+        args_match: "credentials.*true.*origin.*\\*|origin.*\\*.*credentials.*true"
+      - multi_match:
+          - "Access-Control-Allow-Credentials.*true"
+          - "Access-Control-Allow-Origin.*\\*"
+    defense_patterns:
+      - "specific_origin"
+      - "origin_whitelist"
+      - "credentials.*false"
+    message: "CORS allows credentials with wildcard or reflected origin. This enables any site to make authenticated requests on behalf of your users. Pin Access-Control-Allow-Origin to explicit trusted domains."
+
+  - id: "CG-CORS-003"
+    name: "Missing Access-Control headers in CORS configuration"
+    description: >
+      The application implements CORS but omits critical Access-Control response headers
+      such as Access-Control-Allow-Headers or Access-Control-Expose-Headers. Incomplete
+      CORS configuration can lead to inconsistent enforcement across browsers, potentially
+      allowing unintended header injection or information leakage through exposed headers.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java]
+    cwe_id: 16
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "cors\\("
+        missing_args:
+          - "allowedHeaders"
+          - "exposedHeaders"
+      - multi_match:
+          - "Access-Control-Allow-Origin"
+        missing_match:
+          - "Access-Control-Allow-Headers"
+    defense_patterns:
+      - "allowedHeaders"
+      - "Access-Control-Allow-Headers"
+      - "exposedHeaders"
+      - "Access-Control-Expose-Headers"
+    message: "CORS configuration is missing Access-Control-Allow-Headers or Access-Control-Expose-Headers. Explicitly declare allowed and exposed headers to prevent unintended data exposure."
+
+  - id: "CG-CORS-004"
+    name: "Overly permissive CORS methods"
+    description: >
+      The application allows all HTTP methods (including PUT, DELETE, PATCH) in its CORS
+      configuration. Permitting dangerous methods across origins can enable cross-origin
+      state-changing attacks where a malicious site modifies or deletes resources using
+      the victim's authenticated session.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java]
+    cwe_id: 942
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "cors\\("
+        args_match: "methods.*\\*|allowMethods.*\\*"
+      - callee_match: "add_header|set_header|setHeader"
+        args_match: "Access-Control-Allow-Methods.*\\*"
+      - callee_match: "cors\\("
+        args_match: "methods.*DELETE.*PUT|methods.*PUT.*DELETE"
+    defense_patterns:
+      - "methods.*\\[.*GET.*POST.*\\]"
+      - "Access-Control-Allow-Methods.*GET.*POST(?!.*DELETE)"
+      - "allowedMethods\\s*=\\s*\\[\"GET\",\\s*\"POST\"\\]"
+    message: "CORS allows all or excessive HTTP methods. Restrict Access-Control-Allow-Methods to the minimum set of methods required (typically GET and POST)."
+
+  - id: "CG-CORS-005"
+    name: "Null origin allowed in CORS"
+    description: >
+      The application whitelists the 'null' origin in its CORS configuration. The null
+      origin is sent by sandboxed iframes, local file access, and certain redirect chains.
+      Attackers can craft pages that produce null origin requests, bypassing origin-based
+      access controls to access sensitive API endpoints.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java]
+    cwe_id: 942
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "cors\\("
+        args_match: "origin.*null"
+      - callee_match: "add_header|set_header|setHeader"
+        args_match: "Access-Control-Allow-Origin.*null"
+      - assignment_match: "allowed_origins|cors_origins|whitelist"
+        value_match: "null"
+    defense_patterns:
+      - "reject_null_origin"
+      - "origin\\s*!==?\\s*['\"]null['\"]"
+      - "block_null_origin"
+    message: "CORS configuration allows the 'null' origin. Remove 'null' from allowed origins as attackers can generate null-origin requests from sandboxed iframes."

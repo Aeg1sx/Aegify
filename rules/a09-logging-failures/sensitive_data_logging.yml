@@ -1,0 +1,129 @@
+rules:
+  - id: "CG-LOG-DATA-001"
+    name: "Personally identifiable information in log output"
+    description: >
+      Personally identifiable information (PII) such as email addresses, phone
+      numbers, Social Security numbers, dates of birth, or physical addresses
+      is written to application logs. Logging PII violates data minimization
+      principles under GDPR, CCPA, and HIPAA regulations. Log data is
+      frequently aggregated, stored long-term, and accessed by operations
+      staff without the same access controls as production databases, creating
+      an uncontrolled data exposure surface.
+    severity: high
+    confidence: 0.80
+    languages: [python, javascript, java, csharp, go, ruby]
+    cwe_id: 532
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee_match: "(logger\\.(info|warn|error|debug|log)|logging\\.(info|warning|error|debug|critical)|console\\.(log|warn|error|info)|log\\.(Print|Info|Warn|Error))"
+        args_match: "(email|phone|ssn|social_security|date_of_birth|dob|address|zip_code|postal_code|national_id|passport|driver_license|full_name|first_name.*last_name)"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug|log|warning|critical)\\(.*\\b(user\\.email|user\\.phone|user\\.ssn|user\\.address|profile\\.email|customer\\.phone|patient\\.(name|dob|ssn))\\b"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug|log)\\(.*\\b(email_address|phone_number|social_security_number|birth_date|home_address|ip_address)\\b"
+    defense_patterns:
+      - "pii_redaction_filter"
+      - "log_masking_middleware"
+      - "data_classification_tags"
+      - "structured_logging_with_field_filtering"
+      - "audit_log_separation"
+    message: "PII data (email, phone, SSN, address, or other personal identifiers) is being written to application logs. Implement PII redaction filters or use structured logging with field-level masking to prevent uncontrolled PII exposure in log aggregation systems."
+
+  - id: "CG-LOG-DATA-002"
+    name: "Authentication token or session ID in log output"
+    description: >
+      Authentication tokens (JWT, OAuth bearer tokens, API keys, session
+      identifiers) are written to log output. Exposed tokens in logs can be
+      used by attackers who gain access to log files, log aggregation
+      services, or monitoring dashboards to hijack user sessions, impersonate
+      users, or escalate privileges. Log retention policies often exceed
+      token lifetimes, extending the window of exploitation.
+    severity: critical
+    confidence: 0.90
+    languages: [python, javascript, java, csharp, go, ruby]
+    cwe_id: 532
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee_match: "(logger\\.|logging\\.|console\\.|log\\.)"
+        args_match: "(access_token|refresh_token|bearer|jwt|session_id|sessionid|auth_token|api_key|apikey|id_token|csrf_token|xsrf_token)"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug|log|warning|critical)\\(.*\\b(token|bearer|authorization|session|api_key)\\b.*[=:]"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug)\\(.*headers\\[?['\"]?(Authorization|Cookie|X-API-Key|X-Auth-Token)['\"]?\\]?"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug)\\(.*request\\.headers"
+        negative_match: "(content.type|accept|user.agent|host|origin)"
+    defense_patterns:
+      - "token_redaction_filter"
+      - "header_sanitization_middleware"
+      - "secret_masking_log_processor"
+      - "bearer_token_truncation"
+      - "log_field_allowlist"
+    message: "Authentication tokens or session identifiers are being logged. This exposes credential material in log storage systems. Implement token redaction filters that mask all but the last 4 characters, or use a log field allowlist to prevent credential leakage."
+
+  - id: "CG-LOG-DATA-003"
+    name: "Password or credential in log message"
+    description: >
+      A password, secret, or credential value is included in a log message.
+      This can occur during authentication debugging, user registration
+      logging, or error handling that dumps request bodies. Passwords in logs
+      are stored in plaintext regardless of how securely they are handled in
+      the application layer, and log files are typically not encrypted at rest
+      or subject to access controls comparable to credential stores.
+    severity: critical
+    confidence: 0.92
+    languages: [python, javascript, java, csharp, go, ruby, php]
+    cwe_id: 312
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee_match: "(logger\\.|logging\\.|console\\.|log\\.|System\\.out|print|puts|fmt\\.Print|echo)"
+        args_match: "(password|passwd|pass_word|pwd|secret|credential|passphrase|pin_code)"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug|log|warning|critical)\\(.*\\b(password|passwd|pass_word|pwd|secret_key|private_key|passphrase)\\b"
+      - pattern_type: "regex"
+        match: "(print|puts|echo|System\\.out\\.println|fmt\\.(Print|Println))\\(.*\\b(password|passwd|pwd|secret|credential)\\b"
+      - pattern_type: "taint"
+        source: "(request\\.(body|form|json|POST)\\[?['\"]?(password|passwd|pwd|secret)['\"]?\\]?|getParameter\\(['\"]password['\"]\\))"
+        sink: "(logger\\.|logging\\.|console\\.|log\\.|print|puts|echo|System\\.out)"
+        sanitizers: ["\\[REDACTED\\]", "mask_password", "\\*\\*\\*\\*", "hash\\("]
+    defense_patterns:
+      - "password_field_redaction"
+      - "request_body_sanitization"
+      - "sensitive_field_masking"
+      - "credential_scrubbing_filter"
+      - "log_field_denylist"
+    message: "A password or credential value is being written to logs. This stores sensitive authentication material in plaintext within log infrastructure. Implement credential scrubbing filters that replace password fields with [REDACTED] before any log output."
+
+  - id: "CG-LOG-DATA-004"
+    name: "Credit card or payment data in log output"
+    description: >
+      Credit card numbers, CVV codes, or other payment card data are written
+      to application logs. This is a direct violation of PCI DSS Requirement
+      3.4 (render PAN unreadable anywhere it is stored) and Requirement 3.2
+      (do not store sensitive authentication data after authorization). Log
+      files containing card data bring the entire log infrastructure into
+      PCI DSS scope, dramatically increasing compliance costs and audit
+      requirements.
+    severity: critical
+    confidence: 0.88
+    languages: [python, javascript, java, csharp, go, ruby, php]
+    cwe_id: 532
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee_match: "(logger\\.|logging\\.|console\\.|log\\.|System\\.out|print|puts|fmt\\.Print)"
+        args_match: "(card_number|credit_card|cc_number|pan|cvv|cvc|card_exp|expiry_date|cardholder|account_number)"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug|log)\\(.*\\b(card_number|credit_card|cc_num|cvv|cvc|card_expir|cardholder_name|billing_address)\\b"
+      - pattern_type: "regex"
+        match: "(logger|logging|console|log)\\.(info|warn|error|debug|log)\\(.*\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b"
+      - pattern_type: "taint"
+        source: "(request\\.(body|form|json|POST)\\[?['\"]?(card|cc|cvv|pan|payment)['\"]?\\]?|payment_data|card_details|stripe_token)"
+        sink: "(logger\\.|logging\\.|console\\.|log\\.|print|puts|System\\.out)"
+        sanitizers: ["mask_card", "truncate_pan", "tokenize", "last_four"]
+    defense_patterns:
+      - "pan_masking_filter"
+      - "payment_data_tokenization"
+      - "pci_compliant_logging"
+      - "card_number_regex_scrubber"
+      - "sensitive_field_auto_redaction"
+    message: "Payment card data (PAN, CVV, or cardholder information) is being written to logs, violating PCI DSS Requirements 3.2 and 3.4. Implement automatic PAN masking that retains only the last four digits, and ensure CVV/CVC values are never logged under any circumstances."

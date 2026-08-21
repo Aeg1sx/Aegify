@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible product defect using a synthetic fixture
+title: "[Bug]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not submit vulnerabilities, credentials, proprietary repositories, or
+        customer scan output here. Use private vulnerability reporting instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Scanner and rules
+        - JVM, SCIP, or Program Graph
+        - Spring, Gateway, or attack surface
+        - Verification harness
+        - Dashboard
+        - Packaging or CI
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use a synthetic or owned fixture and redact local/private paths.
+      placeholder: Commands, minimal source, and configuration
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior and redacted evidence
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: The report contains no live secret, private source, customer data, or unauthorized target.
+          required: true
+        - label: This is not a security vulnerability requiring private disclosure.
+          required: true

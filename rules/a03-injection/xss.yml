@@ -1,0 +1,451 @@
+rules:
+  - id: "CG-XSS-001"
+    name: "Reflected XSS via innerHTML or dangerouslySetInnerHTML"
+    description: >
+      User-controlled input from HTTP request parameters, headers, or URL fragments is assigned
+      directly to innerHTML or passed to React's dangerouslySetInnerHTML without sanitization.
+      An attacker can inject arbitrary HTML and JavaScript that executes in the victim's browser
+      context, enabling session hijacking, credential theft, and defacement. Reflected XSS is
+      triggered when a victim clicks a crafted link, making it a common vector for phishing
+      campaigns and watering-hole attacks.
+    severity: high
+    confidence: 0.9
+    languages: [javascript, typescript]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "\\.innerHTML\\s*="
+        args_match: "(req\\.|request\\.|params|query|body|headers|cookies|location\\.(search|hash)|URLSearchParams|searchParams)"
+        description: "Direct assignment of user input to innerHTML"
+      - pattern: "\\.innerHTML\\s*=\\s*`"
+        description: "innerHTML assignment with template literal interpolation"
+      - pattern: "\\.innerHTML\\s*=.*\\+"
+        args_match: "(req\\.|request\\.|params|query|location\\.|document\\.URL|document\\.referrer)"
+        description: "innerHTML assignment with string concatenation of user input"
+      - pattern: "\\.outerHTML\\s*="
+        args_match: "(req\\.|request\\.|params|query|body|location\\.|searchParams)"
+        description: "outerHTML assignment with user-controlled data"
+    taint:
+      source_types: [http_param, http_body, http_header, url_fragment, query_string]
+      sink_types: [dom_manipulation]
+      sink_pattern: "(\\.innerHTML|\\.outerHTML)\\s*="
+      propagation:
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "DOMPurify\\.sanitize"
+      - "sanitize-html"
+      - "xss\\("
+      - "escapeHtml"
+      - "encodeURIComponent"
+      - "textContent\\s*="
+      - "innerText\\s*="
+      - "createTextNode"
+    fix_suggestion: >
+      Replace innerHTML assignment with textContent or innerText for plain text output.
+      If HTML rendering is required, sanitize the input using DOMPurify.sanitize() before
+      assignment. Implement a Content-Security-Policy header with strict script-src directives
+      as an additional defense layer.
+    message: "Reflected XSS: user input from '{source}' (line {source_line}) flows into innerHTML/outerHTML at '{sink}' (line {sink_line}) without sanitization. Use textContent or DOMPurify to prevent script injection."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/79.html"
+
+  - id: "CG-XSS-002"
+    name: "Stored XSS: unsanitized database output rendered as HTML"
+    description: >
+      Data retrieved from a database or persistent storage is rendered directly into HTML
+      output without escaping or sanitization. If the stored data was originally provided by
+      a user and was not sanitized on input, an attacker can persist malicious scripts that
+      execute every time another user views the affected page. Stored XSS is more dangerous
+      than reflected XSS because it does not require the victim to click a crafted link and
+      can affect many users simultaneously.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "\\.innerHTML\\s*="
+        args_match: "(result|row|record|data|doc|document|model|entity|item|entry|\\bdb\\b|cursor|query_result|find|findOne)"
+        description: "Database result assigned to innerHTML without sanitization"
+      - pattern: "(res\\.send|res\\.write|response\\.write)"
+        args_match: "(result|row|record|data|doc|document|model|entity|cursor|find|findOne|query)"
+        missing_check: "(escape|sanitize|encode|DOMPurify|xss|Content-Type.*text/plain|Content-Type.*application/json)"
+        description: "Database result written to HTTP response body as HTML"
+      - pattern: "(render_template_string|render|render_to_string|render_to_response)"
+        args_match: "(result|row|record|data|doc|model|entity|cursor|query)"
+        description: "Database data passed to template rendering"
+    taint:
+      source_types: [database_read]
+      sink_types: [html_output, dom_manipulation]
+      sink_pattern: "(\\.innerHTML|\\.outerHTML|res\\.(send|write)|response\\.(write|send)|render_template_string|document\\.write)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "object_property"
+    defense_patterns:
+      - "DOMPurify\\.sanitize"
+      - "sanitize-html"
+      - "escape"
+      - "escapeHtml"
+      - "xss\\("
+      - "bleach\\.clean"
+      - "html\\.escape"
+      - "HtmlUtils\\.htmlEscape"
+      - "textContent\\s*="
+    fix_suggestion: >
+      Sanitize all user-generated content before storing it in the database (input sanitization)
+      and again when rendering it as HTML (output encoding). Use DOMPurify on the client side
+      or bleach/html.escape on the server side. Prefer textContent over innerHTML when rendering
+      plain text. Apply Content-Security-Policy headers to mitigate impact.
+    message: "Stored XSS: database output from '{source}' (line {source_line}) flows into HTML output at '{sink}' (line {sink_line}) without sanitization. Escape or sanitize stored data before rendering as HTML."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/79.html"
+
+  - id: "CG-XSS-003"
+    name: "DOM XSS via document.write or document.location with user input"
+    description: >
+      User-controlled input from URL fragments, query parameters, document.referrer, or
+      window.name is passed to document.write(), document.writeln(), or used to set
+      document.location without sanitization. DOM-based XSS occurs entirely in the browser
+      without the payload being sent to the server, making it invisible to server-side WAFs
+      and logging. Attackers exploit this by crafting URLs with malicious fragments or query
+      parameters that get executed when the page processes them client-side.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "document\\.write(ln)?\\s*\\("
+        args_match: "(location\\.(search|hash|href)|document\\.(URL|referrer|cookie)|window\\.(name|location)|URLSearchParams|searchParams|decodeURIComponent|unescape)"
+        description: "document.write with user-controlled DOM source"
+      - pattern: "document\\.write(ln)?\\s*\\(\\s*`"
+        description: "document.write with template literal interpolation"
+      - pattern: "document\\.write(ln)?\\s*\\(.*\\+"
+        args_match: "(location|document\\.(URL|referrer)|window\\.name)"
+        description: "document.write with string concatenation of DOM source"
+      - pattern: "(document|window)\\.location(\\.(href|pathname|search|hash))?\\s*="
+        args_match: "(location\\.(search|hash)|document\\.(URL|referrer)|URLSearchParams|searchParams|decodeURIComponent)"
+        description: "Location assignment from user-controlled source enabling open redirect or javascript: URI"
+    taint:
+      source_types: [url_fragment, query_string, local_storage, document_referrer, window_name]
+      sink_types: [dom_manipulation, navigation]
+      sink_pattern: "(document\\.write(ln)?|document\\.location|window\\.location)(\\s*\\(|\\s*=)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "url_decode"
+    defense_patterns:
+      - "DOMPurify\\.sanitize"
+      - "encodeURIComponent"
+      - "textContent"
+      - "createTextNode"
+      - "URL\\s*\\("
+      - "new\\s+URL"
+      - "sanitize"
+      - "Content-Security-Policy"
+    fix_suggestion: >
+      Replace document.write() with safe DOM manipulation methods (createElement,
+      textContent, createTextNode). For URL-based navigation, validate the target URL
+      against an allowlist of permitted domains and reject javascript: and data: URIs.
+      Use the URL constructor to parse and validate URLs. Implement Content-Security-Policy
+      to block inline script execution.
+    message: "DOM XSS: user-controlled DOM source flows into '{sink}' (line {sink_line}) via document.write or location assignment. Use safe DOM APIs and validate URL inputs."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/79.html"
+
+  - id: "CG-XSS-004"
+    name: "React dangerouslySetInnerHTML with user-controlled data"
+    description: >
+      React's dangerouslySetInnerHTML prop is used with data that originates from user input,
+      URL parameters, or external data sources without sanitization. Despite its warning name,
+      developers frequently use this prop for rendering rich text, markdown output, or CMS
+      content. When the HTML string contains unsanitized user input, an attacker can inject
+      script tags, event handlers (onerror, onload, onmouseover), or SVG-based payloads that
+      execute arbitrary JavaScript in the React application context.
+    severity: high
+    confidence: 0.9
+    languages: [javascript, typescript]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "dangerouslySetInnerHTML\\s*=\\s*\\{\\s*\\{\\s*__html\\s*:"
+        args_match: "(props\\.|state\\.|params|query|body|data|user|input|content|text|message|comment|post|description|title|req\\.|request\\.)"
+        description: "dangerouslySetInnerHTML with potentially user-controlled data"
+      - pattern: "dangerouslySetInnerHTML\\s*=\\s*\\{\\s*\\{\\s*__html\\s*:\\s*`"
+        description: "dangerouslySetInnerHTML with template literal"
+      - pattern: "dangerouslySetInnerHTML\\s*=\\s*\\{\\s*\\{\\s*__html\\s*:.*\\+"
+        description: "dangerouslySetInnerHTML with string concatenation"
+      - pattern: "dangerouslySetInnerHTML\\s*=\\s*\\{\\s*\\{\\s*__html\\s*:\\s*(this\\.)?(props|state)\\."
+        description: "dangerouslySetInnerHTML directly from component props or state"
+    taint:
+      source_types: [http_param, http_body, url_fragment, database_read, local_storage]
+      sink_types: [dom_manipulation]
+      sink_pattern: "dangerouslySetInnerHTML"
+      propagation:
+        - through: "variable_assignment"
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "object_property"
+        - through: "react_props"
+        - through: "react_state"
+    defense_patterns:
+      - "DOMPurify\\.sanitize"
+      - "sanitize-html"
+      - "xss\\("
+      - "isomorphic-dompurify"
+      - "sanitizeHtml"
+      - "createMarkup.*sanitize"
+    fix_suggestion: >
+      Sanitize all HTML content before passing it to dangerouslySetInnerHTML using
+      DOMPurify.sanitize() or the sanitize-html package. Create a wrapper component
+      that enforces sanitization: function SafeHTML({ html }) { return
+      <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }} /> }.
+      Consider using a markdown renderer with XSS protection (react-markdown) instead
+      of raw HTML injection.
+    message: "React XSS: user-controlled data from '{source}' (line {source_line}) flows into dangerouslySetInnerHTML at '{sink}' (line {sink_line}). Sanitize HTML with DOMPurify before rendering."
+    references:
+      - "https://react.dev/reference/react-dom/components/common#dangerously-setting-the-inner-html"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/79.html"
+
+  - id: "CG-XSS-005"
+    name: "Template engine auto-escape disabled or bypassed"
+    description: >
+      Server-side template engines have their automatic HTML escaping disabled or explicitly
+      bypassed using filters such as Jinja2's |safe, Django's mark_safe(), Twig's |raw,
+      or triple-brace syntax in Handlebars ({{{ }}}). When user-controlled data flows through
+      these unescaped rendering paths, an attacker can inject arbitrary HTML and JavaScript
+      that persists in server-rendered pages. This is a common source of stored XSS in web
+      applications because developers often disable escaping for rich text content without
+      applying alternative sanitization.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "\\|\\s*safe\\b"
+        description: "Jinja2/Django |safe filter disabling auto-escape"
+      - pattern: "mark_safe\\s*\\("
+        args_match: "(request|req|input|user|param|query|body|data|content|text|message|comment|result|row)"
+        description: "Django mark_safe() with user-controlled data"
+      - pattern: "Markup\\s*\\("
+        args_match: "(request|req|input|user|param|query|body|data|content|text|message)"
+        description: "Jinja2 Markup() bypassing auto-escape"
+      - pattern: "\\{\\{\\{.*\\}\\}\\}"
+        description: "Handlebars triple-brace unescaped output"
+      - pattern: "\\{%\\s*autoescape\\s+(false|off|disabled)\\s*%\\}"
+        description: "Jinja2/Django autoescape block disabled"
+      - pattern: "render_template_string\\s*\\("
+        args_match: "(request|req|input|user|param|query|body|data)"
+        description: "Dynamic template string rendering (also SSTI risk)"
+      - pattern: "\\|\\s*raw\\b"
+        description: "Twig |raw filter disabling auto-escape"
+      - pattern: "autoescape\\s*=\\s*(False|false)"
+        description: "Jinja2 Environment with autoescape disabled"
+    taint:
+      source_types: [http_param, http_body, database_read]
+      sink_types: [html_output, template_render]
+      sink_pattern: "(\\|\\s*safe|mark_safe|Markup\\(|\\{\\{\\{|autoescape.*false|\\|\\s*raw|render_template_string)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "template_context"
+    defense_patterns:
+      - "bleach\\.clean"
+      - "html\\.escape"
+      - "DOMPurify"
+      - "sanitize"
+      - "autoescape\\s*=\\s*(True|true)"
+      - "escape\\("
+      - "markupsafe\\.escape"
+    fix_suggestion: >
+      Keep auto-escaping enabled globally and avoid |safe, mark_safe(), or Markup() with
+      user-controlled data. If unescaped HTML rendering is necessary, sanitize the content
+      using bleach.clean() with an allowlist of safe tags and attributes before marking it
+      as safe. Set autoescape=True in Jinja2 Environment configuration and audit all
+      template files for unescaped output directives.
+    message: "Template XSS: auto-escape is disabled or bypassed at '{sink}' (line {sink_line}) with data from '{source}' (line {source_line}). Sanitize content with bleach or html.escape before disabling auto-escape."
+    references:
+      - "https://jinja.palletsprojects.com/en/3.1.x/templates/#html-escaping"
+      - "https://docs.djangoproject.com/en/5.0/ref/utils/#django.utils.safestring.mark_safe"
+      - "https://cwe.mitre.org/data/definitions/79.html"
+
+  - id: "CG-XSS-006"
+    name: "jQuery .html() or .append() with user-controlled content"
+    description: >
+      jQuery's .html(), .append(), .prepend(), .after(), .before(), or .replaceWith() methods
+      are called with user-controlled input. These methods parse HTML strings and insert them
+      into the DOM, executing any embedded script tags or event handlers. jQuery does not
+      perform any sanitization on the input, making these methods functionally equivalent to
+      innerHTML assignment. Legacy jQuery applications are particularly susceptible because
+      jQuery encourages HTML string manipulation patterns that bypass modern framework protections.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "\\$\\(.*\\)\\.html\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|location\\.(search|hash|href)|document\\.(URL|referrer)|data|input|user|content|text|window\\.name|localStorage|sessionStorage)"
+        description: "jQuery .html() with user-controlled content"
+      - pattern: "\\$\\(.*\\)\\.append\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|body|location\\.|document\\.(URL|referrer)|data|input|user|content|text|localStorage|sessionStorage)"
+        description: "jQuery .append() with user-controlled content"
+      - pattern: "\\$\\(.*\\)\\.(prepend|after|before|replaceWith|wrap|wrapInner)\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|location\\.|document\\.(URL|referrer)|data|input|user|content)"
+        description: "jQuery DOM insertion method with user-controlled content"
+      - pattern: "\\$\\s*\\(\\s*['\"]<"
+        args_match: "(\\+|`|concat|\\$\\{)"
+        description: "jQuery HTML string constructor with interpolation"
+      - pattern: "jQuery\\s*\\(.*\\)\\.html\\s*\\("
+        args_match: "(req\\.|request\\.|params|query|data|input|user|content)"
+        description: "jQuery (long form) .html() with user-controlled content"
+    taint:
+      source_types: [http_param, http_body, url_fragment, local_storage, query_string]
+      sink_types: [dom_manipulation]
+      sink_pattern: "\\$\\(.*\\)\\.(html|append|prepend|after|before|replaceWith|wrap|wrapInner)\\s*\\("
+      propagation:
+        - through: "variable_assignment"
+        - through: "template_literal"
+        - through: "string_concatenation"
+        - through: "jquery_data"
+    defense_patterns:
+      - "DOMPurify\\.sanitize"
+      - "\\.text\\s*\\("
+      - "sanitize-html"
+      - "xss\\("
+      - "escapeHtml"
+      - "encodeURIComponent"
+      - "\\$\\.escapeSelector"
+    fix_suggestion: >
+      Replace .html() with .text() when rendering plain text content. If HTML rendering is
+      required, sanitize the content using DOMPurify.sanitize() before passing it to jQuery
+      DOM methods. Migrate from jQuery HTML string construction to safe DOM APIs (document.createElement,
+      textContent). Consider migrating from jQuery to a modern framework with built-in XSS
+      protection (React, Vue, Angular).
+    message: "jQuery XSS: user-controlled data from '{source}' (line {source_line}) flows into jQuery DOM method '{sink}' (line {sink_line}). Use .text() or DOMPurify.sanitize() instead."
+    references:
+      - "https://api.jquery.com/html/"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/79.html"
+
+  - id: "CG-XSS-007"
+    name: "Server-side HTML response without Content-Type or encoding"
+    description: >
+      An HTTP response containing user-controlled data is sent without an explicit Content-Type
+      header specifying text/html with a charset, or is sent with a Content-Type that browsers
+      may interpret as HTML (text/html, application/xhtml+xml). When the Content-Type header is
+      missing or does not specify a charset, browsers may perform MIME-type sniffing and
+      character encoding detection, both of which can be exploited to inject and execute scripts.
+      Setting the correct Content-Type with charset prevents browser misinterpretation and reduces
+      the XSS attack surface.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(res\\.send|res\\.write|response\\.write|response\\.getWriter\\(\\)\\.write|w\\.Write|fmt\\.Fprint)"
+        args_match: "(req\\.|request\\.|params|query|body|input|user|data|<html|<script|<div|<span|<p\\b)"
+        missing_check: "(Content-Type|content-type|setContentType|setHeader.*Content-Type|Header\\(\\).Set.*Content-Type|res\\.type)"
+        description: "HTTP response with user input but no Content-Type header"
+      - pattern: "(res\\.send|response\\.send|response\\.write)"
+        args_match: "(req\\.|request\\.|params|query|body|input|user)"
+        missing_check: "(res\\.type|setHeader|content-type|Content-Type)"
+        description: "Express response without explicit Content-Type"
+      - pattern: "HttpResponse\\s*\\("
+        args_match: "(request\\.|input|user|data|content)"
+        missing_check: "(content_type|Content-Type|charset)"
+        description: "Django HttpResponse without content_type parameter"
+    taint:
+      source_types: [http_param, http_body, http_header]
+      sink_types: [http_response]
+      sink_pattern: "(res\\.(send|write)|response\\.(write|send|getWriter)|w\\.Write|fmt\\.Fprint|HttpResponse)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "template_literal"
+        - through: "string_concatenation"
+    defense_patterns:
+      - "Content-Type.*charset=utf-8"
+      - "res\\.type\\("
+      - "setContentType"
+      - "X-Content-Type-Options.*nosniff"
+      - "content_type.*text/plain"
+      - "application/json"
+      - "res\\.json"
+    fix_suggestion: >
+      Always set an explicit Content-Type header with a charset on all HTTP responses:
+      res.setHeader('Content-Type', 'text/html; charset=utf-8'). Add the
+      X-Content-Type-Options: nosniff header to prevent MIME-type sniffing. For API
+      responses returning data (not HTML), use application/json as the Content-Type.
+      Return user-controlled data through JSON serialization (res.json()) rather than
+      raw HTML output.
+    message: "XSS risk: HTTP response at '{sink}' (line {sink_line}) includes user input from '{source}' (line {source_line}) without explicit Content-Type header or charset. Set Content-Type with charset and add X-Content-Type-Options: nosniff."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/79.html"
+
+  - id: "CG-XSS-008"
+    name: "Vue v-html directive with user-controlled data"
+    description: >
+      Vue.js v-html directive is used to render raw HTML from data that originates from user
+      input, API responses, or database queries. The v-html directive bypasses Vue's built-in
+      template escaping and inserts the content as raw HTML, similar to innerHTML. Unlike Vue's
+      double-brace interpolation ({{ }}) which automatically escapes HTML entities, v-html
+      renders content without any sanitization. An attacker who controls the data bound to
+      v-html can inject arbitrary scripts, event handlers, or malicious HTML that executes in
+      the application context.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 79
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "v-html\\s*=\\s*['\"]"
+        args_match: "(user|input|content|data|message|comment|post|description|text|title|body|html|raw|result)"
+        description: "v-html directive binding to potentially user-controlled data"
+      - pattern: "v-html\\s*=\\s*['\"]\\s*(\\$route|\\$store|props|formData|response)"
+        description: "v-html bound to route params, store state, props, or API response"
+      - pattern: "\\$el\\.innerHTML\\s*="
+        args_match: "(this\\.|\\$data|\\$props|\\$store|\\$route)"
+        description: "Direct innerHTML manipulation in Vue component"
+      - pattern: "compile\\s*\\("
+        args_match: "(user|input|content|data|template|html|\\$route|\\$store)"
+        description: "Dynamic template compilation with user-controlled content"
+    taint:
+      source_types: [http_param, http_body, url_fragment, database_read, local_storage]
+      sink_types: [dom_manipulation]
+      sink_pattern: "(v-html|\\$el\\.innerHTML|compile\\()"
+      propagation:
+        - through: "variable_assignment"
+        - through: "vue_props"
+        - through: "vue_data"
+        - through: "vuex_state"
+        - through: "object_property"
+    defense_patterns:
+      - "DOMPurify\\.sanitize"
+      - "sanitize-html"
+      - "xss\\("
+      - "vue-sanitize"
+      - "vue-dompurify-html"
+      - "v-text"
+      - "\\{\\{\\s*.*\\s*\\}\\}"
+    fix_suggestion: >
+      Replace v-html with v-text or double-brace interpolation ({{ }}) for plain text content.
+      If HTML rendering is required, sanitize the content using DOMPurify before binding it to
+      v-html. Use the vue-dompurify-html directive as a drop-in replacement that automatically
+      sanitizes: <div v-dompurify-html="userContent"></div>. For markdown content, use a
+      sanitizing markdown renderer instead of rendering raw HTML.
+    message: "Vue XSS: user-controlled data from '{source}' (line {source_line}) flows into v-html directive at '{sink}' (line {sink_line}). Use v-text, {{ }} interpolation, or DOMPurify to prevent script injection."
+    references:
+      - "https://vuejs.org/api/built-in-directives.html#v-html"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/79.html"

@@ -1,0 +1,77 @@
+rules:
+  - id: CG-A10-001
+    name: DNS Rebinding via User URL
+    description: >
+      User-supplied URLs are resolved and fetched without DNS rebinding
+      protection. An attacker can use DNS rebinding to bypass allowlist
+      checks and access internal services by having a domain resolve to
+      an internal IP after initial validation.
+    severity: high
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery"
+    defense_patterns: ["dns_pinning", "resolve_before_request", "validate_resolved_ip", "ssrf_filter"]
+    taint:
+      source_types: [http_param]
+      sink_pattern: "(requests\\.(get|post|put|delete|head|patch)|fetch|http\\.get|http\\.request|urllib\\.request\\.urlopen|HttpClient\\.Do|http\\.Get)"
+    message: >
+      Potential DNS rebinding SSRF: user input from '{source}' (line {source_line})
+      flows to HTTP request '{sink}' (line {sink_line}) without DNS-level validation.
+      Pin the resolved IP address before making the request.
+
+  - id: CG-A10-002
+    name: Internal Network Access via SSRF
+    description: >
+      HTTP requests target internal or loopback addresses (127.0.0.1,
+      localhost, 10.x.x.x, 172.16-31.x.x, 192.168.x.x, ::1, 0.0.0.0).
+      This may indicate SSRF exploitation or a misconfigured service reaching
+      into the internal network.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery"
+    patterns:
+      - callee: "(requests\\.(get|post|put|delete|head)|fetch|http\\.get|http\\.request|urllib\\.request\\.urlopen|HttpClient|http\\.Get|http\\.Do)"
+        args_match: "(127\\.0\\.0\\.1|localhost|0\\.0\\.0\\.0|10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2[0-9]|3[0-1])\\.\\d{1,3}\\.\\d{1,3}|192\\.168\\.\\d{1,3}\\.\\d{1,3}|\\[?::1\\]?)"
+    message: "HTTP request to internal/loopback address at '{callee}' (line {line}). This may indicate SSRF or misconfiguration. Block requests to private IP ranges."
+
+  - id: CG-A10-003
+    name: Cloud Metadata SSRF
+    description: >
+      HTTP requests target the cloud instance metadata endpoint
+      (169.254.169.254, metadata.google.internal, fd00:ec2::254). Accessing
+      cloud metadata via SSRF can expose IAM credentials, service account
+      tokens, and sensitive infrastructure configuration.
+    severity: critical
+    confidence: 0.95
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery"
+    patterns:
+      - callee: "(requests\\.(get|post|put|head)|fetch|http\\.get|http\\.request|urllib\\.request\\.urlopen|HttpClient|http\\.Get|http\\.Do)"
+        args_match: "(169\\.254\\.169\\.254|metadata\\.google\\.internal|metadata\\.azure\\.com|fd00:ec2::254)"
+      - callee: ".*"
+        args_match: "http://(169\\.254\\.169\\.254|metadata\\.google\\.internal)/.*/(meta-data|token|credentials|identity)"
+    message: "Request to cloud metadata endpoint at '{callee}' (line {line}). This is a critical SSRF vector. Block all requests to 169.254.169.254 and equivalent metadata services."
+
+  - id: CG-A10-004
+    name: URL Scheme Not Validated
+    description: >
+      User-supplied URLs are used in server-side requests without validating
+      the URL scheme. Attackers can use file://, gopher://, dict://, or other
+      schemes to read local files or interact with internal services.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 918
+    owasp_category: "A10:2021-Server-Side Request Forgery"
+    defense_patterns: ["scheme_allowlist", "validate_scheme", "urlparse", "http_only"]
+    taint:
+      source_types: [http_param]
+      sink_pattern: "(requests\\.(get|post|put|delete|head|patch)|fetch|http\\.get|http\\.request|urllib\\.request\\.urlopen|HttpClient|http\\.Get|http\\.Do|urlopen)"
+    message: >
+      URL scheme not validated: user input from '{source}' (line {source_line})
+      flows to HTTP request '{sink}' (line {sink_line}) without scheme restriction.
+      Allow only https:// (and http:// if required). Block file://, gopher://, dict://, and other schemes.

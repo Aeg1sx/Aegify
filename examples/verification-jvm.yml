@@ -1,0 +1,30 @@
+# Replace the all-zero placeholder with the immutable digest of your approved
+# verification image. Mutable tags are intentionally rejected.
+version: 1
+name: jvm-offline-tests
+image: ghcr.io/example/codeguard-jvm@sha256:0000000000000000000000000000000000000000000000000000000000000000
+policy:
+  network: none
+  cpus: 2
+  memory: 2g
+  pids_limit: 256
+  tmpfs_size: 256m
+  max_output_bytes: 1000000
+  allowed_commands:
+    - ./gradlew
+    - ./mvnw
+    - gradle
+    - mvn
+    - java
+  exclude:
+    - .git
+    - .idea
+    - .gradle
+    - build
+    - target
+steps:
+  - id: unit-tests
+    command: ["./gradlew", "test", "--offline", "--no-daemon"]
+    working_directory: .
+    timeout_seconds: 600
+stop_on_failure: true

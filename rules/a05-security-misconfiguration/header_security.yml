@@ -1,0 +1,160 @@
+rules:
+  - id: "CG-HEADER-001"
+    name: "Missing Content-Security-Policy header"
+    description: >
+      The application does not set a Content-Security-Policy (CSP) header. CSP is a
+      critical defense-in-depth mechanism against cross-site scripting (XSS), clickjacking,
+      and other code injection attacks. Without CSP, the browser has no restrictions on
+      which scripts, styles, or resources can be loaded and executed, making XSS exploitation
+      trivial once an injection point is found.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 693
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - missing_header: "Content-Security-Policy"
+        context: "response_headers"
+      - callee_match: "helmet\\("
+        missing_args: ["contentSecurityPolicy"]
+      - file_match: "\\.(conf|config)$"
+        missing_pattern: "Content-Security-Policy"
+    defense_patterns:
+      - "Content-Security-Policy"
+      - "contentSecurityPolicy"
+      - "CSP_HEADER"
+      - "csp_policy"
+      - "helmet\\.contentSecurityPolicy"
+    message: "No Content-Security-Policy header is set. Implement CSP to restrict resource loading and mitigate XSS attacks. Start with a strict policy using 'default-src self' and refine as needed."
+
+  - id: "CG-HEADER-002"
+    name: "Missing Strict-Transport-Security header"
+    description: >
+      The application does not set the HTTP Strict-Transport-Security (HSTS) header.
+      Without HSTS, the browser will allow insecure HTTP connections, making users
+      vulnerable to SSL stripping attacks where an attacker downgrades HTTPS to HTTP
+      to intercept or modify traffic in transit.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 319
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - missing_header: "Strict-Transport-Security"
+        context: "response_headers"
+      - callee_match: "helmet\\("
+        missing_args: ["hsts"]
+      - file_match: "\\.(conf|config)$"
+        missing_pattern: "Strict-Transport-Security"
+    defense_patterns:
+      - "Strict-Transport-Security"
+      - "hsts"
+      - "HSTS_HEADER"
+      - "max-age=\\d{7,}"
+      - "includeSubDomains"
+    message: "No Strict-Transport-Security header is set. Add HSTS with a minimum max-age of 31536000 (1 year) and include 'includeSubDomains' to prevent SSL stripping attacks."
+
+  - id: "CG-HEADER-003"
+    name: "Missing X-Frame-Options header"
+    description: >
+      The application does not set the X-Frame-Options header. Without this header,
+      the application can be embedded in iframes on malicious sites, enabling
+      clickjacking attacks where users are tricked into clicking hidden elements
+      overlaid on the attacker's page, potentially performing unintended actions.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 1021
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - missing_header: "X-Frame-Options"
+        context: "response_headers"
+      - callee_match: "helmet\\("
+        missing_args: ["frameguard"]
+      - file_match: "\\.(conf|config)$"
+        missing_pattern: "X-Frame-Options"
+    defense_patterns:
+      - "X-Frame-Options"
+      - "frameguard"
+      - "DENY"
+      - "SAMEORIGIN"
+      - "frame-ancestors"
+    message: "No X-Frame-Options header is set. Add 'X-Frame-Options: DENY' or 'SAMEORIGIN' to prevent clickjacking attacks. Prefer CSP frame-ancestors directive for modern browsers."
+
+  - id: "CG-HEADER-004"
+    name: "Missing X-Content-Type-Options header"
+    description: >
+      The application does not set the X-Content-Type-Options header to 'nosniff'.
+      Without this header, browsers may perform MIME type sniffing, interpreting
+      uploaded files or API responses as executable content. This can lead to
+      stored XSS through file uploads or response content type confusion attacks.
+    severity: medium
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 16
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - missing_header: "X-Content-Type-Options"
+        context: "response_headers"
+      - callee_match: "helmet\\("
+        missing_args: ["noSniff"]
+      - file_match: "\\.(conf|config)$"
+        missing_pattern: "X-Content-Type-Options"
+    defense_patterns:
+      - "X-Content-Type-Options"
+      - "nosniff"
+      - "noSniff"
+      - "x_content_type_options"
+    message: "No X-Content-Type-Options header is set. Add 'X-Content-Type-Options: nosniff' to prevent browsers from MIME-sniffing the response content type."
+
+  - id: "CG-HEADER-005"
+    name: "Insecure Referrer-Policy"
+    description: >
+      The application sets an insecure Referrer-Policy or omits it entirely. Without
+      a restrictive referrer policy, the full URL including sensitive path segments,
+      query parameters, and tokens may be leaked to third-party sites via the Referer
+      header when users navigate away or load external resources.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 200
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - missing_header: "Referrer-Policy"
+        context: "response_headers"
+      - callee_match: "set_header|setHeader|add_header"
+        args_match: "Referrer-Policy.*unsafe-url|Referrer-Policy.*no-referrer-when-downgrade"
+      - assignment_match: "referrerPolicy|REFERRER_POLICY"
+        value_match: "unsafe-url|no-referrer-when-downgrade"
+    defense_patterns:
+      - "strict-origin-when-cross-origin"
+      - "no-referrer"
+      - "same-origin"
+      - "strict-origin"
+    message: "Referrer-Policy is missing or set to an insecure value. Use 'strict-origin-when-cross-origin' or 'no-referrer' to prevent leaking sensitive URL information to external sites."
+
+  - id: "CG-HEADER-006"
+    name: "Missing Permissions-Policy header"
+    description: >
+      The application does not set a Permissions-Policy (formerly Feature-Policy) header.
+      Without this header, embedded content and third-party scripts have unrestricted
+      access to powerful browser features including camera, microphone, geolocation,
+      and payment APIs, increasing the attack surface for malicious scripts.
+    severity: low
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 16
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - missing_header: "Permissions-Policy"
+        context: "response_headers"
+      - missing_header: "Feature-Policy"
+        context: "response_headers"
+      - callee_match: "helmet\\("
+        missing_args: ["permissionsPolicy"]
+    defense_patterns:
+      - "Permissions-Policy"
+      - "Feature-Policy"
+      - "permissionsPolicy"
+      - "featurePolicy"
+    message: "No Permissions-Policy header is set. Add Permissions-Policy to restrict browser features (camera, microphone, geolocation) available to the page and embedded content."

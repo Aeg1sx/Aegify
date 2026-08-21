@@ -1,0 +1,220 @@
+rules:
+  - id: CG-A02-001
+    name: Hardcoded Cryptographic Key
+    description: >
+      A cryptographic key, secret, or password is hardcoded as a string
+      literal in source code. Hardcoded secrets are trivially extractable
+      from compiled binaries or source repositories, compromising all
+      cryptographic operations that depend on them.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, rust, swift, kotlin]
+    cwe_id: 321
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["env_var", "secret_manager", "vault", "keystore", "KMS"]
+    patterns:
+      - callee_match: "(AES|DES|Fernet|HMAC|RSA|encrypt|sign|jwt\\.encode)"
+        args_match: "key\\s*=\\s*['\"][^'\"]+"
+    message: >
+      Hardcoded cryptographic key detected at line {sink_line}. Secrets
+      must be loaded from environment variables, a secrets manager, or a
+      secure vault -- never embedded in source code.
+
+  - id: CG-A02-002
+    name: Weak Hash Algorithm MD5
+    description: >
+      MD5 is used as a hash function. MD5 is cryptographically broken and
+      vulnerable to collision attacks. It must not be used for password
+      hashing, digital signatures, certificate validation, or any
+      security-sensitive integrity check.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go, rust, swift, kotlin]
+    cwe_id: 328
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["sha256", "sha384", "sha512", "bcrypt", "scrypt", "argon2", "pbkdf2"]
+    patterns:
+      - callee: "md5"
+      - callee_match: "(hashlib\\.md5|MD5\\.Create|MessageDigest\\.getInstance|createHash|crypto\\.createHash|md5\\.New|Md5\\.hashBytes)"
+        args_match: "(.*|['\"]md5['\"]|['\"]MD5['\"])"
+    message: >
+      Weak hash algorithm MD5 used at line {sink_line}. MD5 is
+      cryptographically broken. Use SHA-256 or stronger for integrity
+      checks, and bcrypt/argon2/scrypt for password hashing.
+
+  - id: CG-A02-003
+    name: Weak Hash Algorithm SHA-1
+    description: >
+      SHA-1 is used as a hash function. SHA-1 has known collision
+      vulnerabilities (SHAttered attack, 2017) and is deprecated by NIST
+      for digital signatures and certificate validation. Use SHA-256 or
+      stronger alternatives.
+    severity: medium
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, rust, swift, kotlin]
+    cwe_id: 328
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["sha256", "sha384", "sha512", "sha3"]
+    patterns:
+      - callee_match: "(hashlib\\.sha1|SHA1\\.Create|createHash\\(['\"]sha1['\"]\\)|MessageDigest\\.getInstance\\(['\"]SHA-?1['\"]\\)|sha1\\.New|crypto\\.SHA1)"
+        args_match: ".*"
+      - callee_match: "(crypto\\.createHash|hashlib\\.new)"
+        args_match: "['\"]sha-?1['\"]"
+    message: >
+      Weak hash algorithm SHA-1 used at line {sink_line}. SHA-1 has known
+      collision vulnerabilities. Migrate to SHA-256 or SHA-3 for
+      security-sensitive hashing.
+
+  - id: CG-A02-004
+    name: Insecure Random Number Generator for Cryptographic Use
+    description: >
+      A non-cryptographic pseudo-random number generator (PRNG) is used in
+      a security context such as token generation, key derivation, nonce
+      creation, or password generation. Non-cryptographic PRNGs are
+      predictable and must not be used where unpredictability is required.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go, kotlin, swift]
+    cwe_id: 338
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["secrets", "crypto.randomBytes", "SecureRandom", "crypto/rand", "os.urandom", "CSPRNG"]
+    patterns:
+      - callee_match: "(random\\.random|random\\.randint|random\\.choice|random\\.randrange|Math\\.random|java\\.util\\.Random|rand\\.Intn|rand\\.Int|arc4random)"
+      - callee_match: "(Math\\.random|random\\.random)"
+    message: >
+      Insecure random number generator used in security context at line
+      {sink_line}. Use a cryptographically secure PRNG: secrets (Python),
+      crypto.randomBytes (Node.js), SecureRandom (Java), or crypto/rand (Go).
+
+  - id: CG-A02-005
+    name: Missing TLS Certificate Verification
+    description: >
+      TLS/SSL certificate verification is explicitly disabled, allowing
+      man-in-the-middle attacks. An attacker on the network path can
+      intercept, read, and modify encrypted traffic by presenting a
+      fraudulent certificate.
+    severity: critical
+    confidence: 0.95
+    languages: [python, javascript, typescript, java, go, kotlin, swift]
+    cwe_id: 295
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["verify=True", "rejectUnauthorized: true", "certificate_pinning"]
+    patterns:
+      - callee_match: "(requests\\.(get|post|put|delete|patch|head|options)|urllib3|httplib2|aiohttp)"
+        args_match: "verify\\s*=\\s*False"
+      - callee_match: "(SSLContext|ssl\\.create_default_context)"
+        args_match: "(check_hostname\\s*=\\s*False|verify_mode\\s*=\\s*ssl\\.CERT_NONE)"
+      - callee_match: "(TrustManager|X509TrustManager|HostnameVerifier)"
+    message: >
+      TLS certificate verification is disabled at line {sink_line}. This
+      allows man-in-the-middle attacks. Always verify TLS certificates in
+      production environments.
+
+  - id: CG-A02-006
+    name: Weak Cipher Mode ECB
+    description: >
+      Electronic Codebook (ECB) mode is used for block cipher encryption.
+      ECB encrypts identical plaintext blocks to identical ciphertext blocks,
+      leaking patterns in the data. Use CBC, CTR, or GCM mode instead.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go, rust, kotlin]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["CBC", "CTR", "GCM", "CCM", "AEAD"]
+    patterns:
+      - callee_match: "(AES\\.new|Cipher\\.getInstance|CryptoJS\\.AES|createCipheriv|NewCipher|aes\\.NewECBEncrypter)"
+        args_match: "(ECB|MODE_ECB|AES/ECB|mode\\s*=\\s*.*ECB)"
+    message: >
+      Weak cipher mode ECB detected at line {sink_line}. ECB leaks
+      plaintext patterns in ciphertext. Use GCM (authenticated encryption),
+      CBC with HMAC, or CTR mode instead.
+
+  - id: CG-A02-007
+    name: Insufficient RSA Key Length
+    description: >
+      An RSA key is generated with fewer than 2048 bits. Keys shorter than
+      2048 bits are considered breakable with current computing resources.
+      NIST recommends 2048-bit keys as the minimum through 2030 and
+      3072-bit keys for protection beyond 2030.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go, rust, kotlin]
+    cwe_id: 326
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["key_size=2048", "key_size=4096", "key_size: 3072"]
+    patterns:
+      - callee_match: "(generate_private_key|RSA\\.generate|generateKeyPair|generateKeyPairSync|rsa\\.GenerateKey|KeyPairGenerator\\.getInstance)"
+        args_match: "(key_size\\s*=\\s*(512|768|1024)|bits\\s*[:=]\\s*(512|768|1024)|modulusLength\\s*[:=]\\s*(512|768|1024)|\\b(512|768|1024)\\b)"
+      - callee_match: "(RSAKeyGenParameterSpec|rsa\\.GenerateKey)"
+        args_match: "(512|768|1024)"
+    message: >
+      Insufficient RSA key length detected at line {sink_line}. The key
+      size is below the recommended minimum of 2048 bits. Use at least
+      2048-bit keys (3072-bit recommended for long-term security).
+
+  - id: CG-A02-008
+    name: Cleartext Password Storage
+    description: >
+      A password is stored or persisted in cleartext without hashing. Stored
+      cleartext passwords are immediately compromised in any data breach.
+      Passwords must always be hashed with a dedicated password hashing
+      algorithm (bcrypt, argon2, scrypt, or PBKDF2).
+    severity: critical
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 256
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["bcrypt", "argon2", "scrypt", "pbkdf2", "password_hash"]
+    patterns:
+      - callee_match: "(INSERT|UPDATE|save|create)"
+        args_match: "(password|passwd)"
+        missing_transform: "(bcrypt|hash|argon2|scrypt|pbkdf2)"
+    message: >
+      Cleartext password storage detected at line {sink_line}. The password
+      value is persisted without hashing. Use bcrypt, argon2, or scrypt to
+      hash passwords before storage.
+
+  - id: CG-A02-009
+    name: Deprecated Cipher DES or 3DES
+    description: >
+      DES (56-bit key) or Triple DES (168-bit effective, 112-bit security)
+      is used for encryption. Both ciphers are deprecated by NIST. DES is
+      trivially brute-forced and 3DES is vulnerable to the Sweet32 attack
+      due to its 64-bit block size. Use AES-128 or AES-256 instead.
+    severity: high
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go, rust, kotlin]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["AES", "AES-128", "AES-256", "ChaCha20"]
+    patterns:
+      - callee_match: "(DES\\.new|DES3\\.new|TripleDES|DESede|Blowfish|RC4|RC2)"
+      - callee_match: "(Cipher\\.getInstance|createCipher|createCipheriv)"
+        args_match: "(DES|3DES|DESede|des-ede|des-cbc|des-ecb|des3|rc4|rc2|blowfish)"
+    message: >
+      Deprecated cipher DES/3DES detected at line {sink_line}. DES and
+      3DES are cryptographically weak and deprecated. Migrate to AES-256-GCM
+      or ChaCha20-Poly1305 for symmetric encryption.
+
+  - id: CG-A02-010
+    name: Sensitive Data Stored Without Encryption
+    description: >
+      Sensitive data (credit card numbers, SSNs, health records, personal
+      identifiers) is written to a file, database, or log without encryption.
+      Regulatory frameworks (PCI DSS, HIPAA, GDPR) mandate encryption at
+      rest for such data categories.
+    severity: medium
+    confidence: 0.55
+    languages: [python, javascript, typescript, java, go, kotlin]
+    cwe_id: 312
+    owasp_category: "A02:2021-Cryptographic Failures"
+    defense_patterns: ["encrypt", "cipher", "AES", "Fernet", "field_encryption", "encrypted_field"]
+    patterns:
+      - callee_match: "(open|fwrite|writeFile|fs\\.write|io\\.Write)"
+        args_match: "(ssn|credit_card|card_number|social_security|medical)"
+        missing_transform: "(encrypt|cipher)"
+    message: >
+      Sensitive data written without encryption at line {sink_line}. Data
+      classified as PII, PCI, or PHI must be encrypted at rest. Apply
+      field-level or volume-level encryption before persisting.

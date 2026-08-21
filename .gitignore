@@ -1,0 +1,70 @@
+# Local secrets. Only reviewed example templates may be committed.
+.env
+.env.*
+!.env.example
+!.env.*.example
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+.vault-token
+vault-data/
+/secrets/
+**/secrets.local/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+scanner/dist/
+scanner/build/
+*.egg-info/
+
+# Node / Next.js / Prisma local state
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Generated analysis, compiler, and package artifacts
+target/
+dist/
+*.sarif
+*.scip
+*.class
+*.jar
+*.whl
+*.tar.gz
+*.zip
+*.log
+
+# Local IDE/agent/session state
+.DS_Store
+.idea/
+.vscode/
+.claude/settings.local.json
+.codeguard-session.md
+*.swp
+*.swo
+
+# Local deployment state
+.vercel/
+docker-compose.override.yml
+tmp/
+temp/

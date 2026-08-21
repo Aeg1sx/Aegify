@@ -1,0 +1,151 @@
+rules:
+  - id: "CG-MASS-001"
+    name: "Django model creation from unsanitized request data"
+    description: >
+      The application creates or updates a Django model instance by directly unpacking
+      request.POST or request.data into the model constructor or update method. An
+      attacker can inject unexpected fields such as is_admin, is_staff, or price to
+      escalate privileges or manipulate business-critical data that should be server-controlled.
+    severity: critical
+    confidence: 0.9
+    languages: [python]
+    cwe_id: 915
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - callee_match: "objects\\.create|objects\\.update|objects\\.get_or_create"
+        args_match: "\\*\\*request\\.(POST|data|GET|query_params)"
+      - callee_match: "__init__|save"
+        args_match: "\\*\\*request\\.(POST|data)"
+      - callee_match: "objects\\.filter.*\\.update"
+        args_match: "\\*\\*request\\.(POST|data)"
+      - assignment_match: "form_data\\s*=\\s*request\\.(POST|data)\\.dict\\(\\)"
+        context: "objects\\.create|objects\\.update"
+    defense_patterns:
+      - "ModelForm"
+      - "Serializer"
+      - "fields\\s*=\\s*\\["
+      - "exclude\\s*=\\s*\\["
+      - "clean_data"
+      - "validated_data"
+      - "pick\\(|only\\("
+    message: "Django model created/updated with unsanitized request data. Use Django Forms or DRF Serializers with explicit field whitelisting to prevent mass assignment."
+
+  - id: "CG-MASS-002"
+    name: "Express request body spread into object"
+    description: >
+      The application spreads or assigns req.body directly into a database model,
+      configuration object, or data transfer object in an Express/Node.js application.
+      Attackers can send additional JSON fields to modify internal properties such as
+      role, permissions, verified, or __proto__ leading to privilege escalation or
+      prototype pollution.
+    severity: critical
+    confidence: 0.9
+    languages: [javascript, typescript]
+    cwe_id: 915
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - callee_match: "create|findOneAndUpdate|updateOne|insertOne|save"
+        args_match: "req\\.body|request\\.body"
+      - assignment_match: ".*"
+        value_match: "\\{\\s*\\.\\.\\.req\\.body|Object\\.assign\\(.*req\\.body"
+      - callee_match: "Model\\(|new.*Model"
+        args_match: "req\\.body"
+      - callee_match: "update|findByIdAndUpdate"
+        args_match: "\\$set.*req\\.body|req\\.body"
+    defense_patterns:
+      - "pick\\(|pluck\\(|only\\("
+      - "allowedFields|whitelist|permitted"
+      - "Joi\\.object|yup\\.object|zod\\.object"
+      - "destructuring.*=.*req\\.body"
+      - "sanitize|validate"
+    message: "Request body is spread directly into a database operation. Explicitly destructure or whitelist allowed fields from req.body to prevent mass assignment attacks."
+
+  - id: "CG-MASS-003"
+    name: "Spring @ModelAttribute without field restriction"
+    description: >
+      A Spring MVC controller binds HTTP parameters directly to a domain model or
+      entity using @ModelAttribute without @InitBinder field restrictions or a
+      dedicated DTO. Attackers can submit additional form fields to set sensitive
+      properties such as id, role, approved, or internal state flags.
+    severity: high
+    confidence: 0.85
+    languages: [java]
+    cwe_id: 915
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - annotation_match: "@ModelAttribute"
+        class_context: "@Entity|@Table|@Document"
+      - annotation_match: "@ModelAttribute|@RequestBody"
+        missing_annotation: "@InitBinder|@JsonIgnoreProperties"
+        param_type_match: "Entity|Model|Domain"
+      - callee_match: "WebDataBinder"
+        missing_args: "setAllowedFields|setDisallowedFields"
+    defense_patterns:
+      - "@InitBinder"
+      - "setAllowedFields"
+      - "setDisallowedFields"
+      - "@JsonIgnoreProperties"
+      - "DTO|Request|Command|Form"
+      - "MapStruct|ModelMapper|BeanUtils\\.copyProperties"
+    message: "Spring @ModelAttribute binds directly to a domain entity. Use a DTO class or configure @InitBinder with setAllowedFields to restrict bindable properties."
+
+  - id: "CG-MASS-004"
+    enabled: false
+    disabled_reason: "Reference-only Ruby rule; Ruby parsing is not supported."
+    name: "Rails strong parameters bypass"
+    description: >
+      The application accesses params directly without using strong parameters
+      (require/permit) for mass assignment in Rails controllers. Without strong
+      parameter filtering, attackers can inject arbitrary attributes including admin
+      flags, role assignments, or internal state into model creation and updates.
+    severity: critical
+    confidence: 0.9
+    languages: [ruby]
+    cwe_id: 915
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - callee_match: "new|create|update|update_attributes|assign_attributes"
+        args_match: "params(?!\\.require|\\.permit|\\[:\\w+\\]\\.permit)"
+      - callee_match: "create|update"
+        args_match: "params\\.to_unsafe_h|params\\.to_hash"
+      - callee_match: "permit!"
+        context: "controller|action"
+      - assignment_match: "attr_accessible"
+        value_match: ".*"
+        context: "model"
+        note: "Deprecated pre-Rails 4 pattern"
+    defense_patterns:
+      - "params\\.require.*\\.permit"
+      - "strong_parameters"
+      - "permitted_params"
+      - "ActionController::Parameters"
+    message: "Model created or updated without strong parameter filtering. Always use params.require(:model).permit(:field1, :field2) to whitelist allowed attributes."
+
+  - id: "CG-MASS-005"
+    name: "Mongoose schema without strict mode"
+    description: >
+      A Mongoose schema is configured with strict mode disabled (strict: false),
+      allowing arbitrary fields from user input to be saved to the database. This
+      bypasses schema validation and enables attackers to inject unexpected fields
+      that may be used in authorization checks, query filters, or rendered in views.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 915
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - callee_match: "new\\s+Schema|mongoose\\.Schema"
+        args_match: "strict\\s*:\\s*false"
+      - callee_match: "schema\\.set"
+        args_match: "strict.*false"
+      - callee_match: "model\\.findOneAndUpdate|model\\.updateMany"
+        args_match: "strict\\s*:\\s*false"
+      - callee_match: "new\\s+Schema"
+        args_match: "strictQuery\\s*:\\s*false"
+    defense_patterns:
+      - "strict:\\s*true"
+      - "strict:\\s*'throw'"
+      - "pick\\(|sanitize"
+      - "validate.*before.*save"
+      - "pre\\('save'"
+    message: "Mongoose schema has strict mode disabled. Keep strict mode enabled (default) and explicitly define all schema fields to prevent mass assignment through unexpected properties."

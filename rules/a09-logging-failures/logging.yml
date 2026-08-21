@@ -1,0 +1,74 @@
+rules:
+  - id: CG-A09-001
+    name: Sensitive Data in Logs
+    description: >
+      Sensitive data such as passwords, secrets, or tokens is written to log
+      output. This can expose credentials through log aggregation systems,
+      log files, or monitoring dashboards.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 532
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee: "(log|logger|logging|console)\\.(info|debug|warn|warning|error|log|trace|fatal|print)"
+        args_match: "(password|passwd|secret|token|bearer|authorization|credentials|credit_card|ssn|social_security)"
+      - callee: "(System\\.out\\.println|fmt\\.Print|print|println)"
+        args_match: "(password|passwd|secret|token|bearer|authorization|credentials)"
+    message: "Sensitive data may be logged at '{callee}' (line {line}). Mask or redact sensitive fields before logging."
+
+  - id: CG-A09-002
+    name: Log Injection
+    description: >
+      User-controlled input flows into log statements without sanitization.
+      Attackers can forge log entries, inject CRLF sequences, or exploit log
+      parsing tools through crafted input.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 117
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    defense_patterns: ["sanitize", "escape", "strip_newlines", "encode"]
+    taint:
+      source_types: [http_param]
+      sink_pattern: "(logger\\.(info|debug|warn|warning|error|critical|log)|log\\.(Info|Debug|Warn|Error|Fatal|Printf)|console\\.(log|warn|error|info))"
+    message: >
+      Log injection: user input from '{source}' (line {source_line})
+      flows to log statement '{sink}' (line {sink_line}). Sanitize input before logging
+      to prevent log forging and CRLF injection.
+
+  - id: CG-A09-004
+    name: Excessive Error Information in Logs
+    description: >
+      Full stack traces or detailed exception information is logged or
+      displayed. This can reveal internal architecture, file paths, library
+      versions, and other data useful to attackers.
+    severity: low
+    confidence: 0.6
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 209
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee: "(logger|logging|console|log)\\.(info|debug|warn|warning|error|log)"
+        args_match: "(traceback\\.format_exc|traceback\\.print_exc|stacktrace|getStackTrace|stack_trace|e\\.stack|err\\.stack|exc_info\\s*=\\s*True)"
+      - callee: "(print|System\\.out\\.println|fmt\\.Print)"
+        args_match: "(traceback|stackTrace|stack_trace)"
+    message: "Excessive error detail logged at '{callee}' (line {line}). Avoid exposing full stack traces in production logs."
+
+  - id: CG-A09-005
+    name: Logging Credentials
+    description: >
+      API keys, passwords, or authentication tokens are explicitly included
+      in log statements. Credentials in logs can be harvested from log files,
+      SIEM systems, or monitoring platforms.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 532
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee: "(log|logger|logging|console)\\.(info|debug|warn|warning|error|log|trace|fatal)"
+        args_match: "(api_key|apiKey|API_KEY|api_secret|apiSecret|private_key|privateKey|access_token|accessToken|refresh_token|client_secret|clientSecret)"
+      - callee: "(print|println|System\\.out\\.println|fmt\\.Print|fmt\\.Printf)"
+        args_match: "(api_key|apiKey|API_KEY|api_secret|private_key|access_token|refresh_token|client_secret)"
+    message: "Credential value logged at '{callee}' (line {line}). Never log API keys, tokens, or secrets. Use redaction or masking."

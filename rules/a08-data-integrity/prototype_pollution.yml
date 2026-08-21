@@ -1,0 +1,142 @@
+rules:
+  - id: "CG-PROTO-001"
+    name: "__proto__ property assignment"
+    description: >
+      The application allows user input to set the __proto__ property on a JavaScript
+      object. By assigning properties through __proto__, an attacker can inject
+      properties onto Object.prototype, affecting all objects in the application.
+      This can lead to denial of service, property injection for authentication
+      bypass, or remote code execution in server-side JavaScript environments.
+    severity: critical
+    confidence: 0.9
+    languages: [javascript, typescript]
+    cwe_id: 1321
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - assignment_match: "\\[.*__proto__.*\\]"
+        taint_source: "req\\.body|req\\.query|req\\.params|request|input|user"
+      - multi_match:
+          - "__proto__"
+          - "\\[.*\\]\\s*="
+          - "req\\.|request\\.|params|input|body"
+      - callee_match: "Object\\.assign|Object\\.defineProperty"
+        args_match: "__proto__"
+      - multi_match:
+          - "for.*in|Object\\.keys|Object\\.entries"
+          - "\\[key\\]\\s*=|\\[prop\\]\\s*=|\\[name\\]\\s*="
+        missing_match:
+          - "hasOwnProperty|__proto__|constructor|prototype"
+    defense_patterns:
+      - "Object\\.create\\(null\\)"
+      - "hasOwnProperty"
+      - "key.*!==.*__proto__|key.*!==.*constructor"
+      - "JSON\\.parse.*JSON\\.stringify"
+      - "Map\\(\\)|new Map"
+      - "Object\\.freeze\\(Object\\.prototype\\)"
+    message: "Potential __proto__ property injection from user input. Validate property keys against a deny list (__proto__, constructor, prototype) or use Object.create(null) for lookup objects."
+
+  - id: "CG-PROTO-002"
+    name: "Constructor prototype manipulation"
+    description: >
+      The application allows user-controlled property paths that can reach
+      constructor.prototype, enabling prototype pollution through an alternative
+      path. Accessing obj.constructor.prototype provides the same pollution vector
+      as __proto__ but bypasses many naive __proto__-only filters.
+    severity: critical
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 1321
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - assignment_match: "constructor\\.prototype"
+        taint_source: "req|request|params|input|user|body"
+      - multi_match:
+          - "constructor"
+          - "prototype"
+          - "\\[.*\\]\\s*="
+        taint_source: "req|request|params|input"
+      - callee_match: "set|assign|define"
+        args_match: "constructor\\.prototype"
+      - multi_match:
+          - "\\[key\\]|\\[prop\\]|\\[path\\]"
+          - "constructor"
+        missing_match:
+          - "constructor.*filter|constructor.*block|constructor.*deny"
+    defense_patterns:
+      - "key.*!==.*constructor"
+      - "deny_list.*constructor.*prototype"
+      - "Object\\.create\\(null\\)"
+      - "Map\\(\\)"
+      - "Object\\.freeze"
+      - "sanitize.*path|validate.*path"
+    message: "User input can reach constructor.prototype for prototype pollution. Block both __proto__ and constructor property paths in recursive operations and use Object.create(null) for safe objects."
+
+  - id: "CG-PROTO-003"
+    name: "Recursive merge without prototype pollution safeguard"
+    description: >
+      The application implements a recursive object merge or deep clone function
+      that does not guard against prototype pollution. When merging user-controlled
+      objects, properties with keys like __proto__ or constructor.prototype are
+      recursively assigned to the target, polluting the prototype chain of all
+      objects in the runtime.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 1321
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - multi_match:
+          - "function.*merge|function.*deepMerge|function.*extend|function.*deepCopy"
+          - "for.*in|Object\\.keys"
+          - "typeof.*===.*object|isObject"
+          - "\\[key\\]\\s*="
+        missing_match:
+          - "__proto__|constructor|prototype|hasOwnProperty"
+      - multi_match:
+          - "merge|deepMerge|extend|assign|mixin"
+          - "recursive|deep"
+          - "\\[key\\]\\s*=.*\\[key\\]"
+        missing_match:
+          - "isPlainObject|__proto__|constructor"
+      - callee_match: "deepmerge|deep-extend|merge-deep"
+        args_match: "req\\.body|request|params|input"
+        note: "Check library version for known prototype pollution CVE"
+    defense_patterns:
+      - "key.*!==.*__proto__.*key.*!==.*constructor"
+      - "hasOwnProperty"
+      - "Object\\.create\\(null\\)"
+      - "isPlainObject"
+      - "JSON\\.parse\\(JSON\\.stringify"
+      - "structuredClone"
+    message: "Recursive merge/clone does not guard against prototype pollution. Add checks to skip __proto__, constructor, and prototype keys, or use structuredClone() for safe deep cloning."
+
+  - id: "CG-PROTO-004"
+    name: "lodash merge or set with user-controlled input"
+    description: >
+      The application uses lodash.merge, lodash.set, lodash.defaultsDeep, or
+      lodash.mergeWith with user-controlled input as the source object or property
+      path. Older versions of lodash (before 4.17.12) are vulnerable to prototype
+      pollution through these functions, and even patched versions can be bypassed
+      if property paths are user-controlled.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 1321
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee_match: "_\\.merge|lodash\\.merge|_\\.defaultsDeep|lodash\\.defaultsDeep"
+        args_match: "req\\.body|request|params|input|user"
+      - callee_match: "_\\.set|lodash\\.set|_\\.setWith|lodash\\.setWith"
+        args_match: "req\\.(body|query|params)|request\\.(body|data)"
+      - callee_match: "_\\.mergeWith|lodash\\.mergeWith"
+        taint_source: "req|request|params|input"
+      - callee_match: "require\\(['\"]lodash['\"]\\)"
+        context: "\\.merge.*req\\.body|\\.set.*req\\.(query|body|params)"
+    defense_patterns:
+      - "lodash.*4\\.17\\.21|lodash.*>.*4\\.17\\.12"
+      - "JSON\\.parse\\(JSON\\.stringify"
+      - "sanitize|clean|strip.*proto"
+      - "Object\\.create\\(null\\)"
+      - "structuredClone"
+      - "pick\\(|whitelist|allowedKeys"
+    message: "lodash merge/set/defaultsDeep used with user input is vulnerable to prototype pollution. Update lodash to >=4.17.21, sanitize input to remove __proto__ and constructor keys, or use explicit property picks."

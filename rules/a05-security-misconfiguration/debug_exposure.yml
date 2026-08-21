@@ -1,0 +1,119 @@
+rules:
+  - id: "CG-DEBUG-001"
+    name: "Debug mode enabled in production"
+    description: >
+      The application has debug mode enabled in a configuration that may be deployed
+      to production. Debug mode typically disables security protections, exposes detailed
+      error information including stack traces and variable contents, enables interactive
+      debuggers (e.g., Werkzeug), and may serve static files insecurely. An attacker
+      can leverage debug mode to gain remote code execution or extract sensitive data.
+    severity: critical
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 489
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - assignment_match: "DEBUG"
+        value_match: "True|true|1"
+        file_match: "settings\\.py|config\\.py|\\.env"
+      - callee_match: "app\\.run\\("
+        args_match: "debug\\s*=\\s*True"
+      - assignment_match: "NODE_ENV"
+        value_match: "development"
+        file_match: "\\.env\\.production|docker-compose.*\\.yml"
+      - assignment_match: "FLASK_DEBUG|DJANGO_DEBUG"
+        value_match: "1|True|true"
+    defense_patterns:
+      - "DEBUG\\s*=\\s*False"
+      - "NODE_ENV.*production"
+      - "debug\\s*=\\s*False"
+      - "os\\.environ\\.get\\(['\"]DEBUG['\"]"
+    message: "Debug mode is enabled in a configuration file. Ensure DEBUG is set to False in production environments to prevent information disclosure and potential remote code execution."
+
+  - id: "CG-DEBUG-002"
+    name: "Stack trace exposure in error responses"
+    description: >
+      The application returns detailed stack traces or exception information in HTTP
+      error responses. Stack traces reveal internal file paths, library versions,
+      database connection details, and code structure, providing attackers with
+      reconnaissance data to craft targeted exploits.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 209
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "traceback\\.format_exc|traceback\\.print_exc"
+        context: "response|render|send|json"
+      - callee_match: "res\\.send|res\\.json|response\\.write"
+        args_match: "err\\.stack|error\\.stack|exception\\.getMessage"
+      - callee_match: "printStackTrace"
+        context: "response|servlet|controller"
+      - multi_match:
+          - "catch|except|rescue"
+          - "response|render|send|json"
+          - "stack|trace|backtrace|getMessage"
+    defense_patterns:
+      - "custom_error_handler"
+      - "error_page"
+      - "generic_error_message"
+      - "sanitize_error"
+      - "logger\\.error.*(?!response|send|render)"
+    message: "Stack trace or exception details are exposed in error responses. Return generic error messages to clients and log detailed errors server-side only."
+
+  - id: "CG-DEBUG-003"
+    name: "Debug endpoints enabled"
+    description: >
+      The application exposes debug or diagnostic endpoints such as profilers, status
+      pages, phpinfo, or health-check endpoints that reveal internal state. These
+      endpoints can disclose environment variables, database credentials, internal
+      network topology, and application configuration to attackers.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 215
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "route|get|post|map|register"
+        args_match: "/debug|/profiler|/phpinfo|/__debug__|/actuator|/elmah|/trace|/server-status"
+      - callee_match: "phpinfo\\("
+      - callee_match: "mount|use"
+        args_match: "debug-toolbar|django-debug-toolbar|express-status-monitor"
+      - assignment_match: "management\\.endpoints\\.web\\.exposure\\.include"
+        value_match: "\\*"
+    defense_patterns:
+      - "if.*DEBUG"
+      - "if.*development"
+      - "@require_admin"
+      - "authentication_required"
+      - "management\\.endpoints\\.web\\.exposure\\.include.*health,info"
+    message: "Debug or diagnostic endpoints are exposed. Remove or restrict debug endpoints behind authentication and ensure they are disabled in production."
+
+  - id: "CG-DEBUG-004"
+    name: "Verbose error messages in responses"
+    description: >
+      The application returns detailed error messages including internal identifiers,
+      SQL queries, file paths, or configuration details in API responses or rendered
+      pages. Verbose error messages provide attackers with valuable information about
+      the application internals, database schema, and technology stack.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 209
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - callee_match: "res\\.status\\(\\d+\\)\\.json|jsonify|JsonResponse"
+        args_match: "str\\(e\\)|str\\(err\\)|error\\.message|e\\.getMessage\\(\\)"
+      - callee_match: "render|send_response"
+        args_match: "exception|error_detail|sql_error"
+      - multi_match:
+          - "except|catch"
+          - "return.*response|return.*json|return.*render"
+          - "str\\(e\\)|error\\.message|getMessage"
+    defense_patterns:
+      - "generic_error"
+      - "\"An error occurred\""
+      - "\"Internal server error\""
+      - "sanitize_error_message"
+      - "error_handler"
+    message: "Verbose error information is returned in responses. Replace detailed error messages with generic user-facing messages and log specifics server-side."

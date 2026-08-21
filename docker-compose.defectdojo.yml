@@ -1,0 +1,87 @@
+# Development-only DefectDojo integration fixture. It is not a production
+# deployment topology. All credentials must come from the local ignored .env.
+# Usage: docker compose -f docker-compose.defectdojo.yml up -d
+# Access: http://localhost:8080
+
+services:
+  nginx:
+    image: defectdojo/defectdojo-nginx:3.1.303
+    depends_on:
+      uwsgi:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443"
+
+  uwsgi:
+    image: defectdojo/defectdojo-django:3.1.303
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+      initializer:
+        condition: service_completed_successfully
+    entrypoint: ["/wait-for-it.sh", "postgres:5432", "-t", "30", "--", "/entrypoint-uwsgi.sh"]
+    environment: &defectdojo-env
+      DD_DEBUG: "False"
+      DD_DATABASE_ENGINE: django.db.backends.postgresql
+      DD_DATABASE_HOST: postgres
+      DD_DATABASE_PORT: "5432"
+      DD_DATABASE_NAME: defectdojo
+      DD_DATABASE_USER: defectdojo
+      DD_DATABASE_PASSWORD: ${DD_DATABASE_PASSWORD:?Set DD_DATABASE_PASSWORD in a local .env}
+      DD_SECRET_KEY: ${DD_SECRET_KEY:?Set DD_SECRET_KEY in a local .env}
+      DD_CREDENTIAL_AES_256_KEY: ${DD_CREDENTIAL_AES_256_KEY:?Set DD_CREDENTIAL_AES_256_KEY in a local .env}
+      DD_CELERY_BROKER_URL: redis://valkey:6379/0
+
+  initializer:
+    image: defectdojo/defectdojo-django:3.1.303
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/wait-for-it.sh", "postgres:5432", "-t", "30", "--", "/entrypoint-initializer.sh"]
+    environment:
+      <<: *defectdojo-env
+      DD_INITIALIZE: "true"
+      DD_ADMIN_USER: admin
+      DD_ADMIN_PASSWORD: ${DD_ADMIN_PASSWORD:?Set DD_ADMIN_PASSWORD in a local .env}
+      DD_ADMIN_MAIL: admin@defectdojo.local
+
+  celery-beat:
+    image: defectdojo/defectdojo-django:3.1.303
+    depends_on:
+      initializer:
+        condition: service_completed_successfully
+    entrypoint: ["/wait-for-it.sh", "postgres:5432", "-t", "30", "--", "/entrypoint-celery-beat.sh"]
+    environment:
+      <<: *defectdojo-env
+
+  celery-worker:
+    image: defectdojo/defectdojo-django:3.1.303
+    depends_on:
+      initializer:
+        condition: service_completed_successfully
+    entrypoint: ["/wait-for-it.sh", "postgres:5432", "-t", "30", "--", "/entrypoint-celery-worker.sh"]
+    environment:
+      <<: *defectdojo-env
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: defectdojo
+      POSTGRES_USER: defectdojo
+      POSTGRES_PASSWORD: ${DD_DATABASE_PASSWORD:?Set DD_DATABASE_PASSWORD in a local .env}
+    volumes:
+      - defectdojo-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U defectdojo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:7.2-alpine
+
+volumes:
+  defectdojo-pgdata:

@@ -1,0 +1,202 @@
+rules:
+  - id: "CG-IDOR-001"
+    name: "Direct object reference via sequential integer ID"
+    description: >
+      The application uses a sequential integer identifier from user input to
+      retrieve a resource without verifying the requesting user's authorization.
+      Sequential IDs are trivially enumerable, allowing an attacker to iterate
+      through all valid IDs and access every resource in the system.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "taint"
+        source: "(req\\.params\\.id|request\\.args\\.get\\(['\"]id|kwargs\\[?['\"]?pk|@PathVariable.*int|ctx\\.Param\\(['\"]id)"
+        sink: "(Model\\.objects\\.get|findById|findOne|findByPk|find_by|get_object_or_404|repository\\.find)"
+        sanitizers: ["filter\\(user=", "where.*user_id", "owner_id.*current_user", "authorize"]
+      - pattern_type: "regex"
+        match: "(get_object_or_404|objects\\.get|findById|findOne|findByPk)\\(.*\\b(pk|id)\\s*=.*\\b(request|req|params|args|kwargs)\\b"
+        negative_match: "(user=|owner=|created_by=|tenant_id=|authorize)"
+    defense_patterns:
+      - "scoped_query_by_user"
+      - "ownership_verification"
+      - "authorization_middleware"
+      - "uuid_instead_of_integer_id"
+    message: "Resource retrieved by user-supplied integer ID without authorization check at line {line}. Scope all queries to the authenticated user or verify resource ownership."
+
+  - id: "CG-IDOR-002"
+    name: "UUID-based IDOR without authorization"
+    description: >
+      The application uses UUIDs as resource identifiers but relies solely on
+      unguessability for access control instead of implementing proper authorization.
+      UUIDs can be leaked through API responses, logs, URLs, and Referer headers.
+      UUID v1 is partially predictable. Relying on identifier opacity is security
+      through obscurity.
+    severity: high
+    confidence: 0.80
+    languages: [python, javascript, typescript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "taint"
+        source: "(req\\.params\\.uuid|request\\.args\\.get\\(['\"]uuid|kwargs\\[?['\"]?uuid|@PathVariable.*UUID)"
+        sink: "(findByUuid|findOne.*uuid|where.*uuid|objects\\.get.*uuid)"
+        sanitizers: ["filter\\(user=", "where.*user_id", "authorize", "policy"]
+      - pattern_type: "regex"
+        match: "(findOne|find_by|objects\\.get|where)\\(.*uuid\\s*[=:].*\\b(request|req|params)\\b"
+        negative_match: "(user_id|owner_id|created_by|tenant|authorize)"
+    defense_patterns:
+      - "authorization_check_regardless_of_id_type"
+      - "compound_query_user_plus_uuid"
+      - "row_level_security"
+    message: "Resource accessed by UUID without authorization check at line {line}. UUIDs are not access control - always verify the authenticated user has permission."
+
+  - id: "CG-IDOR-003"
+    name: "Path parameter used for file access without authorization"
+    description: >
+      The application uses a path parameter to serve files without verifying
+      the requesting user's authorization. This combines IDOR with path traversal,
+      allowing access to files belonging to other users or system files.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "taint"
+        source: "(req\\.params\\.(file|filename|path|document)|request\\.args\\.get\\(['\"]file)"
+        sink: "(open|readFile|sendFile|send_file|download|FileInputStream|os\\.Open)"
+        sanitizers: ["authorize", "belongs_to_user", "verify_ownership", "os.path.basename"]
+      - pattern_type: "regex"
+        match: "(send_file|sendFile|download|FileInputStream|open)\\(.*\\b(request|req|params|args)\\b.*(file|path|name)"
+        negative_match: "(authorize|user_owns|belongs_to|sanitize_path|path\\.basename)"
+    defense_patterns:
+      - "file_ownership_verification"
+      - "indirect_file_reference_mapping"
+      - "user_scoped_file_storage"
+    message: "File served based on user-supplied path parameter without authorization at line {line}. Map files to user-owned records and verify ownership before serving."
+
+  - id: "CG-IDOR-004"
+    name: "Horizontal privilege escalation via user ID parameter"
+    description: >
+      The application accepts a user identifier as a parameter and uses it to
+      retrieve or modify user-specific data without verifying the identifier
+      matches the authenticated session. Any authenticated user can access
+      another user's data by changing the user ID in the request.
+    severity: critical
+    confidence: 0.88
+    languages: [python, javascript, typescript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "taint"
+        source: "(req\\.params\\.userId|req\\.params\\.user_id|request\\.args\\.get\\(['\"]user_id|@PathVariable.*userId)"
+        sink: "(User\\.objects\\.get|User\\.findById|User\\.findOne|getUser|fetchUser|userRepository)"
+        sanitizers: ["session.user.id.*==", "current_user.id.*==", "req.user.id.*=="]
+      - pattern_type: "regex"
+        match: "(User|Profile|Account)\\.(objects\\.get|findById|findOne)\\(.*\\b(userId|user_id)\\s*[=:]\\s*.*\\b(req|request|params)\\b"
+        negative_match: "(session\\.user|current_user|req\\.user|auth\\.user)\\.(id|pk)\\s*(==|===)"
+    defense_patterns:
+      - "use_session_user_id_not_parameter"
+      - "enforce_current_user_equals_param"
+      - "admin_only_user_parameter_access"
+    message: "User-specific data accessed via user ID parameter without matching against authenticated session at line {line}. Derive user ID from session/token, never from request parameters."
+
+  - id: "CG-IDOR-005"
+    name: "Mass assignment enabling IDOR through foreign key manipulation"
+    description: >
+      The application accepts user input that includes foreign key fields (user_id,
+      account_id) without filtering, allowing an attacker to associate resources
+      with other users or organizations through mass assignment.
+    severity: high
+    confidence: 0.82
+    languages: [python, javascript, typescript, java, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "regex"
+        match: "(create|update|save|insert)\\(.*\\b(req\\.body|request\\.data|request\\.json|params)\\b"
+        negative_match: "(pick\\(|omit\\(|permit\\(|exclude=|only=|allowedFields|whitelist)"
+      - pattern_type: "regex"
+        match: "Object\\.assign\\(.*\\b(req\\.body|request\\.body|params)\\b"
+        negative_match: "(delete.*user_id|delete.*account_id|pick|omit|sanitize)"
+    defense_patterns:
+      - "explicit_field_allowlist"
+      - "strong_parameters"
+      - "dto_validation"
+      - "override_foreign_keys_from_session"
+    message: "Record created/updated with unfiltered user input that may include foreign key fields at line {line}. Filter input to an explicit allowlist and set foreign keys from the authenticated session."
+
+  - id: "CG-IDOR-006"
+    name: "Predictable resource URL or token"
+    description: >
+      The application generates resource access URLs or tokens using predictable
+      patterns (sequential numbers, timestamps, base64-encoded IDs) instead of
+      cryptographically random identifiers. An attacker can predict or brute-force
+      valid URLs to access resources without authorization.
+    severity: high
+    confidence: 0.78
+    languages: [python, javascript, typescript, java, go, ruby, php]
+    cwe_id: 330
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "regex"
+        match: "(token|url|link|code)\\s*=\\s*(base64|btoa|Buffer\\.from|b64encode)\\(.*\\b(id|user_id|email|timestamp)\\b"
+      - pattern_type: "regex"
+        match: "(token|url|link|code)\\s*=\\s*(md5|sha1|hashlib\\.md5|hashlib\\.sha1)\\(.*\\b(id|user_id|email)\\b"
+      - pattern_type: "regex"
+        match: "(reset_token|verification_token|invite_token|share_token)\\s*=\\s*str\\(.*\\b(uuid1|time|timestamp|id)\\b"
+    defense_patterns:
+      - "secrets\\.token_urlsafe|crypto\\.randomBytes|SecureRandom"
+      - "uuid4|uuidv4|UUID\\.randomUUID"
+      - "hmac_signed_url"
+    message: "Resource token or URL generated using predictable values at line {line}. Use cryptographically random tokens (secrets.token_urlsafe, crypto.randomBytes) for all access tokens and shareable URLs."
+
+  - id: "CG-IDOR-007"
+    name: "Bulk operation without per-item authorization"
+    description: >
+      The application processes a bulk operation where multiple resource IDs are
+      provided by the user, but authorization is only checked at the request level
+      rather than for each individual resource. An attacker can include unauthorized
+      resource IDs in bulk operations.
+    severity: high
+    confidence: 0.78
+    languages: [python, javascript, typescript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "regex"
+        match: "(ids|item_ids|selectedIds)\\s*=\\s*(req\\.body|request\\.data|params)\\.(ids|items|selected)"
+      - pattern_type: "regex"
+        match: "(Model|\\w+)\\.(update|delete|destroy)\\w*\\(.*\\b(id|pk)\\s*(in|IN|\\$in)\\s*.*\\b(ids|item_ids|selectedIds)\\b"
+        negative_match: "(user_id|owner_id|AND.*user|filter.*user|where.*user)"
+    defense_patterns:
+      - "per_item_authorization_in_bulk"
+      - "scoped_bulk_query_by_user"
+      - "count_verification_after_scoped_query"
+    message: "Bulk operation processes user-supplied resource IDs without per-item authorization at line {line}. Scope bulk queries to the authenticated user and verify affected row count matches input count."
+
+  - id: "CG-IDOR-008"
+    name: "API endpoint exposes internal object references in response"
+    description: >
+      An API endpoint returns internal object references (database IDs, file paths,
+      internal URLs) in its response body that can be used to construct IDOR attacks
+      against other endpoints. Exposing internal references makes IDOR exploitation
+      possible on endpoints that lack authorization checks.
+    severity: medium
+    confidence: 0.70
+    languages: [python, javascript, typescript, java, go, ruby, php]
+    cwe_id: 200
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "regex"
+        match: "(jsonify|res\\.json|JsonResponse|json\\.dumps|JSON\\.stringify)\\(.*\\b(internal_id|db_id|file_path|internal_url|admin_id|system_ref)\\b"
+      - pattern_type: "regex"
+        match: "(serializer|schema).*fields.*=.*\\[.*['\"](_id|internal_id|file_path|storage_path|admin_url)['\"]"
+    defense_patterns:
+      - "response_field_allowlist"
+      - "dto_with_public_fields_only"
+      - "opaque_external_identifiers"
+    message: "API response exposes internal object references at line {line}. Use opaque external identifiers in API responses. Never expose file paths, internal URLs, or sequential database IDs."

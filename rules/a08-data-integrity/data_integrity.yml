@@ -1,0 +1,115 @@
+rules:
+  - id: CG-A08-001
+    name: Insecure Deserialization
+    description: >
+      User-controlled data is deserialized without validation, potentially allowing
+      remote code execution, privilege escalation, or denial of service.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, java, go]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    defense_patterns: ["allowlist", "whitelist", "validate_type", "safe_deserialize"]
+    taint:
+      source_types: [http_body]
+      sink_pattern: "(unserialize|ObjectInputStream\\.readObject|json\\.loads|JSON\\.parse|Marshal\\.load|fromObject|deserialize)"
+    message: >
+      Insecure deserialization: user input from '{source}' (line {source_line})
+      flows to deserialization call '{sink}' (line {sink_line}).
+
+  - id: CG-A08-002
+    name: Unsigned JWT Token
+    description: >
+      JWT tokens are created or accepted without proper signature verification,
+      allowing token forgery and authentication bypass. Always verify JWT
+      signatures using a strong algorithm such as RS256 or ES256.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 345
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee: "jwt\\.(decode|verify)"
+        args_match: "(algorithms\\s*=\\s*\\[?[\"']none[\"']|verify\\s*=\\s*False|verify_signature\\s*=\\s*False)"
+      - callee: "jwt\\.decode"
+        args_match: "(options\\s*:\\s*\\{[^}]*algorithms\\s*:\\s*\\[?[\"']none[\"'])"
+      - callee: "Jwts\\.parser"
+        args_match: "(setSigningKey\\(null\\))"
+    message: "JWT token processed without signature verification at '{callee}' (line {line}). Always verify JWT signatures."
+
+  - id: CG-A08-003
+    name: Missing Integrity Check on Downloads
+    description: >
+      Files are downloaded from external sources without verifying a checksum
+      or digital signature. This allows man-in-the-middle or supply chain
+      attacks to inject malicious content.
+    severity: medium
+    confidence: 0.6
+    languages: [python, javascript, java, go]
+    cwe_id: 494
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee: "(urllib\\.request\\.urlretrieve|requests\\.get|wget|curl|http\\.Get|fetch)"
+        args_match: "(download|\\.(zip|tar|gz|exe|dmg|deb|rpm|jar|whl|pkg))"
+      - callee: "(subprocess\\.run|subprocess\\.call|os\\.system|exec)"
+        args_match: "(curl|wget)\\s+.*https?://"
+    message: "File downloaded without integrity check at '{callee}' (line {line}). Verify checksum or signature after download."
+
+  - id: CG-A08-004
+    name: Unsafe YAML Load
+    description: >
+      Using yaml.load() without specifying SafeLoader allows arbitrary Python
+      object deserialization, leading to remote code execution. Always use
+      yaml.safe_load() or yaml.load(data, Loader=yaml.SafeLoader).
+    severity: high
+    confidence: 0.9
+    languages: [python]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee: "yaml\\.load"
+        args_match: "^(?!.*SafeLoader)(?!.*safe_load).*$"
+      - callee: "yaml\\.load_all"
+        args_match: "^(?!.*SafeLoader).*$"
+      - callee: "yaml\\.unsafe_load"
+    message: "Unsafe YAML loading at '{callee}' (line {line}). Use yaml.safe_load() or specify Loader=yaml.SafeLoader."
+
+  - id: CG-A08-005
+    name: Pickle Deserialization of Untrusted Data
+    description: >
+      Untrusted data from an HTTP body or file is deserialized using Python's
+      pickle module. Pickle deserialization can execute arbitrary code and must
+      never be used on untrusted input.
+    severity: critical
+    confidence: 0.9
+    languages: [python]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    defense_patterns: ["hmac", "signature", "allowlist", "json"]
+    taint:
+      source_types: [http_body, file_read]
+      sink_pattern: "(pickle\\.loads?|cPickle\\.loads?|shelve\\.open|joblib\\.load|torch\\.load|numpy\\.load)"
+    message: >
+      Pickle deserialization of untrusted data: input from '{source}' (line {source_line})
+      flows to pickle/deserialization call '{sink}' (line {sink_line}). Use JSON or a safe
+      serialization format instead.
+
+  - id: CG-A08-006
+    name: Unvalidated Redirect URL
+    description: >
+      User-controlled input is used to construct a redirect URL without
+      validation. Attackers can redirect users to malicious sites for
+      phishing or credential theft.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 601
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    defense_patterns: ["allowlist", "whitelist", "url_validate", "urlparse", "same_origin"]
+    taint:
+      source_types: [http_param]
+      sink_pattern: "(redirect|HttpResponseRedirect|sendRedirect|res\\.redirect|location\\.href|window\\.location|http\\.Redirect|Header\\(\"Location\")"
+    message: >
+      Unvalidated redirect: user input from '{source}' (line {source_line})
+      flows to redirect call '{sink}' (line {sink_line}). Validate the URL against an
+      allowlist of trusted domains.

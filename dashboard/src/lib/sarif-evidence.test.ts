@@ -1,0 +1,139 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { PrismaClient } from "@prisma/client";
+import { createClient } from "@libsql/client";
+
+import {
+  normalizeFindingEvidence,
+  workspaceSnapshotForRun,
+} from "./sarif-evidence.ts";
+
+test("prefers the run-level snapshot and accepts invocation fallback", () => {
+  assert.equal(
+    workspaceSnapshotForRun(
+      { workspaceSnapshot: "sha256:run" },
+      { workspaceSnapshot: "sha256:invocation" },
+    ),
+    "sha256:run",
+  );
+  assert.equal(
+    workspaceSnapshotForRun(undefined, {
+      workspaceSnapshot: "sha256:invocation",
+    }),
+    "sha256:invocation",
+  );
+});
+
+test("normalizes the scanner provenance contract for database insertion", () => {
+  const normalized = normalizeFindingEvidence({
+    provenance: {
+      contract_version: 1,
+      producer: "codeguard.YAMLRule",
+      repository_id: "orders",
+      module_path: "src/OrderController.kt",
+      evidence_id: "ev:1234",
+    },
+  });
+
+  assert.equal(normalized.evidenceId, "ev:1234");
+  assert.equal(normalized.repositoryId, "orders");
+  assert.equal(normalized.modulePath, "src/OrderController.kt");
+  assert.deepEqual(JSON.parse(normalized.provenance), {
+    contract_version: 1,
+    producer: "codeguard.YAMLRule",
+    repository_id: "orders",
+    module_path: "src/OrderController.kt",
+    evidence_id: "ev:1234",
+  });
+});
+
+test("legacy SARIF without provenance remains uploadable", () => {
+  assert.deepEqual(normalizeFindingEvidence(undefined), {
+    evidenceId: "",
+    repositoryId: "",
+    modulePath: "",
+    provenance: "{}",
+  });
+});
+
+test("fresh migration history persists normalized evidence with Prisma", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "codeguard-evidence-"));
+  const databasePath = join(temporaryDirectory, "integration.db");
+  const databaseUrl = `file:${databasePath}`;
+  const migrationRoot = join(process.cwd(), "prisma", "migrations");
+  const migrationDirectories = (await readdir(migrationRoot, {
+    withFileTypes: true,
+  }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  const migrationClient = createClient({ url: databaseUrl });
+  for (const migrationDirectory of migrationDirectories) {
+    const sql = await readFile(
+      join(migrationRoot, migrationDirectory, "migration.sql"),
+      "utf8",
+    );
+    await migrationClient.executeMultiple(sql);
+  }
+  migrationClient.close();
+
+  const prisma = new PrismaClient({
+    adapter: new PrismaLibSql({ url: databaseUrl }),
+  });
+  try {
+    const user = await prisma.user.create({
+      data: { email: "integration@example.test" },
+    });
+    const project = await prisma.project.create({
+      data: { name: "commerce", userId: user.id },
+    });
+    const scan = await prisma.scan.create({
+      data: {
+        repository: "commerce",
+        status: "completed",
+        workspaceSnapshot: "sha256:workspace",
+        projectId: project.id,
+      },
+    });
+    const llmJob = await prisma.llmJob.create({
+      data: { scanId: scan.id, mode: "quick" },
+    });
+    const evidence = normalizeFindingEvidence({
+      provenance: {
+        contract_version: 1,
+        producer: "codeguard.YAMLRule",
+        repository_id: "orders",
+        module_path: "api/OrderController.kt",
+        evidence_id: "ev:integration",
+      },
+    });
+    const finding = await prisma.finding.create({
+      data: {
+        scanId: scan.id,
+        ruleId: "CG-INTEGRATION-001",
+        ruleName: "Evidence integration",
+        severity: "high",
+        filePath: "api/OrderController.kt",
+        lineStart: 7,
+        lineEnd: 7,
+        message: "integration evidence",
+        ...evidence,
+      },
+      include: { scan: true },
+    });
+
+    assert.equal(finding.evidenceId, "ev:integration");
+    assert.equal(finding.repositoryId, "orders");
+    assert.equal(finding.scan.workspaceSnapshot, "sha256:workspace");
+    assert.equal(JSON.parse(finding.provenance).contract_version, 1);
+    assert.equal(llmJob.status, "pending");
+    assert.equal(project.userId, user.id);
+  } finally {
+    await prisma.$disconnect();
+  }
+});

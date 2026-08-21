@@ -1,0 +1,39 @@
+services:
+  scanner:
+    build:
+      context: .
+      dockerfile: scanner/Dockerfile
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ./target:/scan/target
+      - ./rules:/scan/rules
+    environment:
+      - CODEGUARD_ANTHROPIC_API_KEY=${CODEGUARD_ANTHROPIC_API_KEY:-}
+      - CODEGUARD_RULES__CUSTOM_RULES=/scan/rules
+
+  dashboard:
+    build: ./dashboard
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-file:/data/dev.db}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in a local .env or inject it from Vault}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?Set ENCRYPTION_SECRET in a local .env or inject it from Vault}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
+      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
+      AUTH_GITLAB_ID: ${AUTH_GITLAB_ID:-}
+      AUTH_GITLAB_SECRET: ${AUTH_GITLAB_SECRET:-}
+      CODEGUARD_UPLOAD_TOKEN: ${CODEGUARD_UPLOAD_TOKEN:?Set a dedicated upload token}
+    volumes:
+      - dashboard-data:/data
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+
+volumes:
+  dashboard-data:

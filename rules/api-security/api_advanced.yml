@@ -1,0 +1,306 @@
+rules:
+  - id: "CG-API-010"
+    name: "Unsafe consumption of third-party API responses"
+    description: >
+      The application consumes data from a third-party API and uses the response directly in
+      security-sensitive operations (database queries, file operations, HTML rendering, command
+      execution) without validation or sanitization. Third-party APIs can be compromised, may
+      change their response format, or may return malicious data injected through their own
+      vulnerabilities. Treating external API responses as trusted input violates the principle
+      of defense-in-depth and creates transitive trust chains where a compromise of any
+      upstream service can cascade into your application. This corresponds to OWASP API10:2023
+      Unsafe Consumption of APIs.
+    severity: high
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 918
+    owasp_category: "API10:2023-Unsafe Consumption of APIs"
+    patterns:
+      - pattern: "(axios|fetch|http\\.get|https\\.get|requests\\.(get|post)|HttpClient|http\\.Get|http\\.Post|RestTemplate|WebClient)"
+        args_match: "(http://|https://)"
+        description: "External API call whose response may be used unsafely"
+      - pattern: "(res\\.data|response\\.json|response\\.text|body|result)"
+        args_match: "(execute|query|exec|eval|innerHTML|write|render|run|system|popen|spawn|\\$\\()"
+        description: "API response data flowing into a security-sensitive sink"
+      - pattern: "(axios|fetch|got|request|superagent|needle)\\s*\\("
+        args_match: "(http|https)"
+        missing_check: "(validate|sanitize|schema|joi|zod|yup|ajv|assert|check|verify|instanceof)"
+        description: "External HTTP call without response validation"
+    taint:
+      source_types: [external_api_response]
+      sink_types: [sql_query, os_command, html_output, file_write, code_execution]
+      sink_pattern: "(execute|query|exec|eval|innerHTML|document\\.write|render|system|popen|spawn|writeFile|open)"
+      propagation:
+        - through: "variable_assignment"
+        - through: "object_property"
+        - through: "destructuring"
+        - through: "json_parse_value"
+    defense_patterns:
+      - "schema.*validate"
+      - "joi\\.object"
+      - "zod\\.object"
+      - "yup\\.object"
+      - "ajv\\.validate"
+      - "JSON\\.parse.*try.*catch"
+      - "typeof.*===|instanceof"
+      - "sanitize|escape|encode"
+      - "Content-Type.*check"
+    fix_suggestion: >
+      Validate all third-party API responses against a strict schema using a validation
+      library (Joi, Zod, Yup, ajv) before using the data in any operation. Enforce expected
+      types, ranges, and formats. Sanitize string fields that will be rendered as HTML.
+      Implement circuit breakers to handle compromised or misbehaving upstream APIs. Use
+      TLS certificate pinning for critical third-party integrations and set strict
+      request timeouts.
+    message: "Unsafe API consumption: response from external API call at line {line} is used in security-sensitive operations without validation. Validate external data against a schema before use."
+    references:
+      - "https://owasp.org/API-Security/editions/2023/en/0xaa-unsafe-consumption-of-apis/"
+      - "https://cwe.mitre.org/data/definitions/918.html"
+
+  - id: "CG-API-011"
+    name: "Missing rate limiting on authentication endpoint"
+    description: >
+      An authentication endpoint (login, token generation, password reset, MFA verification)
+      is defined without rate limiting middleware or brute-force protection. Without rate
+      limiting, attackers can perform credential stuffing using leaked credential databases,
+      brute-force passwords at thousands of attempts per second, and enumerate valid usernames
+      through timing or response differences. This is a direct violation of OWASP API4:2023
+      Unrestricted Resource Consumption and is a prerequisite for many authentication attacks
+      including account takeover.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 307
+    owasp_category: "API4:2023-Unrestricted Resource Consumption"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "Express/Fastify auth route without rate limiting"
+        match: "(app|router)\\.(post|put)\\(['\"].*/(login|signin|sign-in|authenticate|token|auth|oauth|verify-otp|mfa|2fa)/?['\"]"
+        must_contain: "(rateLimit|rateLimiter|rate_limit|throttle|slowDown|brute|limiter)"
+      - pattern_type: "negative_check"
+        description: "Django/Flask auth endpoint without throttle"
+        match: "(@app\\.route.*/(login|signin|auth|token).*POST|class\\s+(Login|Auth|Token)\\w*(View|APIView)|def\\s+(login|authenticate|create_token|verify_otp))"
+        must_contain: "(@ratelimit|@throttle_classes|throttle_classes|RateThrottle|limiter\\.limit)"
+      - pattern_type: "negative_check"
+        description: "Spring auth controller without rate limiting"
+        match: "(@PostMapping|@RequestMapping).*/(login|signin|auth|token|authenticate)"
+        must_contain: "(RateLimit|RateLimiter|Bucket4j|Resilience4j|@RateLimited|rateLimiter)"
+      - pattern_type: "negative_check"
+        description: "Go auth handler without rate limiting"
+        match: "(HandleFunc|Handle|POST).*/(login|signin|auth|token|authenticate)"
+        must_contain: "(RateLimiter|rateLimiter|Throttle|limiter|tollbooth|rate\\.NewLimiter)"
+    defense_patterns:
+      - "rateLimit|rateLimiter|rate_limit"
+      - "throttle|throttle_classes"
+      - "slowDown"
+      - "brute_force_protection"
+      - "account_lockout"
+      - "progressive_delay"
+      - "captcha|recaptcha|hCaptcha"
+      - "Bucket4j|Resilience4j"
+    fix_suggestion: >
+      Apply strict rate limiting to all authentication endpoints. Use per-IP rate limits
+      (e.g., 5 attempts per minute) and per-account rate limits (e.g., 10 attempts per hour).
+      Implement progressive delays that increase with each failed attempt. Add account lockout
+      after repeated failures with CAPTCHA-based unlock. Use a distributed rate limiter
+      (Redis-backed) for multi-instance deployments. Return consistent error responses to
+      prevent username enumeration.
+    message: "Authentication endpoint at line {line} lacks rate limiting. This enables brute-force attacks, credential stuffing, and account enumeration. Apply per-IP and per-account rate limits with progressive delays."
+    references:
+      - "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+      - "https://cwe.mitre.org/data/definitions/307.html"
+
+  - id: "CG-API-012"
+    name: "JWT algorithm confusion vulnerability"
+    description: >
+      The JWT verification configuration accepts the 'none' algorithm, allows algorithm
+      switching between HMAC (HS256) and RSA (RS256), or does not explicitly specify the
+      expected algorithm. In an algorithm confusion attack, the attacker changes the JWT
+      header to alg:none to bypass signature verification entirely, or switches from RS256
+      to HS256 and signs the token using the RSA public key as the HMAC secret. Since
+      public keys are often accessible, this effectively allows an attacker to forge valid
+      JWTs and gain unauthorized access. This vulnerability class has led to authentication
+      bypasses in numerous production systems.
+    severity: critical
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 327
+    owasp_category: "API2:2023-Broken Authentication"
+    patterns:
+      - pattern: "(jwt\\.verify|jwt\\.decode|jose\\.jwtVerify|jose\\.JWTVerify)\\s*\\("
+        missing_check: "(algorithms\\s*:|algorithms\\s*=|algorithm\\s*:|allowedAlgorithms)"
+        description: "JWT verification without explicit algorithm specification"
+      - pattern: "algorithms\\s*[=:]\\s*\\[.*['\"]none['\"]"
+        description: "JWT configuration explicitly allowing 'none' algorithm"
+      - pattern: "algorithms\\s*[=:]\\s*\\[.*HS256.*RS256|algorithms\\s*[=:]\\s*\\[.*RS256.*HS256"
+        description: "JWT configuration allowing both HMAC and RSA algorithms"
+      - pattern: "(jwt\\.decode|jwt\\.verify)\\s*\\(.*verify\\s*[=:]\\s*(False|false)"
+        description: "JWT decode with signature verification disabled"
+      - pattern: "options\\s*[=:].*algorithms.*\\[.*none"
+        description: "JWT options including 'none' in allowed algorithms"
+      - pattern: "(PyJWT|pyjwt|jose).*decode.*options.*verify_signature.*False"
+        description: "Python JWT decode with signature verification disabled"
+    defense_patterns:
+      - "algorithms\\s*[=:]\\s*\\[\\s*['\"]RS256['\"]\\s*\\]"
+      - "algorithms\\s*[=:]\\s*\\[\\s*['\"]ES256['\"]\\s*\\]"
+      - "algorithms\\s*[=:]\\s*\\[\\s*['\"]HS256['\"]\\s*\\]"
+      - "algorithm\\s*[=:]\\s*['\"]RS256['\"]"
+      - "allowedAlgorithms"
+      - "require_signing"
+    fix_suggestion: >
+      Always specify the exact expected algorithm in JWT verification: jwt.verify(token, key,
+      { algorithms: ['RS256'] }). Never include 'none' in the allowed algorithms list. Use
+      asymmetric algorithms (RS256, ES256) in preference to symmetric (HS256) for APIs where
+      tokens are verified by multiple services. Use separate keys for signing and verification.
+      Validate the JWT header's alg field matches the expected algorithm before verification.
+      Keep JWT libraries updated to patch known algorithm confusion vulnerabilities.
+    message: "JWT algorithm confusion: JWT verification at line {line} does not enforce a specific algorithm, or allows unsafe algorithms (none, mixed HS/RS). Explicitly specify the expected algorithm in verification options."
+    references:
+      - "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/"
+      - "https://portswigger.net/web-security/jwt/algorithm-confusion"
+      - "https://cwe.mitre.org/data/definitions/327.html"
+
+  - id: "CG-API-013"
+    name: "GraphQL introspection enabled in production"
+    description: >
+      The GraphQL API has introspection queries enabled, allowing any client to discover the
+      entire API schema including all types, fields, mutations, subscriptions, and their
+      descriptions. While introspection is essential during development, leaving it enabled in
+      production exposes the full API surface area to attackers, revealing internal types,
+      deprecated fields, hidden mutations, and data relationships. Attackers use introspection
+      to map the API before launching targeted attacks against sensitive operations, and to
+      discover IDOR-vulnerable fields or admin-only mutations.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 200
+    owasp_category: "API8:2023-Security Misconfiguration"
+    patterns:
+      - pattern: "(introspection\\s*[=:]\\s*(true|True|enabled))"
+        description: "GraphQL introspection explicitly enabled"
+      - pattern: "(ApolloServer|GraphQLServer|graphqlHTTP|graphql-yoga|makeExecutableSchema|GraphQLModule)"
+        missing_check: "(introspection\\s*[=:]\\s*(false|False|disabled)|disable_introspection|NoIntrospection|IntrospectionDisabled|introspection_disabled)"
+        description: "GraphQL server without introspection disabled"
+      - pattern: "(GraphQLSchema|buildSchema|makeSchema|nexusSchema)"
+        missing_check: "(introspection.*false|disable_introspection|NoIntrospection|validationRules.*NoIntrospection)"
+        description: "GraphQL schema without introspection restriction"
+      - pattern: "__schema|__type"
+        missing_check: "(reject|deny|block|disable|validation)"
+        description: "Introspection query fields without access control"
+    defense_patterns:
+      - "introspection\\s*[=:]\\s*(false|False)"
+      - "disable_introspection"
+      - "NoIntrospection"
+      - "IntrospectionDisabled"
+      - "validationRules.*NoIntrospection"
+      - "NODE_ENV.*production.*introspection.*false"
+      - "process\\.env.*introspection"
+    fix_suggestion: >
+      Disable GraphQL introspection in production environments. For Apollo Server:
+      new ApolloServer({ introspection: process.env.NODE_ENV !== 'production' }).
+      For graphql-yoga or express-graphql, add the NoIntrospection validation rule.
+      If introspection must remain available, restrict it to authenticated internal
+      users or specific IP ranges. Implement query depth limiting and query complexity
+      analysis as additional protections against GraphQL-specific attacks.
+    message: "GraphQL introspection is enabled at line {line}, exposing the full API schema to unauthenticated users. Disable introspection in production to prevent API schema discovery."
+    references:
+      - "https://www.apollographql.com/blog/graphql/security/why-you-should-disable-graphql-introspection-in-production/"
+      - "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+      - "https://cwe.mitre.org/data/definitions/200.html"
+
+  - id: "CG-API-014"
+    name: "Missing pagination on list endpoints"
+    description: >
+      An API list endpoint returns all matching records without enforcing pagination limits
+      (limit, offset, page_size, cursor). Without pagination, an attacker can request the
+      entire dataset in a single call, causing excessive memory consumption, database
+      overload, and potential denial of service. Large unbounded responses also leak more
+      data than necessary, increasing the impact of any access control bypass. This is a
+      direct instance of OWASP API4:2023 Unrestricted Resource Consumption and is commonly
+      exploited in data scraping and enumeration attacks.
+    severity: medium
+    confidence: 0.7
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 770
+    owasp_category: "API4:2023-Unrestricted Resource Consumption"
+    patterns:
+      - pattern: "(findAll|find\\(\\)|find\\(\\{\\}\\)|Objects\\.all|select\\s*\\*|collection\\.find\\(\\)|Model\\.findAll|getAll|listAll|fetchAll)"
+        missing_check: "(limit|offset|page|cursor|paginate|pagination|skip|take|per_page|page_size|maxResults|setMaxResults|Pageable|PageRequest)"
+        description: "Database query returning all records without pagination"
+      - pattern: "(res\\.json|jsonify|ResponseEntity\\.ok|json\\.NewEncoder|JSON\\.stringify)\\s*\\("
+        args_match: "(findAll|find\\(\\)|Objects\\.all|getAll|listAll|fetchAll|\\.all\\(\\))"
+        description: "API response returning all database records"
+      - pattern: "(app|router)\\.(get)\\(['\"].*/(list|all|users|items|products|orders|records|entries|data)/?['\"]"
+        missing_check: "(limit|page|cursor|paginate|pagination|per_page|page_size)"
+        description: "List endpoint without pagination parameters"
+    defense_patterns:
+      - "limit\\s*[=:]"
+      - "offset\\s*[=:]"
+      - "page\\s*[=:]|page_size|per_page"
+      - "cursor\\s*[=:]"
+      - "paginate|pagination"
+      - "Pageable|PageRequest"
+      - "skip\\s*\\(.*\\)\\.limit"
+      - "LIMIT\\s+\\d+"
+      - "maxResults|setMaxResults|setFirstResult"
+    fix_suggestion: >
+      Enforce server-side pagination on all list endpoints with a maximum page size. Set a
+      default limit (e.g., 20-100) and a maximum limit (e.g., 1000) that cannot be exceeded
+      regardless of client request. Use cursor-based pagination for large datasets to prevent
+      offset-based performance degradation. Return total count and pagination metadata in
+      the response. Example: Model.find().skip(offset).limit(Math.min(limit, MAX_LIMIT)).
+    message: "Unbounded list endpoint at line {line} returns all records without pagination. Enforce server-side pagination with a maximum page size to prevent resource exhaustion and data scraping."
+    references:
+      - "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
+      - "https://cwe.mitre.org/data/definitions/770.html"
+
+  - id: "CG-API-015"
+    name: "Sensitive data in URL query parameters"
+    description: >
+      Sensitive data such as API keys, authentication tokens, passwords, session identifiers,
+      or personally identifiable information (PII) is transmitted as URL query parameters
+      instead of in request headers or the request body. URL query parameters are logged in
+      web server access logs, proxy logs, browser history, and HTTP Referer headers sent to
+      third-party resources. This creates multiple persistent records of the sensitive data
+      across infrastructure components, violating the principle of least exposure. Even with
+      HTTPS, the URL (including query parameters) is visible in server logs and may be cached
+      by intermediary proxies after TLS termination.
+    severity: medium
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 598
+    owasp_category: "API3:2023-Broken Object Property Level Authorization"
+    patterns:
+      - pattern: "(req\\.query|request\\.args|request\\.GET|r\\.URL\\.Query|c\\.Query|getParameter)\\s*[\\(\\[]\\s*['\"]"
+        args_match: "(api_key|apiKey|api-key|token|access_token|auth_token|secret|password|passwd|pwd|session_id|sessionId|credit_card|ssn|social_security)"
+        description: "Sensitive parameter read from URL query string"
+      - pattern: "(app|router)\\.(get|delete)\\s*\\(['\"]"
+        args_match: "(/:token|/:api_key|/:password|/:secret|\\?.*token=|\\?.*key=|\\?.*password=|\\?.*secret=)"
+        description: "Route definition with sensitive data in URL path or query"
+      - pattern: "(fetch|axios|http\\.get|requests\\.get|HttpClient|http\\.Get)\\s*\\("
+        args_match: "(\\?.*api_key=|\\?.*token=|\\?.*password=|\\?.*secret=|\\?.*access_token=|\\?.*session_id=)"
+        description: "HTTP client sending sensitive data in URL query parameters"
+      - pattern: "(redirect|location\\.href|window\\.location)\\s*[=\\(]"
+        args_match: "(token=|api_key=|session=|password=|secret=|access_token=)"
+        description: "Redirect URL containing sensitive query parameters"
+    defense_patterns:
+      - "Authorization\\s*[=:]\\s*['\"]Bearer"
+      - "X-API-Key"
+      - "req\\.headers"
+      - "request\\.headers"
+      - "req\\.body"
+      - "request\\.body"
+      - "POST"
+      - "HttpHeaders"
+    fix_suggestion: >
+      Transmit sensitive data in HTTP headers (Authorization: Bearer <token>, X-API-Key)
+      or in the request body (POST/PUT), never in URL query parameters. For API keys, use
+      the Authorization header or a custom X-API-Key header. For authentication tokens,
+      use the Authorization: Bearer scheme. Configure server access logs to exclude or
+      redact sensitive headers. Add the Referrer-Policy: no-referrer header to prevent
+      leaking sensitive URLs in Referer headers.
+    message: "Sensitive data in URL: '{callee}' at line {line} reads sensitive parameters (tokens, keys, passwords) from URL query string. Transmit sensitive data in HTTP headers or request body instead."
+    references:
+      - "https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/"
+      - "https://cwe.mitre.org/data/definitions/598.html"

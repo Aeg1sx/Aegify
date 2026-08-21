@@ -1,0 +1,474 @@
+rules:
+  - id: "CG-XEE-001"
+    name: "Python lxml.etree with external entity processing enabled"
+    description: >
+      The lxml library's etree.parse() and etree.fromstring() functions process XML
+      documents that may contain external entity declarations. When the XMLParser is
+      created without explicitly disabling entity resolution (resolve_entities=False)
+      or when using the default parser, an attacker can craft XML input containing
+      external entity references (<!ENTITY xxe SYSTEM "file:///etc/passwd">) to read
+      arbitrary files from the server, perform server-side request forgery (SSRF) to
+      internal services, or cause denial of service through recursive entity expansion
+      (billion laughs attack).
+    severity: high
+    confidence: 0.9
+    languages: [python]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "etree\\.(parse|fromstring|XML|iterparse)\\s*\\("
+        args_match: "(request|input|param|query|body|form|data|user|upload|file|read|recv)"
+        exclude_match: "resolve_entities\\s*=\\s*False"
+      - pattern: "etree\\.XMLParser\\s*\\("
+        exclude_match: "resolve_entities\\s*=\\s*False"
+        description: "XMLParser without resolve_entities=False"
+      - pattern: "etree\\.XMLParser\\s*\\(\\s*resolve_entities\\s*=\\s*True"
+        description: "XMLParser with entities explicitly enabled"
+      - pattern: "etree\\.parse\\s*\\(.*XMLParser\\s*\\(\\s*\\)"
+        description: "parse() with default XMLParser (entities enabled)"
+      - pattern: "etree\\.DTD\\s*\\("
+        args_match: "(request|input|param|query|body|data|user)"
+        description: "DTD loading from user-controlled source"
+    taint:
+      source_types: [http_body, file_upload, http_param, xml_input]
+      sink_types: [xml_parse]
+      sink_pattern: "etree\\.(parse|fromstring|XML|iterparse|XMLParser|DTD)"
+      propagation:
+        - through: "file_read"
+        - through: "request_body"
+        - through: "string_decode"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "resolve_entities\\s*=\\s*False"
+      - "no_network\\s*=\\s*True"
+      - "dtd_validation\\s*=\\s*False"
+      - "load_dtd\\s*=\\s*False"
+      - "defusedxml"
+      - "XMLParser.*resolve_entities.*False.*no_network.*True"
+    fix_suggestion: >
+      Use defusedxml.lxml instead of lxml.etree directly. If lxml must be used,
+      create the parser with all protections enabled:
+      parser = etree.XMLParser(resolve_entities=False, no_network=True, dtd_validation=False, load_dtd=False).
+      Validate XML input against a schema before processing. Strip DOCTYPE declarations
+      from untrusted XML input.
+    message: "lxml.etree XML parsing with potentially user-controlled input at line {line} without explicit entity resolution disabled. XXE enables file disclosure and SSRF."
+    references:
+      - "https://lxml.de/parsing.html#parser-options"
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "CG-XEE-002"
+    name: "Python xml.etree.ElementTree/xml.sax with user input"
+    description: >
+      Python's standard library XML modules (xml.etree.ElementTree, xml.sax, xml.dom,
+      xml.dom.minidom) have varying levels of XXE vulnerability. While
+      xml.etree.ElementTree in CPython disables external entity loading by default
+      since Python 3.7.1, xml.sax and xml.dom.pulldom can still be vulnerable.
+      Additionally, the billion laughs (XML bomb) attack via recursive entity
+      expansion is possible across all standard library XML parsers unless explicitly
+      mitigated. The defusedxml package provides drop-in replacements with proper
+      protections.
+    severity: medium
+    confidence: 0.8
+    languages: [python]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "xml\\.sax\\.(parse|parseString|make_parser)\\s*\\("
+        args_match: "(request|input|param|query|body|form|data|user|upload|file|read)"
+        description: "xml.sax parsing with user-controlled input"
+      - pattern: "xml\\.dom\\.(minidom|pulldom)\\.(parse|parseString)\\s*\\("
+        args_match: "(request|input|param|query|body|form|data|user|upload)"
+        description: "xml.dom parsing with user-controlled input"
+      - pattern: "ET\\.(parse|fromstring|ElementTree)\\s*\\("
+        args_match: "(request|input|param|query|body|form|data|user|upload)"
+        description: "ElementTree parsing with user-controlled input"
+      - pattern: "XMLReader.*setFeature.*feature_external_ges.*True"
+        description: "SAX parser with external general entities explicitly enabled"
+      - pattern: "expat\\.ParserCreate\\s*\\("
+        args_match: "(request|input|param|query|body|data|user)"
+        description: "Low-level expat parser with user-controlled XML"
+    taint:
+      source_types: [http_body, file_upload, http_param, xml_input]
+      sink_types: [xml_parse]
+      sink_pattern: "xml\\.(sax|dom|etree|parsers)"
+      propagation:
+        - through: "file_read"
+        - through: "request_body"
+        - through: "string_decode"
+    defense_patterns:
+      - "defusedxml"
+      - "feature_external_ges.*False"
+      - "feature_external_pes.*False"
+      - "forbid_dtd"
+      - "forbid_entities"
+      - "forbid_external"
+    fix_suggestion: >
+      Use the defusedxml package which provides safe replacements for all standard
+      library XML parsers: defusedxml.ElementTree, defusedxml.sax, defusedxml.minidom.
+      For xml.sax, explicitly disable external entity features:
+      parser.setFeature(xml.sax.handler.feature_external_ges, False) and
+      parser.setFeature(xml.sax.handler.feature_external_pes, False).
+      Set entity expansion limits to prevent XML bomb attacks.
+    message: "Standard library XML parsing with potentially user-controlled input at line {line}. Depending on Python version and parser, XXE and XML bomb attacks may be possible."
+    references:
+      - "https://docs.python.org/3/library/xml.html#xml-vulnerabilities"
+      - "https://pypi.org/project/defusedxml/"
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "CG-XEE-003"
+    name: "Java SAXParser without secure processing features"
+    description: >
+      Java's SAXParser (javax.xml.parsers.SAXParserFactory) processes XML documents
+      sequentially through event callbacks. By default, SAXParser resolves external
+      entities and DTDs, enabling XXE attacks. An attacker can exploit this to read
+      files (file:// protocol), access internal network services (http:// protocol),
+      or perform denial of service via entity expansion. Java's XML processing is
+      particularly dangerous because it supports a wide range of URI schemes including
+      jar:, netdoc:, and gopher:// in some implementations.
+    severity: high
+    confidence: 0.95
+    languages: [java]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "SAXParserFactory\\.newInstance\\s*\\("
+        exclude_context: "setFeature.*disallow-doctype-decl.*true|setFeature.*external-general-entities.*false"
+        description: "SAXParserFactory without XXE protection features"
+      - pattern: "SAXParser.*\\.parse\\s*\\("
+        args_match: "(request|getParameter|getInputStream|getReader|input|user|param|upload|InputStream|Reader|InputSource)"
+        description: "SAXParser parsing user-controlled XML input"
+      - pattern: "XMLReader.*\\.parse\\s*\\("
+        args_match: "(request|getInputStream|input|user|param|upload|InputSource)"
+        description: "XMLReader parsing user-controlled input"
+      - pattern: "SAXParserFactory.*\\.setFeature.*external-general-entities.*true"
+        description: "SAXParser with external entities explicitly enabled"
+      - pattern: "XMLReader.*\\.setFeature.*external-general-entities.*true"
+        description: "XMLReader with external entities explicitly enabled"
+    taint:
+      source_types: [http_body, file_upload, http_param, xml_input, jms_message]
+      sink_types: [xml_parse]
+      sink_pattern: "SAXParser.*\\.parse|XMLReader.*\\.parse"
+      propagation:
+        - through: "input_stream"
+        - through: "reader_wrapper"
+        - through: "input_source"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "disallow-doctype-decl.*true"
+      - "external-general-entities.*false"
+      - "external-parameter-entities.*false"
+      - "load-external-dtd.*false"
+      - "FEATURE_SECURE_PROCESSING.*true"
+      - "setEntityResolver.*null"
+      - "XMLConstants\\.ACCESS_EXTERNAL_DTD.*\"\""
+      - "XMLConstants\\.ACCESS_EXTERNAL_SCHEMA.*\"\""
+    fix_suggestion: >
+      Configure SAXParserFactory with all XXE protections:
+      factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+      factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+      factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+      factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+      factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+      Also set factory.setXIncludeAware(false).
+    message: "SAXParser processing potentially user-controlled XML at line {line} without XXE protection features. External entity resolution enables file disclosure and SSRF."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#jaxp-documentbuilderfactory-saxparserfactory-and-dom4j"
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "CG-XEE-004"
+    name: "Java DocumentBuilderFactory without secure processing"
+    description: >
+      Java's DocumentBuilderFactory (javax.xml.parsers) creates DOM parsers that load
+      the entire XML document into memory as a tree structure. The default configuration
+      resolves external entities and DTDs, enabling XXE attacks. DOM parsers are
+      additionally vulnerable to denial-of-service attacks because the entity expansion
+      happens during document loading, and the expanded document must fit entirely in
+      memory. A carefully crafted XML bomb can expand to gigabytes from a few kilobytes
+      of input.
+    severity: high
+    confidence: 0.95
+    languages: [java]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "DocumentBuilderFactory\\.newInstance\\s*\\("
+        exclude_context: "setFeature.*disallow-doctype-decl.*true|setFeature.*external-general-entities.*false"
+        description: "DocumentBuilderFactory without XXE protection"
+      - pattern: "DocumentBuilder.*\\.parse\\s*\\("
+        args_match: "(request|getParameter|getInputStream|getReader|input|user|param|upload|InputStream|Reader|InputSource)"
+        description: "DocumentBuilder parsing user-controlled XML"
+      - pattern: "DocumentBuilderFactory.*\\.setExpandEntityReferences\\s*\\(\\s*true"
+        description: "Entity expansion explicitly enabled"
+      - pattern: "DocumentBuilderFactory.*\\.setFeature.*external-general-entities.*true"
+        description: "External entities explicitly enabled"
+      - pattern: "TransformerFactory\\.newInstance\\s*\\("
+        exclude_context: "ACCESS_EXTERNAL_DTD|ACCESS_EXTERNAL_STYLESHEET"
+        description: "TransformerFactory without external access restrictions"
+    taint:
+      source_types: [http_body, file_upload, http_param, xml_input, soap_message, jms_message]
+      sink_types: [xml_parse]
+      sink_pattern: "DocumentBuilder.*\\.parse|Transformer.*\\.transform"
+      propagation:
+        - through: "input_stream"
+        - through: "reader_wrapper"
+        - through: "input_source"
+        - through: "byte_array_input_stream"
+    defense_patterns:
+      - "disallow-doctype-decl.*true"
+      - "external-general-entities.*false"
+      - "external-parameter-entities.*false"
+      - "load-external-dtd.*false"
+      - "FEATURE_SECURE_PROCESSING.*true"
+      - "setExpandEntityReferences\\s*\\(\\s*false"
+      - "ACCESS_EXTERNAL_DTD.*\"\""
+      - "ACCESS_EXTERNAL_SCHEMA.*\"\""
+      - "ACCESS_EXTERNAL_STYLESHEET.*\"\""
+    fix_suggestion: >
+      Configure DocumentBuilderFactory with all XXE protections:
+      factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+      factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+      factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+      factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+      factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+      factory.setExpandEntityReferences(false);
+      factory.setXIncludeAware(false);
+      For TransformerFactory, set ACCESS_EXTERNAL_DTD and ACCESS_EXTERNAL_STYLESHEET to empty string.
+    message: "DocumentBuilder processing potentially user-controlled XML at line {line} without XXE protection. Entity resolution enables file disclosure, SSRF, and denial of service."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#jaxp-documentbuilderfactory-saxparserfactory-and-dom4j"
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "CG-XEE-005"
+    enabled: false
+    disabled_reason: "Reference-only C# rule; C# parsing is not supported."
+    name: ".NET XmlDocument with unsafe DTD processing"
+    description: >
+      In .NET Framework (pre-4.5.2), XmlDocument.Load() and LoadXml() resolve
+      external entities by default through the XmlResolver. In .NET Framework 4.5.2+
+      and .NET Core/5+, the default XmlResolver is null (safe), but developers may
+      explicitly set XmlResolver to XmlUrlResolver to enable DTD resolution, which
+      reintroduces XXE vulnerabilities. When XmlDocument processes user-controlled XML
+      with an active resolver, attackers can read local files, perform SSRF attacks
+      against internal services, and cause denial of service through entity expansion.
+    severity: high
+    confidence: 0.9
+    languages: [csharp]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "XmlDocument.*\\.XmlResolver\\s*=\\s*new\\s+XmlUrlResolver"
+        description: "XmlDocument with XmlUrlResolver enabling entity resolution"
+      - pattern: "XmlDocument.*\\.(Load|LoadXml)\\s*\\("
+        args_match: "(Request|request|input|user|param|query|body|form|data|Stream|Reader|TextReader)"
+        description: "XmlDocument loading user-controlled XML"
+      - pattern: "new\\s+XmlDocument\\s*\\(\\s*\\).*\\.XmlResolver\\s*=(?!\\s*null)"
+        description: "XmlDocument with non-null XmlResolver"
+      - pattern: "XmlDocument.*\\.InnerXml\\s*=\\s*"
+        args_match: "(Request|request|input|user|param|query|body|form)"
+        description: "XmlDocument.InnerXml assignment with user-controlled XML"
+    taint:
+      source_types: [http_body, file_upload, http_param, query_string, form_data]
+      sink_types: [xml_parse]
+      sink_pattern: "XmlDocument.*\\.(Load|LoadXml|InnerXml)"
+      propagation:
+        - through: "stream_reader"
+        - through: "string_assignment"
+        - through: "variable_assignment"
+        - through: "method_parameter"
+    defense_patterns:
+      - "XmlResolver\\s*=\\s*null"
+      - "DtdProcessing\\.Prohibit"
+      - "ProhibitDtd\\s*=\\s*true"
+      - "XmlReaderSettings.*DtdProcessing.*Prohibit"
+      - "XDocument"
+    fix_suggestion: >
+      Set XmlDocument.XmlResolver = null to disable external entity resolution.
+      Alternatively, create an XmlReader with secure settings and pass it to Load():
+      var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+      var reader = XmlReader.Create(input, settings);
+      xmlDoc.Load(reader);
+      Consider migrating to XDocument (LINQ to XML) which is safe by default.
+    message: "XmlDocument processing potentially user-controlled XML at line {line} with entity resolution enabled. XXE allows file disclosure and SSRF on the server."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#net"
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "CG-XEE-006"
+    enabled: false
+    disabled_reason: "Reference-only C# rule; C# parsing is not supported."
+    name: ".NET XmlReader/XmlTextReader with unsafe settings"
+    description: >
+      XmlTextReader in .NET Framework resolves external entities and processes DTDs
+      by default, making it vulnerable to XXE. XmlReader.Create() is safer by default
+      in modern .NET but can be misconfigured with XmlReaderSettings that enable
+      DTD processing or external entity resolution. When processing user-controlled
+      XML with unsafe settings, the same XXE attacks apply: file disclosure via
+      file:// URIs, SSRF via http:// URIs, and denial of service via entity expansion.
+    severity: high
+    confidence: 0.9
+    languages: [csharp]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "new\\s+XmlTextReader\\s*\\("
+        args_match: "(Request|request|input|user|param|query|body|form|data|Stream|Reader)"
+        description: "XmlTextReader (unsafe by default) with user-controlled input"
+      - pattern: "XmlReaderSettings.*DtdProcessing\\s*=\\s*DtdProcessing\\.Parse"
+        description: "XmlReaderSettings with DTD processing enabled"
+      - pattern: "XmlReaderSettings.*XmlResolver\\s*=\\s*new\\s+XmlUrlResolver"
+        description: "XmlReaderSettings with XmlUrlResolver"
+      - pattern: "XmlTextReader.*\\.ProhibitDtd\\s*=\\s*false"
+        description: "XmlTextReader with DTD prohibition disabled"
+      - pattern: "XmlTextReader.*\\.DtdProcessing\\s*=\\s*DtdProcessing\\.Parse"
+        description: "XmlTextReader with DTD processing enabled"
+    taint:
+      source_types: [http_body, file_upload, http_param, form_data]
+      sink_types: [xml_parse]
+      sink_pattern: "(new\\s+XmlTextReader|XmlReader\\.Create)"
+      propagation:
+        - through: "stream_reader"
+        - through: "string_reader"
+        - through: "variable_assignment"
+    defense_patterns:
+      - "DtdProcessing\\.Prohibit"
+      - "DtdProcessing\\.Ignore"
+      - "XmlResolver\\s*=\\s*null"
+      - "ProhibitDtd\\s*=\\s*true"
+      - "MaxCharactersFromEntities"
+      - "MaxCharactersInDocument"
+    fix_suggestion: >
+      Replace XmlTextReader with XmlReader.Create() using secure settings:
+      var settings = new XmlReaderSettings {
+        DtdProcessing = DtdProcessing.Prohibit,
+        XmlResolver = null,
+        MaxCharactersFromEntities = 1024,
+        MaxCharactersInDocument = 1024 * 1024
+      };
+      var reader = XmlReader.Create(input, settings);
+      Set MaxCharactersFromEntities and MaxCharactersInDocument to prevent XML bomb attacks.
+    message: "XML reader processing potentially user-controlled input at line {line} with unsafe DTD/entity settings. External entity resolution enables file disclosure and SSRF."
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#xmltextreader"
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "CG-XEE-007"
+    enabled: false
+    disabled_reason: "Reference-only PHP rule; PHP parsing is not supported."
+    name: "PHP simplexml_load_string/file with external entities"
+    description: >
+      PHP's simplexml_load_string() and simplexml_load_file() functions parse XML
+      documents using libxml2. By default in PHP 8.0+, libxml2 external entity loading
+      is disabled (LIBXML_NOENT is not set). However, developers often pass the
+      LIBXML_NOENT flag to enable entity substitution, or call
+      libxml_disable_entity_loader(false) (deprecated in PHP 8.0) to globally enable
+      entity loading. When these functions process user-controlled XML with entity
+      loading enabled, XXE attacks can read server files, perform SSRF, and cause DoS.
+    severity: high
+    confidence: 0.9
+    languages: [php]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "simplexml_load_string\\s*\\("
+        args_match: "(\\$_GET|\\$_POST|\\$_REQUEST|\\$_FILES|\\$_SERVER|\\$request|\\$input|\\$data|\\$body|\\$xml|file_get_contents|fread|php://input|LIBXML_NOENT)"
+      - pattern: "simplexml_load_file\\s*\\("
+        args_match: "(\\$_GET|\\$_POST|\\$_REQUEST|\\$_FILES|\\$request|\\$input|\\$data|\\$url|\\$path|LIBXML_NOENT)"
+      - pattern: "simplexml_load_string\\s*\\(.*LIBXML_NOENT"
+        description: "simplexml_load_string with external entity substitution enabled"
+      - pattern: "simplexml_load_file\\s*\\(.*LIBXML_NOENT"
+        description: "simplexml_load_file with external entity substitution enabled"
+      - pattern: "libxml_disable_entity_loader\\s*\\(\\s*false\\s*\\)"
+        description: "Global external entity loading enabled (pre-PHP 8.0)"
+      - pattern: "new\\s+SimpleXMLElement\\s*\\("
+        args_match: "(\\$_GET|\\$_POST|\\$_REQUEST|\\$request|\\$input|\\$data|LIBXML_NOENT)"
+        description: "SimpleXMLElement constructor with user-controlled XML"
+    taint:
+      source_types: [http_body, http_param, file_upload, php_input_stream]
+      sink_types: [xml_parse]
+      sink_pattern: "simplexml_load_(string|file)|new\\s+SimpleXMLElement"
+      propagation:
+        - through: "variable_assignment"
+        - through: "file_get_contents"
+        - through: "fread"
+        - through: "function_parameter"
+    defense_patterns:
+      - "libxml_disable_entity_loader\\s*\\(\\s*true\\s*\\)"
+      - "LIBXML_NONET"
+      - "LIBXML_DTDLOAD.*false"
+      - "preg_replace.*<!DOCTYPE"
+      - "preg_replace.*<!ENTITY"
+      - "strip_tags"
+    fix_suggestion: >
+      Do not pass LIBXML_NOENT to simplexml functions. In PHP < 8.0, call
+      libxml_disable_entity_loader(true) before parsing. In PHP 8.0+, the default
+      is already safe. Always validate XML input and strip DOCTYPE declarations
+      from untrusted input before parsing. Use LIBXML_NONET to disable network
+      access during parsing. Consider using json_decode() instead of XML parsing
+      when the data format is negotiable.
+    message: "SimpleXML parsing potentially user-controlled XML at line {line} with entity loading enabled. XXE via file:// or http:// entity URIs enables file disclosure and SSRF."
+    references:
+      - "https://www.php.net/manual/en/function.simplexml-load-string.php"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#php"
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "CG-XEE-008"
+    enabled: false
+    disabled_reason: "Reference-only PHP rule; PHP parsing is not supported."
+    name: "PHP DOMDocument with external entity processing"
+    description: >
+      PHP's DOMDocument class provides a full DOM implementation for XML/HTML parsing.
+      When loading XML with loadXML() or load(), DOMDocument can process external
+      entities if entity substitution is enabled via the substituteEntities property
+      or the LIBXML_NOENT option. Additionally, the loadXML() method with
+      LIBXML_DTDLOAD allows DTD loading which can trigger SSRF. DOMDocument is also
+      used for HTML parsing (loadHTML/loadHTMLFile), which while generally safer for
+      XXE, can still be exploited for SSRF through DTD loading in some configurations.
+    severity: high
+    confidence: 0.9
+    languages: [php]
+    cwe_id: 611
+    owasp_category: "A05:2021-Security Misconfiguration"
+    patterns:
+      - pattern: "\\$.*->loadXML\\s*\\("
+        args_match: "(\\$_GET|\\$_POST|\\$_REQUEST|\\$_FILES|\\$request|\\$input|\\$data|\\$body|\\$xml|file_get_contents|php://input|LIBXML_NOENT|LIBXML_DTDLOAD)"
+        context: "DOMDocument|new\\s+DOMDocument"
+      - pattern: "\\$.*->load\\s*\\("
+        args_match: "(\\$_GET|\\$_POST|\\$_REQUEST|\\$request|\\$input|\\$url|\\$path|LIBXML_NOENT|LIBXML_DTDLOAD)"
+        context: "DOMDocument|new\\s+DOMDocument"
+      - pattern: "DOMDocument.*->substituteEntities\\s*=\\s*true"
+        description: "DOMDocument with entity substitution enabled"
+      - pattern: "DOMDocument.*->resolveExternals\\s*=\\s*true"
+        description: "DOMDocument with external resolution enabled"
+      - pattern: "DOMDocument.*loadXML.*LIBXML_NOENT"
+        description: "DOMDocument loadXML with entity substitution flag"
+      - pattern: "DOMDocument.*loadXML.*LIBXML_DTDLOAD"
+        description: "DOMDocument loadXML with DTD loading flag"
+    taint:
+      source_types: [http_body, http_param, file_upload, php_input_stream]
+      sink_types: [xml_parse]
+      sink_pattern: "DOMDocument.*(loadXML|load)\\s*\\("
+      propagation:
+        - through: "variable_assignment"
+        - through: "file_get_contents"
+        - through: "fread"
+        - through: "function_parameter"
+    defense_patterns:
+      - "libxml_disable_entity_loader\\s*\\(\\s*true\\s*\\)"
+      - "substituteEntities\\s*=\\s*false"
+      - "resolveExternals\\s*=\\s*false"
+      - "LIBXML_NONET"
+      - "preg_replace.*<!DOCTYPE"
+      - "preg_replace.*<!ENTITY"
+    fix_suggestion: >
+      Do not set $doc->substituteEntities = true or $doc->resolveExternals = true.
+      Do not pass LIBXML_NOENT or LIBXML_DTDLOAD options to loadXML()/load().
+      In PHP < 8.0, call libxml_disable_entity_loader(true) before loading.
+      Always use LIBXML_NONET to prevent network access during parsing.
+      Strip DOCTYPE declarations from untrusted XML:
+      $xml = preg_replace('/<!DOCTYPE[^>]*>/', '', $input);
+      Consider using JSON instead of XML for API data exchange.
+    message: "DOMDocument parsing potentially user-controlled XML at line {line} with unsafe entity/DTD settings. XXE enables server-side file access and request forgery."
+    references:
+      - "https://www.php.net/manual/en/domdocument.loadxml.php"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#php"
+      - "https://cwe.mitre.org/data/definitions/611.html"

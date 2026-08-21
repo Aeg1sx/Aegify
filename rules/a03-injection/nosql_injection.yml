@@ -1,0 +1,251 @@
+rules:
+  - id: "CG-NOSQL-001"
+    name: "MongoDB Operator Injection"
+    description: >
+      Detects user-controlled input passed directly into MongoDB query operators
+      such as $gt, $ne, $in, $regex, and $where without proper sanitization.
+      An attacker can manipulate query logic by injecting JSON operator keys
+      (e.g., submitting {"$gt": ""} as a password field) to bypass authentication
+      or extract unauthorized data. This is especially dangerous when request body
+      objects are passed directly to MongoDB driver methods like find(), findOne(),
+      updateOne(), or deleteMany().
+    severity: critical
+    confidence: 0.92
+    languages: [javascript, typescript, python]
+    cwe_id: 943
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee_chain: ["db.collection", "find|findOne|updateOne|updateMany|deleteOne|deleteMany|aggregate"]
+        args_match: "(req\\.body|req\\.query|req\\.params|request\\.(json|form|args|data))"
+      - pattern: "\\$where.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "\\{\\s*[\"']\\$(gt|gte|lt|lte|ne|in|nin|regex|where|exists|or|and)[\"']"
+        context_match: "(req\\.|request\\.|input|param|query|body|form|data|user)"
+    taint:
+      source_types: [http_body, http_param, http_query]
+      sink_types: [nosql_query]
+      sink_pattern: "\\.(find|findOne|update|delete|aggregate|count|distinct)\\("
+      propagation:
+        - "JSON\\.parse"
+        - "Object\\.assign"
+        - "spread_operator"
+    defense_patterns:
+      - "mongo-sanitize"
+      - "express-mongo-sanitize"
+      - "sanitize\\("
+      - "JSON\\.stringify.*JSON\\.parse"
+      - "\\$set\\s*:\\s*\\{\\s*[a-zA-Z_]+\\s*:"
+      - "mongoose\\.Schema.*validate"
+      - "Joi\\.(object|string|number)"
+    message: "MongoDB query at line {line} accepts unsanitized user input, enabling NoSQL operator injection. An attacker may bypass authentication or exfiltrate data via malicious query operators like $gt or $ne."
+
+  - id: "CG-NOSQL-002"
+    name: "Redis Command Injection"
+    description: >
+      Detects user-controlled input concatenated or interpolated into Redis
+      commands without proper validation. Redis commands are newline-delimited
+      in the RESP protocol, and an attacker who can inject newline characters
+      (\r\n) into command arguments can execute arbitrary Redis commands. This
+      can lead to data exfiltration, data corruption, denial of service via
+      FLUSHALL, or remote code execution via the EVAL command with Lua scripting.
+      This is particularly dangerous when using raw command interfaces or string
+      concatenation to build Redis commands.
+    severity: critical
+    confidence: 0.88
+    languages: [javascript, typescript, python, ruby, java]
+    cwe_id: 77
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee_chain: ["redis|redisClient|client", "send_command|sendCommand|call|execute_command"]
+        args_match: "(req\\.|request\\.|input|param|query|body|form|data|user)"
+      - callee: "eval"
+        receiver_match: "redis|redisClient"
+        args_match: "(req\\.|request\\.|input|param|query|body|form|data|user)"
+      - pattern: "redis\\.(get|set|hset|hget|lpush|rpush|sadd|zadd|del|execute_command)\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(SET|GET|HSET|DEL|EVAL)\\s.*[\"']\\s*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [nosql_command]
+      sink_pattern: "redis\\.(get|set|hset|hget|del|eval|send_command|execute_command|call)\\("
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "format\\("
+    defense_patterns:
+      - "encodeURIComponent"
+      - "validator\\.isAlphanumeric"
+      - "allowlist|whitelist"
+      - "\\.replace\\(.*[\\\\]r[\\\\]n"
+      - "parameterized"
+      - "ioredis.*\\[.*\\]"
+    message: "Redis command at line {line} incorporates unsanitized user input, enabling command injection. An attacker may execute arbitrary Redis commands including FLUSHALL, CONFIG SET, or EVAL with Lua payloads."
+
+  - id: "CG-NOSQL-003"
+    name: "CouchDB View Injection"
+    description: >
+      Detects user-controlled input passed into CouchDB view queries, Mango
+      selectors, or design document definitions without sanitization. CouchDB
+      uses JSON-based query selectors and JavaScript map/reduce functions in
+      views. An attacker who can inject into Mango selectors can manipulate
+      query logic using operators like $regex, $gt, or $or to bypass access
+      controls and extract unauthorized documents. Injection into view functions
+      can lead to server-side JavaScript execution within the CouchDB process.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript, python]
+    cwe_id: 943
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - callee_chain: ["db|couch|nano", "find|view|query|get|fetch|bulk"]
+        args_match: "(req\\.|request\\.|input|param|query|body|form|data|user)"
+      - pattern: "selector\\s*[=:].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(startkey|endkey|key|keys)\\s*[=:].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "nano\\(.*\\)\\.(find|view|search)\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_body, http_param, http_query]
+      sink_types: [nosql_query]
+      sink_pattern: "\\.(find|view|query|search|list|show)\\("
+      propagation:
+        - "JSON\\.parse"
+        - "Object\\.assign"
+        - "spread_operator"
+    defense_patterns:
+      - "Joi\\.(object|string|number)"
+      - "ajv\\.validate"
+      - "JSON\\.stringify.*allowlist"
+      - "sanitize"
+      - "validator\\."
+      - "zod\\.(object|string|number)"
+    message: "CouchDB query at line {line} includes unsanitized user input in a Mango selector or view parameter, enabling document exfiltration or query logic manipulation."
+
+  - id: "CG-NOSQL-004"
+    name: "DynamoDB Injection via Expression Attributes"
+    description: >
+      Detects user-controlled input interpolated into DynamoDB expression strings
+      including FilterExpression, KeyConditionExpression, ProjectionExpression,
+      and UpdateExpression without using ExpressionAttributeValues placeholders.
+      While DynamoDB's PartiQL interface can be vulnerable to SQL-like injection,
+      even the document API is exploitable when expression strings are built via
+      concatenation. An attacker can manipulate filter logic to bypass access
+      controls, read unauthorized items, or modify update expressions to alter
+      unintended attributes.
+    severity: high
+    confidence: 0.87
+    languages: [javascript, typescript, python, java]
+    cwe_id: 943
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(FilterExpression|KeyConditionExpression|ProjectionExpression|UpdateExpression|ConditionExpression)\\s*[=:]\\s*[\"'`].*\\$\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(FilterExpression|KeyConditionExpression|ProjectionExpression|UpdateExpression|ConditionExpression)\\s*[=:].*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "executeStatement.*Statement.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - callee_chain: ["dynamodb|docClient|documentClient", "query|scan|getItem|putItem|updateItem|deleteItem"]
+        args_match: "(req\\.|request\\.|input|param|query|body|form|data|user).*(?!ExpressionAttributeValues)"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [nosql_query]
+      sink_pattern: "(FilterExpression|KeyConditionExpression|UpdateExpression|ConditionExpression|executeStatement)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+    defense_patterns:
+      - "ExpressionAttributeValues"
+      - "ExpressionAttributeNames"
+      - ":placeholder"
+      - "#attribute"
+      - "Joi\\."
+      - "zod\\."
+      - "validator\\."
+      - "marshall\\("
+    message: "DynamoDB expression at line {line} concatenates user input without using ExpressionAttributeValues placeholders, enabling filter logic manipulation or unauthorized data access."
+
+  - id: "CG-NOSQL-005"
+    name: "Elasticsearch Query Injection"
+    description: >
+      Detects user-controlled input injected into Elasticsearch query DSL
+      bodies, query string queries, or Painless script contexts without
+      proper sanitization. Elasticsearch's JSON query DSL can be manipulated
+      when user input is embedded into bool queries, match queries, or script
+      fields. The query_string and simple_query_string query types support
+      Lucene syntax which can be abused to craft wildcard-heavy queries
+      causing denial of service, or to bypass intended search scope restrictions.
+      Painless script injection can lead to remote code execution on the
+      Elasticsearch cluster.
+    severity: critical
+    confidence: 0.86
+    languages: [javascript, typescript, python, java]
+    cwe_id: 943
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(query_string|simple_query_string).*query\\s*[=:].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(script|painless|source)\\s*[=:].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "elastic|es_client|elasticsearch"
+      - callee_chain: ["esClient|elasticClient|client", "search|index|update|delete|msearch|bulk"]
+        args_match: "(req\\.|request\\.|input|param|query|body|form|data|user)"
+      - pattern: "\\{\\s*[\"']query[\"']\\s*:.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "elastic|es_client|elasticsearch|@elastic"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [nosql_query]
+      sink_pattern: "\\.(search|index|update|msearch|bulk|deleteByQuery|updateByQuery)\\("
+      propagation:
+        - "JSON\\.parse"
+        - "Object\\.assign"
+        - "spread_operator"
+        - "string_concat"
+    defense_patterns:
+      - "escapeQueryString"
+      - "querystring\\.escape"
+      - "match_phrase"
+      - "term\\s*:"
+      - "sanitize"
+      - "validator\\."
+      - "bodybuilder"
+      - "elastic-builder"
+    message: "Elasticsearch query at line {line} incorporates unsanitized user input, enabling query logic manipulation, denial of service via wildcard abuse, or Painless script injection leading to remote code execution."
+
+  - id: "CG-NOSQL-006"
+    name: "Cassandra CQL Injection"
+    description: >
+      Detects user-controlled input concatenated into Cassandra Query Language
+      (CQL) statements without using parameterized queries (prepared statements).
+      CQL is syntactically similar to SQL and is vulnerable to injection when
+      queries are built via string concatenation or interpolation. An attacker
+      can manipulate WHERE clauses, INSERT values, or BATCH statements to
+      exfiltrate data, modify records, or cause denial of service by crafting
+      expensive full-table scans with ALLOW FILTERING. Unlike SQL, CQL does not
+      support UNION or subqueries, but injection can still bypass authentication
+      logic and corrupt data.
+    severity: high
+    confidence: 0.90
+    languages: [python, java, javascript, typescript]
+    cwe_id: 89
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(execute|execute_async)\\s*\\(\\s*[\"'`]\\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|BATCH).*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        flags: "i"
+      - pattern: "(SELECT|INSERT|UPDATE|DELETE)\\s+.*[\"'`]\\s*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "cassandra|cql|session\\.execute"
+      - pattern: "f[\"']\\s*(SELECT|INSERT|UPDATE|DELETE).*\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "cassandra|cql"
+      - pattern: "SimpleStatement\\s*\\(\\s*[\"'`].*\\+.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [nosql_query]
+      sink_pattern: "(session\\.execute|cluster\\.connect|execute_async|SimpleStatement)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+        - "%s.*%"
+    defense_patterns:
+      - "PreparedStatement"
+      - "prepare\\("
+      - "session\\.prepare"
+      - "BoundStatement"
+      - "\\?"
+      - "%s.*execute.*\\(.*,.*\\("
+      - "bind\\("
+    message: "CQL statement at line {line} concatenates user input instead of using prepared statements, enabling CQL injection for data exfiltration, record manipulation, or denial of service via ALLOW FILTERING abuse."

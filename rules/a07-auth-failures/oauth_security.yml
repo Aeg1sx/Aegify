@@ -1,0 +1,131 @@
+rules:
+  - id: "CG-OAUTH-001"
+    name: "Missing OAuth state parameter"
+    description: >
+      The application initiates an OAuth authorization flow without including a
+      cryptographically random state parameter, or fails to validate the state
+      parameter in the callback. Without state validation, an attacker can perform
+      cross-site request forgery (CSRF) against the OAuth callback, forcing the
+      victim to authenticate with the attacker's account or linking the victim's
+      account to the attacker's identity provider.
+    severity: critical
+    confidence: 0.9
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 352
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - callee_match: "authorize_url|authorization_url|getAuthorizationUrl|buildAuthorizeUrl"
+        missing_args: "state"
+      - callee_match: "redirect|navigate"
+        args_match: "oauth|authorize|auth/login"
+        missing_args: "state="
+      - multi_match:
+          - "oauth|authorization_code|auth/callback"
+          - "code|authorization_code"
+        missing_match:
+          - "state|csrf_token|nonce"
+      - callee_match: "passport\\.authenticate|oauth2\\.callback|handle_callback"
+        missing_context: "state.*verify|validate.*state|check.*state"
+    defense_patterns:
+      - "state=.*random|state=.*token|state=.*csrf"
+      - "verify_state|validate_state|check_state"
+      - "session\\[.state|req\\.session\\.oauthState"
+      - "state.*===|state.*==|state.*equals"
+      - "generateState|create_state_token"
+    message: "OAuth flow is missing the state parameter or does not validate it on callback. Generate a cryptographic random state value, store it in the session, and verify it matches on the callback."
+
+  - id: "CG-OAUTH-002"
+    name: "Open redirect in OAuth callback"
+    description: >
+      The application's OAuth callback handler uses a user-controlled redirect_uri
+      or return_url parameter without validating it against a whitelist. An attacker
+      can manipulate the redirect target to steal authorization codes or access tokens
+      by redirecting the OAuth callback to a domain they control.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 601
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - callee_match: "redirect|res\\.redirect|redirect_to|sendRedirect"
+        args_match: "redirect_uri|return_url|next|callback_url|return_to"
+        taint_source: "req\\.query|request\\.GET|params|getParameter"
+      - multi_match:
+          - "oauth|callback|authorize"
+          - "redirect_uri|return_url|next_url"
+          - "req\\.query|request\\.GET|params"
+        missing_match:
+          - "whitelist|allowed_urls|valid_redirect|validate_url"
+      - callee_match: "oauth_callback|handle_callback|auth/callback"
+        args_match: "redirect.*req\\.query|redirect.*params"
+    defense_patterns:
+      - "redirect_whitelist|allowed_redirects|valid_redirect_uris"
+      - "url\\.startsWith\\(['\"/]|url\\.startsWith.*https://"
+      - "validate_redirect_uri|is_safe_url|is_valid_redirect"
+      - "registered_redirect_uris"
+      - "ALLOWED_REDIRECT_URLS"
+    message: "OAuth callback uses unvalidated redirect URI. Validate redirect URIs against a strict whitelist of pre-registered URLs and reject any redirect to external or unregistered domains."
+
+  - id: "CG-OAUTH-003"
+    name: "OAuth token in URL fragment or query parameter"
+    description: >
+      The application receives or transmits OAuth access tokens or refresh tokens
+      via URL fragments or query parameters. Tokens in URLs are exposed through
+      browser history, server logs, proxy logs, the Referer header, and can be
+      captured by JavaScript on the page or by browser extensions.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 598
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - callee_match: "redirect|navigate|window\\.location"
+        args_match: "access_token=|token=|refresh_token="
+      - assignment_match: "access_token|oauth_token"
+        value_match: "location\\.hash|window\\.location|url\\.searchParams|req\\.query"
+      - multi_match:
+          - "response_type"
+          - "token"
+        note: "Implicit grant flow exposes tokens in URL fragment"
+      - callee_match: "fetch|axios|http\\.get|requests\\.get"
+        args_match: "\\?.*access_token=|&access_token=|\\?.*token="
+    defense_patterns:
+      - "response_type.*code"
+      - "authorization_code"
+      - "PKCE|code_verifier|code_challenge"
+      - "token.*header|Authorization.*Bearer"
+      - "httpOnly.*cookie"
+    message: "OAuth token is exposed in URL. Use the authorization code flow with PKCE instead of the implicit grant. Transmit tokens in HTTP headers or secure cookies, never in URLs."
+
+  - id: "CG-OAUTH-004"
+    name: "Insufficient OAuth scope validation"
+    description: >
+      The application requests overly broad OAuth scopes or does not validate
+      the granted scopes match the requested scopes in the callback. Excessive
+      scope grants the application more permissions than needed, and failure to
+      validate granted scopes allows scope escalation if the authorization server
+      grants different scopes than requested.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 269
+    owasp_category: "A07:2021-Identification and Authentication Failures"
+    patterns:
+      - callee_match: "authorize_url|authorization_url|getAuthorizationUrl"
+        args_match: "scope.*admin|scope.*write|scope.*all|scope.*\\*"
+      - multi_match:
+          - "scope"
+          - "oauth|authorize|token"
+        missing_match:
+          - "validate_scope|check_scope|verify_scope|scope.*===|scope.*includes"
+      - callee_match: "get_token|exchange_code|token_exchange"
+        missing_context: "scope.*validate|scope.*verify|scope.*check"
+      - assignment_match: "scope|OAUTH_SCOPE"
+        value_match: "admin|write:all|\\*|root|full_access"
+    defense_patterns:
+      - "validate_scope|verify_scope|check_scope"
+      - "scope.*===|scope.*includes|scope.*contains"
+      - "minimum_scope|required_scope"
+      - "scope.*read|scope.*profile|scope.*email"
+      - "principle_of_least_privilege"
+    message: "OAuth scope is overly broad or not validated. Request the minimum scopes needed and validate that the granted scopes match the requested scopes in the callback handler."

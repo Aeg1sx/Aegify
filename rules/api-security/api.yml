@@ -1,0 +1,135 @@
+rules:
+  - id: CG-API-001
+    name: Broken Object Level Authorization (BOLA)
+    description: >
+      An API endpoint retrieves or modifies an object using a user-supplied
+      identifier without verifying that the requesting user is authorized to
+      access that specific object. This is the most prevalent API vulnerability
+      and can lead to unauthorized data access or modification.
+    severity: high
+    confidence: 0.6
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 639
+    owasp_category: "API1:2023-Broken Object Level Authorization"
+    patterns:
+      - callee: "(get|find|findOne|findById|findByPk|query|select|load|retrieve|fetch_one|Objects\\.get)"
+        args_match: "(req\\.(params|query|body)\\.|request\\.(args|form|json)\\[|r\\.URL\\.Query|c\\.Param|ctx\\.params)"
+      - callee: "(update|delete|destroy|remove|save|put|patch)"
+        args_match: "(req\\.(params|query|body)\\.|request\\.(args|form|json)\\[|r\\.URL\\.Query|c\\.Param)"
+    message: "Potential BOLA at '{callee}' (line {line}). Object accessed by user-supplied ID without ownership verification. Add authorization checks before accessing resources."
+
+  - id: CG-API-003
+    name: Excessive Data Exposure
+    description: >
+      The API response returns a full database model or all object fields
+      instead of a curated response DTO. Over-exposed data can leak sensitive
+      fields such as password hashes, internal IDs, or PII.
+    severity: medium
+    confidence: 0.6
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 213
+    owasp_category: "API3:2023-Broken Object Property Level Authorization"
+    patterns:
+      - callee: "(jsonify|json\\.dumps|res\\.json|ResponseEntity\\.ok|JSON\\.stringify|json\\.NewEncoder)"
+        args_match: "(model\\.to_dict|serializer\\.data|\\.__dict__|toJSON|findAll|find\\(|Objects\\.all|select\\s*\\*)"
+      - callee: "(res\\.send|res\\.json|response\\.json)"
+        args_match: "(\\.toObject\\(\\)|\\.toJSON\\(\\)|\\._doc|spread\\s*operator)"
+    message: "Possible excessive data exposure at '{callee}' (line {line}). Return only required fields using a response DTO or serializer with explicit field selection."
+
+  - id: CG-API-005
+    name: Broken Function Level Authorization (BFLA)
+    description: >
+      Administrative or privileged API endpoints are accessible without
+      proper role-based authorization checks. Attackers can access admin
+      functionality by simply calling the endpoint directly.
+    severity: high
+    confidence: 0.65
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 285
+    owasp_category: "API5:2023-Broken Function Level Authorization"
+    patterns:
+      - callee: "(app\\.(get|post|put|delete|patch)|router\\.(get|post|put|delete|patch))"
+        args_match: "(admin|manage|superuser|privilege|internal|config|setting|dashboard|user/create|user/delete|role)"
+      - callee: "(@app\\.route|@api\\.route)"
+        args_match: "(admin|manage|internal|config|setting|dashboard)"
+    message: "Privileged endpoint at '{callee}' (line {line}) may lack role-based authorization. Verify admin/role checks are enforced before granting access."
+
+  - id: CG-API-006
+    name: Mass Assignment in API
+    description: >
+      Request body data is passed directly to a model create or update
+      operation without field filtering. Attackers can inject additional
+      fields (e.g., is_admin, role, price) to escalate privileges or
+      manipulate business logic.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 915
+    owasp_category: "API3:2023-Broken Object Property Level Authorization"
+    patterns:
+      - callee: "(create|update|save|insert|bulkCreate|updateMany|findOneAndUpdate|findByIdAndUpdate)"
+        args_match: "(req\\.body|request\\.json|request\\.form|request\\.data|request\\.POST|\\*\\*request|\\.\\.\\.(req|request)\\.body)"
+      - callee: "(Model\\.objects\\.create|Model\\.objects\\.update|Objects\\.create)"
+        args_match: "(\\*\\*request\\.(data|POST|json)|\\*\\*req\\.body)"
+    message: "Mass assignment at '{callee}' (line {line}). Filter request input through an allowlist of permitted fields before passing to model operations."
+
+  - id: CG-API-007
+    name: Security Misconfiguration in API
+    description: >
+      API framework is configured with overly permissive CORS policy
+      (Access-Control-Allow-Origin: *), debug mode enabled, or verbose
+      error messages returned to clients. These misconfigurations can
+      expose internal details and expand the attack surface.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 942
+    owasp_category: "API8:2023-Security Misconfiguration"
+    patterns:
+      - callee: "(cors|CORS|CorsRegistry|addCorsMappings)"
+        args_match: "(origin\\s*:\\s*[\"']\\*[\"']|origins\\s*=\\s*[\"']\\*[\"']|allowedOrigins\\(\"\\*\"\\)|Access-Control-Allow-Origin.*\\*)"
+      - callee: "(app\\.run|app\\.config|DEBUG|settings)"
+        args_match: "(debug\\s*=\\s*True|DEBUG\\s*=\\s*True|debug\\s*:\\s*true)"
+      - callee: "(res\\.json|res\\.send|jsonify|ResponseEntity)"
+        args_match: "(stack|stackTrace|traceback|internal_error|debug_info)"
+    message: "API security misconfiguration at '{callee}' (line {line}). Restrict CORS origins, disable debug mode, and suppress detailed errors in production."
+
+  - id: CG-API-008
+    name: SQL Injection in API
+    description: >
+      User-supplied input from API request parameters is concatenated
+      directly into SQL queries without parameterization. This allows
+      attackers to execute arbitrary SQL commands, extract data, or
+      modify the database.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 89
+    owasp_category: "API8:2023-Security Misconfiguration"
+    defense_patterns: ["parameterized", "prepared_statement", "bind", "sanitize", "escape"]
+    taint:
+      source_types: [http_param, http_body]
+      sink_pattern: "(execute|query|raw|rawQuery|cursor\\.execute|db\\.query|db\\.Query|db\\.Exec|connection\\.query|sequelize\\.query|knex\\.raw)"
+    message: >
+      SQL injection in API: user input from '{source}' (line {source_line})
+      flows to SQL query '{sink}' (line {sink_line}). Use parameterized queries
+      or an ORM to prevent injection.
+
+  - id: CG-API-009
+    name: Improper Asset Management
+    description: >
+      Deprecated or outdated API versions remain active in routing
+      configuration. Old API versions may lack security patches, use
+      weaker authentication, or expose deprecated functionality that
+      has been removed from newer versions.
+    severity: low
+    confidence: 0.5
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 1059
+    owasp_category: "API9:2023-Improper Inventory Management"
+    patterns:
+      - callee: "(app\\.(get|post|put|delete|patch|use)|router\\.(get|post|put|delete|patch|use))"
+        args_match: "(/api/v0/|/v0/|/legacy/|/old-api/|/deprecated/|/retired/|/sunset/)"
+      - callee: "(@app\\.route|@api\\.route|@router)"
+        args_match: "(/api/v0/|/v0/|/legacy/|/old-api/|/deprecated/|/retired/|/sunset/)"
+    message: "Potentially deprecated API version at '{callee}' (line {line}). Review and retire old API versions. Ensure deprecated endpoints are decommissioned."

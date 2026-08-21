@@ -1,0 +1,187 @@
+rules:
+  - id: "CG-DESER-001"
+    name: "Python pickle deserialization of untrusted data"
+    description: >
+      The application uses pickle.loads(), pickle.load(), or cPickle to deserialize
+      data from an untrusted source. Python's pickle protocol can execute arbitrary
+      code during deserialization through the __reduce__ method, allowing an attacker
+      to achieve remote code execution by crafting a malicious pickle payload.
+    severity: critical
+    confidence: 0.95
+    languages: [python]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee_match: "pickle\\.loads|pickle\\.load|cPickle\\.loads|cPickle\\.load"
+      - callee_match: "shelve\\.open"
+        taint_source: "request|socket|file|input|network"
+      - callee_match: "joblib\\.load"
+        taint_source: "request|upload|user|network"
+      - callee_match: "torch\\.load"
+        missing_args: "weights_only.*True"
+    defense_patterns:
+      - "json\\.loads|json\\.load"
+      - "hmac|signature|verify"
+      - "RestrictedUnpickler"
+      - "weights_only=True"
+      - "safe_load"
+      - "allowlist|whitelist"
+    message: "Pickle deserialization can execute arbitrary code. Replace pickle with JSON, MessagePack, or Protocol Buffers. If pickle is required, implement a RestrictedUnpickler with a strict class whitelist."
+
+  - id: "CG-DESER-002"
+    name: "Java ObjectInputStream deserialization"
+    description: >
+      The application uses Java ObjectInputStream.readObject() or readUnshared() to
+      deserialize data from an untrusted source. Java deserialization vulnerabilities
+      enable remote code execution through gadget chains found in common libraries
+      (Apache Commons Collections, Spring, etc.), and have been exploited in numerous
+      high-profile attacks.
+    severity: critical
+    confidence: 0.9
+    languages: [java]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee_match: "ObjectInputStream|readObject|readUnshared"
+      - callee_match: "XMLDecoder"
+        taint_source: "request|socket|input|stream|network"
+      - callee_match: "RMIConnector|JMXConnector"
+        taint_source: "remote|user|untrusted"
+      - multi_match:
+          - "ObjectInputStream"
+          - "readObject|readUnshared"
+        missing_match:
+          - "ObjectInputFilter|ValidatingObjectInputStream|LookAheadObjectInputStream"
+    defense_patterns:
+      - "ObjectInputFilter|serialFilter"
+      - "ValidatingObjectInputStream"
+      - "LookAheadObjectInputStream"
+      - "NotSerializableException"
+      - "JSON|Jackson|Gson|protobuf"
+      - "allowlist|whitelist.*class"
+    message: "Java ObjectInputStream deserializes untrusted data. Use JSON (Jackson, Gson) or Protocol Buffers instead. If ObjectInputStream is required, implement ObjectInputFilter with a strict class whitelist."
+
+  - id: "CG-DESER-003"
+    enabled: false
+    disabled_reason: "Reference-only PHP rule; PHP parsing is not supported."
+    name: "PHP unserialize on untrusted data"
+    description: >
+      The application uses PHP unserialize() on data from an untrusted source.
+      PHP object injection through unserialize allows attackers to instantiate
+      arbitrary classes, trigger magic methods (__wakeup, __destruct, __toString),
+      and chain gadgets to achieve remote code execution, file manipulation, or
+      SQL injection.
+    severity: critical
+    confidence: 0.9
+    languages: [php]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee_match: "unserialize"
+        taint_source: "\\$_GET|\\$_POST|\\$_REQUEST|\\$_COOKIE|file_get_contents|fread|input"
+      - callee_match: "unserialize"
+        missing_args: "allowed_classes.*false|allowed_classes.*\\["
+      - multi_match:
+          - "unserialize"
+          - "\\$_GET|\\$_POST|\\$_REQUEST|\\$_COOKIE|file_get_contents"
+    defense_patterns:
+      - "json_decode"
+      - "allowed_classes.*false"
+      - "allowed_classes.*\\[.*\\]"
+      - "hash_hmac.*verify|signature"
+      - "json_encode.*json_decode"
+    message: "PHP unserialize() on untrusted data enables object injection. Use json_decode() instead. If unserialize is required, set allowed_classes to false or an explicit whitelist."
+
+  - id: "CG-DESER-004"
+    enabled: false
+    disabled_reason: "Reference-only C# rule; C# parsing is not supported."
+    name: ".NET BinaryFormatter deserialization"
+    description: >
+      The application uses .NET BinaryFormatter, SoapFormatter, NetDataContractSerializer,
+      or ObjectStateFormatter to deserialize data. Microsoft has officially deprecated
+      BinaryFormatter due to inherent security risks. These formatters can instantiate
+      arbitrary types during deserialization, enabling remote code execution through
+      gadget chains in the .NET framework itself.
+    severity: critical
+    confidence: 0.95
+    languages: [csharp]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee_match: "BinaryFormatter|SoapFormatter|NetDataContractSerializer|ObjectStateFormatter|LosFormatter"
+      - callee_match: "Deserialize|ReadObject"
+        context: "BinaryFormatter|SoapFormatter|NetDataContractSerializer"
+      - callee_match: "TypeNameHandling"
+        args_match: "All|Auto|Objects|Arrays"
+        note: "Json.NET TypeNameHandling enables type-based deserialization attacks"
+    defense_patterns:
+      - "System\\.Text\\.Json|JsonSerializer"
+      - "DataContractSerializer"
+      - "XmlSerializer"
+      - "TypeNameHandling\\.None"
+      - "SerializationBinder"
+      - "AllowedTypes|knownTypes"
+    message: "BinaryFormatter is deprecated and inherently insecure. Migrate to System.Text.Json or DataContractSerializer. For Json.NET, set TypeNameHandling to None."
+
+  - id: "CG-DESER-005"
+    enabled: false
+    disabled_reason: "Reference-only Ruby rule; Ruby parsing is not supported."
+    name: "Ruby Marshal.load on untrusted data"
+    description: >
+      The application uses Ruby Marshal.load() to deserialize data from an untrusted
+      source. Ruby's Marshal format can instantiate arbitrary objects and invoke
+      methods during deserialization, enabling remote code execution through gadget
+      chains in the Ruby standard library and common gems like Rails.
+    severity: critical
+    confidence: 0.9
+    languages: [ruby]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee_match: "Marshal\\.load|Marshal\\.restore"
+        taint_source: "params|request|socket|file|cookies|input"
+      - callee_match: "Marshal\\.load"
+        missing_context: "hmac|signature|verify|trusted"
+      - multi_match:
+          - "Marshal\\.load|Marshal\\.restore"
+          - "params|request\\.body|cookies|socket|open"
+    defense_patterns:
+      - "JSON\\.parse"
+      - "YAML\\.safe_load"
+      - "MessagePack"
+      - "hmac.*verify|ActiveSupport::MessageVerifier"
+      - "signed_cookie"
+    message: "Marshal.load on untrusted data can execute arbitrary code. Use JSON.parse or MessagePack for deserialization. If Marshal is needed, verify data integrity with HMAC before loading."
+
+  - id: "CG-DESER-006"
+    name: "YAML unsafe load"
+    description: >
+      The application uses YAML.load() (Python) or YAML.load() (Ruby) without safe
+      mode to parse YAML from an untrusted source. YAML's full loading mode can
+      construct arbitrary language objects through tags like !!python/object or
+      !ruby/object, enabling remote code execution.
+    severity: critical
+    confidence: 0.9
+    languages: [python, ruby, java]
+    cwe_id: 502
+    owasp_category: "A08:2021-Software and Data Integrity Failures"
+    patterns:
+      - callee_match: "yaml\\.load\\("
+        missing_args: "Loader=.*SafeLoader|Loader=yaml\\.SafeLoader"
+        languages: [python]
+      - callee_match: "yaml\\.unsafe_load|yaml\\.full_load"
+        taint_source: "request|file|input|open"
+        languages: [python]
+      - callee_match: "YAML\\.load\\("
+        missing_args: "safe|permitted_classes"
+        languages: [ruby]
+      - callee_match: "Yaml\\(\\)\\.load|new Yaml"
+        missing_context: "SafeConstructor|Constructor.*safe"
+        languages: [java]
+    defense_patterns:
+      - "yaml\\.safe_load|SafeLoader"
+      - "YAML\\.safe_load"
+      - "SafeConstructor"
+      - "permitted_classes"
+      - "yaml\\.CSafeLoader"
+    message: "YAML loaded without safe mode can execute arbitrary code. Use yaml.safe_load() in Python, YAML.safe_load() in Ruby, or SafeConstructor in Java SnakeYAML."

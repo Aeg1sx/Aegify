@@ -1,0 +1,90 @@
+rules:
+  - id: "CG-LOG-INJ-001"
+    name: "CRLF injection in log output"
+    description: >
+      User-controlled input containing carriage return (\r) or line feed (\n)
+      characters is written directly into log output without sanitization. An
+      attacker can inject fake log entries, corrupt log integrity, or forge
+      audit trails by embedding newline sequences in request parameters,
+      headers, or form fields that flow into logging calls.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, java, csharp, go]
+    cwe_id: 117
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee_match: "(logger\\.(info|warn|error|debug|log)|console\\.(log|warn|error|info)|log\\.(Printf|Println|Infof|Warnf|Errorf))"
+        args_match: "(request\\.(params|query|body|headers|cookies)|req\\.(params|query|body|headers|cookies)|request\\.GET|request\\.POST|request\\.META)"
+        negative_match: "(\\.replace\\(.*\\\\[rn]|strip_newlines|sanitize_log|escape_log|log_safe)"
+      - pattern_type: "taint"
+        source: "(request\\.args|request\\.form|request\\.headers|req\\.params|req\\.query|req\\.body|@RequestParam|@PathVariable)"
+        sink: "(logging\\.(info|warning|error|debug|critical)|logger\\.(info|warn|error|debug)|log\\.(info|warn|error|debug))"
+        sanitizers: ["replace(\\\\n)", "replace(\\\\r)", "strip()", "encode()"]
+    defense_patterns:
+      - "structured_logging"
+      - "parameterized_log_messages"
+      - "log_sanitization_middleware"
+      - "input_newline_stripping"
+    message: "User-controlled input flows into log output without CRLF sanitization, enabling log injection attacks that can forge audit trails and corrupt log integrity."
+
+  - id: "CG-LOG-INJ-002"
+    name: "Format string injection in log message"
+    description: >
+      User-supplied input is used directly in a log format string rather than
+      being passed as a parameter argument. In Python, using percent-style or
+      f-string formatting with untrusted data in logging calls can lead to
+      information disclosure, denial of service via format string exceptions,
+      or log forgery. In C/C++ contexts, this can lead to arbitrary memory
+      reads or writes.
+    severity: high
+    confidence: 0.80
+    languages: [python, javascript, java, c, cpp]
+    cwe_id: 134
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - callee_match: "logging\\.(info|warning|error|debug|critical)"
+        args_match: "(f['\"].*\\{.*request|%s.*%.*request|\\.format\\(.*request)"
+        negative_match: "logging\\.(info|warning|error|debug|critical)\\(['\"][^'\"]*%[sd].*,\\s*(request|user_input)"
+      - pattern_type: "regex"
+        match: "logger\\.(info|warn|error|debug)\\(\\s*f['\"].*\\{.*\\b(user_input|request|params|query|form_data|payload)\\b"
+      - pattern_type: "regex"
+        match: "log\\.(Printf|Sprintf|Fatalf)\\(\\s*[^,]*\\+\\s*(req|request|userInput|params)"
+      - pattern_type: "regex"
+        match: "LOG\\.(info|warn|error|debug)\\(\\s*[\"'].*[\"']\\s*\\+\\s*(request|input|param)"
+    defense_patterns:
+      - "parameterized_log_messages"
+      - "logging_extra_dict"
+      - "structured_logging_framework"
+      - "log_message_template"
+    message: "User input is interpolated directly into a log format string instead of being passed as a logging parameter. Use parameterized logging (e.g., logger.info('User action: %s', user_input)) to prevent format string attacks."
+
+  - id: "CG-LOG-INJ-003"
+    name: "ANSI escape sequence injection in logs"
+    description: >
+      User-controlled input containing ANSI escape codes (ESC sequences
+      starting with \x1b or \033) is written to log output. When logs are
+      viewed in a terminal emulator, injected escape sequences can manipulate
+      terminal display to hide malicious activity, alter visible output,
+      execute terminal-specific commands, or exploit vulnerabilities in
+      terminal emulators. This is particularly dangerous in CI/CD pipelines
+      and monitoring dashboards that render log output.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, java, go, ruby]
+    cwe_id: 117
+    owasp_category: "A09:2021-Security Logging and Monitoring Failures"
+    patterns:
+      - pattern_type: "taint"
+        source: "(request\\.(args|form|headers|json|data)|req\\.(params|query|body|headers)|@RequestParam|os\\.environ\\.get|sys\\.argv)"
+        sink: "(logger\\.(info|warn|error|debug)|logging\\.(info|warning|error|debug|critical)|console\\.(log|warn|error)|log\\.(Print|Info|Warn|Error))"
+        sanitizers: ["strip_ansi", "escape_ansi", "re.sub.*\\\\x1b", "ansi_escape_filter"]
+      - pattern_type: "regex"
+        match: "(print|puts|fmt\\.Print|System\\.out\\.print).*\\b(request|user_input|argv|environ|params|query)\\b"
+        context: "logging_context"
+    defense_patterns:
+      - "ansi_escape_stripping"
+      - "structured_logging_json"
+      - "log_output_encoding"
+      - "terminal_safe_logging"
+      - "plaintext_log_formatter"
+    message: "User-controlled data may contain ANSI escape sequences that can manipulate terminal output when logs are viewed. Strip or encode ANSI escape codes before logging, or use structured JSON logging to neutralize terminal escape sequences."

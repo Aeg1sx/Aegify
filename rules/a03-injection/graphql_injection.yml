@@ -1,0 +1,195 @@
+rules:
+  - id: "CG-GQL-001"
+    name: "GraphQL Query Depth Attack"
+    description: >
+      Detects GraphQL schema configurations and resolver implementations
+      that lack query depth limiting, enabling deeply nested query attacks.
+      GraphQL's type system allows recursive relationships (e.g., a User
+      type that has a friends field returning [User]), which an attacker
+      can exploit by crafting deeply nested queries like
+      { user { friends { friends { friends { ... } } } } } to cause
+      exponential resource consumption on the server. Without depth limiting,
+      a single request can trigger thousands of database queries, exhaust
+      server memory and CPU, and cause denial of service. This is a
+      fundamental GraphQL-specific vulnerability because REST APIs naturally
+      limit response depth through endpoint design, whereas GraphQL's
+      flexible query structure requires explicit depth controls. The attack
+      is amplified when combined with circular type references and list
+      fields that multiply the number of resolved objects at each depth level.
+    severity: high
+    confidence: 0.83
+    languages: [javascript, typescript, python, java, ruby]
+    cwe_id: 400
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(ApolloServer|GraphQLServer|graphqlHTTP|graphqlExpress|createHandler)\\s*\\("
+        negative_match: "(depthLimit|depth_limit|maxDepth|max_depth|queryDepth|query_depth|validationRules.*depthLimit)"
+      - pattern: "type\\s+\\w+\\s*\\{[^}]*(\\w+)\\s*:\\s*\\[?\\1\\]?"
+        context_match: "schema|typeDefs|type_defs"
+      - pattern: "(?:makeExecutableSchema|buildSchema|GraphQLSchema)\\s*\\("
+        negative_match: "(depthLimit|depth_limit|maxDepth|max_depth|validationRules)"
+      - pattern: "(graphene|ariadne|strawberry).*Schema\\("
+        negative_match: "(depth_limit|max_depth|QueryDepthLimiter|DepthAnalysis)"
+      - pattern: "(?:@GraphQLApi|@GraphQLQuery|@SchemaMapping)"
+        negative_match: "(MaxQueryDepth|maxDepth|depthLimit|QueryComplexity)"
+    taint:
+      source_types: [graphql_query]
+      sink_types: [graphql_resolver]
+      sink_pattern: "(execute|graphql|resolve|ApolloServer|GraphQLServer)"
+    defense_patterns:
+      - "depthLimit|depth_limit|graphql-depth-limit"
+      - "maxDepth|max_depth"
+      - "QueryDepthLimiter|DepthAnalysis"
+      - "validationRules.*depth"
+      - "graphql-query-complexity"
+      - "costAnalysis|cost_analysis"
+      - "queryComplexity|query_complexity"
+      - "MaxQueryDepthRule"
+    message: "GraphQL server at line {line} lacks query depth limiting, enabling denial-of-service via deeply nested queries. An attacker can craft recursive queries that cause exponential resolver execution and resource exhaustion."
+
+  - id: "CG-GQL-002"
+    name: "GraphQL Introspection Exposure in Production"
+    description: >
+      Detects GraphQL server configurations that leave introspection enabled
+      in production environments. GraphQL introspection is a powerful feature
+      that allows clients to query the __schema and __type meta-fields to
+      discover the complete API schema including all types, fields, arguments,
+      enums, mutations, subscriptions, and their descriptions. While essential
+      for development tooling, leaving introspection enabled in production
+      exposes the entire API surface to attackers, providing a complete
+      roadmap for exploitation. Attackers can discover hidden or internal-only
+      mutations, identify fields containing sensitive data (e.g., socialSecurityNumber,
+      internalNotes, adminToken), enumerate authorization boundaries by mapping
+      available operations, and identify deprecated fields that may have weaker
+      security controls. This information significantly reduces the effort
+      required to find and exploit other vulnerabilities in the GraphQL API.
+    severity: medium
+    confidence: 0.86
+    languages: [javascript, typescript, python, java, ruby]
+    cwe_id: 200
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(ApolloServer|GraphQLServer|graphqlHTTP|createHandler)\\s*\\("
+        negative_match: "(introspection\\s*:\\s*false|introspection\\s*=\\s*False|disableIntrospection|NoIntrospection|IntrospectionDisabled)"
+      - pattern: "introspection\\s*:\\s*true"
+        context_match: "production|prod|PROD|NODE_ENV"
+      - pattern: "(ApolloServer|GraphQLServer)\\s*\\(\\s*\\{"
+        negative_match: "introspection"
+      - pattern: "(?:__schema|__type|__TypeKind|__Field|__InputValue)"
+        context_match: "production|prod|PROD"
+      - pattern: "(graphene|ariadne|strawberry).*Schema\\("
+        negative_match: "(introspection.*False|disable_introspection|NoIntrospectionMiddleware)"
+    taint:
+      source_types: [graphql_query]
+      sink_types: [information_disclosure]
+      sink_pattern: "(__schema|__type|__TypeKind|IntrospectionQuery)"
+    defense_patterns:
+      - "introspection\\s*:\\s*false"
+      - "introspection\\s*=\\s*False"
+      - "disableIntrospection"
+      - "NoIntrospection"
+      - "NoSchemaIntrospectionCustomRule"
+      - "IntrospectionDisabledError"
+      - "process\\.env\\.NODE_ENV.*introspection"
+      - "GRAPHQL_INTROSPECTION.*false"
+    message: "GraphQL server at line {line} has introspection enabled, exposing the complete API schema to attackers. Disable introspection in production to prevent reconnaissance of types, fields, mutations, and sensitive data structures."
+
+  - id: "CG-GQL-003"
+    name: "GraphQL Batch Query Abuse"
+    description: >
+      Detects GraphQL server configurations that allow unbounded batched
+      queries (query batching or aliased field duplication) without rate
+      limiting or batch size restrictions. GraphQL supports sending arrays
+      of operations in a single HTTP request, and within a single operation,
+      aliases allow duplicating the same field an arbitrary number of times
+      (e.g., a1: login(user:"a",pass:"1"), a2: login(user:"a",pass:"2"), ...).
+      An attacker can abuse batching for credential stuffing by sending
+      thousands of login attempts in a single request that bypasses
+      per-request rate limiting, for data exfiltration by batching many
+      queries that individually appear benign, and for resource exhaustion
+      by multiplying expensive resolver executions. Alias-based batching is
+      particularly dangerous because it occurs within a single GraphQL
+      operation and may bypass middleware that counts operations rather
+      than resolved fields.
+    severity: high
+    confidence: 0.84
+    languages: [javascript, typescript, python, java, ruby]
+    cwe_id: 770
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(ApolloServer|GraphQLServer|graphqlHTTP|createHandler)\\s*\\("
+        negative_match: "(allowBatchedHttpRequests\\s*:\\s*false|batch.*false|maxBatchSize|max_batch_size|batchLimit|batch_limit)"
+      - pattern: "allowBatchedHttpRequests\\s*:\\s*true"
+      - pattern: "graphqlHTTP\\s*\\(.*batch\\s*:\\s*true"
+      - pattern: "Array\\.isArray\\(\\s*(req\\.body|request\\.body|body)\\s*\\)"
+        context_match: "graphql|GraphQL|gql|query"
+        negative_match: "(length\\s*>|length\\s*<|slice|max_batch|batchLimit)"
+      - pattern: "(mutation|query)\\s+\\w+.*\\b(login|authenticate|signIn|resetPassword|verifyCode|checkOtp)\\b"
+        context_match: "alias|a\\d+:|batch"
+        negative_match: "rate.?limit|throttle|captcha"
+    taint:
+      source_types: [graphql_query, http_body]
+      sink_types: [graphql_resolver, authentication]
+      sink_pattern: "(execute|graphql|resolve|login|authenticate|mutation)"
+    defense_patterns:
+      - "allowBatchedHttpRequests\\s*:\\s*false"
+      - "maxBatchSize|max_batch_size"
+      - "batchLimit|batch_limit"
+      - "graphql-rate-limit"
+      - "graphql-shield.*rate"
+      - "rateLimitDirective|rate_limit_directive"
+      - "costAnalysis|cost_analysis"
+      - "maxAliases|max_aliases|aliasLimit"
+      - "graphql-armor"
+    message: "GraphQL server at line {line} allows unbounded query batching without rate limiting or batch size restrictions. An attacker can bypass per-request rate limits by batching thousands of operations (e.g., login attempts) in a single HTTP request for credential stuffing or resource exhaustion."
+
+  - id: "CG-GQL-004"
+    name: "GraphQL Field Suggestion Information Leak"
+    description: >
+      Detects GraphQL server configurations that return field suggestion
+      hints in error messages when invalid field names are queried. By default,
+      many GraphQL implementations use a "Did you mean" algorithm (based on
+      Levenshtein distance) that suggests valid field names when a query
+      references a non-existent field. An attacker can systematically probe
+      the schema by querying variations of common field names and analyzing
+      the suggestions to reconstruct the schema even when introspection is
+      disabled. For example, querying { user { pass } } might return
+      "Did you mean 'password' or 'passwordHash'?" revealing sensitive
+      field names. This technique can be automated to enumerate all fields
+      by iterating through character combinations and following the
+      suggestions, effectively bypassing introspection disablement as a
+      security control. Combined with the information from type error
+      messages that reveal argument types and return types, an attacker
+      can reconstruct a substantial portion of the schema.
+    severity: medium
+    confidence: 0.80
+    languages: [javascript, typescript, python, java, ruby]
+    cwe_id: 209
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(ApolloServer|GraphQLServer|graphqlHTTP|createHandler)\\s*\\("
+        negative_match: "(formatError|customFormatErrorFn|fieldSuggestion.*false|hideFieldSuggestions|hideSuggestions|NoFieldSuggestions)"
+      - pattern: "formatError.*message"
+        negative_match: "(replace.*Did you mean|remove.*suggestion|sanitize.*error|generic.*error)"
+      - pattern: "debug\\s*:\\s*true"
+        context_match: "(ApolloServer|GraphQLServer|graphql|gql)"
+      - pattern: "(graphene|ariadne|strawberry).*Schema\\("
+        negative_match: "(format_error|middleware.*error|error_formatter.*sanitize)"
+      - pattern: "includeStacktraceInErrorResponses\\s*:\\s*true"
+      - pattern: "GraphQLError.*extensions"
+        negative_match: "(sanitize|strip|remove|generic)"
+    taint:
+      source_types: [graphql_query]
+      sink_types: [information_disclosure]
+      sink_pattern: "(formatError|GraphQLError|error.*message|Did you mean)"
+    defense_patterns:
+      - "formatError.*generic"
+      - "hideFieldSuggestions|hideSuggestions"
+      - "NoFieldSuggestions"
+      - "customFormatErrorFn.*sanitize"
+      - "debug\\s*:\\s*false"
+      - "includeStacktraceInErrorResponses\\s*:\\s*false"
+      - "replace.*Did you mean"
+      - "graphql-armor"
+      - "maskErrors|mask_errors"
+    message: "GraphQL server at line {line} exposes field name suggestions in error responses, enabling schema reconnaissance. An attacker can systematically probe field name variations to reconstruct the schema even with introspection disabled, discovering sensitive fields like passwordHash or internalToken."

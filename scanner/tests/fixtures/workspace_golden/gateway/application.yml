@@ -1,0 +1,11 @@
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: orders-api
+          uri: lb://orders
+          predicates:
+            - Path=/edge/v1/**
+            - Method=GET,POST
+          filters:
+            - RewritePath=/edge/v1/(?<segment>.*), /${segment}

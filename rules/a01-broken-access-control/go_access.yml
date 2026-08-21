@@ -1,0 +1,110 @@
+rules:
+  - id: "CG-AC-GO-001"
+    name: "HTTP handler without auth middleware"
+    description: >
+      A Go net/http handler function is registered via http.HandleFunc or
+      http.Handle without being wrapped in an authentication middleware. In Go's
+      standard library HTTP server, middleware must be explicitly composed by wrapping
+      the handler function. Handlers that serve sensitive resources or perform
+      state-changing operations without an auth wrapper are accessible to
+      unauthenticated callers.
+    severity: high
+    confidence: 0.83
+    languages: [go]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "http\\.(HandleFunc|Handle)\\("
+        missing_check: "(authMiddleware|AuthRequired|RequireAuth|WithAuth|Authenticate|JWTMiddleware)"
+      - callee_match: "mux\\.(HandleFunc|Handle)\\("
+        missing_check: "(authMiddleware|AuthRequired|RequireAuth|WithAuth)"
+    defense_patterns:
+      - "http.Handle(\"/api/\", authMiddleware(handler))"
+      - "mux.HandleFunc(\"/api/\", AuthRequired(handler))"
+      - "middleware.Chain(authMiddleware, handler)"
+      - "r.Use(AuthMiddleware)"
+    message: "HTTP handler registered without authentication middleware wrapper. Wrap the handler with an auth middleware function to enforce authentication."
+
+  - id: "CG-AC-GO-002"
+    name: "Gorilla/mux unprotected routes"
+    description: >
+      A gorilla/mux router registers route handlers without applying authentication
+      middleware via router.Use() or per-route middleware wrapping. Gorilla/mux
+      supports middleware at the router level via Use() and at the subrouter level.
+      Routes serving sensitive API endpoints must be protected by an authentication
+      middleware to prevent unauthorized access.
+    severity: high
+    confidence: 0.82
+    languages: [go]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "router\\.HandleFunc\\(['\"]/(api|admin|user|account|dashboard)"
+        missing_check: "(router\\.Use\\(auth|middleware\\.Auth|AuthMiddleware|RequireLogin)"
+      - block_match:
+          start: "mux\\.NewRouter\\(\\)"
+          end: "ListenAndServe"
+          missing: "\\.Use\\(.*[Aa]uth"
+    defense_patterns:
+      - "router.Use(AuthMiddleware)"
+      - "apiRouter := router.PathPrefix(\"/api\").Subrouter(); apiRouter.Use(AuthMiddleware)"
+      - "router.HandleFunc(\"/api/\", AuthRequired(handler))"
+      - "negroni.New(negroni.HandlerFunc(AuthMiddleware))"
+    message: "Gorilla/mux route handlers lack authentication middleware. Use router.Use(AuthMiddleware) or wrap individual handlers with an auth guard."
+
+  - id: "CG-AC-GO-003"
+    name: "Chi router missing auth middleware"
+    description: >
+      A go-chi/chi router group or route registers handlers for sensitive paths
+      without applying authentication middleware via r.Use() on the router or route
+      group. Chi's middleware stack is hierarchical, so auth middleware must be applied
+      at the appropriate level. Routes serving protected resources without auth
+      middleware in the chain are accessible to unauthenticated users.
+    severity: high
+    confidence: 0.84
+    languages: [go]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "r\\.(Get|Post|Put|Patch|Delete)\\(['\"]/(api|admin|user|account)"
+        missing_check: "(r\\.Use\\(.*[Aa]uth|jwtauth\\.Verifier|jwtauth\\.Authenticator)"
+      - block_match:
+          start: "chi\\.NewRouter\\(\\)"
+          end: "(ListenAndServe|Serve)"
+          missing: "\\.Use\\(.*([Aa]uth|[Jj][Ww][Tt]|[Tt]oken)"
+      - callee_match: "r\\.Route\\(['\"]/(api|admin)"
+        missing_check: "r\\.Use\\("
+    defense_patterns:
+      - "r.Use(jwtauth.Verifier(tokenAuth))"
+      - "r.Use(jwtauth.Authenticator)"
+      - "r.Group(func(r chi.Router) { r.Use(AuthMiddleware) })"
+      - "r.With(AuthRequired).Get(\"/protected\", handler)"
+    message: "Chi router route or group lacks authentication middleware. Apply auth middleware via r.Use() at the router or group level to protect sensitive endpoints."
+
+  - id: "CG-AC-GO-004"
+    name: "Missing tenant scope in GORM queries"
+    description: >
+      A GORM database query retrieves records without applying a tenant or
+      organization scope filter. In multi-tenant applications, every query against
+      tenant-scoped tables must include a Where clause filtering by the tenant
+      identifier. Using db.Find(), db.First(), or db.Where() without a tenant
+      predicate enables cross-tenant data access, where one tenant's users can read
+      or modify another tenant's records.
+    severity: critical
+    confidence: 0.78
+    languages: [go]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "db\\.(Find|First|Last|Take|Where)\\("
+        missing_check: "(tenant_id|TenantID|organization_id|OrgID|Scopes\\(.*[Tt]enant)"
+      - callee_match: "db\\.Model\\(&\\w+\\{\\}\\)\\.(Find|Where)\\("
+        missing_check: "(tenant_id|TenantID|organization_id)"
+      - callee_match: "tx\\.(Find|First|Where)\\("
+        missing_check: "(tenant_id|TenantID)"
+    defense_patterns:
+      - "db.Where(\"tenant_id = ?\", tenantID).Find(&records)"
+      - "db.Scopes(TenantScope(ctx)).Find(&records)"
+      - "db.Session(&gorm.Session{}).Where(\"org_id = ?\", orgID)"
+      - "func TenantScope(ctx context.Context) func(db *gorm.DB) *gorm.DB"
+    message: "GORM query does not filter by tenant identifier. Add a .Where(\"tenant_id = ?\", tenantID) clause or use a tenant scope to prevent cross-tenant data access."

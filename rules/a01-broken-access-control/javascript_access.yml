@@ -1,0 +1,207 @@
+rules:
+  - id: "CG-AC-JS-001"
+    name: "Express route without auth middleware"
+    description: >
+      An Express.js route handler is registered via app.get, app.post, or
+      router.get/post without an authentication middleware in the middleware chain.
+      Routes that handle sensitive data or state-changing operations must include an
+      authentication middleware (such as passport.authenticate, ensureAuthenticated,
+      or a custom auth guard) to verify the caller's identity before the handler
+      executes.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 862
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "(app|router)\\.(get|post|put|patch|delete)\\(['\"]/"
+        missing_check: "(authenticate|ensureAuthenticated|isAuthenticated|authMiddleware|requireAuth|verifyToken|protect)"
+    defense_patterns:
+      - "passport.authenticate('jwt')"
+      - "ensureAuthenticated"
+      - "authMiddleware"
+      - "requireAuth"
+      - "verifyToken"
+    message: "Express route registered without authentication middleware. Add an auth guard to the middleware chain before the route handler."
+
+  - id: "CG-AC-JS-002"
+    name: "JWT token not validated before use"
+    description: >
+      A JSON Web Token is decoded using jwt.decode without verification, or the
+      verification step uses an algorithm of 'none', accepts unsigned tokens, or does
+      not validate the signature against a secret or public key. Unverified JWTs can be
+      forged by an attacker to impersonate any user or escalate privileges. Always use
+      jwt.verify with a strong secret and explicit algorithm allowlist.
+    severity: critical
+    confidence: 0.92
+    languages: [javascript, typescript]
+    cwe_id: 347
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "jwt\\.decode\\("
+        context_check: "(?!jwt\\.verify)"
+      - callee_match: "jwt\\.verify\\(.*\\{\\s*algorithms:\\s*\\[.*'none'"
+      - attribute_match: "ignoreExpiration:\\s*true"
+      - attribute_match: "algorithms:\\s*\\[\\s*['\"]none['\"]"
+    defense_patterns:
+      - "jwt.verify(token, secret, { algorithms: ['RS256'] })"
+      - "jwt.verify(token, publicKey)"
+      - "{ algorithms: ['HS256'] }"
+      - "{ complete: true }"
+    message: "JWT token is decoded without proper signature verification. Use jwt.verify with an explicit algorithm allowlist and a strong secret or public key."
+
+  - id: "CG-AC-JS-003"
+    name: "Session fixation vulnerability"
+    description: >
+      After a user successfully authenticates, the existing session ID is not
+      regenerated. An attacker who can set or predict a session ID before
+      authentication (via URL injection, cross-site scripting, or a shared computer)
+      can hijack the authenticated session. The session must be regenerated immediately
+      after login to invalidate any pre-authentication session identifiers.
+    severity: high
+    confidence: 0.80
+    languages: [javascript, typescript]
+    cwe_id: 384
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "(req\\.login|passport\\.authenticate).*callback"
+        missing_check: "req\\.session\\.regenerate"
+      - block_match:
+          start: "req\\.login\\("
+          end: "\\}"
+          missing: "session\\.regenerate"
+    defense_patterns:
+      - "req.session.regenerate(function(err) {"
+      - "req.session.regenerate()"
+      - "session.regenerate(callback)"
+    message: "Session is not regenerated after successful authentication. Call req.session.regenerate() in the login callback to prevent session fixation attacks."
+
+  - id: "CG-AC-JS-004"
+    name: "Missing CORS origin validation"
+    description: >
+      The CORS configuration reflects the request Origin header directly into the
+      Access-Control-Allow-Origin response header, uses a wildcard (*) with
+      credentials enabled, or does not validate the origin against an allowlist.
+      This permits arbitrary third-party websites to make authenticated cross-origin
+      requests to the API, enabling cross-site data theft and unauthorized actions.
+    severity: high
+    confidence: 0.88
+    languages: [javascript, typescript]
+    cwe_id: 346
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "res\\.setHeader\\(['\"]Access-Control-Allow-Origin['\"],\\s*req\\.(headers\\.origin|get\\(['\"]origin['\"]\\))"
+      - attribute_match: "origin:\\s*true"
+        context_check: "credentials:\\s*true"
+      - attribute_match: "Access-Control-Allow-Origin.*\\*"
+        context_check: "Access-Control-Allow-Credentials.*true"
+    defense_patterns:
+      - "origin: ['https://trusted-domain.com']"
+      - "origin: function(origin, callback) { /* validate against allowlist */ }"
+      - "cors({ origin: allowedOrigins })"
+    message: "CORS configuration reflects the request Origin without validation or uses wildcard with credentials. Validate origins against an explicit allowlist."
+
+  - id: "CG-AC-JS-005"
+    name: "Insecure cookie configuration"
+    description: >
+      A session or authentication cookie is set without the Secure, HttpOnly, or
+      SameSite attributes. Missing Secure allows the cookie to be transmitted over
+      unencrypted HTTP connections. Missing HttpOnly exposes the cookie to JavaScript
+      access via document.cookie, enabling theft through XSS. Missing SameSite permits
+      the cookie to be sent with cross-origin requests, facilitating CSRF attacks.
+    severity: high
+    confidence: 0.90
+    languages: [javascript, typescript]
+    cwe_id: 614
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "res\\.cookie\\("
+        missing_check: "(secure:\\s*true|httpOnly:\\s*true|sameSite)"
+      - callee_match: "session\\(\\{"
+        missing_check: "cookie:\\s*\\{[^}]*(secure|httpOnly|sameSite)"
+      - attribute_match: "secure:\\s*false"
+      - attribute_match: "httpOnly:\\s*false"
+    defense_patterns:
+      - "{ secure: true, httpOnly: true, sameSite: 'strict' }"
+      - "{ secure: true, httpOnly: true, sameSite: 'lax' }"
+      - "cookie: { secure: true, httpOnly: true }"
+    message: "Cookie is set without Secure, HttpOnly, or SameSite attributes. Configure all three to protect against interception, XSS-based theft, and CSRF."
+
+  - id: "CG-AC-JS-006"
+    name: "Path traversal in express.static or file serving"
+    description: >
+      User-controlled input is used to construct a file path that is passed to
+      res.sendFile, express.static, fs.readFile, or fs.createReadStream without
+      sanitization or containment validation. An attacker can inject path traversal
+      sequences (../) to read arbitrary files from the server filesystem, including
+      configuration files, environment variables, and source code.
+    severity: critical
+    confidence: 0.88
+    languages: [javascript, typescript]
+    cwe_id: 22
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - taint:
+          source: "(req\\.params|req\\.query|req\\.body)"
+          sink: "(res\\.sendFile|fs\\.readFile|fs\\.readFileSync|fs\\.createReadStream|path\\.join.*\\+)"
+          missing_sanitizer: "(path\\.normalize|path\\.resolve.*startsWith|sanitize|whitelist)"
+      - regex_match: "res\\.sendFile\\(.*req\\.(params|query)\\."
+      - regex_match: "path\\.join\\(.*req\\.(params|query)\\."
+    defense_patterns:
+      - "path.resolve(userPath).startsWith(allowedDir)"
+      - "path.normalize(userPath).replace(/\\.\\./g, '')"
+      - "{ root: path.join(__dirname, 'public') }"
+      - "express.static with fixed root directory"
+    message: "File path constructed from user input without traversal protection. Validate the resolved path starts with the intended base directory."
+
+  - id: "CG-AC-JS-007"
+    name: "Unprotected admin routes"
+    description: >
+      Routes under an administrative path prefix (/admin, /dashboard, /manage,
+      /internal) are registered without role-based authorization middleware. Even if
+      authentication is present, these routes require an additional authorization check
+      to verify the user holds an admin or privileged role. Without this, any
+      authenticated user can access administrative functionality.
+    severity: critical
+    confidence: 0.83
+    languages: [javascript, typescript]
+    cwe_id: 285
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "(app|router)\\.(get|post|put|delete)\\(['\"]/(admin|dashboard|manage|internal)"
+        missing_check: "(isAdmin|requireAdmin|authorize\\(['\"]admin|role.*admin|hasRole)"
+      - callee_match: "Router\\(\\).*\\.(get|post)\\(['\"]/"
+        context_check: "mount.*/admin"
+        missing_check: "(isAdmin|requireAdmin|authorize)"
+    defense_patterns:
+      - "requireAdmin"
+      - "authorize('admin')"
+      - "hasRole('admin')"
+      - "isAdmin middleware"
+      - "rbac('admin')"
+    message: "Administrative route lacks role-based authorization middleware. Add an admin role check to prevent privilege escalation by regular authenticated users."
+
+  - id: "CG-AC-JS-008"
+    name: "Missing rate limiting on sensitive endpoint"
+    description: >
+      A sensitive endpoint such as login, password reset, registration, API key
+      generation, or OTP verification does not have rate limiting middleware applied.
+      Without rate limiting, attackers can perform brute-force attacks against
+      authentication endpoints, credential stuffing, or abuse resource-intensive
+      operations. Apply rate limiting at minimum to authentication and account
+      management endpoints.
+    severity: medium
+    confidence: 0.78
+    languages: [javascript, typescript]
+    cwe_id: 307
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - callee_match: "(app|router)\\.post\\(['\"]/(login|signin|auth|register|signup|reset-password|forgot-password|verify-otp)"
+        missing_check: "(rateLimit|rateLimiter|throttle|slowDown|brute|limiter)"
+    defense_patterns:
+      - "rateLimit({ windowMs: 15 * 60 * 1000, max: 5 })"
+      - "rateLimiter middleware"
+      - "express-rate-limit"
+      - "express-brute"
+      - "express-slow-down"
+    message: "Sensitive authentication endpoint lacks rate limiting. Apply a rate limiter to prevent brute-force and credential stuffing attacks."

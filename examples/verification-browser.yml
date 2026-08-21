@@ -1,0 +1,28 @@
+version: 1
+name: owned-loopback-browser-smoke
+image: example.invalid/codeguard/playwright@sha256:0000000000000000000000000000000000000000000000000000000000000000
+service_command: ["java", "-jar", "application.jar"]
+base_url: http://127.0.0.1:8080
+startup_timeout_seconds: 90
+scenarios:
+  - id: orders-page
+    actions:
+      - action: navigate
+        path: /orders
+        timeout_seconds: 15
+      - action: wait_for_selector
+        selector: main
+        timeout_seconds: 10
+      - action: click
+        selector: "a[data-order-id]"
+        timeout_seconds: 10
+policy:
+  network: none
+  cpus: 2.0
+  memory: 2g
+  pids_limit: 512
+  tmpfs_size: 512m
+  max_output_bytes: 1000000
+  max_artifact_bytes: 200000000
+  allowed_commands: ["java", "python3"]
+  exclude: [".git", ".idea", "node_modules", "build", "target"]

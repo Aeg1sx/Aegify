@@ -1,0 +1,127 @@
+rules:
+  - id: "CG-LOGIC-001"
+    name: "Client-side price manipulation"
+    description: >
+      The application accepts price, discount, or total amount values from client-side
+      input (request parameters, hidden form fields, JSON body) without server-side
+      recalculation from authoritative sources. An attacker can intercept the request
+      and modify price fields to pay less or nothing for products and services.
+    severity: critical
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 472
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - multi_match:
+          - "req\\.body|request\\.POST|request\\.data|params|getParameter"
+          - "price|amount|total|cost|discount|subtotal|unit_price"
+        context: "order|checkout|payment|cart|purchase|invoice"
+      - assignment_match: "total|price|amount|cost"
+        value_match: "req\\.body|request\\.(POST|data|GET)|params\\[|getParameter"
+      - callee_match: "create_order|process_payment|charge|checkout"
+        args_match: "price|amount|total|cost"
+        taint_source: "request|req\\.body|params"
+    defense_patterns:
+      - "calculate_total|compute_price|get_price_from_db"
+      - "Product\\.objects\\.get|products\\.findById"
+      - "server_side_price|authoritative_price"
+      - "price_from_catalog|lookup_price"
+      - "validate_price.*database|verify_price"
+    message: "Price or amount value is accepted from client input. Always calculate prices server-side from authoritative data sources (database, catalog) and never trust client-submitted financial values."
+
+  - id: "CG-LOGIC-002"
+    name: "Negative quantity or amount accepted"
+    description: >
+      The application does not validate that quantity, amount, or count values are
+      positive integers before processing. An attacker can submit negative quantities
+      to reverse charges, generate refunds, add credit to their account, or manipulate
+      inventory counts in their favor.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 20
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - multi_match:
+          - "quantity|qty|amount|count|units"
+          - "req\\.body|request\\.POST|request\\.data|params|getParameter"
+        missing_match:
+          - ">\\s*0|>=\\s*1|positive|min.*1|min.*0[^.]"
+      - callee_match: "add_to_cart|update_cart|process_order|create_line_item"
+        args_match: "quantity|qty|amount|count"
+        missing_validation: "positive|>\\s*0|>=\\s*1"
+      - assignment_match: "quantity|qty|amount"
+        value_match: "int\\(|parseInt|Number\\("
+        missing_context: ">\\s*0|positive|abs\\("
+    defense_patterns:
+      - "quantity\\s*>\\s*0|qty\\s*>\\s*0"
+      - "min.*value.*1|minimum.*1"
+      - "PositiveIntegerField"
+      - "validates.*greater_than.*0"
+      - "Math\\.abs|abs\\("
+      - "@Min\\(1\\)|@Positive"
+    message: "Quantity or amount value is not validated as positive. Enforce server-side validation that quantities and amounts are positive integers to prevent negative value exploitation."
+
+  - id: "CG-LOGIC-003"
+    name: "Workflow step bypass"
+    description: >
+      The application implements a multi-step workflow (registration, checkout,
+      approval) where steps can be accessed directly without completing prior steps.
+      An attacker can skip validation, payment, or approval steps by directly
+      requesting later stages of the workflow.
+    severity: high
+    confidence: 0.75
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 841
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - multi_match:
+          - "step|stage|phase|wizard"
+          - "route|endpoint|handler|controller|view"
+        missing_match:
+          - "previous_step|check_step|validate_step|step_completed"
+      - callee_match: "route|get|post"
+        args_match: "/step-?[2-9]|/stage-?[2-9]|/complete|/finalize|/confirm"
+        missing_context: "middleware|guard|check_previous|validate_prerequisite"
+      - sequence_match:
+          - "step.*2|step.*3|stage.*final"
+        missing_pattern: "step.*1.*completed|previous.*validated|prerequisite"
+    defense_patterns:
+      - "check_previous_step"
+      - "validate_workflow_state"
+      - "step_completed|stage_validated"
+      - "state_machine"
+      - "prerequisite_check"
+      - "workflow_guard|step_middleware"
+    message: "Workflow steps can potentially be accessed out of order. Implement server-side state tracking to validate that all prerequisite steps are completed before allowing progression."
+
+  - id: "CG-LOGIC-004"
+    name: "Privilege escalation via role modification"
+    description: >
+      The application allows users to modify their own role, permission level, or
+      group membership through an API endpoint or form submission without adequate
+      authorization checks. An attacker can elevate their privileges by submitting
+      a request that changes their role to admin or adds them to a privileged group.
+    severity: critical
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, go]
+    cwe_id: 269
+    owasp_category: "A04:2021-Insecure Design"
+    patterns:
+      - multi_match:
+          - "role|permission|is_admin|is_staff|group|privilege|access_level"
+          - "req\\.body|request\\.POST|request\\.data|params|getParameter"
+          - "update|save|set|assign|put"
+      - callee_match: "update_profile|update_user|save_settings"
+        args_match: "role|permission|is_admin|is_staff|group|privilege"
+        taint_source: "request|req\\.body|params"
+      - multi_match:
+          - "user\\.(role|is_admin|is_staff|permission|access_level)"
+          - "=\\s*(req\\.body|request\\.(POST|data)|params)"
+    defense_patterns:
+      - "is_admin|is_superuser|has_permission"
+      - "@admin_required|@permission_required"
+      - "authorize|can\\?|ability"
+      - "role.*not.*in.*request|exclude.*role"
+      - "RBAC|role_check|permission_check"
+    message: "User role or permissions can be modified through user-controlled input. Restrict role/permission changes to authorized administrators and exclude privilege fields from user-editable data."

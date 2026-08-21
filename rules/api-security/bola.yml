@@ -1,0 +1,186 @@
+rules:
+  - id: "CG-BOLA-001"
+    name: "Broken object-level authorization in REST endpoint"
+    description: >
+      A REST API endpoint retrieves a resource by an identifier supplied in
+      the URL path or query parameter without verifying that the
+      authenticated user has authorization to access that specific object.
+      This is the most prevalent API vulnerability (OWASP API1:2023) and
+      allows horizontal privilege escalation where any authenticated user
+      can access or modify any other user's data by manipulating resource
+      identifiers (e.g., changing /api/users/123/orders to
+      /api/users/456/orders).
+    severity: critical
+    confidence: 0.78
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "REST resource retrieval without ownership verification"
+        match: "(app|router)\\.(get|put|patch|delete)\\(['\"].*/:?(id|userId|user_id|orderId|order_id|accountId|account_id)"
+        must_contain: "(authorize|ownership|belongs_to|user_owns|check_access|verify_owner|can_access|permission_check|policy\\.authorize)"
+        scope: "function"
+      - pattern_type: "taint"
+        source: "(req\\.params\\.(id|userId|orderId|accountId)|request\\.args\\.get\\(['\"]id|kwargs\\[?['\"]?(pk|id|slug)|@PathVariable|ctx\\.Param|c\\.Param|mux\\.Vars)"
+        sink: "(Model\\.objects\\.get|findById|findOne|findByPk|find_by|get_object_or_404|db\\.query|repository\\.(find|get)|getById|fetch)"
+        sanitizers: ["filter\\(user=", "where.*user_id", "owner_id.*current_user", "belongsTo", "authorize", "can?"]
+      - pattern_type: "regex"
+        match: "(get_object_or_404|objects\\.get|findById|findOne|findByPk|find_by_id|getById)\\(.*\\b(pk|id)\\s*=.*\\b(request|req|params|args|kwargs)\\b(?!.*\\b(user|owner|author|created_by|tenant)\\b)"
+    defense_patterns:
+      - "object_level_authorization_check"
+      - "ownership_verification_middleware"
+      - "resource_scoping_by_user"
+      - "policy_based_authorization"
+      - "tenant_isolation_filter"
+    message: "REST endpoint retrieves a resource by user-supplied ID without verifying the authenticated user's authorization to access that object. Implement object-level authorization checks that verify ownership or permission before returning any resource."
+
+  - id: "CG-BOLA-002"
+    name: "Missing ownership check on resource modification"
+    description: >
+      A resource update or deletion operation uses a user-supplied identifier
+      to locate the target object without first confirming that the
+      authenticated user owns or has permission to modify that resource.
+      This allows any authenticated user to modify or delete resources
+      belonging to other users by simply changing the resource ID in the
+      request. This is particularly dangerous for state-changing operations
+      (PUT, PATCH, DELETE) where the impact is data modification or loss.
+    severity: critical
+    confidence: 0.82
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "sequence"
+        steps:
+          - match: "(id|pk|resource_id|object_id)\\s*=\\s*(request\\.|req\\.|params|args|kwargs|ctx\\.|c\\.)"
+          - match: "(update|delete|destroy|save|put|patch|remove|modify)\\("
+        condition: "no_authorization_between_steps"
+        negative_match: "(user\\s*=|owner\\s*=|author\\s*=|created_by|belongs_to|authorize|can\\?|permission|access_check)"
+      - pattern_type: "regex"
+        match: "def\\s+(update|delete|destroy|patch|put|edit)\\(.*\\).*:.*\\n.*?(pk|id|object_id).*request\\b.*\\n.*?(save|delete|update|destroy)\\("
+        negative_match: "(request\\.user|current_user|get_user|auth\\.user|session\\.user).*\\b(filter|where|scope|check|verify|authorize)\\b"
+        multiline: true
+      - pattern_type: "regex"
+        match: "(Model|\\w+)\\.objects\\.(filter|get)\\(\\s*(pk|id)\\s*=.*\\)\\.(update|delete)(?!.*user=|.*owner=|.*created_by=)"
+    defense_patterns:
+      - "ownership_check_before_mutation"
+      - "scoped_query_by_user"
+      - "authorization_policy_enforcement"
+      - "resource_access_control_list"
+      - "row_level_security"
+    message: "Resource modification operation retrieves and mutates an object by user-supplied ID without ownership verification. Always scope database queries to the authenticated user or verify ownership before any update or delete operation."
+
+  - id: "CG-BOLA-003"
+    name: "Direct database query by user-supplied identifier without authorization"
+    description: >
+      A database query uses a user-supplied identifier (from URL path, query
+      string, or request body) directly as a lookup parameter without
+      scoping the query to the authenticated user's accessible resources.
+      The query retrieves the exact object matching the supplied ID
+      regardless of who owns it, making the authorization decision based
+      solely on whether the ID exists rather than whether the requester
+      has access to it.
+    severity: high
+    confidence: 0.80
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "taint"
+        source: "(request\\.(args|params|query|body|form|json|GET|POST)|req\\.(params|query|body)|@PathVariable|@RequestParam|ctx\\.(Query|Param)|c\\.(Query|Param))"
+        sink: "(SELECT.*WHERE.*id\\s*=|db\\.(query|execute|run)\\(.*id|cursor\\.execute.*id|Model\\.(find|get|where)\\(.*id|collection\\.(find|findOne)\\(.*_id|RowMapper|PreparedStatement.*setInt)"
+        sanitizers: ["user_id.*=.*current_user", "tenant_id.*=.*session", "WHERE.*user_id.*AND.*id", "filter.*owner"]
+      - pattern_type: "regex"
+        match: "(cursor\\.execute|db\\.query|db\\.run|connection\\.execute)\\(['\"]\\s*SELECT.*WHERE\\s+(id|\\w+_id)\\s*=\\s*(%s|\\?|\\$\\d|:id)"
+        negative_match: "(AND\\s+(user_id|owner_id|tenant_id|created_by)\\s*=)"
+      - pattern_type: "regex"
+        match: "(findOne|findById|findByPk|find_by|objects\\.get|get_or_404)\\(.*\\b(req|request|params|args|kwargs)\\b(?!.*\\{.*user|.*\\{.*owner|.*\\{.*tenant)"
+    defense_patterns:
+      - "scoped_database_queries"
+      - "multi_tenant_query_filter"
+      - "authorization_service_check"
+      - "row_level_security_policies"
+      - "query_builder_with_user_scope"
+    message: "Database query uses user-supplied ID as the sole lookup criterion without scoping to the authenticated user. Add user/tenant scoping to all database queries that accept external identifiers (e.g., WHERE id = ? AND user_id = ?)."
+
+  - id: "CG-BOLA-004"
+    name: "GraphQL node query without authorization check"
+    description: >
+      A GraphQL resolver for node/object queries retrieves objects by their
+      global ID without performing authorization checks. GraphQL's relay-
+      style node interface allows fetching any object by its global ID,
+      and without per-node authorization, any authenticated user can
+      retrieve any object in the system by guessing or enumerating node
+      IDs. This is exacerbated by GraphQL's introspection capabilities
+      which reveal the type system and relationship structure.
+    severity: critical
+    confidence: 0.80
+    languages: [python, javascript, java, ruby]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "GraphQL resolver without authorization"
+        match: "(resolve|resolver|Query|Mutation)\\b.*\\b(node|get\\w+|fetch\\w+|find\\w+|\\w+ById)\\b"
+        must_contain: "(authorize|permission|can_access|check_access|has_permission|@auth|@login_required|guard|policy|viewer_can)"
+        scope: "function"
+      - pattern_type: "regex"
+        match: "def\\s+resolve_node\\(.*\\).*:\\s*\\n\\s*return\\s+\\w+\\.objects\\.(get|filter)\\("
+        negative_match: "(authorize|permission|check_access|user=|owner=|viewer)"
+        multiline: true
+      - pattern_type: "regex"
+        match: "(node|\\w+):\\s*\\{\\s*\\n\\s*type:.*\\n\\s*resolve:.*\\(.*id\\).*=>.*\\b(findById|findOne|findByPk|getById|load)\\b"
+        negative_match: "(authorize|checkAuth|guardResolver|hasPermission|canView)"
+        multiline: true
+      - pattern_type: "regex"
+        match: "@(Resolver|Query|Mutation).*\\n.*\\b(findUnique|findFirst|findById|load|getById)\\(.*\\{\\s*id"
+        negative_match: "(@Authorized|@UseGuards|@Can|authorize|permission)"
+        multiline: true
+    defense_patterns:
+      - "per_node_authorization"
+      - "graphql_authorization_middleware"
+      - "viewer_pattern_authorization"
+      - "field_level_permissions"
+      - "dataloader_with_auth_check"
+    message: "GraphQL resolver retrieves objects by ID without authorization checks. Implement per-node authorization in all resolvers using the viewer pattern or authorization middleware. Ensure every node query verifies the requesting user has permission to access the specific object."
+
+  - id: "CG-BOLA-005"
+    name: "Nested resource access without parent authorization"
+    description: >
+      An API endpoint accesses a nested/child resource using a parent
+      resource identifier without verifying the authenticated user's access
+      to the parent resource. For example, /api/users/{userId}/orders/{orderId}
+      checks authorization for the order but not whether the user can access
+      the specified userId's data. This allows attackers to traverse resource
+      hierarchies by manipulating parent IDs while maintaining valid child
+      resource access, effectively bypassing the intended authorization
+      boundary.
+    severity: high
+    confidence: 0.76
+    languages: [python, javascript, java, go, ruby, php]
+    cwe_id: 639
+    owasp_category: "A01:2021-Broken Access Control"
+    patterns:
+      - pattern_type: "negative_check"
+        description: "Nested route without parent resource authorization"
+        match: "(app|router)\\.(get|post|put|patch|delete)\\(['\"].*/:(userId|user_id|accountId|account_id|teamId|team_id|orgId|org_id)/\\w+/:(\\w+Id|\\w+_id)"
+        must_contain: "(verify_parent|check_parent|authorize_parent|belongs_to_user|user_owns_parent|validate_hierarchy|parent_access)"
+        scope: "function"
+      - pattern_type: "regex"
+        match: "def\\s+\\w+\\(.*\\).*:\\s*\\n.*?(user_id|userId|parent_id|parentId).*=.*(params|args|kwargs|request).*\\n.*?(child|order|item|resource|record).*=.*\\b(get|find|filter|query)\\b"
+        negative_match: "(verify.*parent|check.*owner|authorize.*parent|user.*==.*current_user|parent_user.*==)"
+        multiline: true
+      - pattern_type: "sequence"
+        steps:
+          - match: "(parent_id|userId|user_id|account_id)\\s*=\\s*(req\\.|request\\.|params|args|kwargs|ctx\\.)"
+          - match: "(child|order|item|resource)\\s*=\\s*\\w+\\.(get|find|filter|query)\\(.*\\b(parent_id|userId|user_id)\\b"
+        condition: "no_parent_authorization_between_steps"
+        negative_match: "(current_user\\.id.*==.*parent_id|authorize.*parent|check_access.*parent)"
+    defense_patterns:
+      - "parent_resource_authorization"
+      - "hierarchical_access_control"
+      - "resource_chain_validation"
+      - "nested_scope_middleware"
+      - "cascading_permission_check"
+    message: "Nested resource endpoint uses a parent resource ID from the URL without verifying the authenticated user's access to the parent resource. Validate authorization at every level of the resource hierarchy, not just the leaf resource."

@@ -1,0 +1,159 @@
+rules:
+  - id: "CG-CRYPTO-JS-001"
+    name: "Math.random used for cryptographic purposes"
+    description: >
+      The application uses Math.random() to generate tokens, session identifiers, OTP
+      codes, nonces, password reset tokens, or other security-sensitive random values.
+      Math.random() is a pseudorandom number generator (PRNG) that is not
+      cryptographically secure. Its output is deterministic and predictable given the
+      internal state, which can be recovered from a small number of observed outputs.
+      Use crypto.randomBytes() in Node.js or crypto.getRandomValues() in browsers for
+      cryptographically secure random number generation.
+    severity: critical
+    confidence: 0.92
+    languages: [javascript, typescript]
+    cwe_id: 338
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "Math\\.random\\(\\)"
+        context_check: "(token|session|secret|password|nonce|otp|key|salt|uuid|id|code|csrf|api.?key|reset)"
+      - regex_match: "Math\\.random\\(\\)\\.toString\\(36\\)"
+        context_check: "(token|id|key|secret|session)"
+      - regex_match: "Math\\.floor\\(Math\\.random\\(\\).*\\).*(otp|code|pin|verification)"
+    defense_patterns:
+      - "crypto.randomBytes(32).toString('hex')"
+      - "crypto.randomUUID()"
+      - "crypto.getRandomValues(new Uint8Array(32))"
+      - "uuid.v4()  # uses crypto internally"
+    message: "Math.random() is not cryptographically secure. Use crypto.randomBytes() (Node.js) or crypto.getRandomValues() (browser) for security-sensitive random values."
+
+  - id: "CG-CRYPTO-JS-002"
+    name: "Deprecated crypto.createCipher usage"
+    description: >
+      The application uses the deprecated crypto.createCipher() function instead of
+      crypto.createCipheriv(). The deprecated function derives the encryption key from
+      the password using a single iteration of MD5 without a salt, making it
+      vulnerable to precomputation and rainbow table attacks. Additionally, it uses a
+      null IV, which breaks semantic security. Use crypto.createCipheriv() with a key
+      derived through a proper KDF (scrypt, PBKDF2) and a random IV.
+    severity: critical
+    confidence: 0.95
+    languages: [javascript, typescript]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "crypto\\.createCipher\\(['\"]"
+      - callee_match: "crypto\\.createDecipher\\(['\"]"
+    defense_patterns:
+      - "crypto.createCipheriv('aes-256-gcm', key, iv)"
+      - "crypto.createDecipheriv('aes-256-gcm', key, iv)"
+      - "crypto.scryptSync(password, salt, 32)  # derive key first"
+    message: "crypto.createCipher() is deprecated and uses insecure key derivation (single MD5, no salt, null IV). Use crypto.createCipheriv() with a properly derived key and random IV."
+
+  - id: "CG-CRYPTO-JS-003"
+    name: "bcrypt with insufficient work factor"
+    description: >
+      The application uses bcrypt with a salt rounds (cost factor) value below 10.
+      Each increment of the cost factor doubles the computation time. A cost factor
+      of 10 was the minimum recommendation in 2010; current recommendations suggest
+      at least 12 rounds (as of 2024). Low cost factors enable faster brute-force
+      attacks against the password hashes if the database is compromised. Benchmark
+      the hash time on your target hardware and use the highest cost factor that keeps
+      login latency acceptable (typically under 250ms).
+    severity: medium
+    confidence: 0.88
+    languages: [javascript, typescript]
+    cwe_id: 916
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "bcrypt\\.(hash|genSalt)\\(.*,\\s*[1-9]\\b"
+      - callee_match: "bcrypt\\.genSaltSync\\(\\s*[1-9]\\b"
+      - callee_match: "bcrypt\\.hashSync\\(.*,\\s*[1-9]\\b"
+      - attribute_match: "saltRounds\\s*=\\s*[1-9]\\b"
+    defense_patterns:
+      - "bcrypt.hash(password, 12)"
+      - "bcrypt.genSalt(12)"
+      - "const SALT_ROUNDS = 12;"
+      - "bcrypt.hash(password, 14)  # higher for admin accounts"
+    message: "bcrypt cost factor is below recommended minimum of 12 rounds. Increase salt rounds to at least 12 to provide adequate brute-force resistance."
+
+  - id: "CG-CRYPTO-JS-004"
+    name: "Weak JWT signing algorithm"
+    description: >
+      The application signs or verifies JWTs using the 'none' algorithm, uses HS256
+      with a public key (algorithm confusion attack), or does not explicitly restrict
+      the allowed algorithms during verification. The 'none' algorithm produces
+      unsigned tokens that any party can forge. Algorithm confusion occurs when an
+      HS256 verifier uses an RSA public key as the HMAC secret, allowing an attacker
+      who knows the public key to forge valid tokens. Always specify an explicit
+      algorithms allowlist during verification.
+    severity: critical
+    confidence: 0.92
+    languages: [javascript, typescript]
+    cwe_id: 347
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "jwt\\.sign\\(.*algorithm.*['\"]none['\"]"
+      - callee_match: "jwt\\.verify\\("
+        missing_check: "algorithms:\\s*\\["
+      - attribute_match: "algorithm:\\s*['\"]none['\"]"
+      - regex_match: "jwt\\.verify\\(.*publicKey.*algorithms.*HS256"
+    defense_patterns:
+      - "jwt.verify(token, secret, { algorithms: ['RS256'] })"
+      - "jwt.verify(token, secret, { algorithms: ['ES256'] })"
+      - "jwt.sign(payload, privateKey, { algorithm: 'RS256' })"
+      - "{ algorithms: ['RS256'], issuer: 'trusted-issuer' }"
+    message: "JWT uses 'none' algorithm, lacks algorithm restriction, or is vulnerable to algorithm confusion. Specify an explicit algorithms allowlist in jwt.verify() options."
+
+  - id: "CG-CRYPTO-JS-005"
+    name: "Missing crypto.timingSafeEqual for secret comparison"
+    description: >
+      The application compares cryptographic secrets, HMAC digests, API keys, tokens,
+      or password hashes using standard string comparison operators (===, ==, !==,
+      !==, .equals()) instead of crypto.timingSafeEqual(). Standard comparison
+      operators short-circuit on the first differing byte, creating a timing side
+      channel that allows an attacker to determine the correct value one byte at a time
+      through repeated measurements. Use constant-time comparison for all
+      security-sensitive value comparisons.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 208
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - regex_match: "(hmac|digest|hash|signature|mac|token|apiKey|api_key|secret)\\s*(===|==|!==|!=)\\s*"
+      - regex_match: "\\s*(===|==)\\s*(hmac|digest|hash|signature|mac|token|apiKey|secret)"
+      - callee_match: "\\.equals\\("
+        context_check: "(hmac|digest|hash|signature|token|mac)"
+    defense_patterns:
+      - "crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))"
+      - "crypto.timingSafeEqual(computedHmac, receivedHmac)"
+      - "const isValid = crypto.timingSafeEqual(expected, actual);"
+    message: "Secret comparison uses non-constant-time operator. Use crypto.timingSafeEqual() to prevent timing side-channel attacks on HMAC, token, or API key verification."
+
+  - id: "CG-CRYPTO-JS-006"
+    name: "Hardcoded encryption key"
+    description: >
+      An encryption key, HMAC secret, JWT secret, or API signing key is hardcoded as
+      a string or Buffer literal in the source code. Hardcoded keys are exposed to
+      anyone with access to the source code, version control history, compiled
+      artifacts, or decompiled binaries. They cannot be rotated without a code change
+      and deployment, and they are shared across all environments (development,
+      staging, production). Load encryption keys from environment variables, a secrets
+      manager (AWS Secrets Manager, HashiCorp Vault, Azure Key Vault), or an HSM.
+    severity: critical
+    confidence: 0.88
+    languages: [javascript, typescript]
+    cwe_id: 321
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - regex_match: "(encryption_key|encryptionKey|SECRET_KEY|JWT_SECRET|HMAC_SECRET|signingKey|signing_key|cipher_key)\\s*=\\s*['\"]\\w{8,}['\"]"
+      - regex_match: "(createCipheriv|createHmac|jwt\\.sign)\\(.*['\"][A-Za-z0-9+/=]{16,}['\"]"
+      - regex_match: "Buffer\\.from\\(['\"][A-Fa-f0-9]{32,}['\"]"
+        context_check: "(encrypt|cipher|hmac|sign|key)"
+    defense_patterns:
+      - "process.env.ENCRYPTION_KEY"
+      - "process.env.JWT_SECRET"
+      - "await secretsManager.getSecretValue({ SecretId: 'app/encryption-key' })"
+      - "const key = vault.read('secret/data/encryption-key')"
+    message: "Encryption key is hardcoded in source code. Load keys from environment variables or a secrets manager to enable rotation and environment isolation."

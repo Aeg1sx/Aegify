@@ -1,0 +1,198 @@
+rules:
+  - id: "CG-HDR-001"
+    name: "CRLF Injection in HTTP Headers"
+    description: >
+      Detects user-controlled input written into HTTP response headers without
+      stripping or rejecting carriage return (\r) and line feed (\n) characters.
+      HTTP headers are delimited by CRLF sequences (\r\n), and injecting these
+      characters into header values allows an attacker to insert arbitrary
+      headers into the response or terminate the header section entirely and
+      inject a crafted response body. This can lead to HTTP response splitting,
+      cross-site scripting via injected Content-Type and body, cache poisoning
+      by injecting Cache-Control headers, session fixation via Set-Cookie
+      injection, and open redirect through Location header injection. Modern
+      web frameworks often include CRLF protections, but raw header-setting
+      APIs and custom middleware may remain vulnerable.
+    severity: high
+    confidence: 0.88
+    languages: [python, javascript, typescript, java, ruby, php, csharp]
+    cwe_id: 113
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(setHeader|addHeader|set_header|add_header|header|writeHead|appendHeader)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "response\\.(headers|setHeader|addHeader).*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "res\\.(set|header|setHeader|writeHead|append)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "HttpServletResponse\\.(setHeader|addHeader|setDateHeader|addDateHeader|setIntHeader|addIntHeader)\\s*\\(.*\\b(request|param|input|query)\\b"
+      - pattern: "response\\[\\s*[\"'].*[\"']\\s*\\]\\s*=\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "make_response\\(.*headers\\[.*\\]\\s*=.*\\b(request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query, http_header]
+      sink_types: [http_response_header]
+      sink_pattern: "(setHeader|addHeader|set_header|writeHead|header\\(|res\\.set|response\\.headers)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "assignment"
+    defense_patterns:
+      - "\\.replace\\(.*[\\\\]r|[\\\\]n"
+      - "\\.(strip|trim|replace).*\\\\n|\\\\r"
+      - "encodeURIComponent"
+      - "urllib\\.parse\\.quote"
+      - "URLEncoder\\.encode"
+      - "reject.*[\\\\]r|[\\\\]n"
+      - "CRLF.*filter|sanitize"
+      - "Content-Security-Policy"
+    message: "HTTP header at line {line} incorporates unsanitized user input, enabling CRLF injection. An attacker can inject arbitrary response headers for session fixation, cache poisoning, or XSS via HTTP response splitting."
+
+  - id: "CG-HDR-002"
+    name: "Host Header Injection"
+    description: >
+      Detects application logic that trusts the HTTP Host header for generating
+      URLs, links, redirects, or password reset tokens without validation
+      against a whitelist of expected hostnames. The Host header is client-
+      controlled and can be freely modified by an attacker. When the application
+      uses it to construct absolute URLs in password reset emails, the attacker
+      can trigger a reset for a victim's account and receive the token on their
+      own domain. Host header injection also enables web cache poisoning where
+      the attacker poisons cached responses with malicious URLs, server-side
+      request forgery when the Host header is used in backend requests, and
+      virtual host routing manipulation in reverse proxy configurations. The
+      X-Forwarded-Host header is equally dangerous as it is often used as a
+      Host header override.
+    severity: high
+    confidence: 0.85
+    languages: [python, javascript, typescript, java, ruby, php, csharp]
+    cwe_id: 644
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(request\\.headers?\\[\\s*[\"']host[\"']\\]|request\\.host|req\\.headers?\\.host|req\\.hostname|getHeader\\([\"']Host[\"']\\)|getHeader\\([\"']X-Forwarded-Host[\"']\\))"
+        context_match: "(url|link|href|redirect|reset|email|mail|callback|return_url|next|redirect_uri)"
+      - pattern: "request\\.META\\[\\s*[\"']HTTP_HOST[\"']\\s*\\]"
+        context_match: "(url|link|href|redirect|reset|email|mail)"
+      - pattern: "(request\\.host_url|request\\.url_root|request\\.base_url)"
+        context_match: "(reset|email|mail|token|callback|password)"
+      - pattern: "(X-Forwarded-Host|X-Original-Host|X-Forwarded-Server)"
+        context_match: "(url|link|href|redirect|build_url|url_for)"
+      - pattern: "HttpContext\\.Request\\.Host"
+        context_match: "(url|link|redirect|reset|email)"
+    taint:
+      source_types: [http_header]
+      sink_types: [url_construction, email_content, redirect]
+      sink_pattern: "(url_for|build_url|redirect|send_mail|send_email|Location|href|action)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+        - "assignment"
+    defense_patterns:
+      - "ALLOWED_HOSTS"
+      - "VALID_HOSTS"
+      - "HOST_WHITELIST|HOST_ALLOWLIST"
+      - "settings\\.ALLOWED_HOSTS"
+      - "getServerName\\(\\)"
+      - "config\\.(host|domain|base_url|SERVER_NAME)"
+      - "process\\.env\\.(HOST|DOMAIN|BASE_URL)"
+      - "req\\.hostname.*===.*[\"']"
+    message: "Application at line {line} uses the client-controlled Host or X-Forwarded-Host header to construct URLs or links. An attacker can exploit this for password reset token theft, web cache poisoning, or malicious redirect generation."
+
+  - id: "CG-HDR-003"
+    name: "HTTP Response Splitting"
+    description: >
+      Detects user-controlled input used in HTTP redirect responses or
+      Location headers without CRLF sanitization, enabling full HTTP response
+      splitting. Response splitting occurs when an attacker injects a CRLF
+      sequence followed by a complete HTTP response into a header value,
+      causing the server to emit two distinct HTTP responses from a single
+      request. The second response is entirely attacker-controlled, enabling
+      cross-site scripting with arbitrary Content-Type, cache poisoning where
+      intermediary proxies store the malicious second response, and complete
+      response hijacking. This is distinct from simple header injection
+      (CG-HDR-001) because the attacker controls an entire response including
+      status line, headers, and body. HTTP/2 binary framing mitigates this
+      for direct connections, but HTTP/1.1 downgrade through load balancers
+      and proxies can re-expose the vulnerability.
+    severity: critical
+    confidence: 0.87
+    languages: [python, javascript, typescript, java, ruby, php, csharp]
+    cwe_id: 113
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(redirect|sendRedirect|redirect_to|res\\.redirect|Response\\.Redirect|header\\s*\\(\\s*[\"']Location).*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(Location|Set-Cookie|Content-Type|Content-Disposition)\\s*[=:].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "(setHeader|addHeader|header|writeHead|set_header)"
+      - pattern: "res\\.(redirect|location|set)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "HttpServletResponse\\.sendRedirect\\s*\\(.*\\b(request\\.getParameter|request\\.getAttribute)\\b"
+      - pattern: "response\\.status_code\\s*=\\s*30[1-8].*\\b(request|input|param|query|body|form|data|user)\\b"
+        context_match: "Location|redirect"
+    taint:
+      source_types: [http_param, http_body, http_query, http_header]
+      sink_types: [http_response_header, redirect]
+      sink_pattern: "(redirect|sendRedirect|Location|Set-Cookie|writeHead|header\\()"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+        - "urllib\\.parse\\.urljoin"
+    defense_patterns:
+      - "encodeURIComponent"
+      - "urllib\\.parse\\.quote"
+      - "URLEncoder\\.encode"
+      - "URI\\.encode"
+      - "\\.replace\\(.*[\\\\]r|[\\\\]n"
+      - "url_for\\("
+      - "is_safe_url|is_valid_url|validate_redirect"
+      - "ALLOWED_REDIRECT|SAFE_REDIRECT"
+    message: "HTTP response at line {line} includes unsanitized user input in a redirect or Location header, enabling response splitting. An attacker can inject a complete second HTTP response with arbitrary content for XSS, cache poisoning, or response hijacking."
+
+  - id: "CG-HDR-004"
+    name: "Email Header Injection"
+    description: >
+      Detects user-controlled input used in email header fields (To, From, CC,
+      BCC, Subject, Reply-To) without sanitizing newline characters. Email
+      headers follow the RFC 5322 format where each header is terminated by
+      a CRLF sequence. An attacker who can inject newline characters into
+      email header fields can add arbitrary headers including additional To,
+      CC, or BCC recipients to convert the application into a spam relay,
+      inject MIME boundaries to modify the email body or attach malicious
+      files, override the From address for phishing, and insert custom headers
+      that bypass spam filters. This vulnerability is particularly impactful
+      in contact forms, feedback systems, and password reset functionality
+      where user input directly populates email headers.
+    severity: high
+    confidence: 0.89
+    languages: [python, javascript, typescript, java, ruby, php, csharp]
+    cwe_id: 93
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(send_mail|sendmail|send_message|sendEmail|send_email|transport\\.sendMail)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(to|from|cc|bcc|subject|reply.?to)\\s*[=:]\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "(mail|email|smtp|Message|MimeMessage|sendgrid|ses|nodemailer)"
+      - pattern: "(?:MIMEText|MIMEMultipart|EmailMessage|MimeMessage).*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(msg|message|email)\\[\\s*[\"'](To|From|Cc|Bcc|Subject|Reply-To)[\"']\\s*\\]\\s*=\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(addRecipient|setFrom|setSubject|addHeader|setRecipients)\\s*\\(.*\\b(request|param|input|query|body|form|data|user)\\b"
+      - pattern: "mail\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, form_input]
+      sink_types: [email_header]
+      sink_pattern: "(send_mail|sendmail|send_message|sendEmail|transport\\.sendMail|MIMEText|MimeMessage|mail\\()"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+        - "assignment"
+    defense_patterns:
+      - "\\.replace\\(.*[\\\\]r|[\\\\]n"
+      - "strip_newlines"
+      - "validate_email"
+      - "email_validator"
+      - "is_valid_email"
+      - "re\\.match.*@"
+      - "EmailValidator"
+      - "InternetAddress.*parse.*true"
+      - "sanitize_email"
+      - "reject.*[\\\\]r|[\\\\]n"
+    message: "Email header at line {line} includes unsanitized user input, enabling header injection. An attacker can inject additional recipients (To/CC/BCC) to use the application as a spam relay, override the From address for phishing, or inject MIME boundaries to modify email content."

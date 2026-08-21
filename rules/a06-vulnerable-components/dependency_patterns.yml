@@ -1,0 +1,156 @@
+rules:
+  - id: "CG-DEP-001"
+    name: "Known vulnerable lodash patterns"
+    description: >
+      The application uses lodash functions with known prototype pollution or ReDoS
+      vulnerabilities. Versions of lodash prior to 4.17.21 contain multiple prototype
+      pollution vulnerabilities in merge, defaultsDeep, set, and zipObjectDeep.
+      Additionally, lodash.template is vulnerable to code injection in versions prior
+      to 4.17.21 via the variable option.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 1395
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - callee_match: "_\\.template|lodash\\.template"
+        args_match: "variable"
+        note: "CVE-2021-23337: lodash.template code injection via variable option"
+      - callee_match: "_\\.merge|_\\.defaultsDeep|_\\.set|_\\.zipObjectDeep"
+        note: "CVE-2020-8203, CVE-2019-10744: prototype pollution in lodash < 4.17.21"
+      - import_match: "lodash|lodash\\.merge|lodash\\.template|lodash\\.set"
+        version_match: "<4\\.17\\.21"
+      - file_match: "package\\.json|package-lock\\.json|yarn\\.lock"
+        content_match: "\"lodash\":\\s*\"[~^]?[0-3]\\.|\"lodash\":\\s*\"[~^]?4\\.([0-9]|1[0-6])\\."
+    defense_patterns:
+      - "lodash.*4\\.17\\.21|lodash.*4\\.17\\.2[1-9]"
+      - "lodash-es"
+      - "import.*from.*lodash/"
+      - "structuredClone"
+    message: "Vulnerable lodash version or pattern detected. Update lodash to >=4.17.21 and prefer importing individual functions (lodash/merge) to reduce attack surface."
+
+  - id: "CG-DEP-002"
+    name: "jQuery DOM-based XSS patterns"
+    description: >
+      The application uses jQuery methods known to enable DOM-based cross-site
+      scripting (XSS) when processing user-controlled input. jQuery's html(),
+      append(), prepend(), after(), before(), and $() constructor interpret HTML
+      strings, allowing script injection when the argument contains user input.
+    severity: high
+    confidence: 0.85
+    languages: [javascript, typescript]
+    cwe_id: 79
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - callee_match: "\\$\\(|jQuery\\("
+        args_match: "location\\.|document\\.|window\\.|req\\.|request\\.|params|input|hash|search"
+        note: "jQuery selector with user-controlled string can create DOM elements with scripts"
+      - callee_match: "\\.html\\(|\\.append\\(|\\.prepend\\(|\\.after\\(|\\.before\\("
+        taint_source: "location|document\\.URL|document\\.referrer|window\\.name|\\$\\.param|user|input"
+      - callee_match: "\\.html\\("
+        args_match: "\\$\\(.*\\)\\.val\\(\\)|\\$\\(.*\\)\\.text\\(\\)|req\\.|params"
+      - multi_match:
+          - "jQuery|\\$\\("
+          - "\\.html\\(|\\.append\\("
+          - "location\\.hash|location\\.search|document\\.URL|window\\.name"
+    defense_patterns:
+      - "\\.text\\("
+      - "DOMPurify|sanitize|xss"
+      - "encodeURIComponent|escapeHtml"
+      - "textContent|innerText"
+      - "createTextNode"
+    message: "jQuery DOM XSS pattern detected. Use .text() instead of .html() for user content. If HTML is required, sanitize with DOMPurify before insertion."
+
+  - id: "CG-DEP-003"
+    name: "Log4j JNDI injection pattern"
+    description: >
+      The application uses Apache Log4j 2.x to log user-controlled input, which may
+      be vulnerable to the Log4Shell vulnerability (CVE-2021-44228). Log4j versions
+      2.0-beta9 through 2.14.1 process JNDI lookups in log messages, allowing remote
+      code execution when an attacker injects ${jndi:ldap://...} into logged data
+      such as HTTP headers, form fields, or query parameters.
+    severity: critical
+    confidence: 0.9
+    languages: [java, kotlin]
+    cwe_id: 917
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - callee_match: "logger\\.(info|warn|error|debug|fatal|trace|log)"
+        args_match: "request\\.getHeader|request\\.getParameter|request\\.getRemoteAddr|getUserAgent"
+      - callee_match: "log\\.(info|warn|error|debug|fatal)"
+        args_match: "\\{\\}.*request|\\{\\}.*header|\\{\\}.*param|\\{\\}.*user"
+      - import_match: "org\\.apache\\.logging\\.log4j"
+        version_match: "2\\.(0|[1-9]|1[0-4])\\."
+      - file_match: "pom\\.xml|build\\.gradle"
+        content_match: "log4j.*2\\.(0|[1-9]|1[0-4])\\."
+    defense_patterns:
+      - "log4j.*2\\.17\\.|log4j.*2\\.(1[7-9]|[2-9][0-9])"
+      - "LOG4J_FORMAT_MSG_NO_LOOKUPS"
+      - "formatMsgNoLookups.*true"
+      - "%m{nolookups}"
+      - "JndiLookup.*classpath"
+    message: "Potential Log4Shell (CVE-2021-44228) vulnerability. Update Log4j to >=2.17.1, set log4j2.formatMsgNoLookups=true, or remove JndiLookup class from the classpath."
+
+  - id: "CG-DEP-004"
+    name: "Spring4Shell pattern"
+    description: >
+      The application uses Spring Framework with ClassLoader-accessible data binding
+      that may be vulnerable to Spring4Shell (CVE-2022-22965). Spring MVC and WebFlux
+      applications running on JDK 9+ with WAR deployment on Apache Tomcat can be
+      exploited via class.module.classLoader parameter injection to achieve remote
+      code execution through Tomcat's logging configuration.
+    severity: critical
+    confidence: 0.85
+    languages: [java, kotlin]
+    cwe_id: 94
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - annotation_match: "@ModelAttribute|@RequestMapping|@GetMapping|@PostMapping"
+        context: "class\\.module|classLoader"
+      - import_match: "org\\.springframework"
+        version_match: "<5\\.3\\.18|<5\\.2\\.20"
+      - file_match: "pom\\.xml|build\\.gradle"
+        content_match: "spring-webmvc.*(5\\.[0-2]\\.|5\\.3\\.([0-9]|1[0-7])\\b)"
+      - multi_match:
+          - "@Controller|@RestController"
+          - "@ModelAttribute|@RequestParam"
+        context: "Spring.*5\\.[0-2]|Spring.*5\\.3\\.([0-9]|1[0-7])\\b"
+    defense_patterns:
+      - "spring.*5\\.3\\.18|spring.*5\\.3\\.(1[8-9]|[2-9][0-9])|spring.*[6-9]\\."
+      - "@InitBinder.*setDisallowedFields.*class\\."
+      - "WebDataBinder.*setDisallowedFields"
+      - "spring-boot.*2\\.6\\.6|spring-boot.*2\\.(6\\.[6-9]|[7-9])"
+    message: "Potential Spring4Shell (CVE-2022-22965) vulnerability. Update Spring Framework to >=5.3.18 or Spring Boot to >=2.6.6. Add @InitBinder to disallow 'class.*' property binding."
+
+  - id: "CG-DEP-005"
+    name: "Unsafe eval in npm package usage"
+    description: >
+      The application uses npm packages or patterns that invoke eval(), Function(),
+      or vm.runInNewContext() with user-controlled input. Several popular npm packages
+      have been found to use eval internally (e.g., safe-eval, sandbox, notevil) in
+      ways that can be bypassed for arbitrary code execution. Direct eval usage with
+      user input in a server-side Node.js context enables full system compromise.
+    severity: critical
+    confidence: 0.9
+    languages: [javascript, typescript]
+    cwe_id: 95
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - callee_match: "eval\\(|new\\s+Function\\("
+        taint_source: "req\\.body|req\\.query|req\\.params|request|input|user"
+      - callee_match: "vm\\.runInNewContext|vm\\.runInThisContext|vm\\.compileFunction"
+        taint_source: "req|request|params|input|user"
+      - import_match: "safe-eval|static-eval|notevil|sandcastle|sandbox"
+        note: "Known bypassable eval sandboxes"
+      - callee_match: "safeEval|staticEval"
+        taint_source: "req|request|params|input|user"
+      - callee_match: "require\\("
+        args_match: "req\\.body|req\\.query|params|input"
+        note: "Dynamic require with user input"
+    defense_patterns:
+      - "vm2|isolated-vm"
+      - "JSON\\.parse"
+      - "whitelist|allowlist.*operations"
+      - "AST.*parse|expression.*parser"
+      - "mathjs|expr-eval"
+    message: "Unsafe eval or bypassable sandbox used with user input. Never use eval/Function/vm with untrusted data. Use purpose-built parsers (mathjs for math, JSON.parse for data) or isolated-vm for sandboxing."

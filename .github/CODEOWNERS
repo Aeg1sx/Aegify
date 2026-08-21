@@ -1,0 +1,17 @@
+# Default ownership. CODEOWNERS itself and all workflow/security changes remain
+# owned by the repository maintainer so the review rule cannot be bypassed by
+# moving a sensitive file.
+* @Aeg1sx
+/.github/ @Aeg1sx
+/.github/CODEOWNERS @Aeg1sx
+/action.yml @Aeg1sx
+/scanner/Dockerfile @Aeg1sx
+/dashboard/Dockerfile @Aeg1sx
+/docker-compose*.yml @Aeg1sx
+/SECURITY.md @Aeg1sx
+/deploy/vault/ @Aeg1sx
+/scanner/src/codeguard/harness/ @Aeg1sx
+/scanner/src/codeguard/semantic/ @Aeg1sx
+/scanner/src/codeguard/ir/ @Aeg1sx
+/dashboard/src/app/api/ @Aeg1sx
+/dashboard/prisma/ @Aeg1sx

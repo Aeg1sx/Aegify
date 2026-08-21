@@ -1,0 +1,22 @@
+{
+  "contract_version": 1,
+  "producer": "codeguard-http-harness",
+  "cases": [
+    {
+      "id": "orders-read",
+      "method": "GET",
+      "path": "/edge/v1/orders/42",
+      "status_code": 200,
+      "duration_ms": 8.1,
+      "passed": true
+    },
+    {
+      "id": "orders-cancel",
+      "method": "POST",
+      "path": "/edge/v1/orders/42/cancel",
+      "status_code": 200,
+      "duration_ms": 11.4,
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+version: 1
+name: owned-loopback-http-smoke
+image: example.invalid/codeguard/http@sha256:0000000000000000000000000000000000000000000000000000000000000000
+service_command: ["java", "-jar", "application.jar"]
+base_url: http://127.0.0.1:8080
+startup_timeout_seconds: 90
+request_timeout_seconds: 10
+max_response_bytes: 1000000
+cases:
+  - id: health
+    method: GET
+    path: /actuator/health
+    expected_status: [200]
+policy:
+  network: none
+  cpus: 2.0
+  memory: 2g
+  pids_limit: 256
+  tmpfs_size: 256m
+  max_output_bytes: 1000000
+  max_artifact_bytes: 200000000
+  allowed_commands: ["java", "python3"]
+  exclude: [".git", ".idea", "node_modules", "build", "target"]

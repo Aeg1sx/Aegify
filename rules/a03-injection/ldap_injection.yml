@@ -1,0 +1,179 @@
+rules:
+  - id: "CG-LDAP-001"
+    name: "LDAP Filter Injection"
+    description: >
+      Detects user-controlled input concatenated or interpolated into LDAP
+      search filter strings without proper escaping. LDAP filters use a
+      prefix notation syntax like (&(uid={input})(objectClass=user)) and
+      special characters including *, (, ), \, NUL, /, and the pipe character
+      have semantic meaning. An attacker can inject filter metacharacters to
+      modify the filter logic, such as injecting *)(uid=*))(|(uid=* to
+      enumerate all users, or crafting always-true conditions like (|(cn=*))
+      to bypass authentication. This is a critical vulnerability in directory
+      services used for authentication and authorization decisions.
+    severity: critical
+    confidence: 0.91
+    languages: [python, java, javascript, typescript, csharp, php]
+    cwe_id: 90
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(search|search_s|search_ext|search_ext_s)\\s*\\(.*[\"'`]\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "[\"'`]\\s*\\(&?\\s*\\(\\s*(uid|cn|sAMAccountName|mail|memberOf|objectClass)\\s*=\\s*[\"'`]\\s*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "f[\"']\\s*\\(.*=\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b.*\\)"
+        context_match: "ldap|LDAP|ldap3|python-ldap|DirectorySearcher"
+      - pattern: "String\\.format\\s*\\(\\s*[\"']\\(.*=.*%s.*\\).*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "ldap|LDAP"
+      - pattern: "filter\\s*[=:].*\\+.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "ldap|LDAP|search|directory"
+    taint:
+      source_types: [http_param, http_body, http_query, form_input]
+      sink_types: [ldap_query]
+      sink_pattern: "(search|search_s|search_ext|Search|SearchRequest|ldap_search|Filter\\.create)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+        - "%s.*%"
+    defense_patterns:
+      - "ldap\\.filter\\.escape_filter_chars"
+      - "escape_filter_chars"
+      - "escapeDNValue"
+      - "Filter\\.escape"
+      - "ldap_escape"
+      - "LDAP\\.encode"
+      - "sanitize_ldap"
+      - "SearchFilter\\.Encode"
+      - "\\\\28|\\\\29|\\\\2a|\\\\5c|\\\\00"
+    message: "LDAP filter at line {line} concatenates unsanitized user input, enabling filter injection. An attacker can modify search logic to enumerate directory entries, bypass authentication, or extract sensitive attributes."
+
+  - id: "CG-LDAP-002"
+    name: "LDAP Distinguished Name Injection"
+    description: >
+      Detects user-controlled input used to construct LDAP Distinguished
+      Names (DNs) without proper escaping of DN special characters. DNs use
+      a comma-separated RDN syntax like cn=John Doe,ou=Users,dc=example,dc=com
+      and characters including comma, plus, double quote, backslash, less-than,
+      greater-than, and semicolon have structural meaning. An attacker can
+      inject DN metacharacters to traverse the directory tree, target different
+      organizational units, or manipulate bind operations. When DNs are used
+      in authentication bind operations, injection can allow an attacker to
+      authenticate as a different user or bind to administrative accounts.
+    severity: high
+    confidence: 0.89
+    languages: [python, java, javascript, typescript, csharp, php]
+    cwe_id: 90
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(simple_bind_s|bind|bind_s|Bind)\\s*\\(.*[\"'`]\\s*(cn|uid|ou|dc)=.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "[\"'`](cn|uid|ou|dc)=\\s*[\"'`]\\s*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "f[\"'](cn|uid|ou|dc)=\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(base_dn|baseDN|base|dn|bindDN)\\s*[=:].*\\+.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "String\\.format\\s*\\([\"'].*,(ou|dc|cn|uid)=.*%s"
+        context_match: "ldap|LDAP|bind|directory"
+    taint:
+      source_types: [http_param, http_body, form_input]
+      sink_types: [ldap_bind, ldap_query]
+      sink_pattern: "(bind|bind_s|simple_bind|simple_bind_s|Bind|add|modify|delete|rename|modrdn)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "f_string"
+        - "String\\.format"
+    defense_patterns:
+      - "ldap\\.dn\\.escape_dn_chars"
+      - "escape_dn_chars"
+      - "escapeDNValue"
+      - "DN\\.escape"
+      - "ldap_escape_dn"
+      - "Rdn\\.escapeValue"
+      - "\\\\2c|\\\\2b|\\\\22|\\\\5c|\\\\3c|\\\\3e|\\\\3b"
+    message: "LDAP Distinguished Name at line {line} includes unsanitized user input, enabling DN injection. An attacker can traverse the directory tree, bind as a different user, or target administrative organizational units."
+
+  - id: "CG-LDAP-003"
+    name: "LDAP Search Base and Scope Injection"
+    description: >
+      Detects user-controlled input used to define LDAP search base DNs or
+      search scope parameters without validation. The search base determines
+      the starting point of a directory search, and the scope controls whether
+      the search covers a single entry (BASE), one level of children (ONELEVEL),
+      or the entire subtree (SUBTREE). An attacker who controls the search base
+      can redirect queries to different parts of the directory, potentially
+      accessing entries in privileged organizational units. Manipulation of
+      scope parameters can expand a targeted query into a full subtree enumeration,
+      exposing the entire directory structure and its contents.
+    severity: high
+    confidence: 0.84
+    languages: [python, java, javascript, typescript, csharp]
+    cwe_id: 90
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "(search|search_s|search_ext|searchRequest)\\s*\\(.*base\\s*=.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(searchBase|base_dn|baseDN|search_base)\\s*[=:]\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(scope|searchScope)\\s*[=:]\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        context_match: "ldap|LDAP|directory|search"
+      - pattern: "SearchRequest\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b.*(?:SUBTREE|ONELEVEL|BASE)"
+      - pattern: "new\\s+(SearchControls|SearchRequest)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query]
+      sink_types: [ldap_query]
+      sink_pattern: "(search|search_s|search_ext|SearchRequest|DirectorySearcher|ldap_search)"
+      propagation:
+        - "string_concat"
+        - "assignment"
+        - "parameter_passing"
+    defense_patterns:
+      - "allowlist|whitelist"
+      - "VALID_BASES"
+      - "ALLOWED_OUS"
+      - "enum.*SearchScope"
+      - "\\.includes\\(|in\\s+\\["
+      - "escape_dn_chars"
+      - "startsWith.*dc="
+    message: "LDAP search at line {line} uses user-controlled input for the search base or scope, enabling directory traversal. An attacker can redirect queries to privileged OUs or expand search scope to enumerate the entire directory."
+
+  - id: "CG-LDAP-004"
+    name: "Active Directory Query Injection"
+    description: >
+      Detects user-controlled input incorporated into Active Directory-specific
+      queries including DirectorySearcher filters, PrincipalSearcher criteria,
+      PowerShell AD cmdlet parameters, and ADSI path construction. Active
+      Directory extends standard LDAP with additional query interfaces and
+      attributes like sAMAccountName, userPrincipalName, memberOf, and
+      servicePrincipalName. Injection into AD queries can expose sensitive
+      attributes such as password last set dates, account lockout status,
+      group memberships, and service account credentials. AD-specific OID
+      matching rules (like LDAP_MATCHING_RULE_IN_CHAIN for recursive group
+      membership) can be abused to perform expensive recursive queries
+      causing denial of service.
+    severity: critical
+    confidence: 0.88
+    languages: [csharp, python, javascript, powershell, java]
+    cwe_id: 90
+    owasp_category: "A03:2021-Injection"
+    patterns:
+      - pattern: "DirectorySearcher\\s*\\(.*Filter\\s*=.*\\b(req|request|input|param|query|body|form|data|user|Request|HttpContext)\\b"
+      - pattern: "(sAMAccountName|userPrincipalName|distinguishedName|memberOf|servicePrincipalName)\\s*=.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "PrincipalSearcher.*FindAll.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "LDAP://.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(Get-ADUser|Get-ADGroup|Get-ADComputer|Search-ADAccount).*-Filter.*\\b(req|request|input|param|query|body|form|data|user|\\$_)\\b"
+      - pattern: "DirectoryEntry\\s*\\(\\s*[\"']LDAP://.*\\+.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+    taint:
+      source_types: [http_param, http_body, http_query, form_input]
+      sink_types: [ldap_query, ldap_bind]
+      sink_pattern: "(DirectorySearcher|PrincipalSearcher|DirectoryEntry|SearchRequest|Get-AD|Search-AD)"
+      propagation:
+        - "string_concat"
+        - "template_literal"
+        - "String\\.Format"
+        - "interpolated_string"
+    defense_patterns:
+      - "SearchFilter\\.Encode"
+      - "ldap\\.filter\\.escape"
+      - "PrincipalContext"
+      - "UserPrincipal\\.FindByIdentity"
+      - "GroupPrincipal\\.FindByIdentity"
+      - "Validator\\."
+      - "\\[RegularExpression\\("
+      - "parameterized.*filter"
+    message: "Active Directory query at line {line} includes unsanitized user input, enabling AD-specific injection. An attacker can enumerate users, groups, and service accounts, extract sensitive AD attributes, or cause denial of service via expensive recursive group membership queries."

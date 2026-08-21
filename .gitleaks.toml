@@ -1,0 +1,19 @@
+title = "Aegify secret scanning policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Security rules contain detector regexes, not credentials"
+paths = [
+  '''^rules/secrets/''',
+]
+
+[[allowlists]]
+description = "Documented non-secret development placeholders"
+regexTarget = "match"
+regexes = [
+  '''generate-a-random-secret-here''',
+  '''generate-a-separate-random-token-here''',
+  '''dev-secret-not-for-production''',
+]

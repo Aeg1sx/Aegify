@@ -1,0 +1,167 @@
+rules:
+  - id: "CG-CRYPTO-JAVA-001"
+    name: "DES or 3DES cipher usage"
+    description: >
+      The application uses DES or DESede (Triple DES / 3DES) via
+      Cipher.getInstance(). DES has a 56-bit key that can be brute-forced in hours on
+      commodity hardware. 3DES, while stronger than DES, has an effective security
+      strength of only 112 bits and is vulnerable to the Sweet32 birthday attack on
+      its 64-bit block size, which can recover plaintext in long-lived TLS sessions.
+      NIST deprecated 3DES in 2017 and disallowed it after 2023. Migrate to
+      AES-256 with GCM mode for authenticated encryption.
+    severity: critical
+    confidence: 0.95
+    languages: [java]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "Cipher\\.getInstance\\(['\"]DES['\"/]"
+      - callee_match: "Cipher\\.getInstance\\(['\"]DESede['\"/]"
+      - callee_match: "Cipher\\.getInstance\\(['\"]DES/ECB"
+      - callee_match: "Cipher\\.getInstance\\(['\"]DESede/ECB"
+      - callee_match: "SecretKeyFactory\\.getInstance\\(['\"]DES['\"]\\)"
+      - callee_match: "KeyGenerator\\.getInstance\\(['\"]DES['\"]\\)"
+    defense_patterns:
+      - "Cipher.getInstance(\"AES/GCM/NoPadding\")"
+      - "KeyGenerator.getInstance(\"AES\") with keySize=256"
+      - "Cipher.getInstance(\"ChaCha20-Poly1305\")"
+    message: "DES or 3DES cipher detected. These algorithms are deprecated by NIST. Migrate to AES-256-GCM or ChaCha20-Poly1305."
+
+  - id: "CG-CRYPTO-JAVA-002"
+    name: "ECB cipher mode usage"
+    description: >
+      The application uses Electronic Codebook (ECB) mode via Cipher.getInstance()
+      with an explicit \"ECB\" mode specification or by omitting the mode entirely
+      (Java defaults to ECB for block ciphers). ECB encrypts each block independently,
+      producing identical ciphertext for identical plaintext blocks, which leaks data
+      patterns. This is a fundamental semantic security failure. Use GCM mode for
+      authenticated encryption or CBC mode with HMAC for integrity-protected encryption.
+    severity: critical
+    confidence: 0.95
+    languages: [java]
+    cwe_id: 327
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "Cipher\\.getInstance\\(['\"]AES/ECB"
+      - callee_match: "Cipher\\.getInstance\\(['\"]AES['\"]\\)"
+      - callee_match: "Cipher\\.getInstance\\(['\"]DESede/ECB"
+      - callee_match: "Cipher\\.getInstance\\(['\"]Blowfish/ECB"
+      - regex_match: "Cipher\\.getInstance\\(\"[A-Za-z]+\"\\)"
+    defense_patterns:
+      - "Cipher.getInstance(\"AES/GCM/NoPadding\")"
+      - "Cipher.getInstance(\"AES/CBC/PKCS5Padding\") // with HMAC"
+      - "Cipher.getInstance(\"AES/CTR/NoPadding\")"
+      - "Cipher.getInstance(\"ChaCha20-Poly1305\")"
+    message: "ECB mode detected (explicit or default). ECB leaks plaintext patterns. Use AES/GCM/NoPadding for authenticated encryption."
+
+  - id: "CG-CRYPTO-JAVA-003"
+    name: "Weak SecureRandom seed"
+    description: >
+      The application seeds java.security.SecureRandom with a fixed, predictable, or
+      low-entropy value using setSeed() with a hardcoded byte array, system time, or
+      simple integer. When SecureRandom is seeded with a predictable value, its output
+      becomes deterministic and reproducible by an attacker, defeating the purpose of
+      cryptographic random number generation. Either do not seed SecureRandom manually
+      (it self-seeds from the OS entropy pool) or provide additional entropy from a
+      high-quality source.
+    severity: critical
+    confidence: 0.88
+    languages: [java]
+    cwe_id: 335
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "SecureRandom\\(\\)\\.setSeed\\(\\d+\\)"
+      - callee_match: "SecureRandom\\(\\)\\.setSeed\\(System\\.currentTimeMillis"
+      - callee_match: "new SecureRandom\\(.*\\.getBytes\\(\\)"
+      - regex_match: "setSeed\\((\\d+L?|\"[^\"]+\"\\.getBytes|System\\.currentTimeMillis|System\\.nanoTime)"
+      - callee_match: "new Random\\("
+        context_check: "(key|token|nonce|iv|salt|secret|crypto|cipher|password)"
+    defense_patterns:
+      - "new SecureRandom()  // self-seeds from OS entropy"
+      - "SecureRandom.getInstanceStrong()"
+      - "SecureRandom.getInstance(\"NativePRNGNonBlocking\")"
+    message: "SecureRandom is seeded with a predictable value, or java.util.Random is used for cryptographic purposes. Use new SecureRandom() without manual seeding or SecureRandom.getInstanceStrong()."
+
+  - id: "CG-CRYPTO-JAVA-004"
+    name: "MD5 or SHA-1 MessageDigest for sensitive data"
+    description: >
+      The application uses MessageDigest.getInstance(\"MD5\") or
+      MessageDigest.getInstance(\"SHA-1\") for hashing passwords, tokens, signatures,
+      or integrity verification. MD5 has been cryptographically broken since 2004 with
+      practical collision attacks demonstrated against TLS certificates and software
+      signing. SHA-1 was formally deprecated by NIST in 2011 and collision attacks were
+      demonstrated by Google in 2017 (SHAttered). Use SHA-256 or SHA-3 for integrity,
+      and bcrypt, scrypt, or Argon2 for passwords.
+    severity: critical
+    confidence: 0.90
+    languages: [java]
+    cwe_id: 328
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "MessageDigest\\.getInstance\\(['\"]MD5['\"]\\)"
+      - callee_match: "MessageDigest\\.getInstance\\(['\"]SHA-?1['\"]\\)"
+      - callee_match: "DigestUtils\\.md5Hex\\("
+      - callee_match: "DigestUtils\\.sha1Hex\\("
+      - callee_match: "Hashing\\.md5\\(\\)"
+      - callee_match: "Hashing\\.sha1\\(\\)"
+    defense_patterns:
+      - "MessageDigest.getInstance(\"SHA-256\")"
+      - "MessageDigest.getInstance(\"SHA-384\")"
+      - "MessageDigest.getInstance(\"SHA3-256\")"
+      - "BCrypt.hashpw(password, BCrypt.gensalt(12))"
+      - "SCryptUtil.scrypt(password, 65536, 8, 1)"
+    message: "MD5 or SHA-1 hash function detected. These are cryptographically broken. Use SHA-256+ for integrity checks and bcrypt/scrypt/Argon2 for password hashing."
+
+  - id: "CG-CRYPTO-JAVA-005"
+    name: "RSA key size below 2048 bits"
+    description: >
+      The application generates an RSA key pair using KeyPairGenerator with a key size
+      below 2048 bits. RSA keys of 1024 bits or fewer are factorizable with current
+      technology, and NIST disallowed their use in federal systems after 2013. The
+      minimum acceptable RSA key size is 2048 bits, with 3072 or 4096 bits
+      recommended for data that must remain secure beyond 2030. Consider ECDSA with
+      P-256 or Ed25519 for equivalent security with better performance.
+    severity: critical
+    confidence: 0.92
+    languages: [java]
+    cwe_id: 326
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - callee_match: "keyPairGenerator\\.initialize\\(\\s*(512|768|1024)"
+      - callee_match: "KeyPairGenerator.*\\.initialize\\(\\s*(512|768|1024)"
+      - regex_match: "initialize\\(\\s*(512|768|1024)\\s*[,)]"
+        context_check: "(RSA|rsa|KeyPairGenerator)"
+    defense_patterns:
+      - "keyPairGenerator.initialize(4096)"
+      - "keyPairGenerator.initialize(3072)"
+      - "KeyPairGenerator.getInstance(\"EC\") with P-256"
+      - "KeyPairGenerator.getInstance(\"Ed25519\")"
+    message: "RSA key size is below the 2048-bit minimum. Use at least 2048 bits (preferably 4096) or migrate to ECDSA P-256 / Ed25519."
+
+  - id: "CG-CRYPTO-JAVA-006"
+    name: "Hardcoded cipher key in source code"
+    description: >
+      An encryption key, HMAC secret, or signing key is defined as a hardcoded string
+      literal, byte array, or constant in the Java source code. Hardcoded keys are
+      discoverable through source code access, version control history, or
+      decompilation of JAR/WAR files. They cannot be rotated without recompilation and
+      redeployment, and are shared across all environments. Keys must be loaded from
+      environment variables, a Java KeyStore, a secrets manager (AWS Secrets Manager,
+      HashiCorp Vault), or an HSM at runtime.
+    severity: critical
+    confidence: 0.88
+    languages: [java]
+    cwe_id: 321
+    owasp_category: "A02:2021-Cryptographic Failures"
+    patterns:
+      - regex_match: "(SECRET_KEY|ENCRYPTION_KEY|CIPHER_KEY|HMAC_KEY|SIGNING_KEY|AES_KEY)\\s*=\\s*\"[^\"]{8,}\""
+      - regex_match: "new SecretKeySpec\\(\"[^\"]+\"\\.getBytes"
+      - regex_match: "SecretKeySpec\\(\\s*new byte\\[\\]\\s*\\{"
+      - callee_match: "new SecretKeySpec\\("
+        context_check: "\\.getBytes\\(\\)|\\{\\s*\\(byte\\)"
+    defense_patterns:
+      - "System.getenv(\"ENCRYPTION_KEY\")"
+      - "KeyStore.getInstance(\"JCEKS\").getKey(alias, password)"
+      - "awsSecretsManager.getSecretValue(request).getSecretString()"
+      - "vault.logical().read(\"secret/data/encryption-key\")"
+    message: "Encryption key is hardcoded in Java source. Load keys from environment variables, a Java KeyStore, or a secrets manager to enable rotation and protect against source code exposure."

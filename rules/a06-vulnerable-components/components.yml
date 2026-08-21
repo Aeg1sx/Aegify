@@ -1,0 +1,76 @@
+rules:
+  - id: CG-A06-001
+    name: Known Vulnerable Dependency Import
+    description: >
+      Code imports a library with known critical vulnerabilities that have
+      not been patched in commonly used versions. These libraries have
+      published CVEs with available exploits and should be replaced or
+      upgraded immediately.
+    severity: high
+    confidence: 0.8
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 1395
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - callee: "(import|require|from)"
+        args_match: "(pyyaml\\s*$|PyYAML<[0-5]\\.[0-3]|node-serialize|serialize-to-js|js-yaml<[0-3]\\.[0-9]|lodash<4\\.17\\.21|minimist<1\\.2\\.6|xmlrpc|xml2js<0\\.5|handlebars<4\\.7\\.7)"
+      - callee: ".*"
+        args_match: "(from\\s+yaml\\s+import\\s+load(?!.*Loader)|yaml\\.load\\((?!.*Loader))"
+      - callee: "(import|require)"
+        args_match: "(marked<4\\.0|highlight\\.js<10\\.4\\.1|elliptic<6\\.5\\.4|glob-parent<5\\.1\\.2|tar<6\\.1\\.9)"
+      - callee: "(import)"
+        args_match: "(org\\.apache\\.commons\\.collections\\.functors|org\\.apache\\.log4j(?!2)|com\\.thoughtworks\\.xstream<1\\.4\\.18)"
+    message: >
+      Import of known vulnerable library at '{callee}' (line {line}).
+      Check for CVEs and upgrade to a patched version or use an alternative.
+
+  - id: CG-A06-002
+    name: Outdated Cryptographic Library Usage
+    description: >
+      Code uses deprecated or outdated cryptographic libraries that contain
+      known weaknesses. PyCrypto is unmaintained and has known vulnerabilities;
+      older versions of the cryptography library lack important security fixes.
+      Migrate to actively maintained alternatives.
+    severity: medium
+    confidence: 0.75
+    languages: [python, javascript, typescript, java]
+    cwe_id: 327
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - callee: "(import|from)"
+        args_match: "(Crypto\\.|pycrypto|PyCrypto|Cryptodome\\.)"
+      - callee: "(import|from)"
+        args_match: "(M2Crypto|pyDes|python-rsa<4\\.7)"
+      - callee: "(require|import)"
+        args_match: "(crypto-js<4\\.1|sjcl<1\\.0\\.8|node-forge<1\\.3)"
+      - callee: "(import)"
+        args_match: "(javax\\.crypto\\.spec\\.DESKeySpec|sun\\.security|com\\.sun\\.crypto)"
+    message: >
+      Outdated cryptographic library at '{callee}' (line {line}). Migrate to
+      actively maintained libraries: use 'cryptography>=41.0' (Python),
+      'crypto-js>=4.2' (JavaScript), or 'javax.crypto' with modern algorithms.
+
+  - id: CG-A06-004
+    name: Use of Deprecated API
+    description: >
+      Code calls a function or method that has been officially deprecated by
+      its maintainers. Deprecated APIs may contain unpatched security
+      vulnerabilities, exhibit unexpected behavior, and will be removed in
+      future releases, creating upgrade risk.
+    severity: low
+    confidence: 0.6
+    languages: [python, javascript, typescript, java, go]
+    cwe_id: 477
+    owasp_category: "A06:2021-Vulnerable and Outdated Components"
+    patterns:
+      - callee: "(os\\.popen|os\\.system|commands\\.getoutput|imp\\.load_module|formatter\\.AbstractFormatter|distutils\\.|optparse\\.OptionParser)"
+      - callee: "(cgi\\.FieldStorage|cgi\\.parse|asynchat|asyncore|smtpd|telnetlib|imghdr|sndhdr)"
+      - callee: "(document\\.write|escape\\(|unescape\\(|__defineGetter__|__defineSetter__|Date\\.prototype\\.getYear)"
+      - callee: "(Buffer\\((?!\\.))"
+        args_match: ".*"
+      - callee: "(Thread\\.stop|Thread\\.suspend|Thread\\.resume|Runtime\\.exec|Date\\.parse|System\\.runFinalizersOnExit)"
+      - callee: "(io/ioutil\\.|strings\\.Title|sort\\.Sort\\(|net\\.LookupHost)"
+    message: >
+      Deprecated API call at '{callee}' (line {line}). Migrate to the
+      recommended replacement to avoid security risks and ensure forward
+      compatibility.
