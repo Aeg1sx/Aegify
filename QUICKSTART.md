@@ -66,8 +66,10 @@ codeguard scan /path/to/code --output sarif --output-file results.sarif --upload
 **Option B: curl**
 ```bash
 # Get API token from DefectDojo UI → API v2 key (under your user profile)
+# Inject DEFECTDOJO_TOKEN through your shell or secret manager first.
+: "${DEFECTDOJO_TOKEN:?DEFECTDOJO_TOKEN is required}"
 curl -X POST "http://localhost:8080/api/v2/import-scan/" \
-  -H "Authorization: Token YOUR_TOKEN" \
+  -H "Authorization: Token ${DEFECTDOJO_TOKEN}" \
   -F "scan_type=SARIF" \
   -F "file=@results.sarif" \
   -F "engagement=1" \

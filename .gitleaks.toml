@@ -17,3 +17,11 @@ regexes = [
   '''generate-a-separate-random-token-here''',
   '''dev-secret-not-for-production''',
 ]
+
+[[allowlists]]
+description = "Exact non-secret literals removed after the initial publication scan"
+regexTarget = "match"
+regexes = [
+  '''Authorization: Token YOUR_TOKEN''',
+  '''ENCRYPTION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''',
+]

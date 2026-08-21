@@ -85,8 +85,6 @@ jobs:
         working-directory: dashboard
     env:
       DATABASE_URL: file:./ci.db
-      AUTH_SECRET: ci-only-auth-secret-not-used-outside-the-ephemeral-runner
-      ENCRYPTION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       AUTH_GITHUB_ID: ci-only-client-id
       AUTH_GITHUB_SECRET: ci-only-client-secret
     steps:
@@ -99,6 +97,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Generate ephemeral test secrets
+        shell: bash
+        run: |
+          echo "AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "ENCRYPTION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
