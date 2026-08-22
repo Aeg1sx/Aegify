@@ -13,6 +13,12 @@ Project policies: [contributing](CONTRIBUTING.md), [security](SECURITY.md),
 [Repository-side security controls](docs/security/repository-security.mdx) document the
 branch, tag, review, advisory, and supply-chain settings expected on GitHub.
 
+## Dashboard
+
+![Aegify dashboard overview using demo scan data](docs/assets/aegify-dashboard.png)
+
+_Dashboard preview using demo scan data._
+
 > Aegify now implements a normalized CFG/SSA/DFG security graph with
 > call-site-preserving source-bounded interprocedural call/return edges, basic
 > context-bounded JVM source points-to/alias overlays, a bounded
