@@ -10,6 +10,7 @@ from aegify.scanner.ast_parser import ASTParser
 from aegify.scanner.call_graph import CallGraphBuilder
 from aegify.scanner.dataflow import DataflowAnalyzer, SinkPattern, TaintConfig
 from aegify.scanner.engine import ScanEngine
+from aegify.scanner.taint_v2 import StructuredTaintAnalyzer
 
 
 def _analyze(directory: Path, config: TaintConfig | None = None):
@@ -19,6 +20,42 @@ def _analyze(directory: Path, config: TaintConfig | None = None):
     analyzer = DataflowAnalyzer(config=config)
     flows = analyzer.analyze(asts, call_graph, program_graph)
     return flows, analyzer.summary
+
+
+def test_sink_matching_uses_call_boundaries_not_exec_substrings(tmp_path: Path):
+    source = tmp_path / "calls.py"
+    source.write_text("def run(value):\n    _execute_cases(value)\n    exec(value)\n")
+
+    ast = ASTParser().parse_file(source)
+    sinks = DataflowAnalyzer()._find_sinks(ast)
+    code_exec = [sink.function for sink in sinks if sink.sink_type == "code_exec"]
+
+    assert "_execute_cases" not in code_exec
+    assert "exec" in code_exec
+
+    calls = {call.callee: call for call in ast.calls}
+    assert StructuredTaintAnalyzer._call_matches_pattern("exec", calls["_execute_cases"]) is False
+    assert StructuredTaintAnalyzer._call_matches_pattern("exec", calls["exec"]) is True
+
+
+def test_jvm_sink_model_accepts_receiver_chain_on_identifier_boundary(tmp_path: Path):
+    source = tmp_path / "RuntimeCall.java"
+    source.write_text(
+        "class RuntimeCall {\n  void run(String value) { Runtime.getRuntime().exec(value); }\n}\n"
+    )
+
+    ast = ASTParser().parse_file(source)
+    runtime_exec = next(call for call in ast.calls if call.callee == "exec")
+
+    assert StructuredTaintAnalyzer._call_matches_pattern("Runtime.exec", runtime_exec) is True
+    assert (
+        DataflowAnalyzer._sink_pattern_matches(
+            f"{runtime_exec.receiver}.{runtime_exec.callee}",
+            runtime_exec.callee,
+            "Runtime.exec",
+        )
+        is True
+    )
 
 
 def test_unrelated_source_and_sink_in_same_function_do_not_form_a_flow(
@@ -242,6 +279,45 @@ def test_typescript_property_source_uses_javascript_model(tmp_path: Path):
     assert len(flows) == 1
     assert flows[0].source.source_type == "http_param"
     assert flows[0].sink.sink_type == "os_command"
+
+
+def test_external_response_object_property_reaches_sensitive_sink(tmp_path: Path):
+    (tmp_path / "remote.py").write_text(
+        "def execute_remote_job():\n"
+        "    response = requests.get('https://jobs.example.test/next')\n"
+        "    return os.system(response.text)\n"
+    )
+
+    flows, summary = _analyze(tmp_path)
+
+    api_flows = [
+        flow
+        for flow in flows
+        if flow.source.source_type == "external_api_response"
+        and flow.sink.sink_type == "os_command"
+    ]
+    assert len(api_flows) == 1
+    assert any(step.variable == "response.text" for step in api_flows[0].path)
+    assert summary.field_reads >= 1
+
+
+def test_untrusted_python_format_receiver_reaches_string_format_sink(tmp_path: Path):
+    (tmp_path / "format_receiver.py").write_text(
+        "from flask import request\n"
+        "def unsafe():\n"
+        "    template = request.args.get('template')\n"
+        "    return template.format('value')\n\n"
+        "def safe():\n"
+        "    value = request.args.get('value')\n"
+        "    return 'value={}'.format(value)\n"
+    )
+
+    flows, _ = _analyze(tmp_path)
+
+    format_flows = [flow for flow in flows if flow.sink.sink_type == "string_format"]
+    assert len(format_flows) == 1
+    assert format_flows[0].source.source_type == "http_param"
+    assert format_flows[0].sink.argument_index == -1
 
 
 def test_taint_inside_try_block_is_not_hidden_by_control_node(tmp_path: Path):

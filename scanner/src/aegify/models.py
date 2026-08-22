@@ -29,6 +29,22 @@ class FindingStatus(StrEnum):
     ACCEPTED_RISK = "accepted_risk"
 
 
+class EvidenceState(StrEnum):
+    """Strength of the evidence attached to a finding."""
+
+    CANDIDATE = "candidate"
+    REACHABLE = "reachable"
+    OBSERVED = "observed"
+    IMPACT_PROVEN = "impact_proven"
+
+
+class FindingDisposition(StrEnum):
+    """Whether a finding may fail a CI security gate."""
+
+    ADVISORY = "advisory"
+    BLOCKING = "blocking"
+
+
 class ScanStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -166,7 +182,7 @@ class TaintSink(BaseModel):
     file_path: str
     line: int
     sink_type: str  # e.g., "sql_query", "os_command"
-    argument_index: int = 0  # which argument is dangerous
+    argument_index: int = 0  # dangerous argument; -1 denotes the call receiver
     in_function: str | None = None
 
 
@@ -242,6 +258,8 @@ class Finding(BaseModel):
     severity: Severity
     confidence: float = Field(ge=0.0, le=1.0)
     status: FindingStatus = FindingStatus.NEW
+    evidence_state: EvidenceState = EvidenceState.CANDIDATE
+    disposition: FindingDisposition = FindingDisposition.ADVISORY
     file_path: str
     line_start: int
     line_end: int
@@ -262,6 +280,11 @@ class Finding(BaseModel):
         """Stable hash for deduplication across scans."""
         key = f"{self.rule_id}:{self.file_path}:{self.line_start}:{self.line_end}"
         return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+    @property
+    def blocks_ci(self) -> bool:
+        """Return whether this result participates in the CI exit-code gate."""
+        return self.disposition == FindingDisposition.BLOCKING
 
 
 # --- Scan Result ---
@@ -595,6 +618,13 @@ class ScanResult(BaseModel):
         counts: dict[str, int] = {s.value: 0 for s in Severity}
         for f in self.findings:
             counts[f.severity.value] += 1
+        return counts
+
+    @property
+    def disposition_count(self) -> dict[str, int]:
+        counts = {disposition.value: 0 for disposition in FindingDisposition}
+        for finding in self.findings:
+            counts[finding.disposition.value] += 1
         return counts
 
 

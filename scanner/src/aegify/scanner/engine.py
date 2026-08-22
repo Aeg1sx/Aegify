@@ -20,8 +20,10 @@ from collections.abc import Callable
 from aegify.config import AegifyConfig
 from aegify.models import (
     EvidenceProvenance,
+    EvidenceState,
     FileAST,
     Finding,
+    FindingDisposition,
     Language,
     RuntimeObservation,
     ScanProgress,
@@ -1523,6 +1525,24 @@ class ScanEngine:
             finding.provenance = EvidenceProvenance(
                 producer=producer,
                 producer_version=__version__,
+                analysis_kind=(
+                    "semantic-taint"
+                    if finding.taint_flow is not None
+                    else (
+                        "semantic-structural"
+                        if finding.evidence_state != EvidenceState.CANDIDATE
+                        else "heuristic-candidate"
+                    )
+                ),
+                fidelity=(
+                    "source-to-sink"
+                    if finding.taint_flow is not None
+                    else (
+                        "same-function-structured"
+                        if finding.evidence_state != EvidenceState.CANDIDATE
+                        else "heuristic"
+                    )
+                ),
                 repository_id=repository_id,
                 module_path=module_path,
                 workspace_snapshot=workspace_snapshot,
@@ -1704,11 +1724,25 @@ class ScanEngine:
                 continue
             filtered.append(f)
 
-        # Deduplicate by fingerprint, keeping highest confidence
+        # Deduplicate by fingerprint. Semantic/blocking evidence always wins
+        # over a heuristic advisory at the same rule and location.
         seen: dict[str, Finding] = {}
         for f in filtered:
             fp = f.fingerprint
-            if fp not in seen or f.confidence > seen[fp].confidence:
+            current = seen.get(fp)
+            candidate_rank = (
+                1 if f.disposition == FindingDisposition.BLOCKING else 0,
+                f.confidence,
+            )
+            current_rank = (
+                (
+                    1
+                    if current is not None and current.disposition == FindingDisposition.BLOCKING
+                    else 0
+                ),
+                current.confidence if current is not None else -1.0,
+            )
+            if current is None or candidate_rank > current_rank:
                 seen[fp] = f
 
         deduped = list(seen.values())

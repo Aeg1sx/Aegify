@@ -54,9 +54,10 @@ export async function POST(request: NextRequest) {
 
         results[finding.id] = { success: true, data: result };
       } catch (err) {
+        console.error("Batch finding analysis error:", err);
         results[finding.id] = {
           success: false,
-          error: err instanceof Error ? err.message : "Analysis failed",
+          error: "Analysis failed",
         };
       }
     }

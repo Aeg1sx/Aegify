@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, FileUp, CheckCircle, AlertCircle } from "lucide-react";
+import { uploadValidationError } from "@/lib/upload-validation";
 
 export default function UploadPage() {
   const router = useRouter();
@@ -23,6 +24,11 @@ export default function UploadPage() {
       setResult(null);
 
       try {
+        const uploadError = uploadValidationError(file, "sarif");
+        if (uploadError) {
+          setResult({ success: false, error: uploadError });
+          return;
+        }
         const text = await file.text();
         const sarif = JSON.parse(text);
 

@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 
 from aegify.harness.proxy import ProxyVerificationExecutor, ProxyVerificationPlan
-from aegify.harness.proxy_runner import _apply_mutations, _execute_cases
+from aegify.harness.proxy_runner import (
+    _apply_mutations,
+    _execute_cases,
+    _validated_service_command,
+)
 
 PINNED_IMAGE = f"example.invalid/proxy@sha256:{'e' * 64}"
 
@@ -58,6 +62,14 @@ def test_proxy_plan_rejects_external_targets_and_sensitive_headers():
         )
     with pytest.raises(ValueError, match="1-50"):
         _plan(cases=[{"id": "none", "method": "GET", "path": "/", "mutations": []}])
+
+
+def test_proxy_runner_revalidates_staged_service_command():
+    staged = _plan().model_dump(mode="json")
+    assert _validated_service_command(staged) == staged["service_command"]
+    staged["service_command"] = ["unapproved-server"]
+    with pytest.raises(ValueError, match="not allowlisted"):
+        _validated_service_command(staged)
 
 
 def test_proxy_dry_run_stages_runner_with_no_container_network(tmp_path: Path):

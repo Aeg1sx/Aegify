@@ -10,8 +10,10 @@ from typing import Any
 from aegify.graph_types import CodeGraph
 from aegify.models import (
     DefenseContext,
+    EvidenceState,
     FileAST,
     Finding,
+    FindingDisposition,
     Language,
     Severity,
     TaintFlow,
@@ -71,13 +73,25 @@ class SecurityRule(ABC):
         confidence: float | None = None,
         taint_flow: TaintFlow | None = None,
         defense_context: DefenseContext | None = None,
+        evidence_state: EvidenceState = EvidenceState.CANDIDATE,
+        disposition: FindingDisposition | None = None,
     ) -> Finding:
         """Helper to create a Finding from this rule."""
+        if taint_flow is not None and evidence_state == EvidenceState.CANDIDATE:
+            evidence_state = EvidenceState.REACHABLE
+        if disposition is None:
+            disposition = (
+                FindingDisposition.BLOCKING
+                if taint_flow is not None
+                else FindingDisposition.ADVISORY
+            )
         return Finding(
             rule_id=self.definition.id,
             rule_name=self.definition.name,
             severity=self.definition.severity,
             confidence=confidence or self.definition.default_confidence,
+            evidence_state=evidence_state,
+            disposition=disposition,
             file_path=file_path,
             line_start=line_start,
             line_end=line_end,

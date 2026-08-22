@@ -14,8 +14,10 @@ rules:
     asvs_category: "V3.3 Session Timeout"
     patterns:
       - callee: "(session|Session|SessionMiddleware|express-session|cookie-session|SessionConfig)"
+        callee_match_mode: full
         args_match: "^(?!.*expire)(?!.*timeout)(?!.*maxAge)(?!.*max_age)(?!.*ttl)(?!.*idle)(?!.*lifetime).*$"
       - callee: "(jwt\\.sign|jwt\\.encode|create_access_token|createToken|sign)"
+        callee_match_mode: full
         args_match: "^(?!.*exp)(?!.*expiresIn)(?!.*expires_in)(?!.*expires_delta)(?!.*ttl).*$"
     message: "Session or token created without timeout at '{callee}' (line {line}). Configure session expiry and idle timeout to limit the window for session hijacking."
 

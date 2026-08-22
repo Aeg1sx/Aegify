@@ -17,7 +17,21 @@ interface RunProperties {
 
 interface FindingProperties {
   provenance?: unknown;
+  evidenceState?: unknown;
+  disposition?: unknown;
+  blocksCi?: unknown;
 }
+
+export type EvidenceState = "candidate" | "reachable" | "observed" | "impact_proven";
+export type FindingDisposition = "blocking" | "advisory";
+
+const EVIDENCE_STATES = new Set<EvidenceState>([
+  "candidate",
+  "reachable",
+  "observed",
+  "impact_proven",
+]);
+const FINDING_DISPOSITIONS = new Set<FindingDisposition>(["blocking", "advisory"]);
 
 function stringField(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -52,5 +66,19 @@ export function normalizeFindingEvidence(
     repositoryId: stringField(provenance.repository_id),
     modulePath: stringField(provenance.module_path),
     provenance: JSON.stringify(provenance),
+  };
+}
+
+export function normalizeFindingClassification(
+  properties: FindingProperties | undefined,
+): {
+  evidenceState: EvidenceState;
+  disposition: FindingDisposition;
+} {
+  const evidenceState = stringField(properties?.evidenceState) as EvidenceState;
+  const disposition = stringField(properties?.disposition) as FindingDisposition;
+  return {
+    evidenceState: EVIDENCE_STATES.has(evidenceState) ? evidenceState : "candidate",
+    disposition: FINDING_DISPOSITIONS.has(disposition) ? disposition : "advisory",
   };
 }

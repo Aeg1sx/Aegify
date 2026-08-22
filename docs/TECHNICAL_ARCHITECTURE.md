@@ -118,7 +118,12 @@ rule and every pattern to be executable. Versioned library model packs use a
 separate strict source/sink/propagator/sanitizer schema.
 
 Rule output becomes a finding only after location, repository/module, rule,
-severity, message, and evidence provenance are available.
+severity, message, and evidence provenance are available. Pattern and imported
+fallback results default to `candidate/advisory`. Taint paths and supported
+structured semantic detectors can emit `reachable/blocking` results. CI exits
+non-zero only for blocking high or critical findings; severity alone never
+promotes a candidate. Broad candidates remain queryable in SARIF, GitHub review,
+and the dashboard.
 
 ## External evidence
 
@@ -149,8 +154,9 @@ default self-hosted profile. Production startup requires independent auth and
 encryption secrets, a valid HTTP(S) `AUTH_URL` origin, and a complete GitHub or
 GitLab OAuth provider. CI upload uses a separate bearer token.
 
-SARIF ingestion preserves Aegify provenance and workspace snapshots. The data
-model stores projects, scans, findings, endpoints, graph data, rules, and LLM jobs.
+SARIF ingestion preserves Aegify provenance, workspace snapshots, evidence state,
+and gate disposition. The data model stores projects, scans, findings, endpoints,
+graph data, rules, and LLM jobs. Findings can be filtered as blocking or advisory.
 The production image runs as uid 1001/gid 1001 and contains no build-only secret.
 
 ## Storage

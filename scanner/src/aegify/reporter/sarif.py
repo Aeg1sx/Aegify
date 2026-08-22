@@ -78,6 +78,7 @@ class SARIFReporter:
             "taintAnalysis": scan_result.taint_analysis.model_dump(mode="json"),
             "externalAnalysis": scan_result.external_analysis.model_dump(mode="json"),
             "runtimeEvidence": scan_result.runtime_evidence.model_dump(mode="json"),
+            "findingDisposition": scan_result.disposition_count,
         }
         if call_graph is not None:
             run_props["callGraph"] = self._serialize_call_graph(call_graph)
@@ -435,7 +436,10 @@ class SARIFReporter:
         """Build a SARIF result from a Finding."""
         result: dict[str, Any] = {
             "ruleId": finding.rule_id,
-            "level": SEVERITY_MAP.get(finding.severity, "warning"),
+            "level": (
+                SEVERITY_MAP.get(finding.severity, "warning") if finding.blocks_ci else "note"
+            ),
+            "kind": "fail" if finding.blocks_ci else "review",
             "message": {"text": finding.message},
             "partialFingerprints": {
                 "aegifyFingerprint/v1": finding.fingerprint,
@@ -462,6 +466,9 @@ class SARIFReporter:
                 "confidence": finding.confidence,
                 "status": finding.status.value,
                 "severity": finding.severity.value,
+                "evidenceState": finding.evidence_state.value,
+                "disposition": finding.disposition.value,
+                "blocksCi": finding.blocks_ci,
                 "provenance": finding.provenance.model_dump(mode="json"),
             },
         }

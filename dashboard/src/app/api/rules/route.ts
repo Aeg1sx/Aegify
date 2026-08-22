@@ -54,8 +54,9 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
+    console.error("Rule creation error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to create rule" },
+      { error: "Failed to create rule" },
       { status: 500 }
     );
   }

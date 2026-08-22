@@ -18,13 +18,16 @@ rules:
     patterns:
       - pattern: "(axios|fetch|http\\.get|https\\.get|requests\\.(get|post)|HttpClient|http\\.Get|http\\.Post|RestTemplate|WebClient)"
         args_match: "(http://|https://)"
+        disposition: advisory
         description: "External API call whose response may be used unsafely"
       - pattern: "(res\\.data|response\\.json|response\\.text|body|result)"
         args_match: "(execute|query|exec|eval|innerHTML|write|render|run|system|popen|spawn|\\$\\()"
+        disposition: advisory
         description: "API response data flowing into a security-sensitive sink"
       - pattern: "(axios|fetch|got|request|superagent|needle)\\s*\\("
         args_match: "(http|https)"
         missing_check: "(validate|sanitize|schema|joi|zod|yup|ajv|assert|check|verify|instanceof)"
+        disposition: advisory
         description: "External HTTP call without response validation"
     taint:
       source_types: [external_api_response]

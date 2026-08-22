@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from aegify.config import AegifyConfig
+from aegify.models import FindingDisposition
 from aegify.reporter.sarif import SARIFReporter
 from aegify.scanner.engine import ScanEngine
 
@@ -111,6 +112,26 @@ class TestSARIFReporter:
             assert provenance["rule_digest"].startswith("sha256:")
             assert provenance["evidence_id"].startswith("ev:")
             assert provenance["workspace_snapshot"] == scan_result.workspace_snapshot
+            assert result["properties"]["evidenceState"] in {
+                "candidate",
+                "reachable",
+                "observed",
+                "impact_proven",
+            }
+            assert result["properties"]["disposition"] in {"blocking", "advisory"}
+            assert result["properties"]["blocksCi"] is (
+                result["properties"]["disposition"] == "blocking"
+            )
+
+    def test_advisory_result_is_review_note(self, reporter, scan_result):
+        finding = scan_result.findings[0]
+        finding.disposition = FindingDisposition.ADVISORY
+
+        result = reporter._build_result(finding)
+
+        assert result["level"] == "note"
+        assert result["kind"] == "review"
+        assert result["properties"]["blocksCi"] is False
 
     def test_write_sarif(self, reporter, scan_result, tmp_path):
         output = tmp_path / "report.sarif"

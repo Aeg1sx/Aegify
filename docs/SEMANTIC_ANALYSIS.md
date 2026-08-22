@@ -128,6 +128,9 @@ Global taint v2 is flow-sensitive for supported local and field operations and
 uses points-to identity to avoid obvious cross-object contamination. Sources,
 sinks, propagators, and sanitizers come from strict, versioned model packs. Taint
 evidence records call context and the source-to-sink path.
+Sink models can select either a specific argument or the call receiver. This
+distinguishes an untrusted format program in `template.format(value)` from safe
+substitution data in `'value={}'.format(untrustedValue)`.
 
 Regression tests cover caller isolation, factory-return receivers, field stores
 and loads, exact imported targets, safe overwrite, sanitizer categories, and

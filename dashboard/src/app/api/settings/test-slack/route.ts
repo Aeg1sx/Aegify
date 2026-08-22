@@ -30,8 +30,9 @@ export async function POST() {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    console.error("Slack test notification error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to send" },
+      { error: "Failed to send" },
       { status: 500 }
     );
   }

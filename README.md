@@ -53,7 +53,7 @@ branch, tag, review, advisory, and supply-chain settings expected on GitHub.
   source/bytecode normal and exception-return queries
 - **Global taint v2** with flow-sensitive locals, allocation-site object fields,
   k=2 call-string contexts, argument/receiver/scalar-and-object-return propagation,
-  returned-object field identity, singleton-allocation field strong updates,
+  receiver-target sinks, returned-object field identity, singleton-allocation field strong updates,
   category-scoped sanitizer state, a strict JVM source/sink/propagator/sanitizer
   model pack, and SCIP-disambiguated cross-repository paths
 - **311 YAML rule definitions** with a strict executable-schema gate; 303 are enabled,
@@ -66,6 +66,7 @@ branch, tag, review, advisory, and supply-chain settings expected on GitHub.
   Kotlin suspend, and Reactor continuations
 - **Frontend and Spring Cloud Gateway correlation** with file/line evidence and confidence
 - **Reproducible evidence contract** with workspace snapshots, analyzer/rule provenance, and stable evidence IDs preserved through SARIF and dashboard ingestion
+- **Evidence-gated findings** that retain broad heuristics as candidate/advisory results while only taint or structured semantic evidence can block CI; SARIF and the dashboard preserve both evidence state and gate disposition
 - **LLM-powered review** using Claude to triage findings and suggest remediation
 - **SARIF 2.1.0 output** for GitHub Code Scanning, SonarQube, and VS Code integration
 - **API endpoint detection** for Flask, FastAPI, Django, Express, Spring, and Go net/http

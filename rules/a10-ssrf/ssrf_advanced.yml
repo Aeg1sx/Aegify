@@ -121,11 +121,12 @@ rules:
       - pattern_type: "taint"
         source: "(request\\.(args|params|query|body|form|json)|req\\.(params|query|body)|@RequestParam|ctx\\.Query|r\\.FormValue|getParameter)"
         sink: "(requests\\.(get|post|put|delete|head)|fetch|axios|urllib|HttpClient|http\\.(Get|Do|NewRequest)|Net::HTTP|curl_exec|file_get_contents|WebClient)"
-        sanitizers: ["is_public_ip", "validate_not_private", "ip_allowlist", "ssrf_protection", "block_private_ranges"]
-      - pattern_type: "negative_check"
-        description: "URL fetching function without private IP validation"
-        match: "def\\s+\\w*(fetch|get|request|download|proxy|load|import)_?(url|resource|content|data|page|file)?"
-        must_contain: "(is_private|private_ip|reserved|internal|127\\.|10\\.|172\\.16|192\\.168|0\\.0\\.0\\.0)"
+        sanitizers: ["is_public_ip", "is_private", "validate_not_private", "ip_allowlist", "ssrf_protection", "block_private_ranges"]
+      - multi_match:
+          - "def\\s+\\w+\\([^)]*\\b(url|uri|target|endpoint|link)\\b"
+          - "(requests\\.(get|post|put|delete|head)|fetch|axios|urllib|HttpClient|http\\.(Get|Do|NewRequest)|Net::HTTP|curl_exec|file_get_contents|WebClient)\\s*\\(\\s*(url|uri|target|endpoint|link)\\b"
+        missing_match:
+          - "is_public_ip|is_private|validate_not_private|ip_allowlist|ssrf_protection|block_private_ranges|reserved|internal|127\\.|10\\.|172\\.16|192\\.168|0\\.0\\.0\\.0"
       - pattern_type: "regex"
         match: "(requests|fetch|axios|http|urllib|curl)\\.(get|post|request|urlopen|exec)\\(\\s*(url|uri|target|endpoint|link)\\s*[,)]"
         negative_match: "(ssrf|private|internal|allowlist|whitelist|validate).*\\b(url|uri|target|endpoint|link)\\b"

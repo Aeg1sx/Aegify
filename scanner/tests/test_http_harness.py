@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from aegify.harness.http import HttpVerificationExecutor, HttpVerificationPlan
-from aegify.harness.http_runner import _request
+from aegify.harness.http_runner import _request, _validated_service_command
 
 PINNED_IMAGE = f"example.invalid/http@sha256:{'c' * 64}"
 
@@ -32,6 +32,14 @@ def test_http_plan_is_loopback_only_digest_pinned_and_secret_free():
         _plan(service_command=["python3", "--token=secret"])
     with pytest.raises(ValueError, match="relative"):
         _plan(cases=[{"id": "external", "path": "https://example.com/"}])
+
+
+def test_http_runner_revalidates_staged_service_command():
+    staged = _plan().model_dump(mode="json")
+    assert _validated_service_command(staged) == staged["service_command"]
+    staged["service_command"] = ["unapproved-server"]
+    with pytest.raises(ValueError, match="not allowlisted"):
+        _validated_service_command(staged)
 
 
 def test_http_dry_run_stages_runner_and_keeps_container_network_disabled(

@@ -120,8 +120,9 @@ export async function POST(
 
     return NextResponse.json(result);
   } catch (err) {
+    console.error("Finding analysis error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Analysis failed" },
+      { error: "Analysis failed" },
       { status: 500 }
     );
   }

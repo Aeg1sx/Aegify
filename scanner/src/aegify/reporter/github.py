@@ -52,7 +52,10 @@ class GitHubReporter:
         """Generate GitHub inline review comments for findings."""
         annotations: list[dict[str, Any]] = []
         for finding in findings:
-            body = f"**{finding.severity.value.upper()}**: {finding.message}"
+            body = (
+                f"**{finding.severity.value.upper()} / "
+                f"{finding.disposition.value.upper()}**: {finding.message}"
+            )
             if finding.remediation:
                 body += f"\n\n**Suggested fix**:\n{finding.remediation}"
 
@@ -63,7 +66,8 @@ class GitHubReporter:
                     "end_line": finding.line_end,
                     "annotation_level": (
                         "warning"
-                        if finding.severity in (Severity.MEDIUM, Severity.LOW)
+                        if not finding.blocks_ci
+                        or finding.severity in (Severity.MEDIUM, Severity.LOW)
                         else "failure"
                     ),
                     "message": finding.message,
@@ -93,6 +97,10 @@ class GitHubReporter:
             f"- <code>{finding.file_path}:{finding.line_start}</code></summary>\n"
         )
         lines.append(f"> {finding.message}\n")
+        lines.append(
+            f"**Evidence**: `{finding.evidence_state.value}` · "
+            f"**Gate**: `{finding.disposition.value}`\n"
+        )
 
         if finding.code_snippet:
             lines.append(f"```\n{finding.code_snippet}\n```\n")

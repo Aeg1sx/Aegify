@@ -72,6 +72,8 @@ model Finding {
   ruleName       String
   severity       String // critical, high, medium, low
   confidence     Float    @default(0.8)
+  evidenceState  String   @default("candidate") // candidate, reachable, observed, impact_proven
+  disposition    String   @default("advisory") // blocking, advisory
   status         String   @default("open") // open, triaged, confirmed, in_progress, false_positive, fixed
   source         String   @default("sast") // sast, llm
   filePath       String
@@ -96,6 +98,7 @@ model Finding {
 
   @@index([scanId])
   @@index([severity])
+  @@index([disposition])
   @@index([status])
   @@index([ruleId])
   @@index([filePath])

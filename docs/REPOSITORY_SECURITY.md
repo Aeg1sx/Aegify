@@ -36,10 +36,16 @@ independent approval.
 
 ## Release tag ruleset
 
-Target `v*`. Restrict creation, update, and deletion to maintainers, require a
-signed annotated tag, and do not allow force updates. The release workflow
-verifies the tag, builds from the locked dependency graph, emits a CycloneDX
-SBOM, and records a GitHub artifact attestation.
+Target `v*`. The committed ruleset restricts creation, update, and deletion to
+the administrator bypass role and blocks force updates. The release workflow
+requires an annotated tag whose cryptographic signature GitHub reports as
+verified, builds from the locked dependency graph, emits a CycloneDX SBOM, and
+publishes SHA-256 checksums. The wheel, SBOM, and checksum manifest all receive
+GitHub artifact attestations before publication.
+
+The reproducible repository ruleset payloads live in `.github/rulesets/`.
+Applying them requires repository-administrator access; compare the live
+ruleset response with these files after every protection change.
 
 ## Security features
 

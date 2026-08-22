@@ -3,11 +3,13 @@ import { timingSafeEqual } from "crypto";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  normalizeFindingClassification,
   normalizeFindingEvidence,
   workspaceSnapshotForRun,
 } from "@/lib/sarif-evidence";
 import { anonymousUploadAllowed } from "@/lib/security-config";
 import { sendSlackNotification } from "@/lib/slack";
+import { uploadValidationError } from "@/lib/upload-validation";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
@@ -44,6 +46,9 @@ interface SARIFResult {
   properties?: {
     confidence?: number;
     severity?: string;
+    evidenceState?: string;
+    disposition?: string;
+    blocksCi?: boolean;
     status?: string;
     remediation?: string;
     llmAnalysis?: string;
@@ -256,11 +261,10 @@ export async function POST(request: NextRequest) {
       if (!file) {
         return NextResponse.json({ error: "No file provided" }, { status: 400 });
       }
-      if (file.size > MAX_UPLOAD_BYTES) {
-        return NextResponse.json(
-          { error: "SARIF upload exceeds the 100 MB limit" },
-          { status: 413 },
-        );
+      const uploadError = uploadValidationError(file, "sarif");
+      if (uploadError) {
+        const status = uploadError.includes("exceeds") ? 413 : 415;
+        return NextResponse.json({ error: uploadError }, { status });
       }
       const text = await file.text();
       sarif = JSON.parse(text);
@@ -364,6 +368,7 @@ export async function POST(request: NextRequest) {
         LEVEL_TO_SEVERITY[result.level] ||
         "medium";
       const evidence = normalizeFindingEvidence(result.properties);
+      const classification = normalizeFindingClassification(result.properties);
 
       // Extract CWE from rule
       let cweId: number | null = null;
@@ -400,6 +405,8 @@ export async function POST(request: NextRequest) {
         ruleName: rule?.name || rule?.shortDescription?.text || result.ruleId,
         severity,
         confidence: result.properties?.confidence || 0.8,
+        evidenceState: classification.evidenceState,
+        disposition: classification.disposition,
         status: "open",
         filePath: loc?.artifactLocation?.uri || "",
         lineStart: loc?.region?.startLine || 0,
@@ -634,7 +641,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Upload failed" },
+      { error: "Upload failed" },
       { status: 500 }
     );
   }

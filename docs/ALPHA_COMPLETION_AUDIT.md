@@ -4,11 +4,14 @@ Baseline date: 2026-08-22
 
 ## Verdict
 
-The open-source alpha scope is complete and publishable. The implementation and
-tests cover multi-repository and monorepo reachability, Java/Kotlin/Spring
-semantics, Spring Cloud Gateway transformations, Program Graph queries,
-frontend-to-backend attack-surface correlation, normalized rules, external
-evidence adapters, and bounded verification harnesses.
+The open-source alpha implementation scope is present, but this hardening branch
+is not yet release-green. Tests cover multi-repository and monorepo
+reachability, Java/Kotlin/Spring semantics, Spring Cloud Gateway
+transformations, Program Graph queries, frontend-to-backend attack-surface
+correlation, normalized rules, external evidence adapters, and bounded
+verification harnesses. A separate precision suite retains five failing
+regressions for broad race-condition, external API consumption, and ReDoS
+fallbacks; they must not be hidden from the release decision.
 
 Colima was started for this audit. Both final images were rebuilt from the
 current source and exercised live. Temporary containers and volumes were removed,
@@ -39,14 +42,14 @@ and all Colima profiles were returned to their original stopped state.
 ## Executed release gates
 
 ```text
-scanner tests:          298 passed, 1 skipped
-scanner coverage:       77%
+scanner tests:          339 passed, 1 skipped
+rule precision tests:   17 passed
 ruff:                   passed
-mypy --strict:          74 source files passed
+mypy --strict:          75 source files passed
 rule audit:             311 rules, 303 enabled, 8 disabled,
                         980/980 enabled patterns executable,
                         0 errors, 0 warnings
-dashboard tests:        7 passed
+dashboard tests:        14 passed
 dashboard lint:         passed
 dashboard build:        passed (Next.js 16.3.1)
 dashboard npm audit:    0 vulnerabilities at high threshold
@@ -57,16 +60,21 @@ dashboard container:    uid 1001/gid 1001, no build secrets,
                         missing config -> HTTP 500 fail-closed,
                         configured sign-in -> HTTP 200,
                         protected root -> HTTP 307
+self-scan:              323 medium-or-higher candidates
+                        (45 critical, 167 high, 111 medium)
+                        323 advisory, 0 blocking; exit code 0
 ```
 
 ## Evidence states
 
-1. `candidate`: a static rule, taint, or imported-tool result.
+1. `candidate`: a static rule or imported-tool result that remains advisory.
 2. `reachable`: a bounded graph path connects an exposed or calling surface.
 3. `observed`: approved runtime evidence exercised the route or code path.
 4. `impact_proven`: a separate approved proof demonstrated security impact.
 
-The dashboard and reports must never collapse these states.
+The dashboard and reports must never collapse these states. Gate disposition is
+stored separately: advisory findings remain visible, while only supported
+semantic evidence may be marked blocking.
 
 ## Post-alpha precision track
 

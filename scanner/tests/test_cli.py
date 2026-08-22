@@ -2,9 +2,39 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from aegify.cli import app
+from aegify.cli import _has_blocking_high_findings, app
+from aegify.models import (
+    Finding,
+    FindingDisposition,
+    ScanResult,
+    ScanStatus,
+    Severity,
+)
 
 runner = CliRunner()
+
+
+def _gate_result(disposition: FindingDisposition) -> ScanResult:
+    return ScanResult(
+        status=ScanStatus.COMPLETED,
+        findings=[
+            Finding(
+                rule_id="TEST-GATE-001",
+                rule_name="Gate test",
+                severity=Severity.HIGH,
+                confidence=0.8,
+                disposition=disposition,
+                file_path="app.py",
+                line_start=1,
+                line_end=1,
+            )
+        ],
+    )
+
+
+def test_ci_gate_ignores_high_advisory_but_blocks_high_evidence() -> None:
+    assert _has_blocking_high_findings(_gate_result(FindingDisposition.ADVISORY)) is False
+    assert _has_blocking_high_findings(_gate_result(FindingDisposition.BLOCKING)) is True
 
 
 def test_scan_pr_supports_static_only_mode_without_api_key(tmp_path: Path) -> None:

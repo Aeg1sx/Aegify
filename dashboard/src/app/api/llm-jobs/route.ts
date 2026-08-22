@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("LLM job creation error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to create job" },
+      { error: "Failed to create job" },
       { status: 500 },
     );
   }
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("LLM jobs list error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to list jobs" },
+      { error: "Failed to list jobs" },
       { status: 500 },
     );
   }
