@@ -1,0 +1,91 @@
+---
+title: "Quickstart"
+description: "Install Aegify, scan a repository, export SARIF, and interpret the evidence gate."
+icon: "rocket"
+---
+
+This guide runs the scanner locally without sending source code to an external
+model. Python 3.12 or newer is required.
+
+<Steps>
+  <Step title="Clone Aegify">
+
+```bash
+git clone https://github.com/Aeg1sx/Aegify.git
+cd Aegify
+```
+
+  </Step>
+  <Step title="Create an isolated environment">
+
+```bash
+python3.12 -m venv scanner/.venv
+source scanner/.venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ./scanner
+```
+
+  </Step>
+  <Step title="Verify the installation">
+
+```bash
+aegify version
+aegify audit-rules ./rules --strict
+```
+
+  </Step>
+  <Step title="Scan an owned repository">
+
+```bash
+aegify scan /path/to/owned/repository \
+  --severity low \
+  --no-llm
+```
+
+  </Step>
+  <Step title="Export SARIF">
+
+```bash
+aegify scan /path/to/owned/repository \
+  --output sarif \
+  --output-file results.sarif \
+  --no-llm
+```
+
+  </Step>
+</Steps>
+
+## Interpret the result
+
+The console and SARIF output include both an evidence state and a gate
+disposition:
+
+| Field | Values | Meaning |
+|---|---|---|
+| Evidence | `candidate`, `reachable`, `observed`, `impact_proven` | Strength and origin of the evidence |
+| Disposition | `advisory`, `blocking` | Whether the finding can fail CI |
+
+An advisory result remains reviewable even when its severity is high or
+critical. A blocking high or critical result changes the CLI exit code.
+
+<Note>
+  LLM review is optional. Do not configure an API key until you have reviewed
+  the data boundary and retention policy of the selected provider.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-repository scan" icon="network" href="/concepts/multi-repository">
+    Create a workspace manifest and retain cross-repository identity.
+  </Card>
+  <Card title="Rule authoring" icon="file-code-2" href="/analysis/rule-authoring">
+    Add an executable YAML rule with positive and safe negative fixtures.
+  </Card>
+  <Card title="Verification harness" icon="flask-conical" href="/verification/harness">
+    Plan an isolated validation run before granting execution approval.
+  </Card>
+  <Card title="GitHub integration" icon="github" href="https://github.com/Aeg1sx/Aegify#cicd-integration">
+    Pin the Aegify Action to a reviewed full commit SHA and upload SARIF.
+  </Card>
+</CardGroup>

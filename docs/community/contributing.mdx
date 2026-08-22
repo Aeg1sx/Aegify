@@ -1,0 +1,34 @@
+---
+title: "Contributing"
+description: "Contribute code, rules, tests, and documentation through Aegify's reviewed GitHub workflow."
+icon: "git-pull-request"
+---
+
+Aegify accepts focused pull requests with tests and explicit evidence
+boundaries. All changes to protected code, workflows, rules, and documentation
+go through GitHub review and required status checks.
+
+## Before opening a pull request
+
+1. Search existing issues and pull requests.
+2. Keep the change focused and avoid unrelated formatting rewrites.
+3. Add positive and safe negative fixtures for rule or analysis changes.
+4. Run the scanner, dashboard, rule, and documentation checks that apply.
+5. Remove secrets, proprietary paths, generated evidence, and local databases.
+
+## Documentation checks
+
+From the repository root:
+
+```bash
+cd docs
+npm ci --ignore-scripts
+npm run check
+```
+
+This validates the Mintlify build, internal links and anchors, redirects,
+snippets, and accessibility requirements.
+
+See the canonical [CONTRIBUTING.md](https://github.com/Aeg1sx/Aegify/blob/main/CONTRIBUTING.md),
+[rule authoring contract](/analysis/rule-authoring), and
+[repository security baseline](/security/repository-security).

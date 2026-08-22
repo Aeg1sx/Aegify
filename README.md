@@ -4,10 +4,13 @@
 
 Alpha-stage white-box application security platform with repository-aware program graphs, compiler-index integration, API/runtime attack-surface evidence, isolated verification, and optional LLM review.
 
+Official documentation: [Mintlify source](docs/index.mdx) and
+[quickstart](docs/quickstart.mdx).
+
 Project policies: [contributing](CONTRIBUTING.md), [security](SECURITY.md),
 [governance](GOVERNANCE.md), [support](SUPPORT.md), and
-[secrets management](docs/SECRETS_MANAGEMENT.md).
-[Repository-side security controls](docs/REPOSITORY_SECURITY.md) document the
+[secrets management](docs/operations/secrets-management.mdx).
+[Repository-side security controls](docs/security/repository-security.mdx) document the
 branch, tag, review, advisory, and supply-chain settings expected on GitHub.
 
 > Aegify now implements a normalized CFG/SSA/DFG security graph with
@@ -291,6 +294,7 @@ Aegify/
     src/components/   UI components (shadcn/ui)
     src/lib/          Prisma client, utilities
     prisma/           Schema and migrations
+  docs/             Mintlify documentation, English and Korean navigation
   rules/            YAML rule definitions (OWASP Top 10, API, mobile)
   .github/          CI/CD workflows
 ```
@@ -313,19 +317,31 @@ mypy src/aegify/
 
 # Verify the rule DSL and bundled rules
 aegify audit-rules ../rules --strict
+
+# Validate and preview the Mintlify documentation
+cd ../docs
+npm ci --ignore-scripts
+npm run check
+npm run dev
 ```
+
+For hosted documentation, connect this repository in Mintlify and set the
+monorepo documentation path to `/docs`. Keep `main` as the production branch;
+pull-request previews should be built from the same locked dependencies and
+`docs.json` navigation used by CI.
 
 ## Technical Documentation
 
-- [Technical architecture and roadmap](docs/TECHNICAL_ARCHITECTURE.md)
-- [SCIP/JVM semantic-analysis contract](docs/SEMANTIC_ANALYSIS.md)
-- [Isolated verification-harness contract](docs/VERIFICATION_HARNESS.md)
-- [External and runtime adapter contracts](docs/EXTERNAL_AND_RUNTIME_ADAPTERS.md)
-- [Rule authoring and normalization contract](docs/RULE_AUTHORING.md)
+- [Official documentation home](docs/index.mdx)
+- [Technical architecture and roadmap](docs/architecture/technical-architecture.mdx)
+- [SCIP/JVM semantic-analysis contract](docs/analysis/semantic-analysis.mdx)
+- [Isolated verification-harness contract](docs/verification/harness.mdx)
+- [External and runtime adapter contracts](docs/integrations/external-runtime-adapters.mdx)
+- [Rule authoring and normalization contract](docs/analysis/rule-authoring.mdx)
 - [Open-source readiness assessment](QUALITY_ASSESSMENT.md)
-- [Alpha requirement-by-requirement completion audit](docs/ALPHA_COMPLETION_AUDIT.md)
-- [Threat model and deployment boundaries](docs/THREAT_MODEL.md)
-- [Data, privacy, telemetry, and retention policy](docs/PRIVACY.md)
+- [Alpha requirement-by-requirement completion audit](docs/project/alpha-completion-audit.mdx)
+- [Threat model and deployment boundaries](docs/security/threat-model.mdx)
+- [Data, privacy, telemetry, and retention policy](docs/security/privacy.mdx)
 - [Security and coordinated disclosure policy](SECURITY.md)
 
 ## Contributing

@@ -9,6 +9,7 @@
 /dashboard/Dockerfile @Aeg1sx
 /docker-compose*.yml @Aeg1sx
 /SECURITY.md @Aeg1sx
+/docs/ @Aeg1sx
 /deploy/vault/ @Aeg1sx
 /scanner/src/aegify/harness/ @Aeg1sx
 /scanner/src/aegify/semantic/ @Aeg1sx

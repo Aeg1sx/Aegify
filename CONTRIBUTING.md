@@ -43,7 +43,7 @@ Every detection change should include:
 - the expected AST/graph/evidence path;
 - a bounded finding count and a performance test for broad matches.
 
-See [the rule contract](docs/RULE_AUTHORING.md) before introducing new DSL
+See [the rule contract](docs/analysis/rule-authoring.mdx) before introducing new DSL
 fields.
 
 ## Security tests
@@ -62,5 +62,5 @@ migration test.
 All changes target a non-default branch and merge through a pull request.
 CODEOWNERS review and required CI apply to security-sensitive paths. Never add
 live `.env` files, Vault tokens, customer fixtures, local databases, generated
-SARIF, or build caches. See [secrets management](docs/SECRETS_MANAGEMENT.md) and
+SARIF, or build caches. See [secrets management](docs/operations/secrets-management.mdx) and
 [governance](GOVERNANCE.md).

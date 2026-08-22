@@ -1,0 +1,75 @@
+---
+title: "Multi-repository and monorepo analysis"
+description: "Build stable cross-repository reachability with workspace manifests, SCIP, build modules, and retained artifacts."
+icon: "network"
+---
+
+A workspace scan gives every repository, module, symbol, endpoint, and finding a
+stable qualified identity. Same-named packages in different repositories do not
+collapse into one node.
+
+## Resolution order
+
+Aegify uses the highest-fidelity available evidence:
+
+1. exact SCIP symbol, package manager, package name, and package version;
+2. exact Maven or Gradle artifact provider in the workspace;
+3. a SHA-256-bound JVM classpath and bytecode target;
+4. an explicitly declared dependency fallback labeled as lower fidelity.
+
+Ambiguous providers and version conflicts remain unresolved rather than being
+connected to an arbitrary target.
+
+## Create a workspace manifest
+
+```yaml
+version: 1
+name: example-platform
+
+repositories:
+  - id: edge-gateway
+    path: ./services/gateway
+    role: gateway
+
+  - id: user-service
+    path: ./services/users
+    role: spring-service
+    scip_indexes:
+      - ./evidence/users-api/index.scip
+
+  - id: web-frontend
+    path: ./apps/web
+    role: frontend
+    exclude:
+      - "**/storybook-static/**"
+```
+
+Paths are resolved relative to the manifest. Only include repositories and
+artifacts that you are authorized to analyze.
+
+## Run the workspace scan
+
+```bash
+aegify scan-workspace ./aegify-workspace.yml \
+  --output sarif \
+  --output-file results.sarif \
+  --semantic-graph-file semantic-graph.jsonl \
+  --program-graph-file program-graph.jsonl
+```
+
+## Compiler evidence
+
+Plan compiler-backed indexes and classpath exports separately. Planning does not
+claim that an index or build command ran.
+
+```bash
+aegify index-scip-java ./aegify-workspace.yml \
+  --image ghcr.io/scip-code/scip-java@sha256:<digest>
+
+aegify export-jvm-classpath ./aegify-workspace.yml \
+  --image registry.example/aegify-jvm-classpath@sha256:<digest>
+```
+
+Generated indexes and classpath snapshots are retained with hashes and scoped
+to their repository and build module. See [semantic analysis](/analysis/semantic-analysis)
+for overload, dispatch, Spring DI, and taint behavior.

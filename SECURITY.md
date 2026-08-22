@@ -57,6 +57,6 @@ data.
 - Treat repositories, build scripts, SARIF, OpenAPI documents, and YAML rules as
   untrusted input.
 
-See the [threat model](docs/THREAT_MODEL.md) and
-[data/privacy policy](docs/PRIVACY.md) for trust boundaries and optional
+See the [threat model](docs/security/threat-model.mdx) and
+[data/privacy policy](docs/security/privacy.mdx) for trust boundaries and optional
 external data flows.

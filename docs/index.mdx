@@ -1,0 +1,57 @@
+---
+title: "Aegify documentation"
+description: "Build evidence-aware white-box security analysis across repositories, JVM services, gateways, and frontend clients."
+icon: "shield-check"
+---
+
+Aegify is an alpha-stage, repository-aware white-box application security
+platform. It combines source analysis, compiler indexes, program graphs,
+framework models, attack-surface correlation, and policy-controlled runtime
+evidence without treating every lexical match as a proven vulnerability.
+
+<CardGroup cols={2}>
+  <Card title="Scan your first repository" icon="play" href="/quickstart">
+    Install the Python scanner, run a local scan, and inspect advisory and
+    blocking results.
+  </Card>
+  <Card title="Analyze a workspace" icon="network" href="/concepts/multi-repository">
+    Resolve monorepo modules and multiple repositories with stable identities,
+    SCIP, Maven, Gradle, and classpath evidence.
+  </Card>
+  <Card title="Understand evidence gates" icon="git-compare-arrows" href="/concepts/evidence-gates">
+    Learn why candidate, reachable, observed, and impact-proven evidence remain
+    separate from advisory and blocking disposition.
+  </Card>
+  <Card title="Map the attack surface" icon="route" href="/concepts/attack-surface">
+    Correlate frontend calls, Spring Cloud Gateway transformations, backend
+    endpoints, findings, and runtime observations.
+  </Card>
+</CardGroup>
+
+## What Aegify analyzes
+
+- Python, JavaScript, TypeScript, Java, Kotlin, Go, Rust, and Swift syntax;
+- repository-qualified symbols, calls, endpoints, modules, and findings;
+- CFG, bounded ICFG, SSA/DFG, data-state, points-to, alias, and taint overlays;
+- SCIP symbols, Maven/Gradle providers, JVM classpaths, bytecode, and Spring DI;
+- frontend HTTP calls, Gateway routes and rewrites, and backend handlers;
+- imported SARIF, Semgrep, Joern, HAR, and OpenTelemetry evidence;
+- explicitly approved HTTP, browser, proxy, and JVM verification plans.
+
+<Warning>
+  Aegify is alpha software. A candidate is not proof of reachability, a runtime
+  observation is not exploit proof, and an unresolved link is not proof that a
+  path is unreachable. Review the evidence attached to each result.
+</Warning>
+
+## Evidence before severity
+
+Severity describes potential impact. It does not decide the CI gate. Broad
+heuristics remain visible as advisory candidates. Only supported semantic
+evidence, such as a source-to-sink taint path or a structured database operation
+sequence, can create a blocking result.
+
+<Card title="Read the alpha completion audit" icon="clipboard-check" href="/project/alpha-completion-audit">
+  See the executed release gates, supported capabilities, and explicit
+  precision limits for the current alpha.
+</Card>

@@ -1,0 +1,26 @@
+{
+  "name": "aegify-documentation",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "validate": "mint validate",
+    "links": "mint broken-links --check-anchors --check-redirects --check-snippets",
+    "a11y": "mint a11y",
+    "check": "npm run validate && npm run links && npm run a11y",
+    "dev": "mint dev"
+  },
+  "devDependencies": {
+    "mint": "4.2.818"
+  },
+  "overrides": {
+    "@puppeteer/browsers": "3.2.1",
+    "express": "4.22.2",
+    "puppeteer": "25.8.0",
+    "puppeteer-core": "25.8.0",
+    "qs": "6.15.3",
+    "sharp": "0.35.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
