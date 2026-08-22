@@ -28,6 +28,7 @@ from aegify.models import (
     TaintSink,
     TaintSource,
 )
+from aegify.text import scrub_quoted_strings
 
 _TraceMap = dict[str, "_Trace"]
 _CallString = tuple[str, ...]
@@ -553,6 +554,22 @@ class StructuredTaintAnalyzer:
                     )
                     for argument in call.arguments
                 ]
+                receiver_state = (
+                    self._expression_traces(
+                        call.receiver,
+                        context,
+                        statement,
+                        locals_taint,
+                        local_points,
+                        heap_taints,
+                        heap_points,
+                        call_string,
+                        object_return_sites,
+                        include_line_sources=True,
+                    )
+                    if call.receiver
+                    else {}
+                )
                 receiver_points = (
                     self._expression_points(
                         call.receiver,
@@ -660,6 +677,7 @@ class StructuredTaintAnalyzer:
                     self._record_sink_flows(
                         sink_event,
                         argument_states,
+                        receiver_state,
                         flows,
                         call_string,
                     )
@@ -836,6 +854,7 @@ class StructuredTaintAnalyzer:
             self._record_sink_flows(
                 _SinkEvent(sink=sink, call=call),
                 argument_states,
+                {},
                 flows,
                 call_string,
             )
@@ -911,13 +930,17 @@ class StructuredTaintAnalyzer:
         self,
         event: _SinkEvent,
         argument_states: list[_TraceMap],
+        receiver_state: _TraceMap,
         flows: dict[tuple[str, str, int, str, _CallString], TaintFlow],
         call_string: _CallString,
     ) -> None:
         index = event.sink.argument_index
-        if index < 0 or index >= len(argument_states):
+        if index == -1:
+            states = receiver_state
+        elif index < 0 or index >= len(argument_states):
             return
-        states = argument_states[index]
+        else:
+            states = argument_states[index]
         for origin, trace in states.items():
             sanitized = trace.sanitized or event.sink.sink_type in trace.sanitized_for
             sink_step = TaintPropagation(
@@ -962,6 +985,22 @@ class StructuredTaintAnalyzer:
     ) -> _TraceMap:
         traces: _TraceMap = {}
         for access in self._accesses(expression):
+            if "." in access:
+                base = access.split(".", 1)[0]
+                base_traces = self._append_step(
+                    locals_taint.get(base, {}),
+                    variable=access,
+                    file_path=context.definition.file_path,
+                    line=statement.line_start,
+                    propagation_type="field-load",
+                    function=context.definition.qualified_name,
+                    call_context=call_string,
+                )
+                if base_traces:
+                    self._field_reads.add(
+                        (context.node_id, statement.line_start, access.split(".", 1)[1])
+                    )
+                    self._merge_traces(traces, base_traces)
             for key in self._value_keys(access, context, local_points, heap_points, call_string):
                 if key.startswith("local:"):
                     variable = key.rsplit(":", 1)[-1]
@@ -1217,12 +1256,7 @@ class StructuredTaintAnalyzer:
         for fragment in re.findall(r"\{([^{}]+)\}", expression):
             interpolated.extend(cls._ACCESS.findall(fragment))
         interpolated.extend(re.findall(r"\$(?!\{)([A-Za-z_$][\w$]*)", expression))
-        scrubbed = re.sub(
-            r"(['\"])(?:\\.|(?!\1).)*\1",
-            lambda match: " " * len(match.group(0)),
-            expression,
-            flags=re.DOTALL,
-        )
+        scrubbed = scrub_quoted_strings(expression)
         accesses: list[str] = [
             value for value in interpolated if value not in cls._KEYWORDS and not value[0].isupper()
         ]
@@ -1296,16 +1330,24 @@ class StructuredTaintAnalyzer:
     @classmethod
     def _call_matches_pattern(cls, pattern: str, call: CallSite) -> bool:
         call_text = cls._call_text(call)
-        if cls._pattern_matches(pattern, call_text):
-            return True
         normalized = pattern.removesuffix("(")
+        if normalized.startswith("."):
+            return call_text.endswith(normalized)
         if "." not in normalized:
-            return cls._pattern_matches(normalized, call.callee)
+            return call.callee == normalized or call_text == normalized
+        if call_text == normalized or call_text.endswith(f".{normalized}"):
+            return True
         receiver_pattern, method_pattern = normalized.rsplit(".", 1)
         return (
             call.callee == method_pattern
             and call.receiver is not None
-            and cls._pattern_matches(receiver_pattern, call.receiver)
+            and bool(
+                re.search(
+                    rf"(?<![A-Za-z0-9_$]){re.escape(receiver_pattern)}"
+                    r"(?![A-Za-z0-9_$])",
+                    call.receiver,
+                )
+            )
         )
 
     @staticmethod

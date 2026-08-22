@@ -27,6 +27,8 @@ interface Finding {
   ruleName: string;
   severity: string;
   confidence: number;
+  evidenceState: string;
+  disposition: string;
   status: string;
   filePath: string;
   lineStart: number;
@@ -77,6 +79,7 @@ export default function FindingsPage() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [projectId, setProjectId] = useState("");
   const [source, setSource] = useState("");
+  const [disposition, setDisposition] = useState("");
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
 
   // Multi-select state
@@ -116,6 +119,7 @@ export default function FindingsPage() {
     if (language) params.set("language", language);
     if (projectId) params.set("projectId", projectId);
     if (source) params.set("source", source);
+    if (disposition) params.set("disposition", disposition);
 
     fetch(`/api/findings?${params}`)
       .then((r) => r.json())
@@ -124,7 +128,7 @@ export default function FindingsPage() {
         setTotal(data.total);
       })
       .finally(() => setLoading(false));
-  }, [page, search, severity, status, ruleId, language, projectId, source]);
+  }, [page, search, severity, status, ruleId, language, projectId, source, disposition]);
 
   useEffect(() => {
     const timer = setTimeout(fetchFindings, 300);
@@ -343,6 +347,18 @@ export default function FindingsPage() {
           <option value="sast">SAST</option>
           <option value="llm">LLM</option>
         </select>
+        <select
+          value={disposition}
+          onChange={(e) => {
+            setDisposition(e.target.value);
+            setPage(1);
+          }}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All gates</option>
+          <option value="blocking">Blocking</option>
+          <option value="advisory">Advisory</option>
+        </select>
       </div>
 
       {/* Batch analysis summary */}
@@ -459,6 +475,18 @@ export default function FindingsPage() {
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <SeverityBadge severity={finding.severity} />
                             <StatusBadge status={finding.status} />
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                                finding.disposition === "advisory"
+                                  ? "bg-amber-500/10 text-amber-600"
+                                  : "bg-red-500/10 text-red-600"
+                              }`}
+                            >
+                              {finding.disposition}
+                            </span>
+                            <span className="text-[10px] uppercase text-muted-foreground">
+                              {finding.evidenceState}
+                            </span>
                             <span className="text-xs font-mono text-muted-foreground">
                               {finding.ruleId}
                             </span>

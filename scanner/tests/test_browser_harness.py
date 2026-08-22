@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from aegify.harness.browser import BrowserVerificationExecutor, BrowserVerificationPlan
+from aegify.harness.browser_runner import _validated_service_command
 
 PINNED_IMAGE = f"example.invalid/browser@sha256:{'d' * 64}"
 
@@ -52,6 +53,14 @@ def test_browser_plan_rejects_external_navigation_and_arbitrary_action():
                 }
             ]
         )
+
+
+def test_browser_runner_revalidates_staged_service_command():
+    staged = _plan().model_dump(mode="json")
+    assert _validated_service_command(staged) == staged["service_command"]
+    staged["service_command"] = ["unapproved-server"]
+    with pytest.raises(ValueError, match="not allowlisted"):
+        _validated_service_command(staged)
 
 
 def test_browser_plan_stages_playwright_runner_with_no_container_network(

@@ -154,7 +154,7 @@ rules:
       compromise.
     severity: critical
     confidence: 0.9
-    languages: [python, java, go, kotlin]
+    languages: [python, javascript, typescript, java, go, kotlin]
     cwe_id: 94
     owasp_category: "A03:2021-Injection"
     defense_patterns: ["ast.literal_eval", "json.loads", "sandbox", "restricted_exec", "safe_eval"]
@@ -167,8 +167,9 @@ rules:
         args_match: "(request|req|input|user|param|query|body|data|args)"
       - callee: "\\bexec\\b"
         args_match: "(request|req|input|user|param|query|body|data|args)"
-      - callee_match: "(new Function|Function\\()"
+      - callee_match: "^Function$"
         args_match: "(request|req|input|user|param|query|body)"
+        languages: [javascript, typescript]
     message: >
       Code injection: user input from '{source}' (line {source_line})
       flows into dynamic code execution '{sink}' (line {sink_line}). Never
@@ -273,8 +274,10 @@ rules:
     patterns:
       - callee_match: "(re\\.compile|re\\.match|re\\.search|re\\.findall|new RegExp|Pattern\\.compile|regexp\\.Compile|regexp\\.MustCompile)"
         args_match: "(request|req|input|user|param|query|body|data|args)"
+        disposition: advisory
       - callee_match: "(RegExp|re\\.compile|Pattern\\.compile)"
         args_match: "(\\+|format|f['\"]|%s|concat|\\$\\{)"
+        disposition: advisory
     taint:
       source_types: [http_param, http_body]
       sink_pattern: "(re\\.(compile|match|search|findall|sub)|new RegExp|Pattern\\.compile|regexp\\.(Compile|MustCompile|Match))"
@@ -300,13 +303,20 @@ rules:
     patterns:
       - callee_match: "(printf|sprintf|fprintf|snprintf|fmt\\.Sprintf|fmt\\.Fprintf|fmt\\.Printf|String\\.format|format!)"
         args_match: "(request|req|input|user|param|query|body|data|args)"
+        args_match_index: 0
+        args_exclude: "^\\s*(?:[rubfRUBF]{0,2})?['\"]"
+        disposition: advisory
       - callee_match: "(logging\\.(info|warn|error|debug|warning)|logger\\.(info|warn|error|debug))"
         args_match: "(request|req|input|user|param|query|body)"
+        args_match_index: 0
+        args_exclude: "^\\s*(?:[rubfRUBF]{0,2})?['\"]"
+        disposition: advisory
       - callee_match: "(\\.format\\()"
         missing_check: "(sanitize|escape|validate)"
+        disposition: advisory
     taint:
       source_types: [http_param, http_body, http_header]
-      sink_pattern: "(printf|sprintf|fprintf|snprintf|fmt\\.(Sprintf|Fprintf|Printf)|String\\.format|format!)"
+      sink_pattern: "(printf|sprintf|fprintf|snprintf|fmt\\.(Sprintf|Fprintf|Printf)|String\\.format|format!|\\.format|logging\\.(info|warn|error|debug|warning)|logger\\.(info|warn|error|debug))"
     message: >
       Format string vulnerability: user input from '{source}' (line
       {source_line}) is used as a format string in '{sink}' (line

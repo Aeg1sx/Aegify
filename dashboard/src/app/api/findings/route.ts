@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   const language = url.searchParams.get("language");
   const projectId = url.searchParams.get("projectId");
   const source = url.searchParams.get("source");
+  const disposition = url.searchParams.get("disposition");
 
   const LANG_EXT_MAP: Record<string, string[]> = {
     Python: [".py"],
@@ -38,6 +39,9 @@ export async function GET(request: NextRequest) {
   if (status) where.status = status;
   if (ruleId) where.ruleId = ruleId;
   if (source) where.source = source;
+  if (disposition === "blocking" || disposition === "advisory") {
+    where.disposition = disposition;
+  }
   if (projectId) where.scan = { projectId };
   if (language && LANG_EXT_MAP[language]) {
     where.OR = LANG_EXT_MAP[language].map((ext) => ({

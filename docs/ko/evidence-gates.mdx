@@ -1,0 +1,28 @@
+---
+title: "증거 상태와 CI 차단 정책"
+description: "정적 후보, 도달 경로, 런타임 관측과 영향 증명을 CI disposition과 분리합니다."
+icon: "git-compare-arrows"
+---
+
+Aegify는 분석기가 확보한 증거와 CI 정책을 별도 필드로 관리합니다.
+
+| 증거 상태 | 의미 |
+|---|---|
+| `candidate` | 정적 룰이나 외부 도구가 검토 대상을 찾음 |
+| `reachable` | 제한된 그래프 또는 taint 경로가 source와 sink를 연결함 |
+| `observed` | 승인된 런타임 증거가 해당 경로나 코드를 실행함 |
+| `impact_proven` | 별도 승인된 검증에서 보안 영향을 증명함 |
+
+`advisory` finding은 console, SARIF, GitHub와 dashboard에 유지되지만 CI를
+실패시키지 않습니다. `blocking` finding만 설정된 severity 기준에 따라 CI를
+차단할 수 있습니다.
+
+broad heuristic은 기본적으로 `candidate/advisory`입니다. source-to-sink taint,
+DB receiver와 연산 순서, transaction/lock 방어 부재, validation 상태 또는
+receiver-format 같은 실제 의미 증거가 충족될 때만 blocking 결과를 생성합니다.
+
+<Warning>
+  프론트엔드나 Gateway 연결을 찾지 못했다는 결과는 현재 입력과 지원 모델에서
+  정적 연결을 찾지 못했다는 뜻입니다. 런타임에서 접근할 수 없다는 증명이
+  아닙니다.
+</Warning>

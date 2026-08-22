@@ -15,6 +15,25 @@ from typing import Any
 from urllib.parse import urlsplit
 
 
+def _validated_service_command(plan: dict[str, Any]) -> list[str]:
+    """Revalidate the staged argv against the plan's explicit allowlist."""
+    raw_command = plan.get("service_command")
+    raw_policy = plan.get("policy")
+    if not isinstance(raw_command, list) or not raw_command:
+        raise ValueError("service_command must be a non-empty argv list")
+    if not isinstance(raw_policy, dict):
+        raise ValueError("verification policy is required")
+    raw_allowed = raw_policy.get("allowed_commands")
+    if not isinstance(raw_allowed, list) or not raw_allowed:
+        raise ValueError("allowed_commands must be a non-empty list")
+    if any(not isinstance(value, str) or "\x00" in value for value in raw_command):
+        raise ValueError("service_command must contain NUL-free strings")
+    allowed = {value for value in raw_allowed if isinstance(value, str)}
+    if raw_command[0] not in allowed:
+        raise ValueError(f"service command {raw_command[0]!r} is not allowlisted")
+    return list(raw_command)
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
         return None
@@ -74,8 +93,9 @@ def _request(  # type: ignore[no-untyped-def]
 def main() -> int:
     plan_path = Path(sys.argv[1])
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    service_command = _validated_service_command(plan)
     service = subprocess.Popen(
-        [str(value) for value in plan["service_command"]],
+        service_command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

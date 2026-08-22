@@ -11,7 +11,24 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
+
+def _validated_service_command(plan: dict[str, Any]) -> list[str]:
+    """Revalidate the staged argv against the plan's explicit allowlist."""
+    raw_command = plan.get("service_command")
+    raw_policy = plan.get("policy")
+    if not isinstance(raw_command, list) or not raw_command:
+        raise ValueError("service_command must be a non-empty argv list")
+    if not isinstance(raw_policy, dict):
+        raise ValueError("verification policy is required")
+    raw_allowed = raw_policy.get("allowed_commands")
+    if not isinstance(raw_allowed, list) or not raw_allowed:
+        raise ValueError("allowed_commands must be a non-empty list")
+    if any(not isinstance(value, str) or "\x00" in value for value in raw_command):
+        raise ValueError("service_command must contain NUL-free strings")
+    allowed = {value for value in raw_allowed if isinstance(value, str)}
+    if raw_command[0] not in allowed:
+        raise ValueError(f"service command {raw_command[0]!r} is not allowlisted")
+    return list(raw_command)
 
 
 def _wait_for_port(base_url: str, timeout: int) -> None:
@@ -39,13 +56,16 @@ def _local_url(url: str, origin: tuple[str, int]) -> bool:
 
 
 def main() -> int:
+    from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
+
     plan_path = Path(sys.argv[1])
     plan: dict[str, Any] = json.loads(plan_path.read_text(encoding="utf-8"))
     base_url = str(plan["base_url"])
     parsed = urlsplit(base_url)
     origin = (parsed.hostname or "127.0.0.1", parsed.port or 80)
+    service_command = _validated_service_command(plan)
     service = subprocess.Popen(
-        [str(value) for value in plan["service_command"]],
+        service_command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

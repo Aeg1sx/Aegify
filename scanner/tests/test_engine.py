@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from aegify.config import AegifyConfig
-from aegify.models import ScanStatus, Severity
+from aegify.models import EvidenceState, FindingDisposition, ScanStatus, Severity
 from aegify.scanner.engine import ScanEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -28,6 +28,16 @@ class TestScanEngine:
         # Should find SQL injection
         sql_findings = [f for f in result.findings if "SQL" in f.rule_id]
         assert len(sql_findings) > 0
+
+        taint_findings = [f for f in result.findings if f.taint_flow is not None]
+        assert taint_findings
+        assert all(f.evidence_state == EvidenceState.REACHABLE for f in taint_findings)
+        assert all(f.disposition == FindingDisposition.BLOCKING for f in taint_findings)
+        assert all(
+            f.disposition == FindingDisposition.ADVISORY
+            for f in result.findings
+            if f.taint_flow is None
+        )
 
     def test_scan_safe_file_has_fewer_findings(self, engine):
         vulnerable_result = engine.scan(FIXTURES / "vulnerable_app.py")

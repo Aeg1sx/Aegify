@@ -14,6 +14,7 @@ from tree_sitter import Node
 from aegify.graph_types import ProgramGraph
 from aegify.models import FileAST, FunctionDef, ProgramGraphSummary
 from aegify.scanner.ast_parser import _get_parser
+from aegify.text import scrub_quoted_strings
 
 
 @dataclass
@@ -965,7 +966,7 @@ class ProgramGraphBuilder:
                         )
 
     def _data_facts(self, text: str) -> dict[str, Any]:
-        scrubbed = re.sub(r"(['\"])(?:\\.|(?!\1).)*\1", "", text, flags=re.DOTALL)
+        scrubbed = scrub_quoted_strings(text)
         definitions: set[str] = set()
         for match in self._DECLARATION.finditer(scrubbed):
             definitions.add(match.group(1) or match.group(2))

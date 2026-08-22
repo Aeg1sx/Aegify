@@ -1,0 +1,131 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "aspen",
+  "name": "Aegify",
+  "description": "Repository-aware white-box application security analysis with explicit evidence and CI-gating boundaries.",
+  "colors": {
+    "primary": "#4F46E5",
+    "light": "#818CF8",
+    "dark": "#4F46E5"
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs",
+    "codeblocks": "system"
+  },
+  "navigation": {
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "icon": "github",
+          "href": "https://github.com/Aeg1sx/Aegify"
+        },
+        {
+          "anchor": "Security",
+          "icon": "shield",
+          "href": "https://github.com/Aeg1sx/Aegify/security/policy"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "language": "en",
+        "default": true,
+        "versions": [
+          {
+            "version": "alpha",
+            "default": true,
+            "tag": "Latest",
+            "groups": [
+              {
+                "group": "Get started",
+                "icon": "rocket",
+                "pages": ["index", "quickstart"]
+              },
+              {
+                "group": "Core concepts",
+                "icon": "blocks",
+                "pages": [
+                  "concepts/evidence-gates",
+                  "concepts/multi-repository",
+                  "concepts/attack-surface"
+                ]
+              },
+              {
+                "group": "Analysis engine",
+                "icon": "scan-search",
+                "pages": [
+                  "analysis/semantic-analysis",
+                  "analysis/rule-authoring",
+                  "architecture/technical-architecture"
+                ]
+              },
+              {
+                "group": "Verification and integrations",
+                "icon": "workflow",
+                "pages": [
+                  "verification/harness",
+                  "integrations/external-runtime-adapters"
+                ]
+              },
+              {
+                "group": "Operations and security",
+                "icon": "shield-check",
+                "pages": [
+                  "operations/secrets-management",
+                  "security/reporting",
+                  "security/threat-model",
+                  "security/privacy",
+                  "security/repository-security"
+                ]
+              },
+              {
+                "group": "Project",
+                "icon": "folder-git-2",
+                "pages": [
+                  "community/contributing",
+                  "project/alpha-completion-audit"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "language": "ko",
+        "versions": [
+          {
+            "version": "alpha",
+            "default": true,
+            "tag": "최신",
+            "groups": [
+              {
+                "group": "시작하기",
+                "icon": "rocket",
+                "pages": ["ko/index", "ko/quickstart"]
+              },
+              {
+                "group": "핵심 개념",
+                "icon": "blocks",
+                "pages": ["ko/evidence-gates"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "errors": {
+    "404": {
+      "redirect": false,
+      "title": "Page not found",
+      "description": "The requested Aegify documentation page does not exist. [Return to the documentation home](/)."
+    }
+  }
+}

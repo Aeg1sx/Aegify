@@ -2,7 +2,7 @@
 
 import pytest
 
-from aegify.models import Finding, ScanResult, ScanStatus, Severity
+from aegify.models import Finding, FindingDisposition, ScanResult, ScanStatus, Severity
 from aegify.reporter.github import GitHubReporter
 
 
@@ -12,6 +12,7 @@ def _make_finding(**overrides) -> Finding:
         "rule_name": "SQL Injection",
         "severity": Severity.HIGH,
         "confidence": 0.9,
+        "disposition": FindingDisposition.BLOCKING,
         "file_path": "app.py",
         "line_start": 10,
         "line_end": 10,
@@ -83,6 +84,14 @@ class TestGitHubReporter:
         low_ann = annotations[1]
         assert low_ann["annotation_level"] == "warning"
         assert low_ann["start_line"] == 20
+
+    def test_high_advisory_annotation_is_warning(self, reporter):
+        finding = _make_finding(disposition=FindingDisposition.ADVISORY)
+
+        annotation = reporter.generate_inline_annotations([finding])[0]
+
+        assert annotation["annotation_level"] == "warning"
+        assert "ADVISORY" in annotation["body"]
 
     def test_summary_table(self, reporter):
         findings = [

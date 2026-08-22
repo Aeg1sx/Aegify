@@ -9,6 +9,7 @@ import { PrismaClient } from "@prisma/client";
 import { createClient } from "@libsql/client";
 
 import {
+  normalizeFindingClassification,
   normalizeFindingEvidence,
   workspaceSnapshotForRun,
 } from "./sarif-evidence.ts";
@@ -59,6 +60,31 @@ test("legacy SARIF without provenance remains uploadable", () => {
     modulePath: "",
     provenance: "{}",
   });
+});
+
+test("normalizes scanner evidence state and gate disposition", () => {
+  assert.deepEqual(
+    normalizeFindingClassification({
+      evidenceState: "reachable",
+      disposition: "advisory",
+      blocksCi: false,
+    }),
+    { evidenceState: "reachable", disposition: "advisory" },
+  );
+});
+
+test("legacy or malformed classification remains visible without blocking", () => {
+  assert.deepEqual(normalizeFindingClassification(undefined), {
+    evidenceState: "candidate",
+    disposition: "advisory",
+  });
+  assert.deepEqual(
+    normalizeFindingClassification({
+      evidenceState: "invented",
+      disposition: "ignored",
+    }),
+    { evidenceState: "candidate", disposition: "advisory" },
+  );
 });
 
 test("fresh migration history persists normalized evidence with Prisma", async () => {
@@ -112,6 +138,10 @@ test("fresh migration history persists normalized evidence with Prisma", async (
         evidence_id: "ev:integration",
       },
     });
+    const classification = normalizeFindingClassification({
+      evidenceState: "reachable",
+      disposition: "blocking",
+    });
     const finding = await prisma.finding.create({
       data: {
         scanId: scan.id,
@@ -123,12 +153,15 @@ test("fresh migration history persists normalized evidence with Prisma", async (
         lineEnd: 7,
         message: "integration evidence",
         ...evidence,
+        ...classification,
       },
       include: { scan: true },
     });
 
     assert.equal(finding.evidenceId, "ev:integration");
     assert.equal(finding.repositoryId, "orders");
+    assert.equal(finding.evidenceState, "reachable");
+    assert.equal(finding.disposition, "blocking");
     assert.equal(finding.scan.workspaceSnapshot, "sha256:workspace");
     assert.equal(JSON.parse(finding.provenance).contract_version, 1);
     assert.equal(llmJob.status, "pending");

@@ -180,3 +180,40 @@ patterns:
     assert report.disabled_rules == 1
     assert report.errors == 0
     assert report.warnings == 0
+
+
+def test_audit_validates_disposition_and_semantic_detector(tmp_path: Path):
+    rules = tmp_path / "gate.yml"
+    rules.write_text(
+        """
+rules:
+  - id: valid-gate
+    severity: high
+    languages: [python]
+    patterns:
+      - callee: save
+        disposition: advisory
+    semantic:
+      kind: database_race
+      read_callee: find
+      write_callee: save
+      receiver_match: repo
+      required_between: '\\+='
+      defense_match: transaction
+  - id: invalid-gate
+    severity: high
+    languages: [python]
+    patterns:
+      - callee: save
+        disposition: maybe
+    semantic:
+      kind: future_detector
+      read_callee: '['
+"""
+    )
+
+    report = audit_rules(rules)
+
+    assert any(issue.code == "invalid-disposition" for issue in report.issues)
+    assert any(issue.code == "unsupported-semantic-kind" for issue in report.issues)
+    assert any(issue.code == "invalid-regex" for issue in report.issues)

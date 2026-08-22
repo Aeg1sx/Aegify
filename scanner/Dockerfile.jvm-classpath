@@ -1,9 +1,8 @@
-# Build from the repository root. All three base images are intentionally
-# required as digest-pinned build args; the resulting image must also be used
-# by Aegify as name@sha256:<digest>.
-ARG PYTHON_BASE
-ARG GRADLE_BASE
-ARG MAVEN_BASE
+# Build from the repository root. Defaults are multi-architecture manifest
+# digests; callers may override them only with another digest-pinned reference.
+ARG PYTHON_BASE=python:3.12-slim@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
+ARG GRADLE_BASE=gradle:8.10.2-jdk21@sha256:963d59f7f22767da4efbcf46b661361b61af5fb88b0309da1071c4234c647eba
+ARG MAVEN_BASE=maven:3.9.9-eclipse-temurin-21@sha256:3a4ab3276a087bf276f79cae96b1af04f53731bec53fb2e651aca79e4b10211e
 
 FROM ${GRADLE_BASE} AS gradle_runtime
 USER root
@@ -16,11 +15,12 @@ RUN mkdir -p /root/.m2/repository && \
       -Dartifact=org.apache.maven.plugins:maven-dependency-plugin:3.8.1
 
 FROM ${PYTHON_BASE} AS aegify_builder
-WORKDIR /build/scanner
-COPY scanner/pyproject.toml scanner/README.md ./
+WORKDIR /opt/aegify
+COPY scanner/pyproject.toml scanner/uv.lock scanner/README.md ./
 COPY scanner/src/ src/
-COPY rules/ /build/rules/
-RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+COPY rules/ /opt/rules/
+RUN pip install --no-cache-dir uv==0.11.26 && \
+    uv sync --locked --no-dev --no-editable
 
 FROM ${PYTHON_BASE}
 
@@ -29,15 +29,17 @@ COPY --from=gradle_runtime /opt/gradle /opt/gradle
 COPY --from=gradle_runtime /home/gradle/.gradle /opt/aegify-cache/gradle
 COPY --from=maven_runtime /usr/share/maven /usr/share/maven
 COPY --from=maven_runtime /root/.m2/repository /opt/aegify-cache/m2
-COPY --from=aegify_builder /wheels /wheels
+COPY --from=aegify_builder /opt/aegify/.venv /opt/aegify/.venv
 
 ENV JAVA_HOME=/opt/java/openjdk
 ENV GRADLE_HOME=/opt/gradle
 ENV MAVEN_HOME=/usr/share/maven
-ENV PATH=/opt/gradle/bin:/usr/share/maven/bin:/opt/java/openjdk/bin:${PATH}
+ENV PATH=/opt/aegify/.venv/bin:/opt/gradle/bin:/usr/share/maven/bin:/opt/java/openjdk/bin:${PATH}
 
-RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
+RUN groupadd --system --gid 10001 aegify && \
+    useradd --system --uid 10001 --gid 10001 --home-dir /workspace --shell /usr/sbin/nologin aegify
 
 WORKDIR /workspace
+USER 10001:10001
 ENTRYPOINT []
 CMD ["python", "-m", "aegify.semantic.jvm_classpath_exporter", "--help"]

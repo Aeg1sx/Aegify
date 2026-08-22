@@ -166,6 +166,7 @@ class JvmClasspathPlanner:
                 memory="6g",
                 pids_limit=1_024,
                 tmpfs_size="4g",
+                tmpfs_executable=True,
                 max_output_bytes=2_000_000,
                 max_artifact_bytes=2_000_000_000,
             ),

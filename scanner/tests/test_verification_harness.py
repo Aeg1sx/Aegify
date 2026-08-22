@@ -49,8 +49,20 @@ def test_plan_emits_required_isolation_controls_and_hashes(tmp_path: Path):
     assert "no-new-privileges" in command
     assert ["--env", "HOME=/tmp"] == command[command.index("--env") :][:2]
     assert "XDG_CACHE_HOME=/tmp/.cache" in command
+    assert "/tmp:rw,nosuid,nodev,noexec,size=256m" in command
     assert "type=bind,src=<ephemeral-workspace>,dst=/workspace" in command
     assert str(tmp_path.resolve()) not in " ".join(command)
+
+
+def test_plan_requires_explicit_policy_to_make_tmpfs_executable(tmp_path: Path):
+    (tmp_path / "App.java").write_text("class App {}\n")
+    plan = make_plan(policy={"tmpfs_executable": True})
+
+    command = DockerVerificationExecutor("docker").plan(plan, tmp_path).docker_commands[0]
+
+    tmpfs = command[command.index("--tmpfs") + 1]
+    assert tmpfs == "/tmp:rw,nosuid,nodev,exec,size=256m"
+    assert "noexec" not in tmpfs
 
 
 def test_plan_rejects_mutable_images_secrets_and_non_allowlisted_commands():

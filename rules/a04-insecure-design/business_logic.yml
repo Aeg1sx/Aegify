@@ -76,16 +76,16 @@ rules:
     owasp_category: "A04:2021-Insecure Design"
     patterns:
       - multi_match:
-          - "step|stage|phase|wizard"
-          - "route|endpoint|handler|controller|view"
+          - "(@(Get|Post|Put|Patch|Request)Mapping|(@app|@blueprint)\\.route|\\b(app|router)\\.(get|post|put|patch)|HandleFunc|Route)"
+          - "['\"][^'\"]*(step-?[2-9]|stage-?[2-9]|complete|finalize|confirm)[^'\"]*['\"]"
         missing_match:
-          - "previous_step|check_step|validate_step|step_completed"
+          - "previous_step|check_step|validate_step|step_completed|validate_prerequisite|workflow_guard"
       - callee_match: "route|get|post"
         args_match: "/step-?[2-9]|/stage-?[2-9]|/complete|/finalize|/confirm"
         missing_context: "middleware|guard|check_previous|validate_prerequisite"
       - sequence_match:
-          - "step.*2|step.*3|stage.*final"
-        missing_pattern: "step.*1.*completed|previous.*validated|prerequisite"
+          - "(def|function|fun|public|private|protected).*\\b(step_?[2-9]|stage_?[2-9]|complete|finalize|confirm)\\w*\\s*\\("
+        missing_pattern: "step.*1.*completed|previous.*validated|prerequisite|workflow_guard"
     defense_patterns:
       - "check_previous_step"
       - "validate_workflow_state"

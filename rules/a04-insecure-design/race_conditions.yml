@@ -84,12 +84,23 @@ rules:
           - "\\+\\s*=|\\-\\s*=|\\+\\s*1|\\-\\s*1|\\+=|\\-="
           - "UPDATE|save|update|put|write|store"
         max_lines_between: 20
+        disposition: advisory
       - multi_match:
           - "\\.get\\(|findById|SELECT"
           - "\\.|\\[.*\\]\\s*=|\\+=|\\-="
           - "\\.save\\(|update\\(|UPDATE"
         missing_match:
           - "lock|atomic|transaction|synchronized"
+        disposition: advisory
+    semantic:
+      kind: database_race
+      read_callee: "(?:findById|findOne|find|get|load|read|query|fetch|select)"
+      write_callee: "(?:save|update|put|write|store|create|delete|destroy|insert)"
+      receiver_match: "(?:^|[._])(?:repo(?:sitory)?|dao|db|database|store|model|entityManager|jdbc|jooq|collection|table|session)(?:$|[._])"
+      required_between: "(?:\\+=|-=|\\+\\+|--)"
+      defense_match: "(?:transaction|atomic|synchronized|for\\s+update|selectForUpdate|lock|mutex|semaphore|serializable|compareAndSet|findOneAndUpdate|findAndModify|\\$inc)"
+      max_lines_between: 20
+      same_receiver: true
     defense_patterns:
       - "F\\(|Atomic|atomic"
       - "UPDATE.*SET.*=.*\\+|UPDATE.*SET.*=.*-"
@@ -118,12 +129,23 @@ rules:
           - "INSERT|UPDATE|DELETE|save|create|destroy"
         max_lines_between: 20
         missing_pattern: "FOR UPDATE|LOCK|transaction|atomic|serializable"
+        disposition: advisory
       - multi_match:
           - "await.*find|await.*get|await.*query"
           - "if.*===|if.*!==|if.*==|if.*!="
           - "await.*save|await.*update|await.*create"
         missing_match:
           - "session|transaction|lock"
+        disposition: advisory
+    semantic:
+      kind: database_race
+      read_callee: "(?:findById|findOne|find|get|load|read|query|fetch|select)"
+      write_callee: "(?:save|update|put|write|store|create|delete|destroy|insert)"
+      receiver_match: "(?:^|[._])(?:repo(?:sitory)?|dao|db|database|store|model|entityManager|jdbc|jooq|collection|table|session)(?:$|[._])"
+      required_between: "\\b(?:if|unless|guard)\\b"
+      defense_match: "(?:transaction|atomic|synchronized|for\\s+update|selectForUpdate|lock|mutex|semaphore|serializable|advisoryLock|withLock)"
+      max_lines_between: 20
+      same_receiver: true
     defense_patterns:
       - "FOR UPDATE"
       - "LOCK IN SHARE MODE"

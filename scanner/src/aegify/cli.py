@@ -33,6 +33,14 @@ SEVERITY_COLORS: dict[str, str] = {
 }
 
 
+def _has_blocking_high_findings(result: ScanResult) -> bool:
+    """Return whether a scan must fail the CI security gate."""
+    return any(
+        finding.blocks_ci and finding.severity in (Severity.CRITICAL, Severity.HIGH)
+        for finding in result.findings
+    )
+
+
 @app.command()
 def scan(
     target: Annotated[
@@ -219,10 +227,7 @@ def scan(
             console.print(f"[red]Dashboard upload failed: {e}[/red]")
 
     # Exit code
-    critical_high = sum(
-        1 for f in result.findings if f.severity in (Severity.CRITICAL, Severity.HIGH)
-    )
-    if critical_high > 0:
+    if _has_blocking_high_findings(result):
         raise typer.Exit(code=1)
 
 
@@ -1145,10 +1150,7 @@ def scan_pr(
     _output_console(result)
 
     # Exit code
-    critical_high = sum(
-        1 for f in result.findings if f.severity in (Severity.CRITICAL, Severity.HIGH)
-    )
-    if critical_high > 0:
+    if _has_blocking_high_findings(result):
         raise typer.Exit(code=1)
 
 
@@ -1163,6 +1165,7 @@ def _output_console(result: ScanResult) -> None:
     else:
         table = Table(title=f"Security Findings ({len(result.findings)})")
         table.add_column("Severity", width=10)
+        table.add_column("Gate", width=9)
         table.add_column("Rule", width=14)
         table.add_column("Location", width=40)
         table.add_column("Message")
@@ -1172,6 +1175,7 @@ def _output_console(result: ScanResult) -> None:
             sev_color = SEVERITY_COLORS.get(finding.severity.value, "white")
             table.add_row(
                 Text(finding.severity.value.upper(), style=f"bold {sev_color}"),
+                finding.disposition.value.upper(),
                 finding.rule_id,
                 f"{finding.file_path}:{finding.line_start}",
                 finding.message[:80] + "..." if len(finding.message) > 80 else finding.message,
@@ -1182,12 +1186,17 @@ def _output_console(result: ScanResult) -> None:
 
     # Summary
     counts = result.findings_count
+    disposition_counts = result.disposition_count
     console.print(
         f"\n[bold]Summary[/bold]: "
         f"[red]{counts.get('critical', 0)} critical[/red], "
         f"[dark_orange]{counts.get('high', 0)} high[/dark_orange], "
         f"[yellow]{counts.get('medium', 0)} medium[/yellow], "
         f"[blue]{counts.get('low', 0)} low[/blue]"
+    )
+    console.print(
+        f"Gate: {disposition_counts.get('blocking', 0)} blocking, "
+        f"{disposition_counts.get('advisory', 0)} advisory"
     )
     console.print(
         f"Files scanned: {result.files_scanned} | Duration: {result.duration_seconds:.1f}s"

@@ -1,0 +1,29 @@
+---
+title: "Aegify 공식 문서"
+description: "멀티 레포지토리, JVM/Spring, Gateway와 프론트엔드 공격 표면을 분석하는 증거 중심 화이트박스 보안 플랫폼입니다."
+icon: "shield-check"
+---
+
+Aegify는 저장소 단위 식별자, 프로그램 그래프, 컴파일러 인덱스, 프레임워크
+모델과 제한된 런타임 증거를 결합하는 alpha 단계의 화이트박스 애플리케이션
+보안 플랫폼입니다.
+
+<CardGroup cols={2}>
+  <Card title="빠르게 시작하기" icon="play" href="/ko/quickstart">
+    로컬에 scanner를 설치하고 첫 번째 저장소를 점검합니다.
+  </Card>
+  <Card title="증거와 CI 차단 정책" icon="git-compare-arrows" href="/ko/evidence-gates">
+    candidate와 의미 증거가 확인된 blocking finding을 구분합니다.
+  </Card>
+  <Card title="영문 전체 문서" icon="languages" href="/">
+    멀티 레포, JVM/Spring, 룰 작성, 하네스와 운영 문서를 확인합니다.
+  </Card>
+  <Card title="GitHub 저장소" icon="github" href="https://github.com/Aeg1sx/Aegify">
+    소스 코드, 이슈, 릴리스와 기여 절차를 확인합니다.
+  </Card>
+</CardGroup>
+
+<Warning>
+  정적 candidate는 실제 도달 가능성이나 취약점 영향의 증명이 아닙니다.
+  각 finding의 evidence state와 disposition을 함께 확인해야 합니다.
+</Warning>

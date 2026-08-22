@@ -1,4 +1,8 @@
-# Repository security baseline
+---
+title: "Repository security baseline"
+description: "Required GitHub review, branch, tag, Actions, advisory, and supply-chain controls for Aegify."
+icon: "git-pull-request"
+---
 
 This document records the GitHub-side controls that complement the files in
 the repository. Repository administrators should compare the live settings to
@@ -20,6 +24,7 @@ The required pull-request checks are:
 
 - `Scanner / Python 3.12`;
 - `Dashboard / Node 22`;
+- `Documentation`;
 - `Scanner container`;
 - `Dependency review`;
 - `Gitleaks`;
@@ -36,10 +41,16 @@ independent approval.
 
 ## Release tag ruleset
 
-Target `v*`. Restrict creation, update, and deletion to maintainers, require a
-signed annotated tag, and do not allow force updates. The release workflow
-verifies the tag, builds from the locked dependency graph, emits a CycloneDX
-SBOM, and records a GitHub artifact attestation.
+Target `v*`. The committed ruleset restricts creation, update, and deletion to
+the administrator bypass role and blocks force updates. The release workflow
+requires an annotated tag whose cryptographic signature GitHub reports as
+verified, builds from the locked dependency graph, emits a CycloneDX SBOM, and
+publishes SHA-256 checksums. The wheel, SBOM, and checksum manifest all receive
+GitHub artifact attestations before publication.
+
+The reproducible repository ruleset payloads live in `.github/rulesets/`.
+Applying them requires repository-administrator access; compare the live
+ruleset response with these files after every protection change.
 
 ## Security features
 
@@ -56,4 +67,4 @@ Keep these repository controls enabled:
 
 Do not store deployment secrets in repository or Dependabot secrets when OIDC
 or a workload identity can issue a short-lived credential. See
-[SECRETS_MANAGEMENT.md](SECRETS_MANAGEMENT.md).
+[secrets management guide](/operations/secrets-management).

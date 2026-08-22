@@ -1,5 +1,9 @@
 # Aegify - Quick Start Guide
 
+The maintained Mintlify quickstart is available at
+[docs/quickstart.mdx](docs/quickstart.mdx). This repository page retains the
+extended DefectDojo workflow.
+
 ## 1. Install Scanner
 
 ```bash

@@ -32,6 +32,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify signed annotated release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}")"
+          tag_type="$(jq -r '.object.type' <<<"$ref_json")"
+          tag_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+          if [[ "$tag_type" != "tag" ]]; then
+            echo "Release tags must be annotated and cryptographically signed" >&2
+            exit 1
+          fi
+          verified="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.verification.verified')"
+          if [[ "$verified" != "true" ]]; then
+            echo "GitHub did not verify the release tag signature" >&2
+            exit 1
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -57,10 +74,16 @@ jobs:
           output-file: aegify-sbom.cdx.json
           upload-artifact: false
 
-      - name: Attest wheel provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.0.0
+      - name: Generate release checksums
+        run: sha256sum scanner/dist/*.whl aegify-sbom.cdx.json > SHA256SUMS
+
+      - name: Attest release provenance
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
         with:
-          subject-path: scanner/dist/*.whl
+          subject-path: |
+            scanner/dist/*.whl
+            aegify-sbom.cdx.json
+            SHA256SUMS
 
       - name: Publish GitHub release
         env:
@@ -69,5 +92,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME"
           scanner/dist/*.whl
           aegify-sbom.cdx.json
+          SHA256SUMS
           --verify-tag
           --generate-notes

@@ -1,4 +1,8 @@
-# Rule Authoring and Normalization
+---
+title: "Rule authoring and normalization"
+description: "Author executable Aegify YAML rules with strict schema, evidence gating, and positive and negative fixtures."
+icon: "file-code-2"
+---
 
 Aegify rules are executable security detectors, not documentation disguised as
 configuration. The strict audit gate requires every enabled rule and every
@@ -20,6 +24,10 @@ rules:
       - callee_match: "^(exec|start)$"
         receiver_match: "^(Runtime|ProcessBuilder)$"
         args_match: "request|param|input"
+        disposition: advisory
+    taint:
+      source_types: [http_param, http_body]
+      sink_types: [os_command]
     defense_patterns:
       - "allowlist"
       - "validateCommand"
@@ -56,6 +64,52 @@ Common source fields:
 Compatibility fields are accepted only when `PatternSpec` implements them. A
 partially executable rule is still invalid: strict audit reports each
 non-executable pattern even if another pattern in the same rule works.
+
+Pattern results default to `candidate` evidence with an `advisory` disposition.
+This preserves broad coverage in console, SARIF, GitHub review annotations, and
+the dashboard without failing CI. Do not mark a lexical fallback `blocking`.
+
+## Evidence and CI disposition
+
+Findings carry two independent fields:
+
+- `evidence_state`: `candidate`, `reachable`, `observed`, or `impact_proven`;
+- `disposition`: `advisory` or `blocking`.
+
+Native and YAML pattern matches are advisory by default. A source-to-sink taint
+flow is emitted as `reachable` and `blocking`. A structured semantic detector
+may also emit a blocking result when its required receiver, ordering, defense,
+and scope evidence is satisfied. Severity does not override this contract: a
+critical advisory remains visible but does not change the CLI exit code.
+
+SARIF encodes advisory results as `level: note`, `kind: review`, and
+`blocksCi: false`. Blocking high or critical results produce a non-zero CLI exit
+code. Dashboard ingestion stores and filters both classification fields.
+
+## Structured database-race evidence
+
+The `database_race` semantic detector finds a bounded read-modify-write sequence
+inside one parsed function. Broad patterns for the same rule remain advisory.
+
+```yaml
+patterns:
+  - sequence_match: ["findById", "save"]
+    disposition: advisory
+semantic:
+  kind: database_race
+  read_callee: "(findById|findOne|get|load)"
+  write_callee: "(save|update|delete)"
+  receiver_match: "(?:^|[._])(repo|repository|dao|db)(?:$|[._])"
+  required_between: "(?:\\+=|-=|\\+\\+|--)"
+  defense_match: "(?:transaction|atomic|lock|compareAndSet)"
+  same_receiver: true
+  max_lines_between: 20
+```
+
+The blocking finding is created only when the read and write use the required
+database receiver, occur in order and within the bound, contain the required
+business-state operation, and have no matching transaction or concurrency
+defense in that function.
 
 ## Negative checks
 
@@ -118,6 +172,10 @@ Every new or materially changed rule should include:
 3. a cross-file or framework fixture when claimed;
 4. stable rule ID, severity, location, and evidence assertions;
 5. a test proving a nearby decoy is not selected.
+
+Rules with a fallback and a semantic detector also require assertions that the
+fallback is retained as advisory, the semantic path is blocking, and a defended
+or unrelated path is not blocking.
 
 Rules affecting reachability should test repository/module identity and ambiguous
 targets. Rules affecting secrets or logs must use synthetic placeholders.

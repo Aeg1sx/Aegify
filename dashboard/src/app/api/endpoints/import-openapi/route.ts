@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { uploadValidationError } from "@/lib/upload-validation";
 
 interface OpenAPIPath {
   [method: string]: {
@@ -62,6 +63,11 @@ export async function POST(request: NextRequest) {
       const file = formData.get("file") as File;
       if (!file) {
         return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
+      const uploadError = uploadValidationError(file, "openapi");
+      if (uploadError) {
+        const status = uploadError.includes("exceeds") ? 413 : 415;
+        return NextResponse.json({ error: uploadError }, { status });
       }
       const text = await file.text();
       // Try JSON first, then YAML
@@ -186,7 +192,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("OpenAPI import error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Import failed" },
+      { error: "Import failed" },
       { status: 500 },
     );
   }

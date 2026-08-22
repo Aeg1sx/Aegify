@@ -1,18 +1,27 @@
-# Aegify Alpha Completion Audit
+---
+title: "Alpha completion audit"
+description: "Executed release gates, implemented capabilities, and explicit precision boundaries for the Aegify alpha."
+icon: "clipboard-check"
+---
 
 Baseline date: 2026-08-22
 
 ## Verdict
 
-The open-source alpha scope is complete and publishable. The implementation and
-tests cover multi-repository and monorepo reachability, Java/Kotlin/Spring
-semantics, Spring Cloud Gateway transformations, Program Graph queries,
+The open-source alpha implementation scope is present and this hardening branch
+is release-gate green. Local validation and every GitHub PR check passed. Tests
+cover multi-repository and monorepo reachability, Java/Kotlin/Spring semantics,
+Spring Cloud Gateway transformations, Program Graph queries,
 frontend-to-backend attack-surface correlation, normalized rules, external
-evidence adapters, and bounded verification harnesses.
+evidence adapters, and bounded verification harnesses. The dedicated precision
+suite passes all 17 cases: broad race-condition, external API consumption,
+ReDoS, and formatting signals remain visible as candidate/advisory findings,
+while only supported semantic evidence can create a CI-blocking finding.
 
-Colima was started for this audit. Both final images were rebuilt from the
-current source and exercised live. Temporary containers and volumes were removed,
-and all Colima profiles were returned to their original stopped state.
+Colima is running after the final audit. Both final images were rebuilt from the
+current source and exercised live. Only Aegify-owned temporary containers and
+failed rebuild layers were removed; no volumes, unrelated images, or unrelated
+containers were removed.
 
 ## Requirement evidence
 
@@ -39,17 +48,20 @@ and all Colima profiles were returned to their original stopped state.
 ## Executed release gates
 
 ```text
-scanner tests:          298 passed, 1 skipped
-scanner coverage:       77%
+scanner tests:          339 passed, 1 skipped
+rule precision tests:   17 passed
 ruff:                   passed
-mypy --strict:          74 source files passed
+mypy --strict:          75 source files passed
 rule audit:             311 rules, 303 enabled, 8 disabled,
                         980/980 enabled patterns executable,
                         0 errors, 0 warnings
-dashboard tests:        7 passed
+dashboard tests:        14 passed
 dashboard lint:         passed
 dashboard build:        passed (Next.js 16.3.1)
 dashboard npm audit:    0 vulnerabilities at high threshold
+documentation:          20 MDX pages; Mintlify validation, broken-link,
+                        anchor, redirect, snippet, and accessibility checks passed
+documentation audit:    0 vulnerabilities at high threshold
 wheel:                  aegify_sast-0.1.0-py3-none-any.whl
 isolated wheel smoke:   Aegify v0.1.0
 scanner container:      uid/gid 10001, hardened version and clean scan passed
@@ -57,16 +69,21 @@ dashboard container:    uid 1001/gid 1001, no build secrets,
                         missing config -> HTTP 500 fail-closed,
                         configured sign-in -> HTTP 200,
                         protected root -> HTTP 307
+self-scan:              323 medium-or-higher candidates
+                        (45 critical, 167 high, 111 medium)
+                        323 advisory, 0 blocking; exit code 0
 ```
 
 ## Evidence states
 
-1. `candidate`: a static rule, taint, or imported-tool result.
+1. `candidate`: a static rule or imported-tool result that remains advisory.
 2. `reachable`: a bounded graph path connects an exposed or calling surface.
 3. `observed`: approved runtime evidence exercised the route or code path.
 4. `impact_proven`: a separate approved proof demonstrated security impact.
 
-The dashboard and reports must never collapse these states.
+The dashboard and reports must never collapse these states. Gate disposition is
+stored separately: advisory findings remain visible, while only supported
+semantic evidence may be marked blocking.
 
 ## Post-alpha precision track
 

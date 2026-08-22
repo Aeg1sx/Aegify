@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 import networkx as nx
@@ -52,6 +53,11 @@ class TaintConfig:
                     SourcePattern(".query(", "database_result"),
                     SourcePattern("configparser", "config_value"),
                     SourcePattern(".get_config", "config_value"),
+                    SourcePattern("requests.get", "external_api_response"),
+                    SourcePattern("requests.post", "external_api_response"),
+                    SourcePattern("httpx.get", "external_api_response"),
+                    SourcePattern("httpx.post", "external_api_response"),
+                    SourcePattern("urllib.request.urlopen", "external_api_response"),
                 ],
                 Language.JAVASCRIPT: [
                     SourcePattern("req.query", "http_param"),
@@ -64,6 +70,10 @@ class TaintConfig:
                     SourcePattern("document.location", "dom"),
                     SourcePattern("window.location", "dom"),
                     SourcePattern("document.URL", "dom"),
+                    SourcePattern("fetch", "external_api_response"),
+                    SourcePattern("axios.get", "external_api_response"),
+                    SourcePattern("axios.post", "external_api_response"),
+                    SourcePattern("http.get", "external_api_response"),
                 ],
                 Language.JAVA: [
                     SourcePattern("getParameter", "http_param"),
@@ -72,6 +82,10 @@ class TaintConfig:
                     SourcePattern("getInputStream", "http_body"),
                     SourcePattern("getReader", "http_body"),
                     SourcePattern("getCookies", "http_cookie"),
+                    SourcePattern("HttpClient.send", "external_api_response"),
+                    SourcePattern("RestTemplate.getForEntity", "external_api_response"),
+                    SourcePattern("RestTemplate.exchange", "external_api_response"),
+                    SourcePattern("WebClient.retrieve", "external_api_response"),
                 ],
                 Language.GO: [
                     SourcePattern("r.URL.Query", "http_param"),
@@ -80,6 +94,9 @@ class TaintConfig:
                     SourcePattern("r.Header", "http_header"),
                     SourcePattern("os.Args", "cli_arg"),
                     SourcePattern("os.Getenv", "env_var"),
+                    SourcePattern("http.Get", "external_api_response"),
+                    SourcePattern("http.Post", "external_api_response"),
+                    SourcePattern("http.Client.Do", "external_api_response"),
                 ],
                 Language.RUST: [
                     SourcePattern("std::env::args", "cli_arg"),
@@ -115,6 +132,10 @@ class TaintConfig:
                     SourcePattern("request.body", "http_body"),
                     SourcePattern("call.receive", "http_body"),
                     SourcePattern("call.parameters", "http_param"),
+                    SourcePattern("HttpClient.send", "external_api_response"),
+                    SourcePattern("RestTemplate.getForEntity", "external_api_response"),
+                    SourcePattern("RestTemplate.exchange", "external_api_response"),
+                    SourcePattern("WebClient.retrieve", "external_api_response"),
                 ],
             },
             sinks={
@@ -154,6 +175,15 @@ class TaintConfig:
                     SinkPattern("hashlib.md5", "crypto_operation", 0),
                     SinkPattern("hashlib.sha1", "crypto_operation", 0),
                     SinkPattern("DES", "crypto_operation", 0),
+                    SinkPattern("re.compile", "regex_compile", 0),
+                    SinkPattern("re.match", "regex_compile", 0),
+                    SinkPattern("re.search", "regex_compile", 0),
+                    SinkPattern("re.findall", "regex_compile", 0),
+                    SinkPattern("re.sub", "regex_compile", 0),
+                    # A negative index denotes the receiver expression. For
+                    # ``template.format(value)``, the receiver is the format
+                    # program and the arguments are only substitution data.
+                    SinkPattern(".format", "string_format", -1),
                 ],
                 Language.JAVASCRIPT: [
                     SinkPattern("query", "sql_query", 0),
@@ -182,6 +212,7 @@ class TaintConfig:
                     SinkPattern("DOMParser", "xml_parse", 0),
                     SinkPattern("createCipher", "crypto_operation", 0),
                     SinkPattern("createHash", "crypto_operation", 0),
+                    SinkPattern("RegExp", "regex_compile", 0),
                 ],
                 Language.JAVA: [
                     SinkPattern("executeQuery", "sql_query", 0),
@@ -189,6 +220,7 @@ class TaintConfig:
                     SinkPattern("createQuery", "sql_query", 0),
                     SinkPattern("Runtime.exec", "os_command", 0),
                     SinkPattern("ProcessBuilder", "os_command", 0),
+                    SinkPattern("Pattern.compile", "regex_compile", 0),
                 ],
                 Language.GO: [
                     SinkPattern("db.Query", "sql_query", 0),
@@ -196,6 +228,8 @@ class TaintConfig:
                     SinkPattern("exec.Command", "os_command", 0),
                     SinkPattern("template.HTML", "xss", 0),
                     SinkPattern("fmt.Fprintf", "xss", 0),
+                    SinkPattern("regexp.Compile", "regex_compile", 0),
+                    SinkPattern("regexp.MustCompile", "regex_compile", 0),
                 ],
                 Language.RUST: [
                     SinkPattern("execute", "sql_query", 0),
@@ -225,6 +259,7 @@ class TaintConfig:
                     SinkPattern("exec", "os_command", 0),
                     SinkPattern("ProcessBuilder", "os_command", 0),
                     SinkPattern("evaluateJavascript", "code_exec", 0),
+                    SinkPattern("Pattern.compile", "regex_compile", 0),
                 ],
             },
             sanitizers={
@@ -395,7 +430,7 @@ class DataflowAnalyzer:
         for call in ast.calls:
             call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
             for pattern in patterns:
-                if pattern.pattern in call_text:
+                if self._sink_pattern_matches(call_text, call.callee, pattern.pattern):
                     sinks.append(
                         TaintSink(
                             function=call_text,
@@ -409,6 +444,25 @@ class DataflowAnalyzer:
                     break
 
         return sinks
+
+    @staticmethod
+    def _sink_pattern_matches(call_text: str, callee: str, pattern: str) -> bool:
+        """Match sink names on call boundaries instead of arbitrary substrings."""
+        if pattern.startswith("."):
+            return call_text.endswith(pattern)
+        if "." in pattern:
+            receiver_pattern, method_pattern = pattern.rsplit(".", 1)
+            receiver = call_text[: -(len(callee) + 1)] if call_text.endswith(callee) else ""
+            return callee == method_pattern and bool(
+                re.search(
+                    rf"(?<![A-Za-z0-9_$]){re.escape(receiver_pattern)}"
+                    r"(?![A-Za-z0-9_$])",
+                    receiver,
+                )
+            )
+        if "::" in pattern:
+            return call_text == pattern or call_text.endswith(f".{pattern}")
+        return callee == pattern or call_text == pattern
 
     def _trace_flows(
         self,

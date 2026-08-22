@@ -1,0 +1,52 @@
+---
+title: "빠르게 시작하기"
+description: "Aegify scanner를 설치하고 외부 LLM 전송 없이 첫 점검과 SARIF 출력을 실행합니다."
+icon: "rocket"
+---
+
+Python 3.12 이상이 필요합니다. 다음 과정은 소스 코드를 외부 모델로 보내지
+않습니다.
+
+<Steps>
+  <Step title="저장소 복제">
+
+```bash
+git clone https://github.com/Aeg1sx/Aegify.git
+cd Aegify
+```
+
+  </Step>
+  <Step title="격리 환경에 scanner 설치">
+
+```bash
+python3.12 -m venv scanner/.venv
+source scanner/.venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ./scanner
+```
+
+  </Step>
+  <Step title="소유하거나 점검 권한이 있는 저장소 분석">
+
+```bash
+aegify scan /path/to/owned/repository \
+  --severity low \
+  --no-llm
+```
+
+  </Step>
+  <Step title="SARIF 파일 생성">
+
+```bash
+aegify scan /path/to/owned/repository \
+  --output sarif \
+  --output-file results.sarif \
+  --no-llm
+```
+
+  </Step>
+</Steps>
+
+결과의 severity만 보지 말고 `evidence_state`와 `disposition`을 함께
+확인하십시오. 자세한 기준은 [증거와 CI 차단 정책](/ko/evidence-gates)에
+설명되어 있습니다.

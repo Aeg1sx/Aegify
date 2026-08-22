@@ -22,6 +22,7 @@ SUPPORTED_PATTERN_FIELDS = {
     "argument_check",
     "args_exclude",
     "args_match",
+    "args_match_index",
     "assignment_match",
     "attribute_match",
     "block_match",
@@ -29,6 +30,7 @@ SUPPORTED_PATTERN_FIELDS = {
     "callee",
     "callee_chain",
     "callee_match",
+    "callee_match_mode",
     "class_context",
     "class_match",
     "condition",
@@ -40,6 +42,7 @@ SUPPORTED_PATTERN_FIELDS = {
     "decorator_absent",
     "decorator_match",
     "description",
+    "disposition",
     "entropy_threshold",
     "exclude_context",
     "exclude_match",
@@ -85,6 +88,17 @@ SUPPORTED_PATTERN_FIELDS = {
     "taint_source",
     "value_match",
     "version_match",
+}
+
+SUPPORTED_SEMANTIC_FIELDS = {
+    "defense_match",
+    "kind",
+    "max_lines_between",
+    "read_callee",
+    "receiver_match",
+    "required_between",
+    "same_receiver",
+    "write_callee",
 }
 
 
@@ -191,7 +205,8 @@ def audit_rules(path: Path) -> RuleAuditReport:
                 )
 
             patterns = rule.get("patterns") or []
-            executable_for_rule = bool(rule.get("taint"))
+            semantic_executable = _check_semantic(report, rule, file_path, rule_id)
+            executable_for_rule = bool(rule.get("taint")) or semantic_executable
             for index, pattern in enumerate(patterns):
                 report.patterns += 1
                 if not isinstance(pattern, dict):
@@ -218,6 +233,17 @@ def audit_rules(path: Path) -> RuleAuditReport:
                         index,
                     )
                 _check_regexes(report, pattern, file_path, rule_id, index)
+                disposition = str(pattern.get("disposition") or "advisory")
+                if disposition not in {"advisory", "blocking"}:
+                    _issue(
+                        report,
+                        "error",
+                        "invalid-disposition",
+                        f"unsupported disposition: {disposition}",
+                        file_path,
+                        rule_id,
+                        index,
+                    )
                 if _is_executable_pattern(pattern):
                     executable_for_rule = True
                     report.executable_patterns += 1
@@ -248,6 +274,85 @@ def audit_rules(path: Path) -> RuleAuditReport:
     report.unsupported_fields = dict(unsupported.most_common())
     report.deferred_languages = dict(deferred_languages.most_common())
     return report
+
+
+def _check_semantic(
+    report: RuleAuditReport,
+    rule: dict[str, Any],
+    file_path: Path,
+    rule_id: str,
+) -> bool:
+    semantic = rule.get("semantic")
+    if semantic is None:
+        return False
+    if not isinstance(semantic, dict):
+        _issue(
+            report, "error", "invalid-semantic", "semantic must be a mapping", file_path, rule_id
+        )
+        return False
+    unknown = set(semantic) - SUPPORTED_SEMANTIC_FIELDS
+    for field_name in sorted(unknown):
+        _issue(
+            report,
+            "error",
+            "unsupported-semantic-field",
+            f"field is not executed: {field_name}",
+            file_path,
+            rule_id,
+        )
+    kind_supported = semantic.get("kind") == "database_race"
+    if not kind_supported:
+        _issue(
+            report,
+            "error",
+            "unsupported-semantic-kind",
+            f"unsupported semantic kind: {semantic.get('kind')}",
+            file_path,
+            rule_id,
+        )
+    required = {
+        "read_callee",
+        "write_callee",
+        "receiver_match",
+        "required_between",
+        "defense_match",
+    }
+    missing = sorted(field for field in required if not semantic.get(field))
+    for field_name in missing:
+        _issue(
+            report,
+            "error",
+            "missing-semantic-field",
+            f"required semantic field is missing: {field_name}",
+            file_path,
+            rule_id,
+        )
+    for field_name in sorted(required - set(missing)):
+        try:
+            re.compile(str(semantic[field_name]))
+        except re.error as error:
+            _issue(
+                report,
+                "error",
+                "invalid-regex",
+                f"semantic.{field_name}: {error}",
+                file_path,
+                rule_id,
+            )
+    try:
+        max_lines = int(semantic.get("max_lines_between", 20))
+    except (TypeError, ValueError):
+        max_lines = 0
+    if max_lines <= 0:
+        _issue(
+            report,
+            "error",
+            "invalid-semantic-bound",
+            "semantic.max_lines_between must be a positive integer",
+            file_path,
+            rule_id,
+        )
+    return kind_supported and not unknown and not missing and max_lines > 0
 
 
 def _is_executable_pattern(pattern: dict[str, Any]) -> bool:

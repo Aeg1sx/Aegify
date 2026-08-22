@@ -115,11 +115,11 @@ rules:
         args_match: "scope.*admin|scope.*write|scope.*all|scope.*\\*"
       - multi_match:
           - "scope"
-          - "oauth|authorize|token"
+          - "(def|function|fun).*oauth.*(callback|authorize|token)|exchange_code|token_exchange|getAuthorizationUrl|authorization_url"
         missing_match:
           - "validate_scope|check_scope|verify_scope|scope.*===|scope.*includes"
       - callee_match: "get_token|exchange_code|token_exchange"
-        missing_context: "scope.*validate|scope.*verify|scope.*check"
+        missing_context: "(validate|verify|check).*scope|scope.*(validate|verify|check)"
       - assignment_match: "scope|OAUTH_SCOPE"
         value_match: "admin|write:all|\\*|root|full_access"
     defense_patterns:

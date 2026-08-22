@@ -91,10 +91,10 @@ rules:
     languages: [python, javascript, typescript, java, go, kotlin]
     cwe_id: 434
     owasp_category: "A01:2021-Broken Access Control"
-    defense_patterns: ["allowed_extensions", "content_type_check", "file_type_validation", "ALLOWED_TYPES"]
+    defense_patterns: ["allowed_extensions", "content_type_check", "file_type_validation", "uploadValidationError", "validate.*file.*type", "ALLOWED_TYPES"]
     patterns:
       - callee_match: "(upload|save_file|store_file|multer|FileUpload|MultipartFile|formidable|busboy)"
-        missing_check: "(allowed_extensions|content_type|file_type|mime_type|ALLOWED_TYPES|fileFilter|accept)"
+        missing_check: "(allowed_extensions|content_type|file_type|mime_type|uploadValidationError|validate.*file.*type|ALLOWED_TYPES|fileFilter|accept)"
       - callee_match: "(request\\.files|req\\.file|req\\.files)"
         missing_check: "(mimetype|content_type|extension|endswith)"
     message: >

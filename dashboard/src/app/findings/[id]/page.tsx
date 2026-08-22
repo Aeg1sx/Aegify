@@ -83,6 +83,8 @@ interface FindingDetail {
   ruleName: string;
   severity: string;
   confidence: number;
+  evidenceState: string;
+  disposition: string;
   status: string;
   filePath: string;
   lineStart: number;
@@ -508,6 +510,18 @@ export default function FindingDetailPage() {
           <div className="flex items-center gap-2 mb-2">
             <SeverityBadge severity={finding.severity} />
             <StatusBadge status={finding.status} />
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                finding.disposition === "advisory"
+                  ? "bg-amber-500/10 text-amber-600"
+                  : "bg-red-500/10 text-red-600"
+              }`}
+            >
+              {finding.disposition}
+            </span>
+            <span className="text-[10px] uppercase text-muted-foreground">
+              {finding.evidenceState}
+            </span>
             <span className="text-xs font-mono text-muted-foreground">
               {finding.ruleId}
             </span>

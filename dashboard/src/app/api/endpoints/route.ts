@@ -41,9 +41,15 @@ function isApiEndpoint(path: string): boolean {
   // Reject static asset paths
   if (STATIC_PATH_PATTERNS.some((p) => lower.includes(p))) return false;
 
-  // Reject file extension endpoints (strip path params first)
-  const clean = path.replace(/\{[^}]+\}|<[^>]+>|:[a-zA-Z]+/g, "");
-  if (FILE_EXTENSIONS.some((ext) => clean.endsWith(ext))) return false;
+  // Reject file extension endpoints. A final path parameter is not a file.
+  const finalSegment = path.slice(path.lastIndexOf("/") + 1);
+  const finalSegmentIsParameter =
+    /^\{[A-Za-z_][\w:.]*\}$/.test(finalSegment) ||
+    /^<[A-Za-z_][\w:]*>$/.test(finalSegment) ||
+    /^:[A-Za-z_][\w]*$/.test(finalSegment);
+  if (!finalSegmentIsParameter && FILE_EXTENSIONS.some((ext) => finalSegment.endsWith(ext))) {
+    return false;
+  }
 
   // Reject catch-all / wildcard routes
   if (WILDCARD_SUFFIXES.some((s) => path.endsWith(s))) return false;

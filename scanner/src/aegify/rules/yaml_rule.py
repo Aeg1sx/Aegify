@@ -12,8 +12,10 @@ import yaml
 
 from aegify.graph_types import CodeGraph
 from aegify.models import (
+    EvidenceState,
     FileAST,
     Finding,
+    FindingDisposition,
     Language,
     Severity,
     TaintFlow,
@@ -66,6 +68,94 @@ class YAMLRule(SecurityRule):
         if self.spec.patterns:
             findings.extend(self._eval_patterns(file_asts))
 
+        # Structured semantic detection. Broad lexical fallbacks for the same
+        # rule may remain advisory while this evidence is CI-blocking.
+        if self.spec.semantic:
+            findings.extend(self._eval_semantic(file_asts))
+
+        return findings
+
+    def _eval_semantic(self, file_asts: list[FileAST]) -> list[Finding]:
+        """Evaluate normalized same-function semantic evidence."""
+        semantic = self.spec.semantic
+        if semantic is None or semantic.kind != "database_race":
+            return []
+
+        findings: list[Finding] = []
+        for ast in file_asts:
+            if self.definition.languages and ast.language not in self.definition.languages:
+                continue
+            try:
+                source_lines = Path(ast.file_path).read_text(errors="replace").splitlines()
+            except OSError:
+                continue
+
+            seen_functions: set[tuple[int, int]] = set()
+            for function in ast.functions:
+                bounds = (function.line_start, function.line_end)
+                if bounds in seen_functions:
+                    continue
+                seen_functions.add(bounds)
+                function_source = "\n".join(
+                    source_lines[max(function.line_start - 1, 0) : function.line_end]
+                )
+                if semantic._defense_re.search(function_source):
+                    continue
+
+                calls = sorted(
+                    (
+                        call
+                        for call in ast.calls
+                        if function.line_start <= call.line <= function.line_end
+                        and call.receiver
+                        and semantic._receiver_re.search(call.receiver)
+                    ),
+                    key=lambda call: (call.line, call.column),
+                )
+                reads = [call for call in calls if semantic._read_callee_re.fullmatch(call.callee)]
+                writes = [
+                    call for call in calls if semantic._write_callee_re.fullmatch(call.callee)
+                ]
+                matched = False
+                for read in reads:
+                    for write in writes:
+                        if write.line <= read.line:
+                            continue
+                        if write.line - read.line > semantic.max_lines_between:
+                            continue
+                        if semantic.same_receiver and write.receiver != read.receiver:
+                            continue
+                        segment = "\n".join(source_lines[read.line - 1 : write.line])
+                        if not semantic._required_between_re.search(segment):
+                            continue
+                        message = self._safe_format(
+                            self.spec.message,
+                            source=f"{read.receiver}.{read.callee}",
+                            source_line=read.line,
+                            sink=f"{write.receiver}.{write.callee}",
+                            sink_line=write.line,
+                            source_type="database_read",
+                            sink_type="database_write",
+                            line=write.line,
+                            file=ast.file_path,
+                        )
+                        findings.append(
+                            self._create_finding(
+                                file_path=ast.file_path,
+                                line_start=write.line,
+                                line_end=write.line,
+                                code_snippet=segment,
+                                message=message,
+                                evidence_state=EvidenceState.REACHABLE,
+                                disposition=FindingDisposition.BLOCKING,
+                            )
+                        )
+                        matched = True
+                        break
+                    if matched:
+                        break
+                if len(findings) >= self._MAX_FINDINGS_PER_FILE:
+                    break
         return findings
 
     def _eval_taint(self, taint_flows: list[TaintFlow], file_asts: list[FileAST]) -> list[Finding]:
@@ -132,6 +222,8 @@ class YAMLRule(SecurityRule):
                         file=flow.sink.file_path,
                     ),
                     taint_flow=flow,
+                    evidence_state=EvidenceState.REACHABLE,
+                    disposition=FindingDisposition.BLOCKING,
                 )
             )
 
@@ -229,6 +321,8 @@ class YAMLRule(SecurityRule):
                         line_end=line_num,
                         code_snippet="\n".join(snippet),
                         message=msg,
+                        evidence_state=EvidenceState.CANDIDATE,
+                        disposition=pattern.disposition,
                     )
                 )
                 if len(findings) >= self._MAX_REGEX_FINDINGS_PER_FILE:
@@ -258,6 +352,15 @@ class YAMLRule(SecurityRule):
         findings: list[Finding] = []
         # Pre-check: if pattern requires args but no calls have args, skip early
         needs_args = pattern._args_match_re is not None or pattern._args_exclude_re is not None
+        needs_context = bool(
+            pattern._call_context_required_res or pattern._call_context_excluded_res
+        )
+        source = ""
+        if needs_context:
+            try:
+                source = Path(ast.file_path).read_text(errors="replace")
+            except OSError:
+                return []
 
         for call in ast.calls:
             # Early termination when file cap reached
@@ -272,23 +375,31 @@ class YAMLRule(SecurityRule):
 
             # Match function name (skip if match-all, use pre-compiled regex otherwise)
             if not pattern._callee_match_all and pattern._callee_re:
-                if not pattern._callee_re.search(callee_full):
+                matcher = (
+                    pattern._callee_re.fullmatch
+                    if pattern.callee_match_mode == "full"
+                    else pattern._callee_re.search
+                )
+                if not matcher(callee_full) and not matcher(f"{callee_full}("):
                     continue
+
+            args_text = " ".join(call.arguments)
+            if pattern.args_match_index is not None:
+                if pattern.args_match_index >= len(call.arguments):
+                    continue
+                args_text = call.arguments[pattern.args_match_index]
 
             # Match arguments (pre-compiled regex)
             if pattern._args_match_re:
-                args_text = " ".join(call.arguments)
                 if not pattern._args_match_re.search(args_text):
                     continue
 
             if pattern._missing_args_res:
-                args_text = " ".join(call.arguments)
                 if all(regex.search(args_text) for regex in pattern._missing_args_res):
                     continue
 
             # Negative match (pre-compiled regex)
             if pattern._args_exclude_re:
-                args_text = " ".join(call.arguments)
                 if pattern._args_exclude_re.search(args_text):
                     continue
 
@@ -297,17 +408,24 @@ class YAMLRule(SecurityRule):
                 if not call.receiver or not pattern._receiver_re.search(call.receiver):
                     continue
 
+            if needs_context:
+                context = self._call_context_source(ast, source, call.line)
+                if any(not regex.search(context) for regex in pattern._call_context_required_res):
+                    continue
+                if any(regex.search(context) for regex in pattern._call_context_excluded_res):
+                    continue
+
             msg = self._safe_format(
                 self.spec.message,
                 callee=callee_full,
                 line=call.line,
                 file=ast.file_path,
-                source="",
-                source_line="",
+                source=(" ".join(call.arguments)[:80] or callee_full),
+                source_line=call.line,
                 sink=callee_full,
                 sink_line=call.line,
-                source_type="",
-                sink_type="",
+                source_type="call_argument",
+                sink_type="call",
             )
 
             findings.append(
@@ -317,10 +435,28 @@ class YAMLRule(SecurityRule):
                     line_end=call.line,
                     code_snippet="",
                     message=msg,
+                    evidence_state=EvidenceState.CANDIDATE,
+                    disposition=pattern.disposition,
                 )
             )
 
         return findings
+
+    @staticmethod
+    def _call_context_source(ast: FileAST, source: str, line: int) -> str:
+        """Return the smallest parsed function containing a call, or the file."""
+        candidates = [
+            function
+            for function in ast.functions
+            if function.line_start <= line <= function.line_end
+        ]
+        if not candidates:
+            return source
+        function = min(candidates, key=lambda item: item.line_end - item.line_start)
+        lines = source.splitlines(keepends=True)
+        start = max(function.line_start - 1, 0)
+        end = max(function.line_end, function.line_start)
+        return "".join(lines[start:end])
 
 
 # --- YAML Spec Data Classes ---
@@ -366,6 +502,32 @@ class PatternSpec:
         "missing_validation",
         "block_missing",
     )
+    _CALL_CONTEXT_REQUIRED_FIELDS = (
+        "context",
+        "context_match",
+        "context_check",
+        "class_context",
+        "method_match",
+        "value_match",
+        "param_type_match",
+        "taint_source",
+    )
+    _CALL_CONTEXT_EXCLUDED_FIELDS = (
+        "exclude_context",
+        "missing_match",
+        "missing_pattern",
+        "missing_context",
+        "missing_annotation",
+        "missing_filter",
+        "missing_attribute",
+        "missing_sibling",
+        "missing_header",
+        "missing_validation",
+        "missing_check",
+        "missing_transform",
+        "missing_guard",
+        "block_missing",
+    )
     _SOURCE_ONLY_FIELDS = frozenset(
         _SOURCE_PRIMARY_FIELDS
         + _SOURCE_REQUIRED_FIELDS
@@ -386,13 +548,31 @@ class PatternSpec:
 
     def __init__(self, data: dict[str, Any]) -> None:
         self.raw = dict(data)
+        legacy_pattern = data.get("pattern")
+        force_call_mode = False
         if (
-            "pattern" in data
+            legacy_pattern
             and "pattern_type" not in data
             and "callee" not in data
             and "callee_match" not in data
         ):
-            data = {**data, "pattern_type": "regex", "match": data["pattern"]}
+            # A pattern paired with argument constraints describes one parsed
+            # call. File-wide matching can otherwise combine a callee and an
+            # argument expression from unrelated statements or functions.
+            if any(
+                field in data
+                for field in (
+                    "args_match",
+                    "args_exclude",
+                    "missing_args",
+                    *self._CALL_CONTEXT_REQUIRED_FIELDS,
+                    *self._CALL_CONTEXT_EXCLUDED_FIELDS,
+                )
+            ):
+                force_call_mode = True
+                data = {**data, "pattern_type": "call", "callee": legacy_pattern}
+            else:
+                data = {**data, "pattern_type": "regex", "match": legacy_pattern}
         if "callee_chain" in data and not (data.get("callee") or data.get("callee_match")):
             chain = data["callee_chain"]
             if isinstance(chain, list) and len(chain) >= 2:
@@ -401,18 +581,48 @@ class PatternSpec:
             data = {**data, "receiver": data["receiver_match"]}
 
         self.pattern_type = str(data.get("pattern_type") or "call")
-        self.scope = str(data.get("scope") or "file")
+        self.callee_match_mode = str(data.get("callee_match_mode") or "search")
+        raw_disposition = str(data.get("disposition") or FindingDisposition.ADVISORY.value)
+        try:
+            self.disposition = FindingDisposition(raw_disposition)
+        except ValueError:
+            logger.warning(
+                "Unsupported pattern disposition %r; using advisory",
+                raw_disposition,
+            )
+            self.disposition = FindingDisposition.ADVISORY
+        relational_source_pattern = bool(
+            data.get("multi_match")
+            or data.get("sequence_match")
+            or data.get("steps")
+            or isinstance(data.get("taint"), dict)
+            or self.pattern_type in {"negative_check", "sequence", "taint"}
+        )
+        self.scope = str(data.get("scope") or ("function" if relational_source_pattern else "file"))
         self.max_lines_between = int(data.get("max_lines_between") or 50)
         self.entropy_threshold = float(data.get("entropy_threshold") or 0.0)
         self.callee: str | None = data.get("callee") or data.get("callee_match")
         self.receiver: str | None = data.get("receiver")
         self.args_match: str | None = data.get("args_match")
-        self.args_exclude: str | None = (
-            data.get("args_exclude")
-            or data.get("missing_check")
-            or data.get("missing_transform")
-            or data.get("missing_guard")
-        )
+        self.args_exclude: str | None = data.get("args_exclude")
+        raw_args_match_index = data.get("args_match_index")
+        self.args_match_index: int | None = None
+        if raw_args_match_index is not None:
+            try:
+                parsed_index = int(raw_args_match_index)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Unsupported args_match_index %r; matching all arguments",
+                    raw_args_match_index,
+                )
+            else:
+                if parsed_index < 0:
+                    logger.warning(
+                        "Unsupported args_match_index %r; matching all arguments",
+                        raw_args_match_index,
+                    )
+                else:
+                    self.args_match_index = parsed_index
         declared_languages = self._string_values(data.get("languages"))
         self.has_language_constraint = bool(declared_languages)
         self.languages = [LANG_MAP[name] for name in declared_languages if name in LANG_MAP]
@@ -424,8 +634,26 @@ class PatternSpec:
             "taint",
             "entropy",
         }
-        has_source_fields = any(field in data for field in self._SOURCE_ONLY_FIELDS)
-        callee_is_source_regex = bool(self.callee and "\\(" in self.callee)
+        has_structural_source_fields = any(
+            field in data
+            for field in (
+                *self._SOURCE_PRIMARY_FIELDS,
+                "argument_check",
+                "block_match",
+                "decorator_absent",
+                "entropy_threshold",
+                "file_match",
+                "multi_match",
+                "sequence_match",
+                "steps",
+                "taint",
+                "version_match",
+            )
+        )
+        has_source_fields = has_structural_source_fields or (
+            not self.callee and any(field in data for field in self._SOURCE_ONLY_FIELDS)
+        )
+        callee_is_source_regex = bool(self.callee and "\\(" in self.callee and not force_call_mode)
         self.source_mode = explicit_source_type or has_source_fields or callee_is_source_regex
 
         regex_flags = re.IGNORECASE | re.MULTILINE
@@ -446,6 +674,29 @@ class PatternSpec:
         if self.source_mode:
             self._configure_source(data)
 
+        self._call_context_required_res = (
+            self._compile_many(
+                [
+                    value
+                    for field in self._CALL_CONTEXT_REQUIRED_FIELDS
+                    for value in self._string_values(data.get(field))
+                ]
+            )
+            if not self.source_mode
+            else []
+        )
+        self._call_context_excluded_res = (
+            self._compile_many(
+                [
+                    value
+                    for field in self._CALL_CONTEXT_EXCLUDED_FIELDS
+                    for value in self._string_values(data.get(field))
+                ]
+            )
+            if not self.source_mode
+            else []
+        )
+
         self._callee_match_all = self.callee in (".*", ".+", "^.*$", None)
         self._callee_re = (
             self._compile(self.callee)
@@ -462,6 +713,12 @@ class PatternSpec:
         ]
 
         self._is_empty_pattern = not self.is_executable
+        if self.callee_match_mode not in {"search", "full"}:
+            logger.warning(
+                "Unsupported callee_match_mode %r; using search",
+                self.callee_match_mode,
+            )
+            self.callee_match_mode = "search"
 
     @property
     def is_executable(self) -> bool:
@@ -686,6 +943,39 @@ class TaintSpec:
         self._source_types_set: set[str] = set(self.source_types)
 
 
+class SemanticSpec:
+    """Normalized structured evidence detector configuration."""
+
+    _SUPPORTED_KINDS = {"database_race"}
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.kind = str(data.get("kind") or "")
+        self.same_receiver = bool(data.get("same_receiver", True))
+        self.max_lines_between = int(data.get("max_lines_between") or 20)
+        self.read_callee = str(data.get("read_callee") or "")
+        self.write_callee = str(data.get("write_callee") or "")
+        self.receiver_match = str(data.get("receiver_match") or "")
+        self.required_between = str(data.get("required_between") or "")
+        self.defense_match = str(data.get("defense_match") or "")
+        self._read_callee_re = re.compile(self.read_callee, re.IGNORECASE)
+        self._write_callee_re = re.compile(self.write_callee, re.IGNORECASE)
+        self._receiver_re = re.compile(self.receiver_match, re.IGNORECASE)
+        self._required_between_re = re.compile(self.required_between, re.IGNORECASE)
+        self._defense_re = re.compile(self.defense_match, re.IGNORECASE)
+
+    @property
+    def is_executable(self) -> bool:
+        return bool(
+            self.kind in self._SUPPORTED_KINDS
+            and self.read_callee
+            and self.write_callee
+            and self.receiver_match
+            and self.required_between
+            and self.defense_match
+            and self.max_lines_between > 0
+        )
+
+
 class YAMLRuleSpec:
     """Full specification parsed from a YAML rule definition."""
 
@@ -693,10 +983,17 @@ class YAMLRuleSpec:
         default_msg = "Security finding detected at {sink} (line {sink_line})"
         self.message: str = data.get("message", default_msg)
         self.taint: TaintSpec | None = None
+        self.semantic: SemanticSpec | None = None
         self.patterns: list[PatternSpec] = []
 
         if "taint" in data:
             self.taint = TaintSpec(data["taint"])
+        if isinstance(data.get("semantic"), dict):
+            semantic = SemanticSpec(data["semantic"])
+            if semantic.is_executable:
+                self.semantic = semantic
+            else:
+                logger.warning("Rule %s has a non-executable semantic detector", data.get("id"))
 
         rule_id = data.get("id", "<unknown>")
         for p in data.get("patterns", []):

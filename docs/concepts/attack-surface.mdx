@@ -1,0 +1,51 @@
+---
+title: "Frontend-to-backend attack surface"
+description: "Correlate frontend HTTP calls, Gateway transformations, Spring endpoints, findings, and runtime observations."
+icon: "route"
+---
+
+Aegify models an attack surface as evidence-linked nodes rather than a flat list
+of controller annotations.
+
+```text
+frontend call
+  -> public Gateway route
+  -> path transformation
+  -> backend endpoint
+  -> finding
+  -> optional runtime observation
+```
+
+## Frontend calls
+
+Supported extraction recognizes bounded `fetch` and axios-style requests,
+including common literal and template construction. Each call retains file,
+line, method, path, and confidence.
+
+## Spring Cloud Gateway
+
+Gateway YAML and supported Java/Kotlin DSL routes contribute host, path, and
+method predicates. Aegify applies supported transformations such as
+`StripPrefix`, `RewritePath`, `PrefixPath`, and `SetPath` before matching the
+downstream controller.
+
+## Backend endpoints
+
+Spring MVC and WebFlux extraction combines class and method mappings, HTTP
+methods, named `path` and `value` attributes, and Kotlin suspend handlers.
+
+## Runtime evidence
+
+Approved HTTP, browser, proxy, HAR, and OpenTelemetry observations may attach to
+the same route. Observation changes the evidence record, but does not
+automatically establish exploit impact.
+
+<Note>
+  Dynamic URL construction, runtime route registration, custom Gateway filters,
+  and unresolved framework behavior can remain unlinked. The absence of a link
+  is reported as an evidence limit, not as proof that the surface is safe.
+</Note>
+
+See [external and runtime adapters](/integrations/external-runtime-adapters) and
+the [verification harness](/verification/harness) for supported evidence
+formats and execution controls.
