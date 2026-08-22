@@ -38,7 +38,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "^16.3.1",
     "prisma": "^7.9.1",
     "shadcn": "^3.8.4",
