@@ -4,18 +4,20 @@ Baseline date: 2026-08-22
 
 ## Verdict
 
-The open-source alpha implementation scope is present, but this hardening branch
-is not yet release-green. Tests cover multi-repository and monorepo
-reachability, Java/Kotlin/Spring semantics, Spring Cloud Gateway
-transformations, Program Graph queries, frontend-to-backend attack-surface
-correlation, normalized rules, external evidence adapters, and bounded
-verification harnesses. A separate precision suite retains five failing
-regressions for broad race-condition, external API consumption, and ReDoS
-fallbacks; they must not be hidden from the release decision.
+The open-source alpha implementation scope is present and this hardening branch
+is release-gate green. Local validation and every GitHub PR check passed. Tests
+cover multi-repository and monorepo reachability, Java/Kotlin/Spring semantics,
+Spring Cloud Gateway transformations, Program Graph queries,
+frontend-to-backend attack-surface correlation, normalized rules, external
+evidence adapters, and bounded verification harnesses. The dedicated precision
+suite passes all 17 cases: broad race-condition, external API consumption,
+ReDoS, and formatting signals remain visible as candidate/advisory findings,
+while only supported semantic evidence can create a CI-blocking finding.
 
-Colima was started for this audit. Both final images were rebuilt from the
-current source and exercised live. Temporary containers and volumes were removed,
-and all Colima profiles were returned to their original stopped state.
+Colima is running after the final audit. Both final images were rebuilt from the
+current source and exercised live. Only Aegify-owned temporary containers and
+failed rebuild layers were removed; no volumes, unrelated images, or unrelated
+containers were removed.
 
 ## Requirement evidence
 
