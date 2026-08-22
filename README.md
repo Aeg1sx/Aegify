@@ -152,41 +152,48 @@ header. Keep `AEGIFY_UPLOAD_TOKEN` separate from `AUTH_SECRET`.
 
 ## Architecture
 
-```
-Scanner Pipeline:
+```mermaid
+flowchart TB
+  subgraph Inputs["Workspace inputs"]
+    Repositories["Repositories and manifests<br/>multi-repo or monorepo"]
+    Compiler["Compiler and build evidence<br/>SCIP · Maven/Gradle · classpath · bytecode"]
+    Tools["External analysis evidence<br/>CodeQL · Semgrep · Joern"]
+    Runtime["Runtime evidence<br/>HTTP · browser · proxy · HAR · OTel"]
+  end
 
-  Source Files
-      |
-      v
-  [AST Parser]          tree-sitter (8 languages)
-      |
-      v
-  [Semantic Layer]       SCIP + JVM build/module + CHA/RTA
-      |
-      v
-  [Program Graph]        CFG/ICFG + SSA/DFG + points-to/alias + call/framework
-      |
-      +----------------------+
-      v                      v
-  [Global Taint/Rules]   [API Surface]
-  args/returns/fields    endpoint + frontend + gateway + runtime
-      |
-      v
-  [Context Analyzer]    auth middleware, sanitizer detection
-      |
-      v
-  [Rule Engine]         AST rules + YAML pattern rules
-      |
-      v
-  [LLM Verifier]        Claude API (optional, token-budgeted)
-      |
-      v
-  [Reporter]            SARIF / GitHub PR / Dashboard / DefectDojo
+  Identity["Repository-qualified identity<br/>content-addressed workspace snapshot"]
+  Parse["Parallel normalized parsing<br/>tree-sitter CST/AST"]
+  Semantics["Semantic resolution<br/>JVM/Spring models · CHA/RTA · cross-repo providers"]
+  Program["Normalized program graph<br/>call graph · CFG/ICFG · SSA/DFG · points-to"]
+  Taint["Global taint and structured rules"]
+  Surface["Attack-surface graph<br/>frontend → Gateway → endpoint → finding"]
+  Gate{"Evidence gate"}
+  Advisory["Candidate / advisory<br/>retained, non-blocking"]
+  Blocking["Reachable / blocking<br/>semantic evidence required"]
+  Verify["Approved isolated verification<br/>hashed and redacted artifacts"]
+  Review["Optional LLM triage<br/>non-authoritative enrichment"]
+  Outputs["SARIF · GitHub · Dashboard · DefectDojo"]
 
-  [Tool adapters]       CodeQL/Semgrep/Joern -> normalized evidence
-  [Verify Plan]         explicit approval -> isolated Docker -> hashed artifacts
-  [Runtime adapters]    HTTP/browser/proxy/OTel -> observed attack surface
+  Repositories --> Identity --> Parse --> Semantics --> Program
+  Compiler --> Semantics
+  Tools --> Program
+  Program --> Taint
+  Program --> Surface
+  Runtime --> Surface
+  Taint --> Gate
+  Surface --> Gate
+  Gate -->|broad or insufficient evidence| Advisory
+  Gate -->|taint or structured semantic evidence| Blocking
+  Advisory -->|explicit approval| Verify
+  Verify --> Gate
+  Gate -.-> Review
+  Advisory --> Outputs
+  Blocking --> Outputs
+  Review -.-> Outputs
 ```
+
+See the [technical architecture](docs/architecture/technical-architecture.mdx)
+for graph layers, trust boundaries, and scaling details.
 
 ## Supported Languages
 
