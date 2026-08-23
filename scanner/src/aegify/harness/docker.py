@@ -368,7 +368,7 @@ class DockerVerificationExecutor:
                 capture_output=True,
                 timeout=10,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError, subprocess.TimeoutExpired:
             pass
 
     @staticmethod

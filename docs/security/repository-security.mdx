@@ -22,13 +22,18 @@ Target the default branch `main` and enable:
 
 The required pull-request checks are:
 
-- `Scanner / Python 3.12`;
-- `Dashboard / Node 22`;
+- `Supply-chain policy`;
+- `Scanner / Python 3.14`;
+- `Dashboard / Node 26`;
 - `Documentation`;
 - `Scanner container`;
 - `Dependency review`;
 - `Gitleaks`;
 - `zizmor`.
+
+The supply-chain policy check rejects mutable GitHub Action tags, unpinned
+container base images, npm registry packages without SHA-512 integrity, and
+Python registry artifacts without SHA-256 hashes.
 
 CodeQL, the Aegify self-scan, OpenSSF Scorecard, and release workflows run on
 trusted `main`, schedules, or protected tags. Where GitHub code-scanning merge

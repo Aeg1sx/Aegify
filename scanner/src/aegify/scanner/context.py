@@ -83,7 +83,7 @@ class ContextAnalyzer:
         chain: list[CallChainStep] = []
         try:
             path = nx.shortest_path(call_graph, entry_point, sink_func)
-        except (nx.NodeNotFound, nx.NetworkXNoPath):
+        except nx.NodeNotFound, nx.NetworkXNoPath:
             return chain
 
         for node_name in path:

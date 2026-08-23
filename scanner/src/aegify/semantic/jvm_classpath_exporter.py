@@ -196,7 +196,7 @@ class JvmClasspathBundleBuilder:
                         artifact=artifact,
                         version=version,
                     )
-        except (OSError, RuntimeError, zipfile.BadZipFile):
+        except OSError, RuntimeError, zipfile.BadZipFile:
             return None
         return None
 

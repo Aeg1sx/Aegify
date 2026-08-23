@@ -441,7 +441,7 @@ class ExternalAnalysisImporter:
         score = properties.get("security-severity")
         try:
             numeric = float(score) if isinstance(score, (str, int, float)) else 0.0
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             numeric = 0.0
         if numeric > 9.0:
             return Severity.CRITICAL
@@ -562,7 +562,7 @@ class ExternalAnalysisImporter:
     def _positive_int(value: Any, default: int) -> int:
         try:
             parsed = int(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return default
         return max(1, parsed)
 
@@ -570,7 +570,7 @@ class ExternalAnalysisImporter:
     def _float(value: Any, default: float) -> float:
         try:
             parsed = float(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return default
         return max(0.0, min(1.0, parsed))
 

@@ -39,8 +39,9 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": true,
         "required_status_checks": [
-          { "context": "Scanner / Python 3.12" },
-          { "context": "Dashboard / Node 22" },
+          { "context": "Supply-chain policy" },
+          { "context": "Scanner / Python 3.14" },
+          { "context": "Dashboard / Node 26" },
           { "context": "Documentation" },
           { "context": "Scanner container" },
           { "context": "Dependency review" },

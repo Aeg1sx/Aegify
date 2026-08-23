@@ -234,7 +234,7 @@ class YAMLRule(SecurityRule):
         """Format message template, gracefully handling missing keys and brace literals."""
         try:
             return template.format(**kwargs)
-        except (KeyError, ValueError, IndexError):
+        except KeyError, ValueError, IndexError:
             # Fallback: replace known placeholders manually
             result = template
             for key, val in kwargs.items():
@@ -610,7 +610,7 @@ class PatternSpec:
         if raw_args_match_index is not None:
             try:
                 parsed_index = int(raw_args_match_index)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 logger.warning(
                     "Unsupported args_match_index %r; matching all arguments",
                     raw_args_match_index,

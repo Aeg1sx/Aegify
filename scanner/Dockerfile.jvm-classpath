@@ -1,8 +1,11 @@
 # Build from the repository root. Defaults are multi-architecture manifest
 # digests; callers may override them only with another digest-pinned reference.
-ARG PYTHON_BASE=python:3.12-slim@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
+ARG UV_BASE=ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1
+ARG PYTHON_BASE=python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
 ARG GRADLE_BASE=gradle:8.10.2-jdk21@sha256:963d59f7f22767da4efbcf46b661361b61af5fb88b0309da1071c4234c647eba
 ARG MAVEN_BASE=maven:3.9.9-eclipse-temurin-21@sha256:3a4ab3276a087bf276f79cae96b1af04f53731bec53fb2e651aca79e4b10211e
+
+FROM ${UV_BASE} AS uv
 
 FROM ${GRADLE_BASE} AS gradle_runtime
 USER root
@@ -15,12 +18,12 @@ RUN mkdir -p /root/.m2/repository && \
       -Dartifact=org.apache.maven.plugins:maven-dependency-plugin:3.8.1
 
 FROM ${PYTHON_BASE} AS aegify_builder
+COPY --from=uv /uv /uvx /bin/
 WORKDIR /opt/aegify
 COPY scanner/pyproject.toml scanner/uv.lock scanner/README.md ./
 COPY scanner/src/ src/
 COPY rules/ /opt/rules/
-RUN pip install --no-cache-dir uv==0.11.26 && \
-    uv sync --locked --no-dev --no-editable
+RUN uv sync --locked --no-dev --no-editable
 
 FROM ${PYTHON_BASE}
 

@@ -107,7 +107,7 @@ class LLMClient:
                 end = text.index("```", start)
                 try:
                     return LLMClient._validated_json(json.loads(text[start:end].strip()))
-                except (json.JSONDecodeError, ValueError):
+                except json.JSONDecodeError, ValueError:
                     pass
 
         # Try finding JSON object/array in text

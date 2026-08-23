@@ -272,7 +272,7 @@ class AttackSurfaceAnalyzer:
         try:
             source = path.read_text(errors="replace")
             data = yaml.safe_load(source) or {}
-        except (OSError, yaml.YAMLError):
+        except OSError, yaml.YAMLError:
             return []
 
         repository_id = repository_id or self._repository_for_path(path, root, file_asts)

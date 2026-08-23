@@ -16,8 +16,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  supply-chain:
+    name: Supply-chain policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Enforce immutable dependency references
+        run: python scripts/verify_supply_chain.py
+
   scanner:
-    name: Scanner / Python 3.12
+    name: Scanner / Python 3.14
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -37,12 +60,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.11.26"
+          version: "0.12.5"
           enable-cache: true
           cache-dependency-glob: scanner/uv.lock
 
@@ -50,6 +73,9 @@ jobs:
         run: |
           uv lock --check
           uv sync --locked --extra dev
+
+      - name: Audit Python dependencies
+        run: uv audit --frozen
 
       - name: Lint and format check
         run: |
@@ -77,7 +103,7 @@ jobs:
           retention-days: 7
 
   dashboard:
-    name: Dashboard / Node 22
+    name: Dashboard / Node 26
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -109,7 +135,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version: "26.7.0"
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
@@ -117,7 +143,9 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Audit dependencies
-        run: npm audit --audit-level=high
+        run: |
+          npm audit --audit-level=high
+          npm audit signatures --include-attestations
 
       - name: Generate Prisma client
         run: npx --no-install prisma generate
@@ -155,7 +183,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version: "26.7.0"
           cache: npm
           cache-dependency-path: docs/package-lock.json
 
@@ -163,7 +191,9 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Audit documentation dependencies
-        run: npm audit --audit-level=high
+        run: |
+          npm audit --audit-level=high
+          npm audit signatures --include-attestations
 
       - name: Validate Mintlify documentation
         run: npm run check
@@ -188,3 +218,11 @@ jobs:
 
       - name: Smoke test scanner image
         run: docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges aegify-scanner:ci --help
+
+      - name: Build dashboard image
+        run: docker build --pull --file dashboard/Dockerfile --tag aegify-dashboard:ci dashboard
+
+      - name: Smoke test dashboard image
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' aegify-dashboard:ci)" = "nextjs"
+          docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges aegify-dashboard:ci node --version

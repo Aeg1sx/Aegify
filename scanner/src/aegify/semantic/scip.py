@@ -308,7 +308,7 @@ class ScipImporter:
             return None
         try:
             record = _ScipCacheRecord.model_validate_json(cache_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, ValueError):
+        except OSError, UnicodeError, ValueError:
             return None
         if record.repository_id != repository_id or record.content_sha256 != content_sha256:
             return None

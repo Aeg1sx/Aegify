@@ -323,7 +323,7 @@ class StructuredTaintAnalyzer:
             )
         try:
             lines = Path(definition.file_path).read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             return []
         for line_number in range(definition.line_start, definition.line_end + 1):
             if line_number > len(lines):

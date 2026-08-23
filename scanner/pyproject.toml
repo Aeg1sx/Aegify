@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Next-gen SAST tool with Call Graph analysis, Dataflow tracking, and LLM-augmented verification"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 authors = [{ name = "Aegify Team" }]
 
 dependencies = [
@@ -61,7 +61,7 @@ artifacts = ["src/aegify/py.typed"]
 "src/aegify/modelpacks/jvm.yml" = "aegify/modelpacks/jvm.yml"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
@@ -72,8 +72,14 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
+
+[tool.uv]
+required-version = "==0.12.5"
+
+[tool.uv.audit]
+malware-check = true
 
 [[tool.mypy.overrides]]
 module = ["boto3", "psycopg"]
