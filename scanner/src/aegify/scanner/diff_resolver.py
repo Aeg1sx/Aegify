@@ -157,7 +157,7 @@ class DiffResolver:
                 )
                 if result.returncode == 0:
                     return result.stdout.strip()
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+            except subprocess.TimeoutExpired, FileNotFoundError:
                 continue
         return None
 

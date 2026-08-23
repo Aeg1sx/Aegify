@@ -5,7 +5,7 @@ icon: "rocket"
 ---
 
 This guide runs the scanner locally without sending source code to an external
-model. Python 3.12 or newer is required.
+model. Python 3.14 and uv 0.12.5 are required.
 
 <Steps>
   <Step title="Clone Aegify">
@@ -16,13 +16,11 @@ cd Aegify
 ```
 
   </Step>
-  <Step title="Create an isolated environment">
+  <Step title="Synchronize the locked environment">
 
 ```bash
-python3.12 -m venv scanner/.venv
+uv sync --frozen --project scanner
 source scanner/.venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ./scanner
 ```
 
   </Step>

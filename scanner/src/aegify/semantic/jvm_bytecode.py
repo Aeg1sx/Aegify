@@ -1487,7 +1487,7 @@ class JvmBytecodeImporter:
                 version = values.get("version", "")
                 if all((group, artifact, version)):
                     return JvmArtifactCoordinate("maven", group, artifact, version)
-        except (OSError, RuntimeError, zipfile.BadZipFile):
+        except OSError, RuntimeError, zipfile.BadZipFile:
             return None
         return None
 

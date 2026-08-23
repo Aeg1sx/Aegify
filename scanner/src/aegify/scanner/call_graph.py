@@ -322,7 +322,7 @@ class CallGraphBuilder:
         # Fallback to nx.has_path for non-cached nodes
         try:
             return nx.has_path(self.graph, source_node, target_node)
-        except (nx.NodeNotFound, nx.NetworkXError):
+        except nx.NodeNotFound, nx.NetworkXError:
             return False
 
     def _resolve_callee(self, call: CallSite) -> str | None:
@@ -469,7 +469,7 @@ class CallGraphBuilder:
             return []
         try:
             return list(nx.all_simple_paths(self.graph, source_node, target_node, cutoff=max_depth))
-        except (nx.NodeNotFound, nx.NetworkXError):
+        except nx.NodeNotFound, nx.NetworkXError:
             return []
 
     def find_paths_to_sinks(self, entry_point: str) -> dict[str, list[list[str]]]:
@@ -522,5 +522,5 @@ class CallGraphBuilder:
         try:
             path = nx.shortest_path(self.graph, source_node, target_node)
             return [self._display_node(node) for node in path]
-        except (nx.NodeNotFound, nx.NetworkXNoPath):
+        except nx.NodeNotFound, nx.NetworkXNoPath:
             return None

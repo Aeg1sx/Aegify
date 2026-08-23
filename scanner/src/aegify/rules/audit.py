@@ -341,7 +341,7 @@ def _check_semantic(
             )
     try:
         max_lines = int(semantic.get("max_lines_between", 20))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         max_lines = 0
     if max_lines <= 0:
         _issue(

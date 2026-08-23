@@ -70,7 +70,6 @@ export default function EndpointsPage() {
   const [expandedHandlers, setExpandedHandlers] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setLoading(true);
     const params = new URLSearchParams();
     if (filterFramework) params.set("framework", filterFramework);
     if (filterMethod) params.set("method", filterMethod);
@@ -344,7 +343,10 @@ export default function EndpointsPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <select
             value={filterFramework}
-            onChange={(e) => setFilterFramework(e.target.value)}
+            onChange={(e) => {
+              setLoading(true);
+              setFilterFramework(e.target.value);
+            }}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">All frameworks</option>
@@ -356,7 +358,10 @@ export default function EndpointsPage() {
           </select>
           <select
             value={filterMethod}
-            onChange={(e) => setFilterMethod(e.target.value)}
+            onChange={(e) => {
+              setLoading(true);
+              setFilterMethod(e.target.value);
+            }}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">All methods</option>
@@ -368,7 +373,10 @@ export default function EndpointsPage() {
           </select>
           <select
             value={filterAuth}
-            onChange={(e) => setFilterAuth(e.target.value)}
+            onChange={(e) => {
+              setLoading(true);
+              setFilterAuth(e.target.value);
+            }}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">All auth states</option>
@@ -390,7 +398,10 @@ export default function EndpointsPage() {
             <input
               type="checkbox"
               checked={showAll}
-              onChange={(e) => setShowAll(e.target.checked)}
+              onChange={(e) => {
+                setLoading(true);
+                setShowAll(e.target.checked);
+              }}
               className="rounded border-input"
             />
             Show all ({totalUnfiltered})

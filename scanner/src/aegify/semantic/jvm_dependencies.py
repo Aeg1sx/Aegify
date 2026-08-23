@@ -671,7 +671,7 @@ class JvmDependencyAnalyzer:
                 continue
             try:
                 snippets.append(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError):
+            except OSError, UnicodeError:
                 continue
         return "\n".join(snippets)
 

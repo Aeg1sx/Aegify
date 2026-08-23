@@ -31,6 +31,6 @@ def compute_hashes(paths: list[Path], max_workers: int | None = None) -> dict[st
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             results = executor.map(_hash_worker, [str(p) for p in paths])
             return dict(results)
-    except (OSError, PermissionError):
+    except OSError, PermissionError:
         # Some hardened containers disallow process semaphores/sysconf calls.
         return {str(path): compute_file_hash(path) for path in paths}

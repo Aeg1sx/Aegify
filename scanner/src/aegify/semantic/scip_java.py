@@ -163,7 +163,7 @@ class ScipJavaPlanner:
             if path.is_file():
                 try:
                     snippets.append(path.read_text(encoding="utf-8"))
-                except (OSError, UnicodeError):
+                except OSError, UnicodeError:
                     continue
         text = "\n".join(snippets)
         return "maven-publish" in text and "publishing" in text

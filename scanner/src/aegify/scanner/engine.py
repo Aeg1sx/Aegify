@@ -1809,7 +1809,7 @@ class ScanEngine:
                 path = nx.shortest_path(call_graph, ep, sink_func)
                 if best_chain is None or len(path) < len(best_chain):
                     best_chain = path
-            except (nx.NodeNotFound, nx.NetworkXNoPath):
+            except nx.NodeNotFound, nx.NetworkXNoPath:
                 continue
 
         # If no entry point reaches it, try ancestors

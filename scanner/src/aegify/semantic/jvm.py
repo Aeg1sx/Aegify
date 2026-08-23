@@ -154,7 +154,7 @@ class JvmBuildDiscoverer:
             for path in settings:
                 try:
                     text = path.read_text(encoding="utf-8")
-                except (OSError, UnicodeError):
+                except OSError, UnicodeError:
                     continue
                 for match in self._GRADLE_INCLUDE.finditer(text):
                     modules.update(self._QUOTED.findall(match.group("body")))
@@ -163,7 +163,7 @@ class JvmBuildDiscoverer:
             if pom.is_file():
                 try:
                     tree = ET.parse(pom)
-                except (OSError, ET.ParseError):
+                except OSError, ET.ParseError:
                     tree = None
                 if tree is not None:
                     for element in tree.getroot().iter():
@@ -378,7 +378,7 @@ class JvmModuleGraphAnalyzer:
                 continue
             try:
                 snippets.append(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError):
+            except OSError, UnicodeError:
                 continue
         return "\n".join(snippets)
 
@@ -915,7 +915,7 @@ class JvmSemanticAnalyzer:
         for ast in asts:
             try:
                 lines = Path(ast.file_path).read_text(encoding="utf-8").splitlines()
-            except (OSError, UnicodeError):
+            except OSError, UnicodeError:
                 continue
             for definition in ast.functions:
                 node_id = definition.symbol_id or definition.callable_name
@@ -1256,7 +1256,7 @@ class JvmSemanticAnalyzer:
     def _bindings(self, ast: FileAST) -> tuple[dict[str, tuple[str, str]], set[str]]:
         try:
             text = Path(ast.file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             return {}, set()
         pattern = self._JAVA_BINDING if ast.language == Language.JAVA else self._KOTLIN_BINDING
         bindings: dict[str, tuple[str, str]] = {}
@@ -1369,7 +1369,7 @@ class JvmSemanticAnalyzer:
     def _qualified_type_name(cls, ast: FileAST, name: str) -> str:
         try:
             text = Path(ast.file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             text = ""
         package = cls._PACKAGE.search(text)
         simple = cls._simple_type(name)

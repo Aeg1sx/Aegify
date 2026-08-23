@@ -4,7 +4,7 @@ description: "Aegify scanner를 설치하고 외부 LLM 전송 없이 첫 점검
 icon: "rocket"
 ---
 
-Python 3.12 이상이 필요합니다. 다음 과정은 소스 코드를 외부 모델로 보내지
+Python 3.14와 uv 0.12.5가 필요합니다. 다음 과정은 소스 코드를 외부 모델로 보내지
 않습니다.
 
 <Steps>
@@ -16,13 +16,11 @@ cd Aegify
 ```
 
   </Step>
-  <Step title="격리 환경에 scanner 설치">
+  <Step title="잠금 파일로 격리 환경 동기화">
 
 ```bash
-python3.12 -m venv scanner/.venv
+uv sync --frozen --project scanner
 source scanner/.venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ./scanner
 ```
 
   </Step>
