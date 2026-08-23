@@ -9,26 +9,93 @@ icon: "network"
 Aegify is an evidence pipeline with a scanner CLI, normalized graph and evidence
 models, isolated verification runners, and a Next.js dashboard.
 
-```text
-Workspace inputs
-  repositories + manifests + SCIP + classpath + external results + runtime evidence
-        |
-        v
-Identity and indexing
-  repo/module/file/symbol IDs + content-addressed snapshots
-        |
-        v
-Static and semantic analysis
-  AST -> call graph -> CFG/ICFG -> SSA/DFG -> points-to/taint
-        |                         |
-        |                         +-> JVM/Spring/SCIP/bytecode overlays
-        v
-Attack-surface graph
-  frontend -> Gateway -> endpoint -> finding -> runtime observation
-        |
-        +-> SARIF / JSON / dashboard
-        +-> approved verification plan -> isolated runner -> normalized evidence
+```mermaid
+flowchart TB
+  subgraph Inputs["1. Bounded workspace inputs"]
+    Repositories["Repositories<br/>multi-repo or monorepo"]
+    BuildInputs["Build evidence<br/>manifests · lockfiles · classpath"]
+    Imported["Imported evidence<br/>SCIP · bytecode · CodeQL · Semgrep · Joern"]
+    RuntimeInputs["Runtime evidence<br/>HTTP · browser · proxy · HAR · OTel"]
+  end
+
+  subgraph Identity["2. Identity and reproducibility"]
+    Snapshot["Workspace snapshot<br/>revisions · configuration · artifact hashes"]
+    SymbolIds["Stable repository/module/file/symbol IDs"]
+    Providers["Package and artifact provider map"]
+  end
+
+  subgraph Analysis["3. Static and semantic analysis"]
+    Parse["tree-sitter CST/AST<br/>normalized source facts"]
+    Resolution["Call resolution<br/>SCIP · JVM · Spring · CHA/RTA · DI"]
+    ProgramGraph["Normalized program graph<br/>CFG/ICFG · SSA/DFG · data state · points-to"]
+    Taint["Context-bounded global taint<br/>arguments · receivers · returns · fields"]
+    Rules["Strict YAML rules<br/>structured semantic detectors"]
+  end
+
+  subgraph AttackSurface["4. Attack-surface correlation"]
+    Frontend["Frontend API call"]
+    Gateway["Spring Cloud Gateway route<br/>path transformation"]
+    Endpoint["Backend endpoint"]
+    Finding["Finding with provenance"]
+    Observation["Runtime observation"]
+  end
+
+  subgraph Decision["5. Evidence and verification"]
+    Gate{"Evidence contract"}
+    Candidate["Candidate / advisory<br/>retained, non-blocking"]
+    Blocking["Reachable / blocking<br/>semantic evidence required"]
+    Plan["Explicitly approved verification plan"]
+    Runner["Isolated runner<br/>bounded target, network, time, and resources"]
+    Artifact["Hashed, redacted evidence artifact"]
+    Llm["Optional LLM triage<br/>explanation, not primary evidence"]
+  end
+
+  subgraph Delivery["6. Delivery and operations"]
+    Outputs["SARIF · JSON · GitHub · DefectDojo"]
+    Dashboard["Dashboard<br/>triage · graphs · attack surface"]
+    Storage["SQLite/PostgreSQL/object storage<br/>validated identifiers and content hashes"]
+  end
+
+  Repositories --> Snapshot
+  BuildInputs --> Snapshot
+  Imported --> Snapshot
+  Snapshot --> SymbolIds
+  Snapshot --> Providers
+  Snapshot --> Parse
+  SymbolIds --> Resolution
+  Providers --> Resolution
+  Imported --> Resolution
+  Parse --> Resolution --> ProgramGraph
+  Parse --> ProgramGraph
+  ProgramGraph --> Taint
+  Rules --> Taint
+  ProgramGraph --> Frontend
+  ProgramGraph --> Gateway
+  ProgramGraph --> Endpoint
+  Frontend --> Gateway --> Endpoint
+  Frontend -. direct API call .-> Endpoint
+  Taint --> Finding
+  Rules --> Finding
+  Endpoint --> Finding
+  RuntimeInputs --> Observation --> Endpoint
+  Observation --> Finding
+  Finding --> Gate
+  Gate -->|broad heuristic or incomplete proof| Candidate
+  Gate -->|taint or structured semantic evidence| Blocking
+  Candidate --> Plan --> Runner --> Artifact --> Observation
+  Gate -.-> Llm
+  Candidate --> Outputs
+  Blocking --> Outputs
+  Llm -.-> Dashboard
+  Outputs --> Dashboard
+  Outputs --> Storage
+  Dashboard --> Storage
 ```
+
+The diagram represents evidence flow, not a claim of exhaustive language or
+framework semantics. Solid edges are normalized data relationships; labeled
+decision edges show CI disposition, and dashed edges are optional or alternate
+paths.
 
 ## Repository layout
 
