@@ -69,9 +69,7 @@ runs:
       env:
         ACTION_PATH: ${{ github.action_path }}
         UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/aegify-action-venv
-      run: |
-        uv sync --frozen --project "$ACTION_PATH/scanner" --no-dev --no-editable
-        echo "$UV_PROJECT_ENVIRONMENT/bin" >> "$GITHUB_PATH"
+      run: uv sync --frozen --project "$ACTION_PATH/scanner" --no-dev --no-editable
 
     - name: Fetch base branch for diff
       shell: bash
@@ -90,6 +88,7 @@ runs:
         INPUT_MAX_RELATED: ${{ inputs.max-related-files }}
         INPUT_MODEL: ${{ inputs.model }}
         INPUT_SEVERITY: ${{ inputs.severity }}
+        UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/aegify-action-venv
       run: |
         case "$INPUT_SEVERITY" in critical|high|medium|low) ;; *) exit 2 ;; esac
         case "$INPUT_MAX_RELATED" in ''|*[!0-9]*) exit 2 ;; esac
@@ -102,7 +101,7 @@ runs:
           exit 2
         fi
 
-        aegify scan-pr . \
+        "$UV_PROJECT_ENVIRONMENT/bin/aegify" scan-pr . \
           --severity "$INPUT_SEVERITY" \
           --model "$INPUT_MODEL" \
           --max-related "$INPUT_MAX_RELATED" \
