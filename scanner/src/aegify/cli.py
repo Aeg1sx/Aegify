@@ -73,7 +73,7 @@ def scan(
     model: Annotated[
         str,
         typer.Option("--model", "-m", help="LLM model to use"),
-    ] = "claude-opus-4-6",
+    ] = "claude-opus-5",
     upload_defectdojo: Annotated[
         bool,
         typer.Option("--upload-defectdojo", help="Upload SARIF results to DefectDojo"),
@@ -266,6 +266,48 @@ def rules() -> None:
     console.print(table)
 
 
+@app.command("benchmark")
+def benchmark(
+    target: Annotated[Path, typer.Argument(help="Owned benchmark source tree", exists=True)],
+    ground_truth: Annotated[
+        Path,
+        typer.Option(
+            "--ground-truth",
+            help="JSON file with an expected findings array",
+            exists=True,
+        ),
+    ],
+    min_precision: Annotated[
+        float, typer.Option("--min-precision", min=0.0, max=1.0, help="Fail below this precision")
+    ] = 0.9,
+    min_recall: Annotated[
+        float, typer.Option("--min-recall", min=0.0, max=1.0, help="Fail below this recall")
+    ] = 0.9,
+    output_file: Annotated[
+        Path | None, typer.Option("--output-file", "-o", help="Write JSON evidence report")
+    ] = None,
+) -> None:
+    """Measure precision and recall against versioned, owned ground truth."""
+    from aegify.quality.benchmark import ExpectedFinding, evaluate_findings
+    from aegify.scanner.engine import ScanEngine
+
+    payload = json.loads(ground_truth.read_text(encoding="utf-8"))
+    expected_payload = payload.get("expected", []) if isinstance(payload, dict) else []
+    expected = [ExpectedFinding.model_validate(item) for item in expected_payload]
+    config = AegifyConfig.load(target if target.is_dir() else target.parent)
+    config.rules.severity_threshold = "low"
+    config.llm.enabled = False
+    result = ScanEngine(config=config).scan(target)
+    report = evaluate_findings(result.findings, expected)
+    rendered = report.model_dump_json(indent=2)
+    if output_file:
+        output_file.write_text(rendered + "\n", encoding="utf-8")
+    else:
+        console.print(rendered)
+    if report.metrics.precision < min_precision or report.metrics.recall < min_recall:
+        raise typer.Exit(code=1)
+
+
 @app.command("scan-workspace")
 def scan_workspace(
     manifest: Annotated[
@@ -288,6 +330,21 @@ def scan_workspace(
         str,
         typer.Option("--severity", "-s", help="Minimum finding severity"),
     ] = "medium",
+    ai_tools: Annotated[
+        bool,
+        typer.Option(
+            "--ai-tools/--no-ai-tools",
+            help="Run evidence-bound AI review with allowlisted read-only tools",
+        ),
+    ] = False,
+    model: Annotated[
+        str,
+        typer.Option("--model", "-m", help="AI model used for tool-grounded review"),
+    ] = "claude-opus-5",
+    max_ai_findings: Annotated[
+        int,
+        typer.Option("--max-ai-findings", min=1, max=1000, help="Bound AI review cost"),
+    ] = 50,
     semantic_graph_file: Annotated[
         Path | None,
         typer.Option(
@@ -308,9 +365,58 @@ def scan_workspace(
 
     cfg = AegifyConfig.load(manifest.parent)
     cfg.rules.severity_threshold = severity
-    cfg.llm.enabled = False
+    cfg.llm.enabled = ai_tools
+    cfg.llm.model = model
     engine = ScanEngine(config=cfg)
     result = engine.scan_workspace(manifest)
+
+    if ai_tools and result.status == "completed" and result.findings:
+        if not cfg.anthropic_api_key:
+            console.print("[red]AI tool review requires ANTHROPIC_API_KEY or config key[/red]")
+            raise typer.Exit(code=2)
+        from aegify.llm.budget import TokenBudget
+        from aegify.llm.client import LLMClient
+        from aegify.llm.orchestrator import AISTASTOrchestrator
+        from aegify.scanner.workspace import WorkspaceManifest
+
+        workspace_manifest = WorkspaceManifest.load(manifest)
+        budget = TokenBudget(total_budget=cfg.llm.token_budget)
+        client = LLMClient(
+            api_key=cfg.anthropic_api_key,
+            model=model,
+            budget=budget,
+            base_url=cfg.llm.base_url,
+        )
+        orchestrator = AISTASTOrchestrator()
+
+        def model_call(system: str, prompt: str) -> dict[str, Any]:
+            response = client.query(system, prompt, phase="verification")
+            if not isinstance(response, dict):
+                raise RuntimeError("Model returned no structured JSON")
+            return response
+
+        workspace_context = {
+            "workspace_snapshot": result.workspace_snapshot,
+            "repositories": [
+                {"id": repository.id, "depends_on": repository.depends_on}
+                for repository in workspace_manifest.repositories
+            ],
+            "semantic_summary": result.semantic_analysis.model_dump(mode="json"),
+            "runtime_evidence_summary": result.runtime_evidence.model_dump(mode="json"),
+            "attack_surface": [
+                endpoint.model_dump(mode="json") for endpoint in result.endpoints[:500]
+            ],
+        }
+        for finding in result.findings[:max_ai_findings]:
+            finding.ai_review = orchestrator.review_finding(
+                finding,
+                model_call,
+                workspace=workspace_context,
+                model=model,
+            )
+            finding.llm_analysis = finding.ai_review.model_dump_json()
+            if finding.ai_review.remediation_summary:
+                finding.remediation = finding.ai_review.remediation_summary
 
     if semantic_graph_file is not None and result.status == "completed":
         engine.export_semantic_graph(semantic_graph_file)
@@ -992,7 +1098,7 @@ def scan_pr(
     model: Annotated[
         str,
         typer.Option("--model", "-m", help="LLM model to use"),
-    ] = "claude-opus-4-6",
+    ] = "claude-opus-5",
     max_related: Annotated[
         int,
         typer.Option("--max-related", help="Max related files to include in scan"),

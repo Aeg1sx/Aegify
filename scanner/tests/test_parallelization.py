@@ -103,3 +103,26 @@ class TestIncrementalBuild:
         result = engine.scan(FIXTURES / "vulnerable_app.py")
         assert result.status == ScanStatus.COMPLETED
         assert len(result.findings) > 0
+
+    def test_parallel_parser_reuses_persisted_asts(self, tmp_path, monkeypatch):
+        for index in range(4):
+            (tmp_path / f"module_{index}.py").write_text(
+                f"def function_{index}():\n    return {index}\n",
+                encoding="utf-8",
+            )
+
+        config = AegifyConfig()
+        config.llm.enabled = False
+        config.scan.max_workers = 2
+        storage = InMemoryBackend()
+        engine = ScanEngine(config=config, storage=storage)
+        first = engine._parse_directory_parallel(tmp_path)
+        assert len(first) == 4
+        assert len(storage.load_index(str(tmp_path))["asts"]) == 4
+
+        def fail_executor(*_args, **_kwargs):
+            raise AssertionError("unchanged files must not reach parser workers")
+
+        monkeypatch.setattr("aegify.scanner.engine.ProcessPoolExecutor", fail_executor)
+        second = engine._parse_directory_parallel(tmp_path)
+        assert [ast.model_dump() for ast in second] == [ast.model_dump() for ast in first]

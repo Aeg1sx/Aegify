@@ -115,7 +115,14 @@ export async function POST(
     // Store the analysis as JSON in the llmAnalysis field
     await prisma.finding.update({
       where: { id },
-      data: { llmAnalysis: JSON.stringify(result) },
+      data: {
+        llmAnalysis: JSON.stringify(result),
+        aiVerdict: result.verdict,
+        aiConfidence: result.confidence,
+        aiReviewStatus: "suggested",
+        aiProof: JSON.stringify(result.proof),
+        ...(result.remediation && { remediation: result.remediation }),
+      },
     });
 
     return NextResponse.json(result);

@@ -191,7 +191,7 @@ export function Sidebar() {
       <div className="p-3 border-t border-border space-y-1">
         <UserMenu />
         <ThemeToggle />
-        <p className="text-[10px] text-muted-foreground/50 px-3">v0.1.0</p>
+        <p className="text-[10px] text-muted-foreground/50 px-3">v0.2.0</p>
       </div>
     </aside>
   );

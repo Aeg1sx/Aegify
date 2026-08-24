@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { validateRuleYaml } from "@/lib/rule-validation";
 
 export async function GET(
   _request: NextRequest,
@@ -14,7 +15,7 @@ export async function GET(
 
   // Get finding stats for this rule
   const findings = await prisma.finding.findMany({
-    where: { ruleId: id },
+    where: { ruleId: id, isCurrent: true },
     select: {
       severity: true,
       status: true,
@@ -61,10 +62,24 @@ export async function PATCH(
 
   const data: Record<string, unknown> = {};
   if (body.enabled !== undefined) data.enabled = body.enabled;
-  if (body.yamlContent !== undefined) data.yamlContent = body.yamlContent;
+  if (body.yamlContent !== undefined) {
+    if (typeof body.yamlContent !== "string") {
+      return NextResponse.json({ error: "yamlContent must be a string" }, { status: 400 });
+    }
+    const validation = validateRuleYaml(body.yamlContent, id);
+    if (!validation.valid) {
+      return NextResponse.json({ error: "Rule validation failed", ...validation }, { status: 422 });
+    }
+    data.yamlContent = body.yamlContent;
+  }
   if (body.description !== undefined) data.description = body.description;
   if (body.name !== undefined) data.name = body.name;
-  if (body.severity !== undefined) data.severity = body.severity;
+  if (body.severity !== undefined) {
+    if (!["critical", "high", "medium", "low"].includes(body.severity)) {
+      return NextResponse.json({ error: "Invalid severity" }, { status: 400 });
+    }
+    data.severity = body.severity;
+  }
   if (body.cweId !== undefined) data.cweId = body.cweId;
   if (body.owaspCategory !== undefined) data.owaspCategory = body.owaspCategory;
   if (body.languages !== undefined) data.languages = body.languages;

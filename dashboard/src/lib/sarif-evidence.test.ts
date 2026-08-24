@@ -129,6 +129,13 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     const llmJob = await prisma.llmJob.create({
       data: { scanId: scan.id, mode: "quick" },
     });
+    const rule = await prisma.rule.create({
+      data: {
+        id: "AEG-INTEGRATION-001",
+        name: "Evidence integration",
+        severity: "high",
+      },
+    });
     const evidence = normalizeFindingEvidence({
       provenance: {
         contract_version: 1,
@@ -142,6 +149,27 @@ test("fresh migration history persists normalized evidence with Prisma", async (
       evidenceState: "reachable",
       disposition: "blocking",
     });
+    const identity = await prisma.findingIdentity.create({
+      data: {
+        projectId: project.id,
+        fingerprint: "sha256:integration",
+        ruleId: "AEG-INTEGRATION-001",
+        filePath: "api/OrderController.kt",
+        lastSeenScanId: scan.id,
+        lastSeverity: "high",
+        lastEvidenceState: "reachable",
+        lastMessageDigest: "sha256:message",
+      },
+    });
+    await prisma.findingTriageEvent.create({
+      data: {
+        identityId: identity.id,
+        fromStatus: "open",
+        toStatus: "confirmed",
+        reason: "fixture evidence reviewed",
+        actor: "integration@example.test",
+      },
+    });
     const finding = await prisma.finding.create({
       data: {
         scanId: scan.id,
@@ -152,6 +180,9 @@ test("fresh migration history persists normalized evidence with Prisma", async (
         lineStart: 7,
         lineEnd: 7,
         message: "integration evidence",
+        fingerprint: identity.fingerprint,
+        baselineState: "new",
+        identityId: identity.id,
         ...evidence,
         ...classification,
       },
@@ -165,7 +196,14 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     assert.equal(finding.scan.workspaceSnapshot, "sha256:workspace");
     assert.equal(JSON.parse(finding.provenance).contract_version, 1);
     assert.equal(llmJob.status, "pending");
+    assert.ok(rule.updatedAt instanceof Date);
     assert.equal(project.userId, user.id);
+    const persistedIdentity = await prisma.findingIdentity.findUnique({
+      where: { id: identity.id },
+      include: { triageEvents: true },
+    });
+    assert.equal(persistedIdentity?.triageEvents[0].reason, "fixture evidence reviewed");
+    assert.equal(finding.identityId, identity.id);
   } finally {
     await prisma.$disconnect();
   }

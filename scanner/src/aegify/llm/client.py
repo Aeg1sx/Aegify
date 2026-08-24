@@ -9,6 +9,7 @@ from typing import Any
 import anthropic
 
 from aegify.llm.budget import TokenBudget
+from aegify.llm.tools import redact_sensitive
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class LLMClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-opus-4-6",
+        model: str = "claude-opus-5",
         budget: TokenBudget | None = None,
         base_url: str | None = None,
     ) -> None:
@@ -38,8 +39,11 @@ class LLMClient:
         max_tokens: int = 4096,
     ) -> dict[str, Any] | list[Any] | None:
         """Send a query to the LLM and return parsed JSON response."""
+        safe_system = str(redact_sensitive(system))[:50_000]
+        safe_user_prompt = str(redact_sensitive(user_prompt))[:200_000]
+
         # Estimate tokens (rough: 4 chars ≈ 1 token)
-        estimated_input = (len(system) + len(user_prompt)) // 4
+        estimated_input = (len(safe_system) + len(safe_user_prompt)) // 4
         estimated_total = estimated_input + max_tokens
 
         if not self.budget.can_spend(phase, estimated_total):
@@ -50,8 +54,8 @@ class LLMClient:
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user_prompt}],
+                system=safe_system,
+                messages=[{"role": "user", "content": safe_user_prompt}],
             )
 
             # Record actual usage
@@ -70,7 +74,9 @@ class LLMClient:
                 return None
 
             # Parse JSON from response
-            return self._extract_json(text)
+            parsed = self._extract_json(text)
+            redacted = redact_sensitive(parsed)
+            return redacted if isinstance(redacted, (dict, list)) else None
 
         except anthropic.APIError as e:
             logger.error("Anthropic API error: %s", e)
@@ -88,7 +94,7 @@ class LLMClient:
         if result is None:
             return []
         if isinstance(result, list):
-            return result
+            return [item for item in result if isinstance(item, dict)]
         return [result]
 
     @staticmethod
@@ -103,9 +109,9 @@ class LLMClient:
         # Try extracting from code block
         for marker in ("```json", "```"):
             if marker in text:
-                start = text.index(marker) + len(marker)
-                end = text.index("```", start)
                 try:
+                    start = text.index(marker) + len(marker)
+                    end = text.index("```", start)
                     return LLMClient._validated_json(json.loads(text[start:end].strip()))
                 except json.JSONDecodeError, ValueError:
                     pass

@@ -62,6 +62,7 @@
                 "icon": "scan-search",
                 "pages": [
                   "analysis/semantic-analysis",
+                  "analysis/ai-sast-operations",
                   "analysis/rule-authoring",
                   "architecture/technical-architecture"
                 ]

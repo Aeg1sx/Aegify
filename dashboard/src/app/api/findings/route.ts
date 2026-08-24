@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
   const projectId = url.searchParams.get("projectId");
   const source = url.searchParams.get("source");
   const disposition = url.searchParams.get("disposition");
+  const history = url.searchParams.get("history") === "true";
 
   const LANG_EXT_MAP: Record<string, string[]> = {
     Python: [".py"],
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
 
   const where: Record<string, unknown> = {};
   if (scanId) where.scanId = scanId;
+  if (!scanId && !history) where.isCurrent = true;
   if (severity) where.severity = severity;
   if (status) where.status = status;
   if (ruleId) where.ruleId = ruleId;

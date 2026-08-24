@@ -27,7 +27,7 @@ export async function GET(
   const severities = scanIds.length > 0
     ? await prisma.finding.groupBy({
         by: ["severity"],
-        where: { scanId: { in: scanIds } },
+        where: { scanId: { in: scanIds }, isCurrent: true },
         _count: true,
       })
     : [];

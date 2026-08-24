@@ -53,7 +53,9 @@ aegify scan ./src --severity high
 - Approved no-network Maven/Gradle classpath exporter with deterministic bundle,
   SHA/path/compression revalidation, safe materialization, and bytecode re-import
 - Executable YAML rule-schema auditing
-- LLM-powered false positive filtering (Claude Opus 4.6)
+- Evidence-bound AI review suggestions that never auto-suppress findings
+- Allowlisted read-only AI tools and bounded multi-repository tool orchestration
+- Owned-corpus precision/recall/F1 benchmark gates
 - SARIF 2.1.0 output
 - GitHub PR integration
 

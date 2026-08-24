@@ -5,13 +5,15 @@ export async function GET() {
   const [totalScans, totalFindings, severities, statuses, recentScans, topRules] =
     await Promise.all([
       prisma.scan.count(),
-      prisma.finding.count(),
+      prisma.finding.count({ where: { isCurrent: true } }),
       prisma.finding.groupBy({
         by: ["severity"],
+        where: { isCurrent: true },
         _count: true,
       }),
       prisma.finding.groupBy({
         by: ["status"],
+        where: { isCurrent: true },
         _count: true,
       }),
       prisma.scan.findMany({
@@ -21,6 +23,7 @@ export async function GET() {
       }),
       prisma.finding.groupBy({
         by: ["ruleId", "ruleName", "severity"],
+        where: { isCurrent: true },
         _count: true,
         orderBy: { _count: { ruleId: "desc" } },
         take: 15,

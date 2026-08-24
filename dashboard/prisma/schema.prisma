@@ -25,6 +25,7 @@ model Project {
   user   User?   @relation(fields: [userId], references: [id])
 
   scans Scan[]
+  findingIdentities FindingIdentity[]
 
   @@index([name])
   @@index([userId])
@@ -92,6 +93,14 @@ model Finding {
   repositoryId   String   @default("")
   modulePath     String   @default("")
   provenance     String   @default("{}") // JSON evidence producer contract
+  fingerprint    String   @default("")
+  baselineState  String   @default("new") // new, unchanged, updated, regressed
+  identityId     String   @default("")
+  isCurrent      Boolean  @default(true) // latest occurrence for project-level views
+  aiVerdict      String   @default("") // suggestion only; never changes status implicitly
+  aiConfidence   Float?
+  aiReviewStatus String   @default("unreviewed") // unreviewed, suggested, accepted, rejected
+  aiProof         String   @default("{}") // bounded PoC/payload/harness guidance
   createdAt      DateTime @default(now())
 
   scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
@@ -105,6 +114,54 @@ model Finding {
   @@index([source])
   @@index([evidenceId])
   @@index([repositoryId])
+  @@index([fingerprint])
+  @@index([baselineState])
+  @@index([identityId])
+  @@index([isCurrent])
+}
+
+model FindingIdentity {
+  id                 String    @id @default(cuid())
+  projectId          String
+  fingerprint        String
+  ruleId             String
+  filePath           String
+  status             String    @default("open")
+  firstSeenAt        DateTime  @default(now())
+  lastSeenAt         DateTime  @default(now())
+  lastSeenScanId     String    @default("")
+  occurrenceCount    Int       @default(1)
+  absentAt           DateTime?
+  lastSeverity       String    @default("")
+  lastEvidenceState  String    @default("")
+  lastMessageDigest  String    @default("")
+  triageReason       String    @default("")
+  triageActor        String    @default("")
+  triageExpiresAt    DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  project      Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  triageEvents FindingTriageEvent[]
+
+  @@unique([projectId, fingerprint])
+  @@index([projectId, status])
+  @@index([lastSeenScanId])
+}
+
+model FindingTriageEvent {
+  id          String   @id @default(cuid())
+  identityId  String
+  fromStatus  String
+  toStatus    String
+  reason      String   @default("")
+  actor       String   @default("")
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  identity FindingIdentity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId, createdAt])
 }
 
 model Rule {

@@ -1,6 +1,6 @@
 # Aegify Open-Source Quality Assessment
 
-Assessment date: 2026-08-22
+Assessment date: 2026-08-25
 
 ## Decision
 
@@ -20,13 +20,13 @@ exploit impact proof are separate evidence states.
 
 | Area | Result | Evidence and boundary |
 |---|---:|---|
-| Scanner regression | Pass | 339 passed, 1 skipped |
+| Scanner regression | Pass | 351 passed, 1 skipped |
 | Bundled-rule precision | Pass | 17 passed; fallback retention and evidence-only blocking are covered |
-| Python quality | Pass | Ruff and strict mypy across 75 source files |
+| Python quality | Pass | Ruff and strict mypy across 79 source files |
 | Rules | Pass | 311 definitions; 303 enabled; 8 explicitly disabled; 980/980 enabled patterns executable; zero audit errors/warnings |
-| Packaging | Pass | `aegify_sast-0.1.0-py3-none-any.whl`; isolated `aegify version` smoke |
-| Dashboard | Pass | 14 tests, ESLint, TypeScript, and Next production build |
-| Dependencies | Pass | npm high-severity audit: zero vulnerabilities |
+| Packaging | Pass | v0.2.0 reproducible sdist-to-wheel build; 58 bundled rule files; isolated `aegify version` and rule-load smoke |
+| Dashboard | Pass | 25 tests, ESLint, TypeScript, and Next production build |
+| Dependencies | Pass | uv/OSV audit: 65 packages with zero known vulnerabilities; dashboard/docs npm high-severity audits: zero; registry signatures verified |
 | Documentation | Pass | Mintlify schema/build validation, anchors/links/redirects/snippets, accessibility, and locked dependency audit |
 | Containers | Pass | Scanner and dashboard images built; non-root users; read-only/cap-drop/no-new-privileges smoke; dashboard fail-closed without production secrets |
 | Cross-repo semantics | Implemented | Exact SCIP/package path, Maven/Gradle provider resolution, module classpath/bytecode, labeled coarse fallback |
@@ -38,7 +38,10 @@ exploit impact proof are separate evidence states.
 | Data flow | Implemented | k=2 source points-to and bounded global taint with field/object/call context |
 | External evidence | Implemented | SARIF, Semgrep, Joern, SCIP, HTTP, browser, proxy, HAR, OTel |
 | Supply-chain CI | Pass | SHA-pinned Actions, least privilege, hardened runners, CodeQL, dependency review, Gitleaks, Scorecard, zizmor, SBOM and attestations |
-| Aegify self-scan | Pass | 323 medium-or-higher candidates retained as advisory; 45 critical, 167 high, 111 medium; 0 blocking; exit code 0 |
+| Finding lifecycle | Implemented | Persistent scan history, stable fingerprints, current occurrence boundary, baseline state, expiring triage, audit events |
+| AI review boundary | Implemented | Structured suggestions, no implicit status mutation, allowlisted read-only tools, prompt-injection boundary, secret redaction, owned-fixture proof templates |
+| Precision gate | Implemented | Owned ground-truth precision/recall/F1 report with per-rule and unmatched evidence, threshold exit code |
+| Aegify self-scan | Pass | 349 medium-or-higher candidates retained as advisory; 53 critical, 178 high, 118 medium; 0 blocking; exit code 0 |
 
 ## Known precision limits
 
@@ -52,6 +55,8 @@ exploit impact proof are separate evidence states.
 - Browser and proxy verification is loopback-oriented. Authenticated, TLS, and
   multi-origin testing requires a future explicit policy tier.
 - A runtime observation is not automatically exploit impact proof.
+- AI confidence is not measured scanner precision and never authorizes status
+  changes or proof execution.
 
 Detailed evidence is in [Alpha Completion Audit](docs/project/alpha-completion-audit.mdx),
 [Technical Architecture](docs/architecture/technical-architecture.mdx), and

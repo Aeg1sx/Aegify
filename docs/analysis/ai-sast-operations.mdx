@@ -1,0 +1,110 @@
+---
+title: "Evidence-bound AI SAST operations"
+description: "Operate tool-grounded AI review, safe proof guidance, finding lifecycles, and precision gates."
+---
+
+AI review in Aegify is an enrichment layer. It cannot close, confirm, suppress,
+or raise the evidence state of a finding. A deterministic scanner result and a
+human triage decision remain authoritative.
+
+## Structured review contract
+
+Every AI review records one of `likely_true_positive`,
+`likely_false_positive`, or `needs_review`, plus:
+
+- supplied evidence for and against the conclusion;
+- explicit evidence gaps;
+- a bounded attack scenario that is not described as observed impact;
+- concrete remediation, corrected code, and ordered fix steps;
+- an owned-fixture-only proof plan with approval, preconditions, expected
+  signal, and a negative control;
+- model, prompt digest, and tool evidence when the scanner-side orchestrator is used.
+
+The dashboard stores this as a suggestion. A user must separately accept or
+reject the suggestion through the finding lifecycle.
+
+## Allowlisted analysis tools
+
+`aegify.llm.tools.ToolRegistry` accepts only explicitly registered, read-only
+Python handlers. The built-in registry provides bounded finding context, call
+paths, attack-surface evidence, multi-repository workspace summaries, and
+non-executing harness plans. Unknown tools, write-capable specifications,
+oversized arguments, and oversized results are rejected. Common credential
+shapes are redacted before model use and before generated output is persisted.
+Direct provider credentials are never forwarded to custom gateway endpoints;
+those endpoints receive only their explicitly configured headers. Destructive
+proof templates are replaced with a blocked marker instead of being displayed
+as runnable guidance.
+
+Custom tools are application code, not model-generated shell commands:
+
+```python
+from aegify.llm.tools import ToolRegistry, ToolSpec
+
+registry = ToolRegistry()
+registry.register(
+    ToolSpec(name="ownership_context", description="Return reviewed ownership metadata"),
+    lambda arguments, context: {"team": "payments", "read_only": True},
+)
+```
+
+Do not register filesystem writes, network mutation, shell execution, secret
+retrieval, or deployment actions as AI review tools.
+
+## Multi-repository AI scan
+
+Use a versioned workspace manifest so repository identity and dependencies are
+part of the evidence snapshot:
+
+```bash
+aegify scan-workspace aegify-workspace.yml \
+  --ai-tools \
+  --model claude-opus-5 \
+  --max-ai-findings 50 \
+  --output sarif \
+  --output-file results.sarif
+```
+
+The orchestrator first asks the model which allowlisted evidence it needs,
+executes at most the configured bounded calls, and then requests the final
+structured review with those tool results. Token budget and finding count both
+bound cost. Source and tool output are treated as untrusted data, not prompt
+instructions.
+
+## Finding lifecycle
+
+Project-linked SARIF uploads preserve prior scans. A stable producer fingerprint
+is preferred; Aegify derives a content-based fallback when the producer does not
+provide one. The current occurrence is classified as `new`, `unchanged`,
+`updated`, or `regressed`.
+
+Only current occurrences appear in default project lists and statistics. The
+history toggle exposes previous occurrences. False-positive and accepted-risk
+decisions require a rationale, may have an expiry, and create an actor-stamped
+audit event. A fixed or false-positive finding that reappears after absence is
+reopened by the system and audited.
+
+## Precision and recall gate
+
+Use owned, versioned ground truth to measure scanner behavior instead of using
+model confidence as a quality claim:
+
+```bash
+aegify benchmark ./fixtures \
+  --ground-truth ./ground-truth.json \
+  --min-precision 0.95 \
+  --min-recall 0.90 \
+  --output-file benchmark-report.json
+```
+
+The report includes true positives, false positives, false negatives, per-rule
+metrics, and exact unmatched evidence identities. The command exits non-zero
+when either threshold is missed.
+
+## Proof boundary
+
+AI-generated requests and payloads are templates, not execution results. They
+must use placeholders, target an owned or explicitly authorized fixture, remain
+non-destructive, and include a negative control. Execution belongs in the
+approval-gated HTTP, browser, proxy, or container harness. Runtime observation
+and impact proof remain separate evidence states.
