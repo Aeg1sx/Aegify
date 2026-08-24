@@ -7,6 +7,7 @@ scanner/**
 !scanner/pyproject.toml
 !scanner/uv.lock
 !scanner/README.md
+!scanner/hatch_build.py
 !scanner/src/
 !scanner/src/**
 !rules/
