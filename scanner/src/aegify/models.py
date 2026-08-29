@@ -45,6 +45,14 @@ class FindingDisposition(StrEnum):
     BLOCKING = "blocking"
 
 
+class AIReviewVerdict(StrEnum):
+    """Non-authoritative AI recommendation for a finding."""
+
+    LIKELY_TRUE_POSITIVE = "likely_true_positive"
+    LIKELY_FALSE_POSITIVE = "likely_false_positive"
+    NEEDS_REVIEW = "needs_review"
+
+
 class ScanStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -249,6 +257,49 @@ class EvidenceProvenance(BaseModel):
     evidence_id: str = ""
 
 
+class AIToolEvidence(BaseModel):
+    """Bounded, auditable output from an allowlisted analysis tool."""
+
+    tool: str
+    request_id: str = ""
+    summary: str = ""
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    truncated: bool = False
+
+
+class ProofGuidance(BaseModel):
+    """Safe validation guidance. This is never proof that impact occurred."""
+
+    safety: str = "owned_fixture_only"
+    requires_approval: bool = True
+    preconditions: list[str] = Field(default_factory=list)
+    request_template: str = ""
+    payload_template: str = ""
+    expected_signal: str = ""
+    negative_control: str = ""
+    harness_plan: dict[str, Any] = Field(default_factory=dict)
+
+
+class AIReview(BaseModel):
+    """Evidence-bound AI suggestion; humans and deterministic gates stay authoritative."""
+
+    verdict: AIReviewVerdict = AIReviewVerdict.NEEDS_REVIEW
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reasoning: str = ""
+    evidence_for: list[str] = Field(default_factory=list)
+    evidence_against: list[str] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
+    attack_scenario: str = ""
+    remediation_summary: str = ""
+    fixed_code: str = ""
+    remediation_steps: list[str] = Field(default_factory=list)
+    proof: ProofGuidance = Field(default_factory=ProofGuidance)
+    tools_used: list[AIToolEvidence] = Field(default_factory=list)
+    model: str = ""
+    prompt_digest: str = ""
+    reviewed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class Finding(BaseModel):
     """A detected security vulnerability."""
 
@@ -271,6 +322,7 @@ class Finding(BaseModel):
     cwe_id: int | None = None
     owasp_category: str | None = None
     llm_analysis: str | None = None
+    ai_review: AIReview | None = None
     remediation: str | None = None
     provenance: EvidenceProvenance = Field(default_factory=EvidenceProvenance)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -278,7 +330,9 @@ class Finding(BaseModel):
     @property
     def fingerprint(self) -> str:
         """Stable hash for deduplication across scans."""
-        key = f"{self.rule_id}:{self.file_path}:{self.line_start}:{self.line_end}"
+        evidence = re.sub(r"\s+", " ", self.code_snippet or self.message).strip()
+        path = self.file_path.replace("\\", "/").removeprefix("./")
+        key = f"aegify-finding/v1\n{self.rule_id.lower()}\n{path}\n{evidence}"
         return hashlib.sha256(key.encode()).hexdigest()[:16]
 
     @property

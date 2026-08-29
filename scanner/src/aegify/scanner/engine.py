@@ -1635,22 +1635,39 @@ class ScanEngine:
         if len(files) <= 3 or self.max_workers <= 1:
             return self.ast_parser.parse_directory(target, self.config.scan.exclude)
 
-        # Check for incremental build: skip unchanged files
+        # Incremental AST cache: unchanged files are reconstructed from the
+        # versioned storage index and are not sent to parser workers.
         project_id = str(target)
         stored_hashes = self.storage.load_file_hashes(project_id)
+        stored_index = self.storage.load_index(project_id) or {}
+        cached_payloads = stored_index.get("asts", {})
+        if stored_index.get("version") != 1 or not isinstance(cached_payloads, dict):
+            cached_payloads = {}
         files_to_parse: list[Path] = []
+        cached_results: list[FileAST] = []
 
         for f in files:
             current_hash = compute_file_hash(f)
             self._file_hashes[str(f)] = current_hash
 
+            cached_payload = cached_payloads.get(str(f))
+            if stored_hashes.get(str(f)) == current_hash and cached_payload is not None:
+                try:
+                    cached_results.append(FileAST.model_validate(cached_payload))
+                    continue
+                except ValueError:
+                    logger.debug("Invalid cached AST for %s; reparsing", f)
             files_to_parse.append(f)
-            if stored_hashes.get(str(f)) != current_hash:
-                self.storage.store_file_hash(project_id, str(f), current_hash)
+            self.storage.store_file_hash(project_id, str(f), current_hash)
 
         # Parallel AST parsing in batches to limit peak memory
-        logger.info("Parsing %d files with %d workers", len(files_to_parse), self.max_workers)
-        results: list[FileAST] = []
+        logger.info(
+            "Parsing %d changed files with %d workers (%d cache hits)",
+            len(files_to_parse),
+            self.max_workers,
+            len(cached_results),
+        )
+        results: list[FileAST] = list(cached_results)
         batch_size = 5000  # Process files in batches to limit memory
 
         for batch_start in range(0, len(files_to_parse), batch_size):
@@ -1676,7 +1693,25 @@ class ScanEngine:
             if len(files_to_parse) > batch_size:
                 gc.collect()
 
-        logger.info("Parsed %d files from %s", len(results), target)
+        current_paths = {str(path) for path in files}
+        self.storage.store_index(
+            project_id,
+            {
+                "version": 1,
+                "asts": {
+                    ast.file_path: ast.model_dump(mode="json")
+                    for ast in results
+                    if ast.file_path in current_paths
+                },
+            },
+        )
+        logger.info(
+            "Loaded %d ASTs from %s (%d parsed, %d cached)",
+            len(results),
+            target,
+            len(results) - len(cached_results),
+            len(cached_results),
+        )
         return results
 
     def _parse_severity_threshold(self) -> Severity:
@@ -1724,11 +1759,12 @@ class ScanEngine:
                 continue
             filtered.append(f)
 
-        # Deduplicate by fingerprint. Semantic/blocking evidence always wins
-        # over a heuristic advisory at the same rule and location.
+        # Within one scan, exact rule/location duplicates are the same occurrence.
+        # The content-based public fingerprint intentionally excludes line numbers
+        # so it can survive ordinary code movement between scans.
         seen: dict[str, Finding] = {}
         for f in filtered:
-            fp = f.fingerprint
+            fp = f"{f.rule_id}:{f.file_path}:{f.line_start}:{f.line_end}"
             current = seen.get(fp)
             candidate_rank = (
                 1 if f.disposition == FindingDisposition.BLOCKING else 0,

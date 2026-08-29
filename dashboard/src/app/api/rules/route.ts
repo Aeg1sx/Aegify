@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { validateRuleYaml } from "@/lib/rule-validation";
 
 export async function GET() {
   const rules = await prisma.rule.findMany({
@@ -26,6 +27,13 @@ export async function POST(request: NextRequest) {
         { error: "severity must be critical, high, medium, or low" },
         { status: 400 }
       );
+    }
+
+    if (body.yamlContent) {
+      const validation = validateRuleYaml(body.yamlContent, body.id);
+      if (!validation.valid) {
+        return NextResponse.json({ error: "Rule validation failed", ...validation }, { status: 422 });
+      }
     }
 
     const rule = await prisma.rule.create({

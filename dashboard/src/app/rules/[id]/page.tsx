@@ -20,6 +20,7 @@ import {
   FileDown,
 } from "lucide-react";
 import { YamlHighlight } from "@/components/code-highlight";
+import { RuleEditor } from "@/components/rules/rule-editor";
 
 interface RuleDetail {
   id: string;
@@ -57,6 +58,7 @@ export default function RuleDetailPage({
   const [yamlDraft, setYamlDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [yamlValid, setYamlValid] = useState(false);
 
   useEffect(() => {
     fetch(`/api/rules/${encodeURIComponent(id)}`)
@@ -86,6 +88,7 @@ export default function RuleDetailPage({
   const startEditYaml = () => {
     setYamlDraft(rule?.yamlContent || "");
     setEditingYaml(true);
+    setYamlValid(false);
     setSaveMsg("");
   };
 
@@ -275,7 +278,7 @@ export default function RuleDetailPage({
                 <Button
                   size="sm"
                   onClick={saveYaml}
-                  disabled={saving}
+                  disabled={saving || !yamlValid}
                   className="flex items-center gap-1"
                 >
                   <Save className="h-3 w-3" />
@@ -287,11 +290,11 @@ export default function RuleDetailPage({
         </CardHeader>
         <CardContent>
           {editingYaml ? (
-            <textarea
+            <RuleEditor
               value={yamlDraft}
-              onChange={(e) => setYamlDraft(e.target.value)}
-              className="w-full h-80 bg-[#0d1117] text-[#c9d1d9] font-mono text-xs p-4 rounded-md border border-border resize-y focus:outline-none focus:ring-1 focus:ring-primary"
-              spellCheck={false}
+              expectedRuleId={rule.id}
+              onChange={setYamlDraft}
+              onValidityChange={setYamlValid}
             />
           ) : rule.yamlContent ? (
             <YamlHighlight code={rule.yamlContent} />

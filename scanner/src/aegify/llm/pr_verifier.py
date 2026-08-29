@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from typing import Any
 
@@ -16,7 +17,7 @@ from aegify.llm.prompts import (
     format_pr_file_context,
     format_pr_finding,
 )
-from aegify.models import FileAST, Finding, FindingStatus, Severity, TokenUsage
+from aegify.models import AIReview, AIReviewVerdict, FileAST, Finding, Severity, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class PRVerifier:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-opus-4-6",
+        model: str = "claude-opus-5",
         token_budget: int = 100_000,
         batch_size: int = 10,
         base_url: str | None = None,
@@ -62,7 +63,7 @@ class PRVerifier:
         for finding in findings:
             by_file[finding.file_path].append(finding)
 
-        confirmed: list[Finding] = []
+        reviewed: list[Finding] = []
 
         for file_path, file_findings in by_file.items():
             # Build shared file context once per file
@@ -77,16 +78,15 @@ class PRVerifier:
 
                 if not self.budget.can_spend("verification", len(batch) * 500):
                     logger.warning("Budget exhausted, keeping remaining findings as-is")
-                    confirmed.extend(file_findings[i:])
+                    reviewed.extend(file_findings[i:])
                     break
 
-                batch_confirmed = self._verify_batch(batch, file_context)
-                confirmed.extend(batch_confirmed)
+                reviewed.extend(self._verify_batch(batch, file_context))
 
         # Generate remediations for critical/high
-        self._generate_remediations(confirmed)
+        self._generate_remediations(findings)
 
-        return confirmed
+        return findings
 
     def _verify_batch(
         self,
@@ -105,7 +105,7 @@ class PRVerifier:
 
         results = self.client.query_batch(PR_VERIFICATION_SYSTEM, prompt, phase="verification")
 
-        confirmed: list[Finding] = []
+        reviewed: list[Finding] = []
         result_by_idx: dict[int, dict[str, Any]] = {}
         for r in results:
             idx = r.get("idx", r.get("finding_index", -1))
@@ -116,31 +116,26 @@ class PRVerifier:
             result = result_by_idx.get(idx)
             if result is None:
                 # LLM didn't return a verdict — keep finding as-is
-                confirmed.append(finding)
+                reviewed.append(finding)
                 continue
 
-            verdict = result.get("verdict", "TRUE_POSITIVE")
-            finding.llm_analysis = result.get("reasoning", "")
+            finding.ai_review = self._review_from_result(result)
+            finding.llm_analysis = finding.ai_review.model_dump_json()
+            if result.get("remediation"):
+                finding.remediation = str(result["remediation"])
+            reviewed.append(finding)
 
-            if verdict == "FALSE_POSITIVE":
-                finding.status = FindingStatus.FALSE_POSITIVE
-                finding.confidence *= 0.2
-            else:
-                confidence = result.get("confidence", finding.confidence)
-                finding.confidence = max(finding.confidence, confidence)
-                # Attach inline remediation from verification if provided
-                if result.get("remediation"):
-                    finding.remediation = result["remediation"]
-                confirmed.append(finding)
-
-        return confirmed
+        return reviewed
 
     def _generate_remediations(self, findings: list[Finding]) -> None:
         """Generate detailed remediations for confirmed critical/high findings."""
         for finding in findings:
             if finding.severity not in (Severity.CRITICAL, Severity.HIGH):
                 continue
-            if finding.status == FindingStatus.FALSE_POSITIVE:
+            if (
+                finding.ai_review
+                and finding.ai_review.verdict == AIReviewVerdict.LIKELY_FALSE_POSITIVE
+            ):
                 continue
             if finding.remediation:
                 continue  # Already got inline remediation from verification
@@ -193,6 +188,33 @@ class PRVerifier:
                 parts.append(f"- {rec}")
 
         return "\n".join(parts) if parts else ""
+
+    @staticmethod
+    def _review_from_result(result: dict[str, Any]) -> AIReview:
+        verdicts = {
+            "TRUE_POSITIVE": AIReviewVerdict.LIKELY_TRUE_POSITIVE,
+            "LIKELY_TRUE_POSITIVE": AIReviewVerdict.LIKELY_TRUE_POSITIVE,
+            "FALSE_POSITIVE": AIReviewVerdict.LIKELY_FALSE_POSITIVE,
+            "LIKELY_FALSE_POSITIVE": AIReviewVerdict.LIKELY_FALSE_POSITIVE,
+        }
+        verdict = verdicts.get(str(result.get("verdict", "")).upper(), AIReviewVerdict.NEEDS_REVIEW)
+        confidence = result.get("confidence", 0.0)
+        if not isinstance(confidence, (int, float)) or not math.isfinite(confidence):
+            confidence = 0.0
+        return AIReview(
+            verdict=verdict,
+            confidence=max(0.0, min(float(confidence), 1.0)),
+            reasoning=str(result.get("reasoning", "")),
+            evidence_for=[
+                str(item) for item in result.get("evidence_for", []) if isinstance(item, str)
+            ],
+            evidence_against=[
+                str(item) for item in result.get("evidence_against", []) if isinstance(item, str)
+            ],
+            evidence_gaps=[
+                str(item) for item in result.get("evidence_gaps", []) if isinstance(item, str)
+            ],
+        )
 
     @staticmethod
     def _detect_language(file_path: str) -> str:

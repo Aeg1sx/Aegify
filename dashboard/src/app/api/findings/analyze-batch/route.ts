@@ -49,7 +49,14 @@ export async function POST(request: NextRequest) {
 
         await prisma.finding.update({
           where: { id: finding.id },
-          data: { llmAnalysis: JSON.stringify(result) },
+          data: {
+            llmAnalysis: JSON.stringify(result),
+            aiVerdict: result.verdict,
+            aiConfidence: result.confidence,
+            aiReviewStatus: "suggested",
+            aiProof: JSON.stringify(result.proof),
+            ...(result.remediation && { remediation: result.remediation }),
+          },
         });
 
         results[finding.id] = { success: true, data: result };

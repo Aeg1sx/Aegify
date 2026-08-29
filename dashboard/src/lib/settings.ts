@@ -43,7 +43,7 @@ export async function getLLMConfig() {
 
   return {
     provider: provider || "anthropic",
-    model: model || "claude-sonnet-4-5-20250929",
+    model: model || "claude-opus-5",
     anthropicApiKey: anthropicKey,
     openaiApiKey: openaiKey,
     enabled: enabled === "true",

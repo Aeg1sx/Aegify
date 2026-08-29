@@ -7,6 +7,11 @@ import {
   normalizeFindingEvidence,
   workspaceSnapshotForRun,
 } from "@/lib/sarif-evidence";
+import {
+  classifyFindingBaseline,
+  findingMessageDigest,
+  stableFindingFingerprint,
+} from "@/lib/finding-lifecycle";
 import { anonymousUploadAllowed } from "@/lib/security-config";
 import { sendSlackNotification } from "@/lib/slack";
 import { uploadValidationError } from "@/lib/upload-validation";
@@ -37,6 +42,7 @@ interface SARIFResult {
   ruleId: string;
   level: string;
   message: { text: string };
+  partialFingerprints?: Record<string, string>;
   locations?: Array<{
     physicalLocation?: {
       artifactLocation?: { uri: string };
@@ -52,6 +58,13 @@ interface SARIFResult {
     status?: string;
     remediation?: string;
     llmAnalysis?: string;
+    aiReview?: {
+      verdict?: string;
+      confidence?: number;
+      proof?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    aiProof?: Record<string, unknown>;
     callChain?: Array<{
       function: string;
       filePath: string;
@@ -328,23 +341,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Delete previous scans for same project to prevent finding accumulation
-    if (projectId) {
-      const previousScans = await prisma.scan.findMany({
-        where: { projectId },
-        select: { id: true },
-      });
-      if (previousScans.length > 0) {
-        const scanIds = previousScans.map((s) => s.id);
-        // Delete in order: edges → nodes → endpoints → findings → scans (referential integrity)
-        await prisma.callGraphEdge.deleteMany({ where: { scanId: { in: scanIds } } });
-        await prisma.callGraphNode.deleteMany({ where: { scanId: { in: scanIds } } });
-        await prisma.endpoint.deleteMany({ where: { scanId: { in: scanIds } } });
-        await prisma.finding.deleteMany({ where: { scanId: { in: scanIds } } });
-        await prisma.scan.deleteMany({ where: { id: { in: scanIds } } });
-      }
-    }
-
     // Create scan
     const scan = await prisma.scan.create({
       data: {
@@ -360,7 +356,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Insert findings
-    const findings = run.results.map((result) => {
+    const parsedFindings = run.results.map((result) => {
       const rule = ruleMap.get(result.ruleId);
       const loc = result.locations?.[0]?.physicalLocation;
       const severity =
@@ -417,6 +413,9 @@ export async function POST(request: NextRequest) {
         owaspCategory,
         taintFlow,
         remediation: result.properties?.remediation || null,
+        llmAnalysis: result.properties?.aiReview
+          ? JSON.stringify(result.properties.aiReview)
+          : result.properties?.llmAnalysis || null,
         callChain: result.properties?.callChain
           ? JSON.stringify(result.properties.callChain) : null,
         defenseContext: result.properties?.defenseContext
@@ -425,11 +424,158 @@ export async function POST(request: NextRequest) {
         repositoryId: evidence.repositoryId,
         modulePath: evidence.modulePath,
         provenance: evidence.provenance,
+        fingerprint: stableFindingFingerprint({
+          ruleId: result.ruleId,
+          filePath: loc?.artifactLocation?.uri || "",
+          message: result.message.text,
+          codeSnippet: loc?.region?.snippet?.text || "",
+          partialFingerprints: result.partialFingerprints,
+        }),
+        baselineState: "new",
+        identityId: "",
+        aiVerdict: result.properties?.aiReview?.verdict || "",
+        aiConfidence: result.properties?.aiReview?.confidence ?? null,
+        aiReviewStatus: result.properties?.aiReview ? "suggested" : "unreviewed",
+        aiProof: JSON.stringify(
+          result.properties?.aiReview?.proof || result.properties?.aiProof || {},
+        ),
       };
     });
 
+    let findings = parsedFindings;
+    if (projectId && parsedFindings.length === 0) {
+      await prisma.findingIdentity.updateMany({
+        where: { projectId, absentAt: null },
+        data: { absentAt: new Date() },
+      });
+    }
+    if (projectId && parsedFindings.length > 0) {
+      const uniqueFindings = new Map(
+        parsedFindings.map((finding) => [finding.fingerprint, finding]),
+      );
+      const fingerprints = [...uniqueFindings.keys()];
+      const existingIdentities = await prisma.findingIdentity.findMany({
+        where: { projectId, fingerprint: { in: fingerprints } },
+      });
+      const existingByFingerprint = new Map(
+        existingIdentities.map((identity) => [identity.fingerprint, identity]),
+      );
+      const baselineByFingerprint = new Map(
+        [...uniqueFindings].map(([fingerprint, finding]) => [
+          fingerprint,
+          classifyFindingBaseline(existingByFingerprint.get(fingerprint), finding),
+        ]),
+      );
+
+      await prisma.findingIdentity.updateMany({
+        where: {
+          projectId,
+          absentAt: null,
+          fingerprint: { notIn: fingerprints },
+        },
+        data: { absentAt: new Date() },
+      });
+
+      const identityWrites = [...uniqueFindings].map(([fingerprint, finding]) => {
+        const existing = existingByFingerprint.get(fingerprint);
+        const baselineState = baselineByFingerprint.get(fingerprint) || "new";
+        const triageExpired = Boolean(
+          existing?.triageExpiresAt && existing.triageExpiresAt <= new Date(),
+        );
+        const reopened = baselineState === "regressed" &&
+          ["fixed", "false_positive"].includes(existing?.status || "");
+        const status =
+          reopened || triageExpired
+            ? "open"
+            : existing?.status || "open";
+        return prisma.findingIdentity.upsert({
+          where: { projectId_fingerprint: { projectId, fingerprint } },
+          create: {
+            projectId,
+            fingerprint,
+            ruleId: finding.ruleId,
+            filePath: finding.filePath,
+            status,
+            lastSeenScanId: scan.id,
+            lastSeverity: finding.severity,
+            lastEvidenceState: finding.evidenceState,
+            lastMessageDigest: findingMessageDigest(finding.message),
+          },
+          update: {
+            ruleId: finding.ruleId,
+            filePath: finding.filePath,
+            status,
+            lastSeenAt: new Date(),
+            lastSeenScanId: scan.id,
+            occurrenceCount: { increment: 1 },
+            absentAt: null,
+            lastSeverity: finding.severity,
+            lastEvidenceState: finding.evidenceState,
+            lastMessageDigest: findingMessageDigest(finding.message),
+          },
+        });
+      });
+
+      const IDENTITY_WRITE_CHUNK = 200;
+      for (let i = 0; i < identityWrites.length; i += IDENTITY_WRITE_CHUNK) {
+        await prisma.$transaction(identityWrites.slice(i, i + IDENTITY_WRITE_CHUNK));
+      }
+      const systemTriageEvents = [...uniqueFindings].flatMap(([fingerprint]) => {
+        const existing = existingByFingerprint.get(fingerprint);
+        if (!existing) return [];
+        const baselineState = baselineByFingerprint.get(fingerprint);
+        const triageExpired = Boolean(
+          existing.triageExpiresAt && existing.triageExpiresAt <= new Date(),
+        );
+        const regressed = baselineState === "regressed" &&
+          ["fixed", "false_positive"].includes(existing.status);
+        if (!triageExpired && !regressed) return [];
+        return [prisma.findingTriageEvent.create({
+          data: {
+            identityId: existing.id,
+            fromStatus: existing.status,
+            toStatus: "open",
+            reason: triageExpired
+              ? "Time-bounded triage decision expired"
+              : "Finding reappeared after being absent",
+            actor: "aegify-system",
+          },
+        })];
+      });
+      for (let i = 0; i < systemTriageEvents.length; i += IDENTITY_WRITE_CHUNK) {
+        await prisma.$transaction(systemTriageEvents.slice(i, i + IDENTITY_WRITE_CHUNK));
+      }
+      const persistedIdentities = await prisma.findingIdentity.findMany({
+        where: { projectId, fingerprint: { in: fingerprints } },
+        select: { id: true, fingerprint: true, status: true },
+      });
+      const identityByFingerprint = new Map(
+        persistedIdentities.map((identity) => [identity.fingerprint, identity]),
+      );
+
+      findings = parsedFindings.map((finding) => {
+        const identity = identityByFingerprint.get(finding.fingerprint);
+        return {
+          ...finding,
+          status: identity?.status || "open",
+          identityId: identity?.id || "",
+          baselineState: baselineByFingerprint.get(finding.fingerprint) || "new",
+        };
+      });
+    }
+
     if (findings.length > 0) {
       await prisma.finding.createMany({ data: findings });
+    }
+    if (projectId) {
+      await prisma.finding.updateMany({
+        where: {
+          scanId: { not: scan.id },
+          scan: { projectId },
+          isCurrent: true,
+        },
+        data: { isCurrent: false },
+      });
     }
 
     // Store call graph if present
@@ -584,7 +730,9 @@ export async function POST(request: NextRequest) {
 
     // Upsert rules
     for (const [ruleId, rule] of ruleMap) {
-      const count = findings.filter((f) => f.ruleId === ruleId).length;
+      const count = await prisma.finding.count({
+        where: { ruleId, isCurrent: true },
+      });
       let cweId: number | null = null;
       if (rule.properties?.cwe) {
         const m = rule.properties.cwe.match(/CWE-(\d+)/);
@@ -617,13 +765,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Send Slack notification for new findings (non-blocking)
-    if (findings.length > 0) {
+    const actionableFindings = findings.filter((finding) =>
+      finding.baselineState === "new" || finding.baselineState === "regressed"
+    );
+    if (actionableFindings.length > 0) {
       sendSlackNotification({
         scanId: scan.id,
         repository: new URL(request.url).searchParams.get("repository") || "",
         branch: new URL(request.url).searchParams.get("branch") || "",
-        totalFindings: findings.length,
-        findings: findings.map((f) => ({
+        totalFindings: actionableFindings.length,
+        findings: actionableFindings.map((f) => ({
           ruleId: f.ruleId,
           ruleName: f.ruleName,
           severity: f.severity,
@@ -637,6 +788,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       scanId: scan.id,
       findingsCount: findings.length,
+      baseline: findings.reduce<Record<string, number>>((counts, finding) => {
+        counts[finding.baselineState] = (counts[finding.baselineState] || 0) + 1;
+        return counts;
+      }, {}),
     });
   } catch (error) {
     console.error("Upload error:", error);

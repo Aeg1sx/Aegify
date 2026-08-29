@@ -18,6 +18,7 @@ import {
   X,
   CheckCircle,
   AlertCircle,
+  History,
 } from "lucide-react";
 
 interface Finding {
@@ -37,6 +38,9 @@ interface Finding {
   cweId: number | null;
   owaspCategory: string | null;
   llmAnalysis: string | null;
+  aiVerdict: string;
+  baselineState: string;
+  isCurrent: boolean;
   createdAt: string;
 }
 
@@ -63,6 +67,9 @@ const RISK_COLORS: Record<string, string> = {
   MEDIUM: "text-[var(--severity-medium)]",
   LOW: "text-[var(--severity-low)]",
   FALSE_POSITIVE: "text-[var(--status-fixed)]",
+  likely_true_positive: "text-red-500",
+  likely_false_positive: "text-emerald-500",
+  needs_review: "text-amber-500",
 };
 
 export default function FindingsPage() {
@@ -80,6 +87,7 @@ export default function FindingsPage() {
   const [projectId, setProjectId] = useState("");
   const [source, setSource] = useState("");
   const [disposition, setDisposition] = useState("");
+  const [includeHistory, setIncludeHistory] = useState(false);
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
 
   // Multi-select state
@@ -120,6 +128,7 @@ export default function FindingsPage() {
     if (projectId) params.set("projectId", projectId);
     if (source) params.set("source", source);
     if (disposition) params.set("disposition", disposition);
+    if (includeHistory) params.set("history", "true");
 
     fetch(`/api/findings?${params}`)
       .then((r) => r.json())
@@ -128,7 +137,7 @@ export default function FindingsPage() {
         setTotal(data.total);
       })
       .finally(() => setLoading(false));
-  }, [page, search, severity, status, ruleId, language, projectId, source, disposition]);
+  }, [page, search, severity, status, ruleId, language, projectId, source, disposition, includeHistory]);
 
   useEffect(() => {
     const timer = setTimeout(fetchFindings, 300);
@@ -233,6 +242,7 @@ export default function FindingsPage() {
   const totalPages = Math.ceil(total / 50);
 
   const getLlmBadge = (finding: Finding) => {
+    if (finding.aiVerdict) return finding.aiVerdict;
     if (!finding.llmAnalysis) return null;
     try {
       const parsed = JSON.parse(finding.llmAnalysis);
@@ -417,14 +427,27 @@ export default function FindingsPage() {
                   </Button>
                 </>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectMode(true)}
-                >
-                  <Bot className="h-4 w-4 mr-1" />
-                  Batch Analyze
-                </Button>
+                <>
+                  <Button
+                    variant={includeHistory ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setIncludeHistory((value) => !value);
+                      setPage(1);
+                    }}
+                  >
+                    <History className="h-4 w-4 mr-1" />
+                    History
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectMode(true)}
+                  >
+                    <Bot className="h-4 w-4 mr-1" />
+                    Batch Analyze
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -475,6 +498,15 @@ export default function FindingsPage() {
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <SeverityBadge severity={finding.severity} />
                             <StatusBadge status={finding.status} />
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                              finding.baselineState === "regressed"
+                                ? "bg-red-500/10 text-red-600"
+                                : finding.baselineState === "new"
+                                  ? "bg-violet-500/10 text-violet-600"
+                                  : finding.baselineState === "updated"
+                                    ? "bg-amber-500/10 text-amber-600"
+                                    : "bg-emerald-500/10 text-emerald-600"
+                            }`}>{finding.baselineState}</span>
                             <span
                               className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
                                 finding.disposition === "advisory"
@@ -507,7 +539,7 @@ export default function FindingsPage() {
                                 }`}
                               >
                                 <Bot className="h-3 w-3" />
-                                {llmRisk}
+                                {llmRisk.replaceAll("_", " ")}
                               </span>
                             )}
                             {batchResult && !batchResult.success && (

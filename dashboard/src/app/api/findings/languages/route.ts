@@ -21,6 +21,7 @@ const LANG_EXTENSIONS: Record<string, string> = {
 
 export async function GET() {
   const findings = await prisma.finding.findMany({
+    where: { isCurrent: true },
     select: { filePath: true },
     distinct: ["filePath"],
   });

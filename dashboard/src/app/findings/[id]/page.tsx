@@ -13,7 +13,6 @@ import {
   ArrowLeft,
   FileCode,
   GitBranch,
-  Shield,
   ExternalLink,
   ChevronDown,
   ChevronRight,
@@ -24,9 +23,15 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Focus,
+  Search,
 } from "lucide-react";
 import { CodeHighlight } from "@/components/code-highlight";
-import { Markdown } from "@/components/markdown";
+import { AIEvidencePanel, type AIReviewView } from "@/components/finding/ai-evidence-panel";
+import {
+  FindingLifecyclePanel,
+  type FindingIdentityView,
+} from "@/components/finding/finding-lifecycle-panel";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
@@ -36,13 +41,6 @@ interface TaintStep {
   file: string;
   line: number;
   message: string;
-}
-
-interface LLMAnalysis {
-  analysis: string;
-  remediation: string;
-  riskAssessment: string;
-  confidence: number;
 }
 
 interface BatchReviewAnalysis {
@@ -101,7 +99,14 @@ interface FindingDetail {
   repositoryId: string;
   modulePath: string;
   provenance: string;
+  fingerprint: string;
+  baselineState: string;
+  aiVerdict: string;
+  aiConfidence: number | null;
+  aiReviewStatus: string;
+  aiProof: string;
   createdAt: string;
+  identity: FindingIdentityView | null;
   scan: {
     id: string;
     repository: string;
@@ -133,13 +138,43 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: "#2563eb",
 };
 
-const RISK_COLORS: Record<string, string> = {
-  CRITICAL: "text-[var(--severity-critical)]",
-  HIGH: "text-[var(--severity-high)]",
-  MEDIUM: "text-[var(--severity-medium)]",
-  LOW: "text-[var(--severity-low)]",
-  FALSE_POSITIVE: "text-[var(--status-fixed)]",
-};
+function normalizeAIReview(value: Record<string, unknown>): AIReviewView {
+  const proof = value.proof && typeof value.proof === "object"
+    ? value.proof as Record<string, unknown> : {};
+  const stringArray = (item: unknown) => Array.isArray(item)
+    ? item.filter((entry): entry is string => typeof entry === "string") : [];
+  const rawVerdict = String(value.verdict || "needs_review");
+  const verdict = ["likely_true_positive", "likely_false_positive", "needs_review"].includes(rawVerdict)
+    ? rawVerdict as AIReviewView["verdict"] : "needs_review";
+  const rawConfidence = typeof value.confidence === "number" && Number.isFinite(value.confidence)
+    ? value.confidence : 0;
+  return {
+    verdict,
+    analysis: typeof value.analysis === "string" ? value.analysis : String(value.reasoning || ""),
+    remediation: typeof value.remediation === "string"
+      ? value.remediation : String(value.remediation_summary || ""),
+    riskAssessment: typeof value.riskAssessment === "string"
+      ? value.riskAssessment : String(value.risk_assessment || ""),
+    confidence: Math.max(0, Math.min(rawConfidence, 1)),
+    evidenceFor: stringArray(value.evidenceFor ?? value.evidence_for),
+    evidenceAgainst: stringArray(value.evidenceAgainst ?? value.evidence_against),
+    evidenceGaps: stringArray(value.evidenceGaps ?? value.evidence_gaps),
+    attackScenario: typeof value.attackScenario === "string" ? value.attackScenario : String(value.attack_scenario || ""),
+    fixedCode: typeof value.fixedCode === "string" ? value.fixedCode : String(value.fixed_code || ""),
+    remediationSteps: stringArray(value.remediationSteps ?? value.remediation_steps),
+    proof: {
+      safety: String(proof.safety || "owned_fixture_only"),
+      requiresApproval: true,
+      preconditions: stringArray(proof.preconditions),
+      requestTemplate: String(proof.requestTemplate ?? proof.request_template ?? ""),
+      payloadTemplate: String(proof.payloadTemplate ?? proof.payload_template ?? ""),
+      expectedSignal: String(proof.expectedSignal ?? proof.expected_signal ?? ""),
+      negativeControl: String(proof.negativeControl ?? proof.negative_control ?? ""),
+      harnessPlan: proof.harnessPlan && typeof proof.harnessPlan === "object"
+        ? proof.harnessPlan as Record<string, unknown> : {},
+    },
+  };
+}
 
 export default function FindingDetailPage() {
   const params = useParams();
@@ -148,10 +183,13 @@ export default function FindingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showTaintFlow, setShowTaintFlow] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [triageReason, setTriageReason] = useState("");
+  const [triageExpiresAt, setTriageExpiresAt] = useState("");
+  const [triageError, setTriageError] = useState("");
 
   // LLM analysis state
   const [analyzing, setAnalyzing] = useState(false);
-  const [llmResult, setLlmResult] = useState<LLMAnalysis | null>(null);
+  const [llmResult, setLlmResult] = useState<AIReviewView | null>(null);
   const [batchResult, setBatchResult] = useState<BatchReviewAnalysis | null>(null);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [analysisLang, setAnalysisLang] = useState("en");
@@ -164,6 +202,9 @@ export default function FindingDetailPage() {
   const [graphLoading, setGraphLoading] = useState(false);
   const [selectedGraphNode, setSelectedGraphNode] = useState<GraphNode | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [graphQuery, setGraphQuery] = useState("");
+  const [graphType, setGraphType] = useState("all");
+  const [focusEvidencePath, setFocusEvidencePath] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -174,14 +215,18 @@ export default function FindingDetailPage() {
       .then((r) => r.json())
       .then((data) => {
         setFinding(data);
+        setTriageReason(data.identity?.triageReason || "");
+        setTriageExpiresAt(data.identity?.triageExpiresAt?.slice(0, 10) || "");
         // Load saved LLM analysis (two possible formats)
         if (data.llmAnalysis) {
           try {
             const parsed = JSON.parse(data.llmAnalysis);
-            if (parsed.analysis) {
-              // Per-finding analysis format
-              setLlmResult(parsed);
-            } else if ("isFalsePositive" in parsed) {
+            if (parsed && typeof parsed === "object" && (
+              parsed.analysis || parsed.reasoning || parsed.verdict || parsed.proof
+            )) {
+              // Structured evidence-bound review format
+              setLlmResult(normalizeAIReview(parsed));
+            } else if (parsed && typeof parsed === "object" && "isFalsePositive" in parsed) {
               // Batch review format
               setBatchResult(parsed);
             }
@@ -211,16 +256,26 @@ export default function FindingDetailPage() {
   const updateStatus = async (newStatus: string) => {
     if (!finding) return;
     setUpdating(true);
+    setTriageError("");
     try {
       const res = await fetch(`/api/findings/${finding.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({
+          status: newStatus,
+          reason: triageReason,
+          expiresAt: triageExpiresAt || null,
+        }),
       });
       if (res.ok) {
-        const updated = await res.json();
-        setFinding({ ...finding, status: updated.status });
+        const refreshed = await fetch(`/api/findings/${finding.id}`).then((response) => response.json());
+        setFinding(refreshed);
+      } else {
+        const error = await res.json();
+        setTriageError(error.error || "Triage update failed");
       }
+    } catch (error) {
+      setTriageError(error instanceof Error ? error.message : "Triage update failed");
     } finally {
       setUpdating(false);
     }
@@ -241,7 +296,7 @@ export default function FindingDetailPage() {
         setLlmError(data.error || "Analysis failed");
         return;
       }
-      setLlmResult(data);
+      setLlmResult(normalizeAIReview(data));
     } catch (err) {
       setLlmError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -266,15 +321,36 @@ export default function FindingDetailPage() {
 
   const graphData = useMemo(() => {
     if (graphNodes.length === 0) return { nodes: [], links: [] };
+    const query = graphQuery.trim().toLowerCase();
+    const findingNodeId = graphNodes.find((node) => node.isFindingNode)?.id;
+    const pathNeighbors = new Set<string>();
+    if (findingNodeId) {
+      for (const edge of graphEdges) {
+        if (edge.sourceNodeId === findingNodeId) pathNeighbors.add(edge.targetNodeId);
+        if (edge.targetNodeId === findingNodeId) pathNeighbors.add(edge.sourceNodeId);
+      }
+    }
+    const visibleNodes = graphNodes.filter((node) => {
+      if (graphType !== "all" && node.nodeType !== graphType) return false;
+      if (query && !`${node.qualifiedName} ${node.filePath}`.toLowerCase().includes(query)) return false;
+      if (focusEvidencePath && !(
+        node.isFindingNode || node.nodeType === "entry_point" || node.nodeType === "sink" ||
+        pathNeighbors.has(node.id)
+      )) return false;
+      return true;
+    });
+    const visibleIds = new Set(visibleNodes.map((node) => node.id));
     return {
-      nodes: graphNodes.map((n) => ({ ...n })),
-      links: graphEdges.map((e) => ({
+      nodes: visibleNodes.map((n) => ({ ...n })),
+      links: graphEdges.filter((edge) =>
+        visibleIds.has(edge.sourceNodeId) && visibleIds.has(edge.targetNodeId)
+      ).map((e) => ({
         source: e.sourceNodeId,
         target: e.targetNodeId,
         callSiteLine: e.callSiteLine,
       })),
     };
-  }, [graphNodes, graphEdges]);
+  }, [graphNodes, graphEdges, graphQuery, graphType, focusEvidencePath]);
 
   // Adaptive physics: more spacing for small graphs, tighter for large
   const graphPhysics = useMemo(() => {
@@ -485,9 +561,13 @@ export default function FindingDetailPage() {
     );
   }
 
-  const taintSteps: TaintStep[] = finding.taintFlow
-    ? JSON.parse(finding.taintFlow)
-    : [];
+  let taintSteps: TaintStep[] = [];
+  try {
+    const parsed = finding.taintFlow ? JSON.parse(finding.taintFlow) : [];
+    taintSteps = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    taintSteps = [];
+  }
   let evidenceProvenance: EvidenceProvenance = {};
   try {
     evidenceProvenance = finding.provenance
@@ -501,8 +581,10 @@ export default function FindingDetailPage() {
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-start gap-3">
         <button
+          type="button"
           onClick={() => router.back()}
           className="text-muted-foreground hover:text-foreground mt-1"
+          aria-label="Back to findings"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -532,10 +614,10 @@ export default function FindingDetailPage() {
       </div>
 
       <Card>
-        <CardContent className="py-3">
-          <div className="flex items-center gap-2">
+        <CardContent className="space-y-3 py-4">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground mr-2">Triage:</span>
-            {["open", "triaged", "confirmed", "in_progress", "false_positive", "fixed"].map((s) => (
+            {["open", "triaged", "confirmed", "in_progress", "false_positive", "accepted_risk", "fixed"].map((s) => (
               <Button
                 key={s}
                 variant={finding.status === s ? "default" : "outline"}
@@ -545,12 +627,30 @@ export default function FindingDetailPage() {
               >
                 {s === "false_positive"
                   ? "False Positive"
+                  : s === "accepted_risk"
+                  ? "Accepted Risk"
                   : s === "in_progress"
                   ? "In Progress"
                   : s.charAt(0).toUpperCase() + s.slice(1)}
               </Button>
             ))}
           </div>
+          <div className="grid gap-2 md:grid-cols-[1fr_180px]">
+            <input
+              value={triageReason}
+              onChange={(event) => setTriageReason(event.target.value)}
+              placeholder="Decision rationale (required for false positive / accepted risk)"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <input
+              type="date"
+              value={triageExpiresAt}
+              onChange={(event) => setTriageExpiresAt(event.target.value)}
+              aria-label="Triage expiry"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+          {triageError && <p className="text-xs text-destructive">{triageError}</p>}
         </CardContent>
       </Card>
 
@@ -648,6 +748,7 @@ export default function FindingDetailPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => graphRef.current?.zoom(1.5, 300)}
+                      aria-label="Zoom in"
                     >
                       <ZoomIn className="h-4 w-4" />
                     </Button>
@@ -655,6 +756,7 @@ export default function FindingDetailPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => graphRef.current?.zoom(0.67, 300)}
+                      aria-label="Zoom out"
                     >
                       <ZoomOut className="h-4 w-4" />
                     </Button>
@@ -662,6 +764,7 @@ export default function FindingDetailPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => graphRef.current?.zoomToFit(400, 40)}
+                      aria-label="Fit graph to view"
                     >
                       <Maximize2 className="h-4 w-4" />
                     </Button>
@@ -681,7 +784,40 @@ export default function FindingDetailPage() {
                 </p>
               )}
               {showGraph && graphNodes.length > 0 && (
-                <div ref={containerRef} className="rounded-md border border-border overflow-hidden bg-muted">
+                <div className="space-y-2">
+                  <div className="grid gap-2 rounded-lg border bg-muted/30 p-2 md:grid-cols-[1fr_150px_auto]">
+                    <label className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <input
+                        value={graphQuery}
+                        onChange={(event) => setGraphQuery(event.target.value)}
+                        placeholder="Search symbol or file"
+                        aria-label="Search graph symbols or files"
+                        className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs"
+                      />
+                    </label>
+                    <select
+                      value={graphType}
+                      onChange={(event) => setGraphType(event.target.value)}
+                      className="h-8 rounded-md border bg-background px-2 text-xs"
+                      aria-label="Filter graph by node type"
+                    >
+                      <option value="all">All node types</option>
+                      <option value="entry_point">Entry points</option>
+                      <option value="sink">Sinks</option>
+                      <option value="module">Modules</option>
+                      <option value="function">Functions</option>
+                    </select>
+                    <Button
+                      size="sm"
+                      variant={focusEvidencePath ? "default" : "outline"}
+                      onClick={() => setFocusEvidencePath((value) => !value)}
+                      className="h-8 gap-1 text-xs"
+                    >
+                      <Focus className="h-3.5 w-3.5" />Evidence path
+                    </Button>
+                  </div>
+                <div ref={containerRef} className="relative rounded-md border border-border overflow-hidden bg-muted">
                   <ForceGraph2D
                     ref={graphRef as React.MutableRefObject<never>}
                     graphData={graphData}
@@ -744,10 +880,11 @@ export default function FindingDetailPage() {
                       Function
                     </span>
                     <span className="ml-auto">
-                      {graphNodes.length} nodes, {graphEdges.length} edges
+                      {graphData.nodes.length}/{graphNodes.length} nodes, {graphData.links.length} edges
                       {graphCapped && <span className="text-amber-500 ml-1">(truncated)</span>}
                     </span>
                   </div>
+                </div>
                 </div>
               )}
             </CardContent>
@@ -853,76 +990,27 @@ export default function FindingDetailPage() {
               )}
 
               {llmResult && (
-                <div className="space-y-4">
-                  <div>
-                    {llmResult.riskAssessment === "FALSE_POSITIVE" ? (
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <h4 className="text-sm font-medium">AI Assessment</h4>
-                        <span className="text-sm font-bold text-[var(--status-fixed)]">
-                          False Positive
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          ({(llmResult.confidence * 100).toFixed(0)}% confident)
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1.5">
-                          SAST:
-                          <SeverityBadge severity={finding.severity} />
-                          <span className="mx-1">&rarr;</span>
-                          <span className="text-[var(--status-fixed)] font-medium">Dismissed</span>
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <h4 className="text-sm font-medium">AI Assessment</h4>
-                        <span
-                          className={`text-sm font-bold ${
-                            RISK_COLORS[llmResult.riskAssessment] || "text-muted-foreground"
-                          }`}
-                        >
-                          {llmResult.riskAssessment}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          ({(llmResult.confidence * 100).toFixed(0)}% confident)
-                        </span>
-                        {llmResult.riskAssessment !== finding.severity.toUpperCase() && (
-                          <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1.5">
-                            SAST:
-                            <SeverityBadge severity={finding.severity} />
-                            <span className="mx-1">&rarr;</span>
-                            <SeverityBadge severity={llmResult.riskAssessment.toLowerCase()} />
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h4 className="text-sm font-medium mb-3">Analysis</h4>
-                    <div className="text-sm text-muted-foreground">
-                      <Markdown content={llmResult.analysis} />
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <Shield className="h-4 w-4" />
-                      Remediation
-                    </h4>
-                    <div className="text-sm">
-                      <Markdown content={llmResult.remediation} />
-                    </div>
-                  </div>
-                </div>
+                <AIEvidencePanel
+                  review={llmResult}
+                  language={finding.filePath.split(".").pop()}
+                />
               )}
             </CardContent>
           </Card>
         </div>
 
         <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Finding lifecycle</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FindingLifecyclePanel
+                baselineState={finding.baselineState}
+                identity={finding.identity}
+              />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Details</CardTitle>

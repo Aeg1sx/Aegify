@@ -110,7 +110,7 @@ class LLMConfig(BaseModel):
     """LLM integration configuration."""
 
     enabled: bool = False
-    model: str = "claude-opus-4-6"
+    model: str = "claude-opus-5"
     base_url: str | None = None
     token_budget: int = 100_000
     verify_threshold: float = 0.7

@@ -39,7 +39,7 @@ export default function SettingsPage() {
 
   // LLM form
   const [llmProvider, setLlmProvider] = useState("anthropic");
-  const [llmModel, setLlmModel] = useState("claude-opus-4-6");
+  const [llmModel, setLlmModel] = useState("claude-opus-5");
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [llmAutoVerify, setLlmAutoVerify] = useState(false);
   const [llmThreshold, setLlmThreshold] = useState("0.7");
@@ -63,7 +63,7 @@ export default function SettingsPage() {
         const s = data.settings || {};
         setSettings(s);
         setLlmProvider(s["llm.provider"]?.value || "anthropic");
-        setLlmModel(s["llm.model"]?.value || "claude-opus-4-6");
+        setLlmModel(s["llm.model"]?.value || "claude-opus-5");
         setLlmEnabled(s["llm.enabled"]?.value === "true");
         setLlmAutoVerify(s["llm.auto_verify"]?.value === "true");
         setLlmThreshold(s["llm.verify_threshold"]?.value || "0.7");
@@ -276,7 +276,7 @@ export default function SettingsPage() {
                 onChange={(e) => {
                   const p = e.target.value;
                   setLlmProvider(p);
-                  if (p === "anthropic") setLlmModel("claude-opus-4-6");
+                  if (p === "anthropic") setLlmModel("claude-opus-5");
                   else if (p === "openai") setLlmModel("gpt-5.2");
                   else if (p === "google") setLlmModel("gemini-2.5-flash");
                 }}
@@ -297,6 +297,17 @@ export default function SettingsPage() {
                 {llmProvider === "anthropic" ? (
                   <>
                     <optgroup label="Latest">
+                      <option value="claude-opus-5">
+                        Claude Opus 5
+                      </option>
+                      <option value="claude-sonnet-5">
+                        Claude Sonnet 5
+                      </option>
+                      <option value="claude-opus-4-8">
+                        Claude Opus 4.8
+                      </option>
+                    </optgroup>
+                    <optgroup label="Previous">
                       <option value="claude-opus-4-6">
                         Claude Opus 4.6
                       </option>

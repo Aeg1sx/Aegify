@@ -9,7 +9,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/aegify
-COPY scanner/pyproject.toml scanner/uv.lock scanner/README.md ./
+COPY scanner/pyproject.toml scanner/uv.lock scanner/README.md scanner/hatch_build.py ./
 COPY scanner/src/ src/
 COPY rules/ /opt/rules/
 RUN uv sync --locked --no-dev --no-editable

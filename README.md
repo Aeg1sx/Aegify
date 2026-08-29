@@ -76,7 +76,10 @@ _Dashboard preview using demo scan data._
 - **Frontend and Spring Cloud Gateway correlation** with file/line evidence and confidence
 - **Reproducible evidence contract** with workspace snapshots, analyzer/rule provenance, and stable evidence IDs preserved through SARIF and dashboard ingestion
 - **Evidence-gated findings** that retain broad heuristics as candidate/advisory results while only taint or structured semantic evidence can block CI; SARIF and the dashboard preserve both evidence state and gate disposition
-- **LLM-powered review** using Claude to triage findings and suggest remediation
+- **Evidence-bound AI review** with structured likely-TP/likely-FP/needs-review suggestions, explicit evidence gaps, remediation, and approval-gated owned-fixture proof templates; AI never mutates finding status
+- **Allowlisted AI analysis tools** for finding context, call paths, attack surface, workspace summaries, and harness planning, with bounded custom read-only tool registration
+- **Persistent finding lifecycle** with stable SARIF fingerprints, new/unchanged/updated/regressed baselines, current-vs-history views, time-bounded triage, and actor-stamped audit events
+- **Reproducible precision gates** with owned ground truth, per-rule precision/recall/F1, unmatched evidence, and threshold-based CI exit codes
 - **SARIF 2.1.0 output** for GitHub Code Scanning, SonarQube, and VS Code integration
 - **API endpoint detection** for Flask, FastAPI, Django, Express, Spring, and Go net/http
 - **Web dashboard** with finding triage, call graph visualization, and severity charts
@@ -119,6 +122,16 @@ aegify scan-workspace ../aegify-workspace.yml \
   --output sarif --output-file results.sarif \
   --semantic-graph-file semantic-graph.jsonl \
   --program-graph-file program-graph.jsonl
+
+# Add bounded, tool-grounded AI review to a multi-repository scan
+aegify scan-workspace ../aegify-workspace.yml \
+  --ai-tools --max-ai-findings 50 \
+  --output sarif --output-file results.sarif
+
+# Gate a versioned owned benchmark corpus on measured precision and recall
+aegify benchmark ../fixtures --ground-truth ../ground-truth.json \
+  --min-precision 0.95 --min-recall 0.90 \
+  --output-file benchmark-report.json
 
 # Plan compiler-backed Java/Kotlin indexes per repository/build root
 aegify index-scip-java ../aegify-workspace.yml \
@@ -238,7 +251,7 @@ rules:
 
 llm:
   enabled: false
-  model: claude-opus-4-6
+  model: claude-opus-5
   token_budget: 100000
   verify_threshold: 0.7
 
@@ -300,6 +313,7 @@ Aegify/
       rules/            Built-in AST rules + YAML rule loader
       reporter/         SARIF, GitHub, DefectDojo reporters
       llm/              LLM verification client and prompts
+      quality/          Ground-truth precision and recall gates
       storage/          SQLite, PostgreSQL, S3 backends
     tests/            Test suite (pytest)
   dashboard/        Next.js web dashboard

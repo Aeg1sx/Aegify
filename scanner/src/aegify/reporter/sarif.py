@@ -29,7 +29,7 @@ class SARIFReporter:
     SARIF_VERSION = "2.1.0"
     SCHEMA_URI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json"
     TOOL_NAME = "Aegify"
-    TOOL_VERSION = "0.1.0"
+    TOOL_VERSION = "0.2.0"
 
     def generate(
         self,
@@ -486,6 +486,10 @@ class SARIFReporter:
         # Add LLM analysis if available
         if finding.llm_analysis:
             result["properties"]["llmAnalysis"] = finding.llm_analysis
+        if finding.ai_review:
+            review = finding.ai_review.model_dump(mode="json")
+            result["properties"]["aiReview"] = review
+            result["properties"]["aiProof"] = review["proof"]
 
         # Serialize call chain with rich context for LLM verification
         if finding.call_chain:
