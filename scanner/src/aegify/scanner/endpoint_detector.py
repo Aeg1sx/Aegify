@@ -9,11 +9,27 @@ from __future__ import annotations
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-from aegify.models import FileAST, FunctionDef
+from aegify.models import FileAST, FunctionDef, Language
 
 logger = logging.getLogger(__name__)
+
+
+# The endpoint detector's tested support contract.  "100% endpoint language
+# coverage" means every parser-supported language has at least one declared
+# framework family and a parser-backed regression fixture.  It does not claim
+# to discover arbitrary dynamic registrations or every third-party framework.
+ENDPOINT_SUPPORT_MATRIX: dict[Language, tuple[str, ...]] = {
+    Language.PYTHON: ("Flask", "FastAPI", "Django"),
+    Language.JAVASCRIPT: ("Express",),
+    Language.TYPESCRIPT: ("Express", "NestJS", "Next.js App Router"),
+    Language.JAVA: ("Spring",),
+    Language.GO: ("Go net/http", "Gin", "Echo", "Fiber", "Chi", "Gorilla"),
+    Language.RUST: ("Actix Web", "Axum", "Rocket"),
+    Language.SWIFT: ("Vapor", "Hummingbird"),
+    Language.KOTLIN: ("Spring", "Ktor"),
+}
 
 
 @dataclass
@@ -47,19 +63,42 @@ class Endpoint:
 # Flask / FastAPI: @app.route('/path', methods=['GET']) or @app.get('/path')
 _FLASK_ROUTE_RE = re.compile(
     r"@\w+\.route\(\s*['\"]([^'\"]+)['\"]"
-    r"(?:.*?methods\s*=\s*\[([^\]]+)\])?"
+    r"([^)]*)\)"
 )
-_FLASK_METHOD_RE = re.compile(r"@\w+\.(get|post|put|delete|patch)\(\s*['\"]([^'\"]+)['\"]")
+_FLASK_METHOD_RE = re.compile(
+    r"@\w+\.(get|post|put|delete|patch|head|options)\(\s*['\"]([^'\"]+)['\"]"
+)
 
 # FastAPI - same decorator style as Flask method shortcuts
 _FASTAPI_METHOD_RE = _FLASK_METHOD_RE
 
 # Django: path('url/', view) and @api_view(['GET'])
-_DJANGO_PATH_RE = re.compile(r"path\(\s*['\"]([^'\"]+)['\"]")
+_DJANGO_PATH_RE = re.compile(r"(?:re_)?path\(\s*['\"]([^'\"]+)['\"]\s*,\s*([\w.]+)")
 _DJANGO_API_VIEW_RE = re.compile(r"@api_view\(\s*\[([^\]]+)\]\s*\)")
 
 # Express.js: app.get('/path', handler) or router.post('/path', ...)
-_EXPRESS_RE = re.compile(r"(?:app|router)\.(get|post|put|delete|patch|all)\(\s*['\"]([^'\"]+)['\"]")
+_EXPRESS_RE = re.compile(
+    r"(?:app|router)\.(get|post|put|delete|patch|head|options|all)"
+    r"\(\s*['\"]([^'\"]+)['\"]"
+)
+
+# NestJS decorators. Controller paths are joined with method decorators.
+_NEST_CONTROLLER_RE = re.compile(
+    r"@Controller\(\s*['\"]([^'\"]*)['\"]\s*\)\s*"
+    r"(?:export\s+)?class\s+([A-Za-z_$][\w$]*)",
+    re.MULTILINE,
+)
+_NEST_METHOD_RE = re.compile(
+    r"@(Get|Post|Put|Delete|Patch|Options|Head|All)\(\s*"
+    r"(?:['\"]([^'\"]*)['\"])?\s*\)"
+)
+
+# Next.js App Router handlers are exported HTTP-method functions in
+# app/**/route.{js,ts}. The URL is derived from the file path.
+_NEXT_HANDLER_RE = re.compile(
+    r"\bexport\s+(?:async\s+)?function\s+"
+    r"(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s*\("
+)
 
 # Spring: @GetMapping("/path"), @PostMapping, @RequestMapping
 _SPRING_RE = re.compile(
@@ -78,12 +117,42 @@ _SPRING_METHOD_MAP = {
 
 # Go net/http: http.HandleFunc("/path", handler)
 _GO_HANDLE_RE = re.compile(
-    r"(?:http\.HandleFunc|mux\.HandleFunc|http\.Handle)\(\s*['\"]([^'\"]+)['\"]"
+    r"(?:http\.HandleFunc|mux\.HandleFunc|http\.Handle)"
+    r"\(\s*['\"]([^'\"]+)['\"]\s*,\s*([A-Za-z_]\w*)"
+)
+_GO_ROUTER_RE = re.compile(
+    r"\b([A-Za-z_]\w*)\.(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD|Any|"
+    r"Get|Post|Put|Delete|Patch|Options|Head)"
+    r"\(\s*['\"]([^'\"]+)['\"]\s*,\s*([A-Za-z_]\w*)"
+)
+_GO_METHOD_FUNC_RE = re.compile(
+    r"\b([A-Za-z_]\w*)\.MethodFunc\(\s*['\"]([A-Z]+)['\"]\s*,\s*"
+    r"['\"]([^'\"]+)['\"]\s*,\s*([A-Za-z_]\w*)"
+)
+_GO_GORILLA_METHODS_RE = re.compile(
+    r"\b([A-Za-z_]\w*)\.HandleFunc\(\s*['\"]([^'\"]+)['\"]\s*,\s*"
+    r"([A-Za-z_]\w*)\s*\)\.Methods\(\s*['\"]([A-Z]+)['\"]"
 )
 
 # Ktor (Kotlin): get("/path") { ... }, post("/path") { ... }
 # Require path to start with / to avoid matching Map.get("key"), JSONObject.put("field") etc.
 _KTOR_RE = re.compile(r"\b(get|post|put|delete|patch|head|options)\(\s*\"(/[^\"]*)\"")
+
+# Rust: Actix/Rocket route attributes and Axum Router::route calls.
+_RUST_ATTRIBUTE_ROUTE_RE = re.compile(
+    r"#\[(get|post|put|delete|patch|head|options)\(\s*['\"]([^'\"]+)['\"]\s*\)\]"
+)
+_RUST_AXUM_RE = re.compile(
+    r"\.route\(\s*['\"]([^'\"]+)['\"]\s*,\s*"
+    r"(get|post|put|delete|patch|head|options)\(\s*([A-Za-z_]\w*)"
+)
+
+# Swift: Vapor and Hummingbird registrations. Both accept either a slash path
+# or comma-separated string components such as "users", ":id".
+_SWIFT_ROUTE_RE = re.compile(
+    r"\b(app|router)\.(get|post|put|delete|patch|head|options)\("
+    r"(?P<arguments>[^\n)]*)\)"
+)
 
 # Auth decorator patterns
 _AUTH_PATTERNS = [
@@ -154,7 +223,6 @@ _TEST_PATH_SEGMENTS = {
     "/__tests__/",
     "/spec/",
     "/specs/",
-    "/test-",
     "/testFixtures/",
     "/testdata/",
     "/testing/",
@@ -410,6 +478,9 @@ class EndpointDetector:
         """Check if a file is a test file (endpoints from tests are noise)."""
         if any(seg in file_path for seg in _TEST_PATH_SEGMENTS):
             return True
+        basename = os.path.basename(file_path).lower()
+        if basename.startswith(("test_", "test-")):
+            return True
         if file_path.endswith(_TEST_FILE_SUFFIXES):
             return True
         return False
@@ -567,7 +638,12 @@ class EndpointDetector:
 
         for func in all_funcs:
             for decorator in func.decorators:
-                ep = self._parse_decorator(decorator, func, ast.file_path)
+                ep = self._parse_decorator(
+                    decorator,
+                    func,
+                    ast.file_path,
+                    imported_modules={item.module for item in ast.imports},
+                )
                 if ep:
                     if ep.framework == "Spring" and func.class_name:
                         ep.path = self._join_paths(
@@ -587,21 +663,28 @@ class EndpointDetector:
                     # Extract parameters from path
                     ep.parameters = self._extract_path_params(ep.path)
                     ep.repository_id = ast.repository_id
-                    endpoints.append(ep)
+                    methods = [method for method in ep.method.split(",") if method]
+                    endpoints.extend(replace(ep, method=method) for method in methods)
 
         return endpoints
 
     def _parse_decorator(
-        self, decorator: str, func: FunctionDef, file_path: str
+        self,
+        decorator: str,
+        func: FunctionDef,
+        file_path: str,
+        *,
+        imported_modules: set[str],
     ) -> Endpoint | None:
         """Try to parse a single decorator as an endpoint definition."""
+        python_framework = self._python_framework(imported_modules)
         # Flask/FastAPI @app.route
         m = _FLASK_ROUTE_RE.search(decorator)
-        if m:
+        if m and python_framework:
             path = m.group(1)
-            methods_str = m.group(2) or "'GET'"
+            methods_match = re.search(r"methods\s*=\s*\[([^\]]+)\]", m.group(2))
+            methods_str = methods_match.group(1) if methods_match else "'GET'"
             methods = [s.strip().strip("'\"").upper() for s in methods_str.split(",")]
-            framework = "FastAPI" if "fastapi" in file_path.lower() else "Flask"
             return Endpoint(
                 path=path,
                 method=methods[0] if len(methods) == 1 else ",".join(methods),
@@ -609,15 +692,14 @@ class EndpointDetector:
                 file_path=file_path,
                 line_start=func.line_start,
                 line_end=func.line_end,
-                framework=framework,
+                framework=python_framework,
             )
 
         # Flask/FastAPI @app.get, @app.post etc.
         m = _FLASK_METHOD_RE.search(decorator)
-        if m:
+        if m and python_framework:
             method = m.group(1).upper()
             path = m.group(2)
-            framework = "FastAPI" if "fastapi" in file_path.lower() else "Flask"
             return Endpoint(
                 path=path,
                 method=method,
@@ -625,7 +707,7 @@ class EndpointDetector:
                 file_path=file_path,
                 line_start=func.line_start,
                 line_end=func.line_end,
-                framework=framework,
+                framework=python_framework,
             )
 
         # Django @api_view
@@ -660,6 +742,14 @@ class EndpointDetector:
         return None
 
     @staticmethod
+    def _python_framework(imported_modules: set[str]) -> str:
+        if any(module == "fastapi" or module.startswith("fastapi.") for module in imported_modules):
+            return "FastAPI"
+        if any(module == "flask" or module.startswith("flask.") for module in imported_modules):
+            return "Flask"
+        return ""
+
+    @staticmethod
     def _join_paths(prefix: str, path: str) -> str:
         """Join class-level and method-level route paths without losing root."""
         parts = [p.strip("/") for p in (prefix, path) if p and p != "/"]
@@ -685,24 +775,6 @@ class EndpointDetector:
                 method = method_match.group(1)
         return path, method
 
-    # File extension to language category mapping for framework-aware detection
-    _EXT_LANG: dict[str, str] = {
-        ".py": "python",
-        ".pyw": "python",
-        ".js": "javascript",
-        ".mjs": "javascript",
-        ".cjs": "javascript",
-        ".ts": "typescript",
-        ".tsx": "typescript",
-        ".jsx": "javascript",
-        ".java": "java",
-        ".kt": "kotlin",
-        ".kts": "kotlin",
-        ".go": "go",
-        ".rb": "ruby",
-        ".php": "php",
-    }
-
     def _detect_from_source_patterns(self, ast: FileAST) -> list[Endpoint]:
         """Detect endpoints from call-site patterns and source-level annotations.
 
@@ -720,15 +792,12 @@ class EndpointDetector:
 
         lines = source.splitlines()
 
-        # Determine file language from extension
-        ext = ""
-        dot_idx = ast.file_path.rfind(".")
-        if dot_idx != -1:
-            ext = ast.file_path[dot_idx:]
-        lang = self._EXT_LANG.get(ext, "")
+        # The parser is authoritative. Extension re-detection previously made
+        # alternate extensions and synthetic/workspace ASTs silently diverge.
+        lang = ast.language
 
         # Express.js patterns — only in JS/TS files
-        if lang in ("javascript", "typescript"):
+        if lang in (Language.JAVASCRIPT, Language.TYPESCRIPT):
             for m in _EXPRESS_RE.finditer(source):
                 method = m.group(1).upper()
                 path = m.group(2)
@@ -757,7 +826,11 @@ class EndpointDetector:
                     Endpoint(
                         path=path,
                         method=method,
-                        handler_function=self._find_enclosing_func(ast, line_num),
+                        handler_function=self._registration_handler(
+                            ast,
+                            line_num,
+                            self._last_identifier_argument(source, m.end()),
+                        ),
                         file_path=ast.file_path,
                         line_start=line_num,
                         line_end=line_num,
@@ -769,28 +842,107 @@ class EndpointDetector:
                     )
                 )
 
+            if lang == Language.TYPESCRIPT:
+                controller_prefixes = {
+                    match.group(2): match.group(1) for match in _NEST_CONTROLLER_RE.finditer(source)
+                }
+                for m in _NEST_METHOD_RE.finditer(source):
+                    method = m.group(1).upper()
+                    path = m.group(2) or ""
+                    line_num = source[: m.start()].count("\n") + 1
+                    handler = self._find_following_func(ast, line_num)
+                    class_name = self._function_class(ast, handler)
+                    path = self._join_paths(controller_prefixes.get(class_name or "", ""), path)
+                    endpoints.append(
+                        self._make_endpoint(
+                            ast,
+                            path=path,
+                            method=method,
+                            handler=handler,
+                            line=line_num,
+                            framework="NestJS",
+                            source=source,
+                        )
+                    )
+
+                if self._is_next_route_file(ast.file_path):
+                    route_path = self._next_route_path(ast.file_path)
+                    for m in _NEXT_HANDLER_RE.finditer(source):
+                        line_num = source[: m.start()].count("\n") + 1
+                        endpoints.append(
+                            self._make_endpoint(
+                                ast,
+                                path=route_path,
+                                method=m.group(1),
+                                handler=self._registration_handler(ast, line_num, m.group(1)),
+                                line=line_num,
+                                framework="Next.js App Router",
+                                source=source,
+                            )
+                        )
+
         # Go net/http patterns — only in Go files
-        if lang == "go":
+        if lang == Language.GO:
             for m in _GO_HANDLE_RE.finditer(source):
                 path = m.group(1)
                 line_num = source[: m.start()].count("\n") + 1
                 endpoints.append(
-                    Endpoint(
+                    self._make_endpoint(
+                        ast,
                         path=path,
                         method="ALL",
-                        handler_function=self._find_enclosing_func(ast, line_num),
-                        file_path=ast.file_path,
-                        line_start=line_num,
-                        line_end=line_num,
+                        handler=self._registration_handler(ast, line_num, m.group(2)),
+                        line=line_num,
                         framework="Go net/http",
-                        parameters=self._extract_path_params(path),
-                        auth_required=self._source_has_auth(source, line_num, ast=ast),
-                        repository_id=ast.repository_id,
+                        source=source,
+                    )
+                )
+            for m in _GO_GORILLA_METHODS_RE.finditer(source):
+                line_num = source[: m.start()].count("\n") + 1
+                endpoints.append(
+                    self._make_endpoint(
+                        ast,
+                        path=m.group(2),
+                        method=m.group(4),
+                        handler=self._registration_handler(ast, line_num, m.group(3)),
+                        line=line_num,
+                        framework="Gorilla",
+                        source=source,
+                    )
+                )
+            for m in _GO_METHOD_FUNC_RE.finditer(source):
+                line_num = source[: m.start()].count("\n") + 1
+                endpoints.append(
+                    self._make_endpoint(
+                        ast,
+                        path=m.group(3),
+                        method=m.group(2),
+                        handler=self._registration_handler(ast, line_num, m.group(4)),
+                        line=line_num,
+                        framework="Chi",
+                        source=source,
+                    )
+                )
+            for m in _GO_ROUTER_RE.finditer(source):
+                line_num = source[: m.start()].count("\n") + 1
+                method = m.group(2).upper()
+                framework = self._go_router_framework(source)
+                if not framework:
+                    continue
+                endpoints.append(
+                    self._make_endpoint(
+                        ast,
+                        path=m.group(3),
+                        method="ALL" if method == "ANY" else method,
+                        handler=self._registration_handler(ast, line_num, m.group(4)),
+                        line=line_num,
+                        framework=framework,
+                        source=source,
                     )
                 )
 
         # Spring annotation patterns — only in Java/Kotlin files
-        if lang in ("java", "kotlin"):
+        if lang in (Language.JAVA, Language.KOTLIN):
             for m in _SPRING_RE.finditer(source):
                 spring_type = m.group(1)
                 path = m.group(2)
@@ -825,7 +977,7 @@ class EndpointDetector:
                 )
 
         # Ktor patterns — only in Kotlin files
-        if lang == "kotlin":
+        if lang == Language.KOTLIN and ("io.ktor" in source or "routing" in source):
             for m in _KTOR_RE.finditer(source):
                 method = m.group(1).upper()
                 path = m.group(2)
@@ -846,26 +998,190 @@ class EndpointDetector:
                 )
 
         # Django path() patterns — only in Python files
-        if lang == "python":
+        if lang == Language.PYTHON and "django" in source:
             for m in _DJANGO_PATH_RE.finditer(source):
-                path = m.group(1)
+                path = "/" + m.group(1).lstrip("/")
                 line_num = source[: m.start()].count("\n") + 1
                 endpoints.append(
-                    Endpoint(
+                    self._make_endpoint(
+                        ast,
                         path=path,
                         method="ALL",
-                        handler_function=self._find_enclosing_func(ast, line_num),
-                        file_path=ast.file_path,
-                        line_start=line_num,
-                        line_end=line_num,
+                        handler=self._registration_handler(ast, line_num, m.group(2)),
+                        line=line_num,
                         framework="Django",
-                        parameters=self._extract_path_params(path),
-                        auth_required=self._source_has_auth(source, line_num, ast=ast),
-                        repository_id=ast.repository_id,
+                        source=source,
+                    )
+                )
+
+        if lang == Language.RUST:
+            framework = ""
+            if "actix_web" in source:
+                framework = "Actix Web"
+            elif re.search(r"(?:use|extern\s+crate)\s+rocket\b", source):
+                framework = "Rocket"
+            if framework:
+                for m in _RUST_ATTRIBUTE_ROUTE_RE.finditer(source):
+                    line_num = source[: m.start()].count("\n") + 1
+                    endpoints.append(
+                        self._make_endpoint(
+                            ast,
+                            path=m.group(2),
+                            method=m.group(1).upper(),
+                            handler=self._find_following_func(ast, line_num),
+                            line=line_num,
+                            framework=framework,
+                            source=source,
+                        )
+                    )
+            if "axum" in source or "Router::" in source:
+                for m in _RUST_AXUM_RE.finditer(source):
+                    line_num = source[: m.start()].count("\n") + 1
+                    endpoints.append(
+                        self._make_endpoint(
+                            ast,
+                            path=m.group(1),
+                            method=m.group(2).upper(),
+                            handler=self._registration_handler(ast, line_num, m.group(3)),
+                            line=line_num,
+                            framework="Axum",
+                            source=source,
+                        )
+                    )
+
+        if lang == Language.SWIFT and ("import Vapor" in source or "Hummingbird" in source):
+            framework = "Hummingbird" if "Hummingbird" in source else "Vapor"
+            for m in _SWIFT_ROUTE_RE.finditer(source):
+                path = self._swift_route_path(m.group("arguments"))
+                if not path:
+                    continue
+                line_num = source[: m.start()].count("\n") + 1
+                handler_match = re.search(r"\buse\s*:\s*([A-Za-z_]\w*)", m.group("arguments"))
+                explicit_handler = handler_match.group(1) if handler_match else ""
+                endpoints.append(
+                    self._make_endpoint(
+                        ast,
+                        path=path,
+                        method=m.group(2).upper(),
+                        handler=self._registration_handler(ast, line_num, explicit_handler),
+                        line=line_num,
+                        framework=framework,
+                        source=source,
                     )
                 )
 
         return endpoints
+
+    def _make_endpoint(
+        self,
+        ast: FileAST,
+        *,
+        path: str,
+        method: str,
+        handler: str,
+        line: int,
+        framework: str,
+        source: str,
+    ) -> Endpoint:
+        return Endpoint(
+            path=path,
+            method=method,
+            handler_function=handler,
+            file_path=ast.file_path,
+            line_start=line,
+            line_end=line,
+            framework=framework,
+            parameters=self._extract_path_params(path),
+            auth_required=self._source_has_auth(source, line, ast=ast),
+            repository_id=ast.repository_id,
+        )
+
+    @staticmethod
+    def _last_identifier_argument(source: str, offset: int) -> str:
+        tail = source[offset : offset + 500].split(")", 1)[0]
+        identifiers = re.findall(r",\s*([A-Za-z_$][\w$]*)", tail)
+        return identifiers[-1] if identifiers else ""
+
+    def _registration_handler(self, ast: FileAST, line: int, name: str) -> str:
+        if name:
+            candidates = [
+                function
+                for function in self._all_functions(ast)
+                if function.name == name or function.qualified_name == name
+            ]
+            if len(candidates) == 1:
+                return candidates[0].qualified_name
+        return self._find_enclosing_func(ast, line)
+
+    def _find_following_func(self, ast: FileAST, line: int) -> str:
+        following = [
+            function for function in self._all_functions(ast) if function.line_start >= line
+        ]
+        if following:
+            return min(following, key=lambda function: function.line_start).qualified_name
+        return self._find_enclosing_func(ast, line)
+
+    @staticmethod
+    def _all_functions(ast: FileAST) -> list[FunctionDef]:
+        functions = list(ast.functions)
+        known = {id(function) for function in functions}
+        for cls in ast.classes:
+            functions.extend(method for method in cls.methods if id(method) not in known)
+        return functions
+
+    def _function_class(self, ast: FileAST, qualified_name: str) -> str | None:
+        function = next(
+            (item for item in self._all_functions(ast) if item.qualified_name == qualified_name),
+            None,
+        )
+        return function.class_name if function else None
+
+    @staticmethod
+    def _go_router_framework(source: str) -> str:
+        if "gin-gonic/gin" in source:
+            return "Gin"
+        if "labstack/echo" in source:
+            return "Echo"
+        if "gofiber/fiber" in source:
+            return "Fiber"
+        if "go-chi/chi" in source:
+            return "Chi"
+        return ""
+
+    @staticmethod
+    def _is_next_route_file(file_path: str) -> bool:
+        normalized = file_path.replace("\\", "/")
+        return bool(re.search(r"(?:^|/)app/.+/route\.(?:[jt]sx?)$", normalized))
+
+    @staticmethod
+    def _next_route_path(file_path: str) -> str:
+        normalized = file_path.replace("\\", "/")
+        match = re.search(r"(?:^|/)app/(.+)/route\.(?:[jt]sx?)$", normalized)
+        if not match:
+            return "/"
+        parts: list[str] = []
+        for part in match.group(1).split("/"):
+            if part.startswith("(") and part.endswith(")"):
+                continue
+            if part.startswith("[[...") and part.endswith("]]"):
+                parts.append(f":{part[5:-2]}*")
+            elif part.startswith("[...") and part.endswith("]"):
+                parts.append(f":{part[4:-1]}*")
+            elif part.startswith("[") and part.endswith("]"):
+                parts.append(f":{part[1:-1]}")
+            else:
+                parts.append(part)
+        return "/" + "/".join(parts)
+
+    @staticmethod
+    def _swift_route_path(arguments: str) -> str:
+        route_arguments = arguments.split("use:", 1)[0]
+        components = re.findall(r"['\"]([^'\"]+)['\"]", route_arguments)
+        if not components:
+            return ""
+        if len(components) == 1 and components[0].startswith("/"):
+            return str(components[0])
+        return "/" + "/".join(component.strip("/") for component in components)
 
     def _source_has_auth(self, source: str, line_num: int, *, ast: FileAST | None = None) -> bool:
         """Check if auth annotations exist near the endpoint or at class/file level.

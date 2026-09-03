@@ -151,6 +151,9 @@ class ImportInfo(BaseModel):
     module: str
     names: list[str] = Field(default_factory=list)
     alias: str | None = None
+    # Local identifier -> exported/original identifier. This preserves
+    # ``foo as bar`` semantics without changing the legacy ``names`` field.
+    bindings: dict[str, str] = Field(default_factory=dict)
     line: int = 0
 
 

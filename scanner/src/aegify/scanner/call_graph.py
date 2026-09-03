@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
+from collections import Counter
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import networkx as nx
 
@@ -16,6 +19,12 @@ from aegify.semantic.signatures import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# This is an executable support contract, not a marketing-only matrix.  The
+# regression suite builds and resolves at least one real parser-produced call
+# edge for every language in this set.
+HEURISTIC_CALL_GRAPH_LANGUAGES: frozenset[Language] = frozenset(Language)
 
 
 @dataclass
@@ -49,6 +58,9 @@ class CallGraphBuilder:
         "@router.put",
         "@router.delete",
         "@api_view",
+        "@Controller",
+        "@Get",
+        "@Post",
         # Java Spring
         "@GetMapping",
         "@PostMapping",
@@ -58,6 +70,12 @@ class CallGraphBuilder:
         "app.post",
         "router.get",
         "router.post",
+        # Rust web frameworks
+        "#[get",
+        "#[post",
+        "#[put",
+        "#[delete",
+        "#[patch",
         # Go net/http
         "HandleFunc",
         "Handle",
@@ -97,6 +115,7 @@ class CallGraphBuilder:
         self.descriptor_callables = 0
         self._overload_resolved_sites: set[tuple[str, int, int, str]] = set()
         self._overload_ambiguous_sites: set[tuple[str, int, int, str]] = set()
+        self._node_id_by_function: dict[int, str] = {}
 
     def build(self, file_asts: list[FileAST]) -> CodeGraph:
         """Build call graph from a list of parsed file ASTs."""
@@ -111,14 +130,19 @@ class CallGraphBuilder:
         self.descriptor_callables = 0
         self._overload_resolved_sites = set()
         self._overload_ambiguous_sites = set()
+        self._node_id_by_function = {}
 
         # Phase 1: Index all function definitions
-        for ast in file_asts:
-            for func in ast.functions:
-                self._register_function(func)
-            for cls in ast.classes:
-                for method in cls.methods:
-                    self._register_function(method)
+        functions = self._unique_functions(file_asts)
+        base_ids = [function.symbol_id or function.qualified_name for function in functions]
+        duplicate_ids = {symbol_id for symbol_id, count in Counter(base_ids).items() if count > 1}
+        for function in functions:
+            base_id = function.symbol_id or function.qualified_name
+            node_id = (
+                f"file:{function.file_path}::{base_id}" if base_id in duplicate_ids else base_id
+            )
+            self._node_id_by_function[id(function)] = node_id
+            self._register_function(function)
         self.descriptor_callables = len(self._function_index)
 
         # Phase 2: Build import resolution map
@@ -141,9 +165,30 @@ class CallGraphBuilder:
         )
         return self.graph
 
+    @staticmethod
+    def _unique_functions(file_asts: list[FileAST]) -> list[FunctionDef]:
+        functions: list[FunctionDef] = []
+        seen: set[int] = set()
+        for ast in file_asts:
+            for function in ast.functions:
+                if id(function) not in seen:
+                    seen.add(id(function))
+                    functions.append(function)
+            for cls in ast.classes:
+                for method in cls.methods:
+                    if id(method) not in seen:
+                        seen.add(id(method))
+                        functions.append(method)
+        return functions
+
+    def _node_id(self, function: FunctionDef) -> str:
+        return self._node_id_by_function.get(
+            id(function), function.symbol_id or function.qualified_name
+        )
+
     def _register_function(self, func: FunctionDef) -> None:
         """Register a function in the index and add as a graph node."""
-        node_id = func.symbol_id or func.qualified_name
+        node_id = self._node_id(func)
         node = CallGraphNode(
             qualified_name=func.qualified_name,
             file_path=func.file_path,
@@ -160,7 +205,10 @@ class CallGraphBuilder:
         for key in {
             (func.file_path, func.name),
             (func.file_path, func.qualified_name),
+            (func.file_path, func.symbol_id),
         }:
+            if not key[1]:
+                continue
             self._file_function_index.setdefault(key, [])
             if node_id not in self._file_function_index[key]:
                 self._file_function_index[key].append(node_id)
@@ -189,35 +237,28 @@ class CallGraphBuilder:
         For example, if routes.py has `from db import query_user`, and db.py defines
         `query_user`, this maps ("routes.py", "query_user") -> "query_user" (the one in db.py).
         """
-        # Build a module-name -> file_path index
-        # e.g., "db" -> "/path/to/db.py", "utils" -> "/path/to/utils.py"
-        import os
-
-        module_to_file: dict[tuple[str, str], str] = {}
+        # Build a repository-scoped module-name -> file_path index.  Each file
+        # receives language-native aliases (``pkg.mod``, ``pkg/mod``, and
+        # ``pkg::mod``) so Python, JS/TS, JVM, Go, and Rust imports share one
+        # deterministic resolver without falling back across repositories.
+        module_to_files: dict[tuple[str, str], list[str]] = {}
         for ast in file_asts:
-            # Module name = filename without extension
-            basename = os.path.splitext(os.path.basename(ast.file_path))[0]
-            module_to_file[(ast.repository_id, basename)] = ast.file_path
-
-            # Also store relative module paths for deeper imports
-            # e.g., "pkg.db" for pkg/db.py
-            parts = ast.file_path.replace("\\", "/").split("/")
-            for i in range(len(parts) - 1, 0, -1):
-                mod_parts = parts[i:]
-                mod_parts[-1] = os.path.splitext(mod_parts[-1])[0]
-                dotted = ".".join(mod_parts)
-                module_to_file[(ast.repository_id, dotted)] = ast.file_path
+            for alias in self._module_aliases(ast):
+                key = (ast.repository_id, alias)
+                module_to_files.setdefault(key, [])
+                if ast.file_path not in module_to_files[key]:
+                    module_to_files[key].append(ast.file_path)
 
         # Build function-per-file index: file_path -> {func_name: qualified_name}
         file_functions: dict[str, dict[str, list[str]]] = {}
         for ast in file_asts:
             funcs: dict[str, list[str]] = {}
             for func in ast.functions:
-                funcs.setdefault(func.name, []).append(func.symbol_id or func.qualified_name)
+                funcs.setdefault(func.name, []).append(self._node_id(func))
             for cls in ast.classes:
                 for method in cls.methods:
                     funcs.setdefault(method.name, [])
-                    method_id = method.symbol_id or method.qualified_name
+                    method_id = self._node_id(method)
                     if method_id not in funcs[method.name]:
                         funcs[method.name].append(method_id)
             file_functions[ast.file_path] = funcs
@@ -225,27 +266,156 @@ class CallGraphBuilder:
         # Resolve imports
         for ast in file_asts:
             for imp in ast.imports:
+                target_files = self._resolve_import_files(ast, imp.module, module_to_files)
+                if not target_files:
+                    continue
                 # "from db import query_user, query_products"
                 if imp.names:
-                    target_file = module_to_file.get((ast.repository_id, imp.module))
-                    if target_file and target_file in file_functions:
-                        for name in imp.names:
-                            if name in file_functions[target_file]:
-                                self._import_map[(ast.file_path, name)] = list(
-                                    file_functions[target_file][name]
+                    for target_file in target_files:
+                        imported_names = {
+                            name: name for name in imp.names if name not in imp.bindings.values()
+                        }
+                        imported_names.update(imp.bindings)
+                        for local_name, exported_name in imported_names.items():
+                            if exported_name in file_functions[target_file]:
+                                self._add_import_binding(
+                                    ast.file_path,
+                                    local_name,
+                                    file_functions[target_file][exported_name],
                                 )
                 # "import db" -> later calls like db.query_user()
                 elif imp.module:
-                    target_file = module_to_file.get((ast.repository_id, imp.module))
-                    if target_file and target_file in file_functions:
-                        alias = imp.alias or imp.module
+                    alias = imp.alias or self._import_leaf(imp.module)
+                    for target_file in target_files:
                         for func_name, qualified in file_functions[target_file].items():
-                            self._import_map[(ast.file_path, f"{alias}.{func_name}")] = list(
-                                qualified
+                            self._add_import_binding(
+                                ast.file_path,
+                                f"{alias}.{func_name}",
+                                qualified,
+                            )
+                        if alias in file_functions[target_file]:
+                            self._add_import_binding(
+                                ast.file_path,
+                                alias,
+                                file_functions[target_file][alias],
+                            )
+                        elif imp.alias and len(file_functions[target_file]) == 1:
+                            only_targets = next(iter(file_functions[target_file].values()))
+                            self._add_import_binding(ast.file_path, alias, only_targets)
+                        # Java/Kotlin static imports and Rust ``use`` commonly
+                        # encode the imported callable as the final path part.
+                        imported_name = self._import_leaf(imp.module)
+                        if imported_name in file_functions[target_file]:
+                            self._add_import_binding(
+                                ast.file_path,
+                                imported_name,
+                                file_functions[target_file][imported_name],
                             )
 
         if self._import_map:
             logger.info("Resolved %d cross-file import bindings", len(self._import_map))
+
+    @staticmethod
+    def _import_leaf(module: str) -> str:
+        normalized = module.rstrip("/.").replace("::", "/").replace(".", "/")
+        return normalized.rsplit("/", 1)[-1]
+
+    @staticmethod
+    def _module_aliases(ast: FileAST) -> set[str]:
+        raw = (ast.module_path or ast.file_path).replace("\\", "/").lstrip("/")
+        without_ext = os.path.splitext(raw)[0]
+        parts = [part for part in without_ext.split("/") if part]
+        aliases: set[str] = set()
+        for index in range(len(parts)):
+            suffix = parts[index:]
+            if suffix and suffix[-1] == "index":
+                suffix = suffix[:-1]
+            if not suffix:
+                continue
+            aliases.update(
+                {
+                    suffix[-1],
+                    "/".join(suffix),
+                    ".".join(suffix),
+                    "::".join(suffix),
+                }
+            )
+        directories = parts[:-1]
+        for index in range(len(directories)):
+            suffix = directories[index:]
+            aliases.update(
+                {
+                    suffix[-1],
+                    "/".join(suffix),
+                    ".".join(suffix),
+                    "::".join(suffix),
+                }
+            )
+        return aliases
+
+    def _resolve_import_files(
+        self,
+        ast: FileAST,
+        module: str,
+        module_to_files: dict[tuple[str, str], list[str]],
+    ) -> list[str]:
+        normalized = module.strip().strip("'\"").replace("\\", "/")
+        candidates = {
+            normalized,
+            normalized.removeprefix("./"),
+            normalized.replace("::", "/"),
+            normalized.replace("/", "."),
+            normalized.replace("::", "."),
+        }
+        path_parts = [
+            part
+            for part in normalized.replace("::", "/").replace(".", "/").split("/")
+            if part and part not in {"crate", "self", "super"}
+        ]
+        # A direct symbol/static import ends in a callable; try the containing
+        # module/type as well (Rust ``crate::svc::run``, JVM ``Type.run``).
+        for parts in (path_parts, path_parts[:-1]):
+            if not parts:
+                continue
+            candidates.update(
+                {
+                    parts[-1],
+                    "/".join(parts),
+                    ".".join(parts),
+                    "::".join(parts),
+                }
+            )
+        results: list[str] = []
+        for candidate in candidates:
+            for value in module_to_files.get((ast.repository_id, candidate), []):
+                if value not in results:
+                    results.append(value)
+
+        # Relative JS/TS and Python imports are resolved from the importing
+        # file, including extensionless and directory-index forms.
+        if normalized.startswith("."):
+            base = (Path(ast.file_path).parent / normalized).resolve()
+            for other_path in {path for paths in module_to_files.values() for path in paths}:
+                other = Path(other_path).resolve()
+                if other == base or other.with_suffix("") == base:
+                    if other_path not in results:
+                        results.append(other_path)
+                elif other.stem == "index" and other.parent == base:
+                    if other_path not in results:
+                        results.append(other_path)
+        return results
+
+    def _add_import_binding(
+        self,
+        file_path: str,
+        imported_name: str,
+        targets: list[str],
+    ) -> None:
+        key = (file_path, imported_name)
+        self._import_map.setdefault(key, [])
+        for target in targets:
+            if target not in self._import_map[key]:
+                self._import_map[key].append(target)
 
     def _resolve_calls(self) -> None:
         """Resolve call sites to function definitions and create edges."""
@@ -253,12 +423,15 @@ class CallGraphBuilder:
             caller = call.caller_symbol_id or call.in_function
             # Resolve legacy caller names in their own file. Descriptor-bound
             # callers are assigned by the parser from the exact source range.
-            if caller and caller not in self._function_index:
+            if caller and (
+                caller not in self._function_index
+                or self._function_index[caller].file_path != call.file_path
+            ):
                 caller_candidates = self._file_function_index.get((call.file_path, caller), [])
                 caller = caller_candidates[0] if len(caller_candidates) == 1 else caller
             if caller and caller in self._function_index:
                 func = self._function_index[caller]
-                caller = func.symbol_id or func.qualified_name
+                caller = self._node_id(func)
             if caller is None:
                 caller = f"<module:{call.file_path}>"
                 if caller not in self.graph:
@@ -361,6 +534,17 @@ class CallGraphBuilder:
 
     def _select_overload(self, call: CallSite, candidates: list[str]) -> str | None:
         unique = list(dict.fromkeys(candidates))
+        repository_id = call.repository_id
+        caller_function = self._caller_function(call)
+        if not repository_id and caller_function:
+            repository_id = caller_function.repository_id
+        if repository_id:
+            unique = [
+                candidate
+                for candidate in unique
+                if candidate in self._function_index
+                and self._function_index[candidate].repository_id == repository_id
+            ]
         functions = [
             self._function_index[candidate]
             for candidate in unique
@@ -381,8 +565,8 @@ class CallGraphBuilder:
             ]
             if typed:
                 functions = typed
-        elif call.caller_symbol_id in self._function_index:
-            caller_class = self._function_index[call.caller_symbol_id].class_name
+        elif caller_function:
+            caller_class = caller_function.class_name
             same_class = [
                 function
                 for function in functions
@@ -409,7 +593,18 @@ class CallGraphBuilder:
         if is_overloaded:
             self._overload_resolved_sites.add(overload_site)
             self._overload_ambiguous_sites.discard(overload_site)
-        return winners[0].symbol_id or winners[0].qualified_name
+        return self._node_id(winners[0])
+
+    def _caller_function(self, call: CallSite) -> FunctionDef | None:
+        if call.caller_symbol_id in self._function_index:
+            function = self._function_index[call.caller_symbol_id]
+            if function.file_path == call.file_path:
+                return function
+        for caller_name in (call.caller_symbol_id, call.in_function or ""):
+            candidates = self._file_function_index.get((call.file_path, caller_name), [])
+            if len(candidates) == 1:
+                return self._function_index.get(candidates[0])
+        return None
 
     @property
     def overload_calls_resolved(self) -> int:
@@ -421,7 +616,10 @@ class CallGraphBuilder:
 
     def _overload_score(self, call: CallSite, function: FunctionDef) -> int | None:
         if function.language not in {Language.JAVA, Language.KOTLIN}:
-            return 0 if len(self._name_index.get(call.callee, [])) == 1 else None
+            # The caller has already selected an authoritative locality/import
+            # tier.  A single candidate in that tier is safe even if another
+            # file or repository defines the same short name.
+            return 0
         return jvm_overload_score(call, function)
 
     @classmethod

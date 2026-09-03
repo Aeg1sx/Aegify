@@ -78,7 +78,7 @@ python_version = "3.14"
 strict = true
 
 [tool.uv]
-required-version = "==0.12.5"
+required-version = "==0.12.9"
 
 [tool.uv.audit]
 malware-check = true

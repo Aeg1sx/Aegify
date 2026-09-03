@@ -31,8 +31,29 @@ downstream controller.
 
 ## Backend endpoints
 
-Spring MVC and WebFlux extraction combines class and method mappings, HTTP
-methods, named `path` and `value` attributes, and Kotlin suspend handlers.
+Endpoint extraction covers the complete declared language matrix:
+
+| Language | Framework families |
+| --- | --- |
+| Python | Flask, FastAPI, Django |
+| JavaScript | Express |
+| TypeScript | Express, NestJS, Next.js App Router |
+| Java | Spring MVC/WebFlux |
+| Go | net/http, Gin, Echo, Fiber, Chi, Gorilla |
+| Rust | Actix Web, Axum, Rocket |
+| Swift | Vapor, Hummingbird |
+| Kotlin | Spring MVC/WebFlux, Ktor |
+
+Spring extraction combines class and method mappings, HTTP methods, named
+`path` and `value` attributes, and Kotlin handlers. Registration-style routers
+retain the declared handler when it can be resolved, so the endpoint can become
+an entry point in the call graph. Django paths are normalized before quality
+filtering, and Next.js App Router paths are derived from `app/**/route` files.
+
+The scanner test suite exercises every language/framework pair in this table.
+This is 100% coverage of the declared matrix, not a claim that arbitrary runtime
+registrations, generated routes, custom wrappers, or every third-party web
+framework can be recovered statically.
 
 ## Runtime evidence
 
