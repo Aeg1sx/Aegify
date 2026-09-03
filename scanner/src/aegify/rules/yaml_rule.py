@@ -218,9 +218,7 @@ class YAMLRule(SecurityRule):
             # origin is not, by itself, SSRF. Keep authority-controlled URLs
             # blocking, but do not turn ordinary REST resource identifiers
             # into CWE-918 findings merely because they reach fetch().
-            if self.definition.cwe_id == 918 and self._has_fixed_http_origin(
-                flow, fp_index
-            ):
+            if self.definition.cwe_id == 918 and self._has_fixed_http_origin(flow, fp_index):
                 continue
 
             findings.append(
