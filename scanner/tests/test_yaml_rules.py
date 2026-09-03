@@ -133,6 +133,38 @@ class TestYAMLRuleLoading:
 
 
 class TestYAMLRuleExecution:
+    def test_taint_rule_does_not_cross_its_language_boundary(self, tmp_path):
+        rule_file = tmp_path / "python-only.yml"
+        rule_file.write_text(
+            dedent("""\
+            rules:
+              - id: YAML-PYTHON-ONLY-001
+                name: Python-only HTTP sink
+                severity: high
+                languages: [python]
+                cwe_id: 918
+                taint:
+                  source_types: [http_param, http_body]
+                  sink_pattern: "fetch"
+                message: "Python-only rule must not evaluate TypeScript"
+        """)
+        )
+        (tmp_path / "keep-rule-active.py").write_text("def identity(value):\n    return value\n")
+        (tmp_path / "unsafe.ts").write_text(
+            "export async function proxy(request: Request) {\n"
+            "  const target = new URL(request.url).searchParams.get('url');\n"
+            "  return fetch(target!);\n"
+            "}\n"
+        )
+        config = AegifyConfig()
+        config.llm.enabled = False
+        config.rules.severity_threshold = "low"
+        config.rules.custom_rules = str(rule_file)
+
+        findings = ScanEngine(config=config).scan(tmp_path).findings
+
+        assert all(f.rule_id != "YAML-PYTHON-ONLY-001" for f in findings)
+
     def test_advisory_pattern_is_retained_without_blocking_ci(self, tmp_path):
         rule_file = tmp_path / "advisory.yml"
         rule_file.write_text(

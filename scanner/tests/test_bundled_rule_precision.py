@@ -80,6 +80,43 @@ def test_ssrf_private_range_rule_recognizes_private_ip_validation(tmp_path: Path
     assert "AEG-SSRF-ADV-004" not in safe_ids
 
 
+def test_ssrf_taint_rules_require_control_over_url_authority(tmp_path: Path):
+    unsafe_source = (
+        "def proxy(request):\n"
+        "    target = request.args.get('url')\n"
+        "    return requests.get(target)\n"
+    )
+    fixed_origin_source = (
+        "def load_repository(request):\n"
+        "    owner = request.args.get('owner')\n"
+        "    return requests.get(f'https://api.github.com/repos/{owner}')\n"
+    )
+
+    base_unsafe = _scan_blocking_rule(
+        tmp_path, RULES_DIR / "ssrf.yml", unsafe_source, "unsafe_base_ssrf.py"
+    )
+    base_fixed = _scan_blocking_rule(
+        tmp_path, RULES_DIR / "ssrf.yml", fixed_origin_source, "fixed_base_ssrf.py"
+    )
+    extra_unsafe = _scan_blocking_rule(
+        tmp_path,
+        RULES_DIR / "a10-ssrf" / "ssrf_extra.yml",
+        unsafe_source,
+        "unsafe_extra_ssrf.py",
+    )
+    extra_fixed = _scan_blocking_rule(
+        tmp_path,
+        RULES_DIR / "a10-ssrf" / "ssrf_extra.yml",
+        fixed_origin_source,
+        "fixed_extra_ssrf.py",
+    )
+
+    assert "AEG-SSRF-001" in base_unsafe
+    assert "AEG-SSRF-001" not in base_fixed
+    assert {"AEG-A10-001", "AEG-A10-004"} <= extra_unsafe
+    assert not {"AEG-A10-001", "AEG-A10-004"} & extra_fixed
+
+
 def test_race_rules_require_database_and_business_state_evidence(tmp_path: Path):
     rule_file = RULES_DIR / "a04-insecure-design" / "race_conditions.yml"
     unsafe_ids = _scan_blocking_rule(
