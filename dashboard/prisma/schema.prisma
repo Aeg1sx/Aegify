@@ -37,8 +37,8 @@ model Scan {
   repository        String   @default("")
   branch            String   @default("")
   commitSha         String   @default("")
-  status            String   @default("completed") // pending, running, completed, failed
-  scanType          String   @default("sast") // sast, llm-quick, llm-deep
+  status            String   @default("completed") // pending, running, partial, completed, failed
+  scanType          String   @default("sast") // sast, repo-ai-candidate, llm-quick, llm-deep
   filesScanned      Int      @default(0)
   duration          Float    @default(0)
   workspaceSnapshot String   @default("")

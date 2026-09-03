@@ -3,6 +3,13 @@
 The dashboard is the authenticated review surface for Aegify findings, evidence
 graphs, rule management, scan history, AI suggestions, and auditable triage.
 
+Repository AI scans resolve refs to immutable provider commit SHAs and retain
+only model candidates whose file, line, and redacted snippet bind to the fetched
+source. They are always advisory. A provider/file/model bound or failed batch is
+reported as partial or failed and never causes unseen historical findings to be
+marked absent. Project-level absence is reconciled only by an exhaustive,
+successful default-branch snapshot.
+
 ## Local development
 
 Use the repository-pinned Node and npm versions, then install exactly what is in

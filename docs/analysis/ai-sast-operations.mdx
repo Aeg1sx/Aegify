@@ -23,6 +23,23 @@ Every AI review records one of `likely_true_positive`,
 The dashboard stores this as a suggestion. A user must separately accept or
 reject the suggestion through the finding lifecycle.
 
+## Repository AI candidate scan
+
+The dashboard repository action resolves the selected GitHub or GitLab ref to
+an immutable commit before reading its tree or files. A model response is not
+stored merely because it is valid JSON: the rule ID, file path, approximate
+line, and redacted code snippet must bind back to the exact fetched source
+batch. Aegify derives source and snippet digests for every retained candidate;
+hallucinated paths, snippets, and locations are rejected.
+
+These records use `repo-ai-candidate`, `candidate`, and `advisory`. They do not
+replace the deterministic scanner or establish reachability. Provider tree
+truncation, file/byte bounds, model output bounds, or a failed batch make the
+scan `partial` or `failed`. An incomplete or non-default-branch scan may add
+observed candidates but cannot mark unseen older candidates absent; only an
+exhaustive successful default-branch snapshot can reconcile project-level
+absence and current-occurrence state.
+
 ## Allowlisted analysis tools
 
 `aegify.llm.tools.ToolRegistry` accepts only explicitly registered, read-only

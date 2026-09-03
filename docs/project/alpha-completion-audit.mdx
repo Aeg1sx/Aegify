@@ -44,7 +44,7 @@ controls and is not presented as universal scanner accuracy.
 | External tools | SARIF/CodeQL, Semgrep JSON, Joern JSONL/GraphSON | Imports are path-safe and size/count bounded |
 | Verification | Digest-pinned Docker, approval, no-network/read-only/cap-drop/resource/time/output controls; loopback HTTP/browser/proxy | Authenticated/TLS/multi-origin policy is post-alpha |
 | Precision corpus | Strict versioned manifest, safe relative paths, scoped rule IDs, source/manifest digests, per-rule and unmatched evidence | `core-v1`: 5 rules, 9 positives plus paired negative controls, precision/recall/F1 1.0 |
-| Dashboard | Authenticated fail-closed production configuration, SARIF ingestion, endpoint and graph views | Auth.js v5 is still a beta dependency |
+| Dashboard | Authenticated fail-closed production configuration, SARIF ingestion, endpoint and graph views, immutable source-bound repository AI candidates | Repository AI output remains advisory; incomplete snapshots cannot reconcile absence |
 
 ## Executed release gates
 
@@ -57,7 +57,7 @@ mypy --strict:          79 source files passed
 rule audit:             311 rules, 303 enabled, 8 disabled,
                         980/980 enabled patterns executable,
                         0 errors, 0 warnings
-dashboard tests:        25 passed
+dashboard tests:        35 passed
 dashboard lint:         passed
 dashboard build:        passed (Next.js 16.3.2)
 dashboard npm audit:    0 vulnerabilities at high threshold
