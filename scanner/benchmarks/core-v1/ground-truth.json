@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "corpus_id": "aegify-core-taint",
+  "corpus_version": "1.0.0",
+  "rule_scope": [
+    "AEG-CMD-001",
+    "AEG-EXEC-001",
+    "AEG-PATH-001",
+    "AEG-SQL-001",
+    "AEG-SSRF-001"
+  ],
+  "expected": [
+    {
+      "rule_id": "AEG-SQL-001",
+      "file_path": "UnsafeJava.java",
+      "line_start": 7
+    },
+    {
+      "rule_id": "AEG-CMD-001",
+      "file_path": "UnsafeJava.java",
+      "line_start": 12
+    },
+    {
+      "rule_id": "AEG-SQL-001",
+      "file_path": "unsafe_javascript.js",
+      "line_start": 5
+    },
+    {
+      "rule_id": "AEG-SSRF-001",
+      "file_path": "unsafe_javascript.js",
+      "line_start": 10
+    },
+    {
+      "rule_id": "AEG-SQL-001",
+      "file_path": "unsafe_python.py",
+      "line_start": 11
+    },
+    {
+      "rule_id": "AEG-CMD-001",
+      "file_path": "unsafe_python.py",
+      "line_start": 16
+    },
+    {
+      "rule_id": "AEG-PATH-001",
+      "file_path": "unsafe_python.py",
+      "line_start": 21
+    },
+    {
+      "rule_id": "AEG-EXEC-001",
+      "file_path": "unsafe_python.py",
+      "line_start": 26
+    },
+    {
+      "rule_id": "AEG-SSRF-001",
+      "file_path": "unsafe_python.py",
+      "line_start": 31
+    }
+  ]
+}

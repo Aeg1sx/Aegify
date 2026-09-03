@@ -90,16 +90,21 @@ Use owned, versioned ground truth to measure scanner behavior instead of using
 model confidence as a quality claim:
 
 ```bash
-aegify benchmark ./fixtures \
-  --ground-truth ./ground-truth.json \
-  --min-precision 0.95 \
-  --min-recall 0.90 \
+cd scanner
+uv run aegify benchmark benchmarks/core-v1/sources \
+  --ground-truth benchmarks/core-v1/ground-truth.json \
+  --min-precision 1.0 \
+  --min-recall 1.0 \
   --output-file benchmark-report.json
 ```
 
-The report includes true positives, false positives, false negatives, per-rule
-metrics, and exact unmatched evidence identities. The command exits non-zero
-when either threshold is missed.
+The committed `core-v1` corpus pairs positive and negative controls for five
+high-impact taint rules. Its report records the corpus version, source and
+manifest SHA-256 digests, evaluated rule IDs, true positives, false positives,
+false negatives, per-rule metrics, and exact unmatched evidence identities.
+CI currently requires `TP 9 / FP 0 / FN 0`, so precision, recall, and F1 must
+all equal `1.0` inside this declared scope. This is a reproducible regression
+contract, not a universal accuracy claim for every rule, framework, or program.
 
 ## Proof boundary
 

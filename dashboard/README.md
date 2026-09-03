@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Aegify Dashboard
 
-## Getting Started
+The dashboard is the authenticated review surface for Aegify findings, evidence
+graphs, rule management, scan history, AI suggestions, and auditable triage.
 
-First, run the development server:
+## Local development
+
+Use the repository-pinned Node and npm versions, then install exactly what is in
+the lockfile:
 
 ```bash
+corepack enable
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`. Development may use the documented local auth
+path; production deliberately fails closed when authentication, encryption, or
+upload credentials are missing.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Required production configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `AUTH_SECRET`: high-entropy Auth.js session secret.
+- `ENCRYPTION_SECRET`: independent secret for encrypted provider credentials.
+- at least one configured OAuth provider.
+- `AEGIFY_UPLOAD_TOKEN`: dedicated bearer token for SARIF ingestion; do not
+  reuse an OAuth client secret or session secret.
+- `DATABASE_URL`: persistent production database URL.
 
-## Learn More
+Supply secrets through the deployment secret manager, never through committed
+files or image build arguments. Rotate upload and provider credentials
+independently.
 
-To learn more about Next.js, take a look at the following resources:
+## Verification
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm test
+npm run lint
+npm run build
+npm audit --audit-level=high
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The production container runs as a non-root user. Deployment should also keep
+the root filesystem read-only where supported, drop Linux capabilities, set
+`no-new-privileges`, and terminate TLS at the trusted ingress.

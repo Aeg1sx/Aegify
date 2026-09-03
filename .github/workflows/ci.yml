@@ -91,6 +91,23 @@ jobs:
       - name: Test with coverage
         run: uv run pytest -v --cov=aegify --cov-report=term-missing --cov-fail-under=60
 
+      - name: Gate versioned core precision corpus
+        run: |
+          uv run aegify benchmark benchmarks/core-v1/sources \
+            --ground-truth benchmarks/core-v1/ground-truth.json \
+            --min-precision 1.0 \
+            --min-recall 1.0 \
+            --output-file benchmark-report.json
+
+      - name: Upload precision evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aegify-core-precision-report
+          path: scanner/benchmark-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Build wheel
         run: uv build --wheel
 

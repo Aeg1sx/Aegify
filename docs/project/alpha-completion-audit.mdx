@@ -4,24 +4,24 @@ description: "Executed release gates, implemented capabilities, and explicit pre
 icon: "clipboard-check"
 ---
 
-Baseline date: 2026-08-22
+Baseline date: 2026-09-04
 
 ## Verdict
 
-The open-source alpha implementation scope is present and this hardening branch
-is release-gate green. Local validation and every GitHub PR check passed. Tests
-cover multi-repository and monorepo reachability, Java/Kotlin/Spring semantics,
+The open-source alpha implementation scope is present and its local release
+gates are green. Tests cover multi-repository and monorepo reachability,
+Java/Kotlin/Spring semantics,
 Spring Cloud Gateway transformations, Program Graph queries,
 frontend-to-backend attack-surface correlation, normalized rules, external
 evidence adapters, and bounded verification harnesses. The dedicated precision
-suite passes all 17 cases: broad race-condition, external API consumption,
+suite passes all 18 cases: broad race-condition, external API consumption,
 ReDoS, and formatting signals remain visible as candidate/advisory findings,
 while only supported semantic evidence can create a CI-blocking finding.
 
-Colima is running after the final audit. Both final images were rebuilt from the
-current source and exercised live. Only Aegify-owned temporary containers and
-failed rebuild layers were removed; no volumes, unrelated images, or unrelated
-containers were removed.
+The separate `core-v1` executable corpus gates five high-impact taint rules at
+`TP 9 / FP 0 / FN 0`. Its report records the exact source and manifest SHA-256
+digests. That 100% precision and recall result is scoped to the committed owned
+controls and is not presented as universal scanner accuracy.
 
 ## Requirement evidence
 
@@ -43,35 +43,37 @@ containers were removed.
 | Runtime surface | HTTP, browser, proxy, HAR and OTel observation links | Observation is distinct from exploit proof |
 | External tools | SARIF/CodeQL, Semgrep JSON, Joern JSONL/GraphSON | Imports are path-safe and size/count bounded |
 | Verification | Digest-pinned Docker, approval, no-network/read-only/cap-drop/resource/time/output controls; loopback HTTP/browser/proxy | Authenticated/TLS/multi-origin policy is post-alpha |
+| Precision corpus | Strict versioned manifest, safe relative paths, scoped rule IDs, source/manifest digests, per-rule and unmatched evidence | `core-v1`: 5 rules, 9 positives plus paired negative controls, precision/recall/F1 1.0 |
 | Dashboard | Authenticated fail-closed production configuration, SARIF ingestion, endpoint and graph views | Auth.js v5 is still a beta dependency |
 
 ## Executed release gates
 
 ```text
-scanner tests:          339 passed, 1 skipped
-rule precision tests:   17 passed
+scanner tests:          407 passed, 1 skipped; 79.78% coverage
+rule precision tests:   18 passed
+owned precision corpus: TP 9, FP 0, FN 0; precision/recall/F1 1.0
 ruff:                   passed
-mypy --strict:          75 source files passed
+mypy --strict:          79 source files passed
 rule audit:             311 rules, 303 enabled, 8 disabled,
                         980/980 enabled patterns executable,
                         0 errors, 0 warnings
-dashboard tests:        14 passed
+dashboard tests:        25 passed
 dashboard lint:         passed
-dashboard build:        passed (Next.js 16.3.1)
+dashboard build:        passed (Next.js 16.3.2)
 dashboard npm audit:    0 vulnerabilities at high threshold
-documentation:          20 MDX pages; Mintlify validation, broken-link,
+documentation:          21 MDX pages; Mintlify validation, broken-link,
                         anchor, redirect, snippet, and accessibility checks passed
 documentation audit:    0 vulnerabilities at high threshold
-wheel:                  aegify_sast-0.1.0-py3-none-any.whl
-isolated wheel smoke:   Aegify v0.1.0
+wheel:                  aegify_sast-0.2.0-py3-none-any.whl
+Anthropic SDK:          1.0.0 locked with artifact hashes; supported range >=1,<2
 scanner container:      uid/gid 10001, hardened version and clean scan passed
 dashboard container:    uid 1001/gid 1001, no build secrets,
                         missing config -> HTTP 500 fail-closed,
                         configured sign-in -> HTTP 200,
                         protected root -> HTTP 307
-self-scan:              323 medium-or-higher candidates
-                        (45 critical, 167 high, 111 medium)
-                        323 advisory, 0 blocking; exit code 0
+self-scan:              356 medium-or-higher candidates
+                        (53 critical, 179 high, 124 medium)
+                        356 advisory, 0 blocking; exit code 0
 ```
 
 ## Evidence states

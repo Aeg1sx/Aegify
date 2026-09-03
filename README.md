@@ -241,6 +241,22 @@ It is not an IFDS/IDE tabulation engine; unmodeled libraries, reflection,
 generated code, and runtime framework behavior still depend on conservative
 summaries or imported compiler/tool evidence.
 
+## Reproduce the core precision gate
+
+```bash
+cd scanner
+uv run aegify benchmark benchmarks/core-v1/sources \
+  --ground-truth benchmarks/core-v1/ground-truth.json \
+  --min-precision 1.0 \
+  --min-recall 1.0 \
+  --output-file benchmark-report.json
+```
+
+The versioned owned corpus covers five high-impact taint rules with nine
+positive controls and paired negative controls. A passing report is bound to
+the source-tree and ground-truth SHA-256 digests. It establishes 100% precision
+and recall only for that declared corpus and rule scope.
+
 ## Configuration
 
 Create `.aegify.yml` in your project root:
