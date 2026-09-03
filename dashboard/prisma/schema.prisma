@@ -255,8 +255,9 @@ model Endpoint {
 model LlmJob {
   id             String    @id @default(cuid())
   scanId         String
+  activeKey      String?   @unique // scan ID while pending/running; null after terminal state
   mode           String // "quick" | "deep"
-  status         String    @default("pending") // pending, running, completed, failed
+  status         String    @default("pending") // pending, running, partial, completed, failed
   totalFindings  Int       @default(0)
   reviewedCount  Int       @default(0)
   falsePositives Int       @default(0)

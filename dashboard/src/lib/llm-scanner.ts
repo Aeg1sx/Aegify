@@ -1,11 +1,29 @@
+import { createHash } from "node:crypto";
+
 import { getLLMConfig } from "@/lib/settings";
 import { prisma } from "@/lib/prisma";
 import {
   buildLLMRequestHeaders,
   extractAnthropicText,
+  readBoundedLLMJson,
+  readBoundedLLMResponseText,
   sanitizeLLMStrings,
   sanitizeLLMText,
 } from "@/lib/llm-safety";
+import {
+  isLlmJobTerminal,
+  llmJobTerminalStatus,
+} from "@/lib/llm-job-state";
+
+const DEFAULT_LLM_REQUEST_TIMEOUT_MS = 60_000;
+type LLMConfig = Awaited<ReturnType<typeof getLLMConfig>>;
+
+function llmRequestTimeoutMs(): number {
+  const configured = Number(process.env.AEGIFY_LLM_REQUEST_TIMEOUT_MS);
+  return Number.isInteger(configured) && configured >= 1_000 && configured <= 300_000
+    ? configured
+    : DEFAULT_LLM_REQUEST_TIMEOUT_MS;
+}
 
 interface LLMReviewResult {
   findingId: string;
@@ -23,8 +41,9 @@ interface LLMReviewResult {
 export async function callLLM(
   systemPrompt: string,
   userPrompt: string,
+  configured?: LLMConfig,
 ): Promise<string> {
-  const config = await getLLMConfig();
+  const config = configured || await getLLMConfig();
 
   if (!config.enabled) {
     throw new Error("LLM analysis is not enabled. Configure it in Settings.");
@@ -50,6 +69,7 @@ export async function callLLM(
     const res = await fetch(url, {
       method: "POST",
       headers: reqHeaders,
+      signal: AbortSignal.timeout(llmRequestTimeoutMs()),
       body: JSON.stringify({
         model: config.model,
         max_tokens: 4096,
@@ -59,11 +79,11 @@ export async function callLLM(
     });
 
     if (!res.ok) {
-      const body = await res.text();
+      const body = await readBoundedLLMResponseText(res, 100_000);
       throw new Error(`Anthropic API error ${res.status}: ${sanitizeLLMText(body, 1_000)}`);
     }
 
-    const data = await res.json();
+    const data = await readBoundedLLMJson(res);
     return extractAnthropicText(data);
   } else if (config.provider === "openai") {
     if (!config.openaiApiKey && !hasCustomEndpoint) {
@@ -82,6 +102,7 @@ export async function callLLM(
     const res = await fetch(url, {
       method: "POST",
       headers: reqHeaders,
+      signal: AbortSignal.timeout(llmRequestTimeoutMs()),
       body: JSON.stringify({
         model: config.model,
         max_tokens: 4096,
@@ -93,11 +114,13 @@ export async function callLLM(
     });
 
     if (!res.ok) {
-      const body = await res.text();
+      const body = await readBoundedLLMResponseText(res, 100_000);
       throw new Error(`OpenAI API error ${res.status}: ${sanitizeLLMText(body, 1_000)}`);
     }
 
-    const data = await res.json();
+    const data = await readBoundedLLMJson(res) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
     return data.choices?.[0]?.message?.content || "";
   }
 
@@ -153,12 +176,12 @@ Analyze each finding considering:
 1. **Data flow**: Can tainted data actually reach the sink?
 2. **Call chain**: Are there sanitizers or validators in the path?
 3. **Cross-function issues**: Are there vulnerabilities that span multiple functions?
-4. **Missing findings**: Based on the call graph, are there additional vulnerabilities not caught by SAST?
+4. **Evidence gaps**: What specific proof is still missing for this supplied finding?
 
 Respond with a JSON array:
 [
   {
-    "findingId": "<the finding ID or 'NEW' for newly discovered issues>",
+    "findingId": "<the supplied finding ID>",
     "verdict": "likely_true_positive|likely_false_positive|needs_review",
     "confidence": 0.0-1.0,
     "reasoning": "Detailed analysis including data flow path",
@@ -168,10 +191,7 @@ Respond with a JSON array:
     "evidenceAgainst": ["supplied fact"],
     "evidenceGaps": ["specific missing evidence"]
   }
-]
-
-For NEW findings (discovered via call graph analysis), use findingId "NEW-1", "NEW-2", etc.
-and include additional fields: ruleName, severity, filePath, lineStart, message.`;
+]`;
 }
 
 function parseReviewResults(raw: string): LLMReviewResult[] {
@@ -194,7 +214,7 @@ function parseReviewResults(raw: string): LLMReviewResult[] {
     const parsed = JSON.parse(jsonStr);
     if (!Array.isArray(parsed)) return [];
 
-    return parsed.map((r: Record<string, unknown>) => {
+    return parsed.slice(0, 100).map((r: Record<string, unknown>) => {
       const verdict = ["likely_true_positive", "likely_false_positive", "needs_review"].includes(
         String(r.verdict),
       ) ? String(r.verdict) as LLMReviewResult["verdict"] : "needs_review";
@@ -225,18 +245,19 @@ export async function reviewScanFindings(
   let reviewed = 0;
   let falsePositives = 0;
   const errors: string[] = [];
+  const recordError = (message: string) => {
+    if (errors.length < 100) errors.push(sanitizeLLMText(message, 1_000));
+  };
 
   // Helper to update job progress
   async function updateJob(data: Record<string, unknown>) {
     if (!jobId) return;
-    await prisma.llmJob.update({ where: { id: jobId }, data });
+    const status = typeof data.status === "string" ? data.status : "";
+    await prisma.llmJob.update({
+      where: { id: jobId },
+      data: isLlmJobTerminal(status) ? { ...data, activeKey: null } : data,
+    });
   }
-
-  // Update scan type to reflect the LLM review
-  await prisma.scan.update({
-    where: { id: scanId },
-    data: { status: "running" },
-  });
 
   await updateJob({ status: "running", startedAt: new Date() });
 
@@ -248,12 +269,8 @@ export async function reviewScanFindings(
     });
 
     if (findings.length === 0) {
-      await prisma.scan.update({
-        where: { id: scanId },
-        data: { status: "completed" },
-      });
       await updateJob({ status: "completed", completedAt: new Date(), errorMessage: "No findings to review" });
-      return { reviewed: 0, falsePositives: 0, errors: ["No findings to review"] };
+      return { reviewed: 0, falsePositives: 0, errors: [] };
     }
 
     const batchSize = 50;
@@ -311,6 +328,7 @@ export async function reviewScanFindings(
     }
 
     const systemPrompt = mode === "quick" ? getQuickReviewPrompt() : getDeepReviewPrompt();
+    const llmConfig = await getLLMConfig();
 
     // Process findings in batches of 50
     for (let i = 0; i < findings.length; i += batchSize) {
@@ -342,15 +360,22 @@ export async function reviewScanFindings(
       }
 
       try {
-        const raw = await callLLM(systemPrompt, userPrompt);
+        const modelUserPrompt = sanitizeLLMText(userPrompt, 200_000);
+        const raw = await callLLM(systemPrompt, modelUserPrompt, llmConfig);
         const results = parseReviewResults(raw);
+        const appliedFindingIds = new Set<string>();
+        const promptDigest = `sha256:${createHash("sha256")
+          .update(`${systemPrompt}\0${modelUserPrompt}`, "utf8")
+          .digest("hex")}`;
 
         // Update findings with LLM analysis
         for (const result of results) {
           if (result.findingId.startsWith("NEW")) continue; // Skip new findings for now
+          if (appliedFindingIds.has(result.findingId)) continue;
 
           const finding = batch.find((f) => f.id === result.findingId);
           if (!finding) continue;
+          appliedFindingIds.add(result.findingId);
 
           const llmAnalysis = JSON.stringify({
             verdict: result.verdict,
@@ -363,6 +388,10 @@ export async function reviewScanFindings(
             evidenceAgainst: result.evidenceAgainst,
             evidenceGaps: result.evidenceGaps,
             mode,
+            producer: "aegify.dashboard.ai-finding-review",
+            provider: llmConfig.provider,
+            model: llmConfig.model,
+            promptDigest,
             reviewedAt: new Date().toISOString(),
           });
 
@@ -373,11 +402,6 @@ export async function reviewScanFindings(
             aiReviewStatus: "suggested",
           };
 
-          // Update remediation if provided
-          if (result.remediation) {
-            updateData.remediation = result.remediation;
-          }
-
           await prisma.finding.update({
             where: { id: finding.id },
             data: updateData,
@@ -386,32 +410,31 @@ export async function reviewScanFindings(
           reviewed++;
           if (result.isFalsePositive) falsePositives++;
         }
+
+        const omitted = batch.length - appliedFindingIds.size;
+        if (omitted > 0) {
+          recordError(`Batch ${batchNum}: model omitted ${omitted} finding review(s)`);
+        }
       } catch (e) {
-        errors.push(`Batch ${Math.floor(i / batchSize) + 1}: ${e instanceof Error ? e.message : String(e)}`);
+        recordError(
+          `Batch ${batchNum}: ${sanitizeLLMText(e instanceof Error ? e.message : String(e), 1_000)}`,
+        );
       }
     }
 
-    await prisma.scan.update({
-      where: { id: scanId },
-      data: { status: "completed" },
-    });
-
+    const jobStatus = llmJobTerminalStatus(findings.length, reviewed, errors.length);
     await updateJob({
-      status: "completed",
+      status: jobStatus,
       completedAt: new Date(),
       reviewedCount: reviewed,
       falsePositives,
-      errorMessage: errors.length > 0 ? errors.join("; ") : "",
+      errorMessage: errors.length > 0 ? sanitizeLLMText(errors.join("; "), 20_000) : "",
     });
   } catch (error) {
-    await prisma.scan.update({
-      where: { id: scanId },
-      data: { status: "failed" },
-    });
     await updateJob({
       status: "failed",
       completedAt: new Date(),
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: sanitizeLLMText(error instanceof Error ? error.message : String(error), 1_000),
     });
     throw error;
   }

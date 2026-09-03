@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
 import { StatusBadge } from "@/components/status-badge";
+import { isLlmJobTerminal } from "@/lib/llm-job-state";
 import {
   Bot,
   Zap,
@@ -67,6 +68,7 @@ interface ScanResult {
 }
 
 interface LLMAnalysis {
+  verdict?: "likely_true_positive" | "likely_false_positive" | "needs_review";
   isFalsePositive: boolean;
   confidence: number;
   reasoning: string;
@@ -166,16 +168,18 @@ export default function LLMScanPage() {
 
         setActiveJob(job);
 
-        if (job.status === "completed" || job.status === "failed") {
+        if (isLlmJobTerminal(job.status)) {
           setScanning(false);
           setActiveJob(null);
           fetchHistory();
 
-          // Fetch final results for display
-          if (job.status === "completed") {
+          if (job.status === "completed" || job.status === "partial") {
             const scanRes = await fetch(`/api/llm-scan/${job.scanId}`);
             const scanData = await scanRes.json();
             setResult(scanData);
+            if (job.status === "partial") {
+              setError(job.errorMessage || "Review completed with unresolved batches");
+            }
           } else {
             setError(job.errorMessage || "Review failed");
           }
@@ -229,11 +233,12 @@ export default function LLMScanPage() {
   const reviewedFindings = result?.findings.filter((f) => f.llmAnalysis) || [];
   const falsePositives = reviewedFindings.filter((f) => {
     const a = parseLLMAnalysis(f.llmAnalysis);
-    return a?.isFalsePositive;
+    return a?.verdict === "likely_false_positive" ||
+      (!a?.verdict && a?.isFalsePositive === true);
   });
   const truePositives = reviewedFindings.filter((f) => {
     const a = parseLLMAnalysis(f.llmAnalysis);
-    return a && !a.isFalsePositive;
+    return a?.verdict === "likely_true_positive";
   });
 
   const jobPercent =
@@ -284,7 +289,7 @@ export default function LLMScanPage() {
             <Badge variant="outline" className="text-xs">Thorough</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Uses call graph context for cross-function analysis. Can discover additional vulnerabilities missed by SAST.
+            Uses call graph context to assess cross-function evidence and identify explicit evidence gaps.
           </p>
         </button>
       </div>
@@ -421,7 +426,7 @@ export default function LLMScanPage() {
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                 <div>
-                  <p className="text-xs text-muted-foreground">Status</p>
+                  <p className="text-xs text-muted-foreground">Source Scan</p>
                   <p className="text-sm font-medium capitalize">{result.scan.status}</p>
                 </div>
                 <div>
@@ -484,7 +489,8 @@ export default function LLMScanPage() {
                       <div className="flex items-center gap-2 mb-1">
                         <SeverityBadge severity={f.severity} />
                         <StatusBadge status={f.status} />
-                        {analysis?.isFalsePositive && (
+                        {(analysis?.verdict === "likely_false_positive" ||
+                          (!analysis?.verdict && analysis?.isFalsePositive)) && (
                           <Badge variant="outline" className="text-xs bg-[var(--status-false-positive-bg)] text-[var(--status-false-positive)]">
                             FP
                           </Badge>
@@ -505,7 +511,9 @@ export default function LLMScanPage() {
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span className="font-mono">{f.filePath}:{f.lineStart}</span>
                       </div>
-                      {analysis?.remediation && !analysis.isFalsePositive && (
+                      {analysis?.remediation &&
+                        analysis.verdict !== "likely_false_positive" &&
+                        !(!analysis.verdict && analysis.isFalsePositive) && (
                         <p className="text-xs mt-2 text-[var(--status-fixed)] line-clamp-2">
                           Fix: {analysis.remediation}
                         </p>
@@ -562,7 +570,7 @@ export default function LLMScanPage() {
                   <div className="flex-shrink-0">
                     {job.status === "completed" ? (
                       <CheckCircle className="h-4 w-4 text-[var(--status-fixed)]" />
-                    ) : job.status === "failed" ? (
+                    ) : job.status === "failed" || job.status === "partial" ? (
                       <AlertCircle className="h-4 w-4 text-destructive" />
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -579,7 +587,7 @@ export default function LLMScanPage() {
                         className={`text-[10px] capitalize ${
                           job.status === "completed"
                             ? "text-[var(--status-fixed)]"
-                            : job.status === "failed"
+                            : job.status === "failed" || job.status === "partial"
                             ? "text-destructive"
                             : "text-primary"
                         }`}
@@ -592,7 +600,7 @@ export default function LLMScanPage() {
                       {job.falsePositives > 0 && (
                         <span>{job.falsePositives} FPs</span>
                       )}
-                      {job.errorMessage && job.status === "failed" && (
+                      {job.errorMessage && (job.status === "failed" || job.status === "partial") && (
                         <span className="text-destructive truncate">{job.errorMessage}</span>
                       )}
                     </div>

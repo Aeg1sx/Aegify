@@ -33,6 +33,8 @@ upload credentials are missing.
 - `AEGIFY_UPLOAD_TOKEN`: dedicated bearer token for SARIF ingestion; do not
   reuse an OAuth client secret or session secret.
 - `DATABASE_URL`: persistent production database URL.
+- `AEGIFY_LLM_REQUEST_TIMEOUT_MS`: optional provider request timeout from 1000
+  to 300000 milliseconds; defaults to 60000.
 
 Supply secrets through the deployment secret manager, never through committed
 files or image build arguments. Rotate upload and provider credentials
@@ -50,3 +52,6 @@ npm audit --audit-level=high
 The production container runs as a non-root user. Deployment should also keep
 the root filesystem read-only where supported, drop Linux capabilities, set
 `no-new-privileges`, and terminate TLS at the trusted ingress.
+At startup the container applies committed Prisma migrations to `DATABASE_URL`
+and refuses to start if migration fails; the database volume must remain
+writable by UID/GID 1001.

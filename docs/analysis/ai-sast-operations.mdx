@@ -23,6 +23,21 @@ Every AI review records one of `likely_true_positive`,
 The dashboard stores this as a suggestion. A user must separately accept or
 reject the suggestion through the finding lifecycle.
 
+Dashboard AI review runs as a separately tracked `LlmJob`; it never rewrites
+the deterministic source scan status. Next.js tracks the post-response task,
+provider requests have a bounded timeout, and abandoned jobs are failed after
+the execution bound. A model must return one valid review per supplied finding.
+Omitted or failed batches produce `partial` or `failed`, never a false
+`completed` state. `needs_review` remains unresolved and is not counted as a
+true positive. Provider responses and parsed review counts are size-bounded,
+including for custom endpoints that ignore requested token limits.
+Each persisted review names its producer, provider, model, and prompt digest.
+Suggested remediation stays inside the AI review record and does not overwrite
+the scanner-authored remediation field before human acceptance.
+The database also holds a nullable unique lease for each active scan review, so
+concurrent requests cannot create duplicate provider work or conflicting
+updates.
+
 ## Repository AI candidate scan
 
 The dashboard repository action resolves the selected GitHub or GitLab ref to

@@ -57,7 +57,7 @@ mypy --strict:          79 source files passed
 rule audit:             311 rules, 303 enabled, 8 disabled,
                         980/980 enabled patterns executable,
                         0 errors, 0 warnings
-dashboard tests:        35 passed
+dashboard tests:        38 passed
 dashboard lint:         passed
 dashboard build:        passed (Next.js 16.3.2)
 dashboard npm audit:    0 vulnerabilities at high threshold
@@ -67,7 +67,7 @@ documentation audit:    0 vulnerabilities at high threshold
 wheel:                  aegify_sast-0.2.0-py3-none-any.whl
 Anthropic SDK:          1.0.0 locked with artifact hashes; supported range >=1,<2
 scanner container:      uid/gid 10001, hardened version and clean scan passed
-dashboard container:    uid 1001/gid 1001, no build secrets,
+dashboard container:    uid 1001/gid 1001, migrations before startup, no build secrets,
                         missing config -> HTTP 500 fail-closed,
                         configured sign-in -> HTTP 200,
                         protected root -> HTTP 307
