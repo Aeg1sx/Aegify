@@ -1151,7 +1151,7 @@ class EndpointDetector:
     @staticmethod
     def _is_next_route_file(file_path: str) -> bool:
         normalized = file_path.replace("\\", "/")
-        return bool(re.search(r"(?:^|/)app/.+/route\.(?:[jt]sx?)$", normalized))
+        return bool(re.search(r"(?:^|/)app(?:/.+)?/route\.(?:[jt]sx?)$", normalized))
 
     @staticmethod
     def _next_route_path(file_path: str) -> str:
