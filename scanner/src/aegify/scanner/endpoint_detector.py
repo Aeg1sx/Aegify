@@ -1156,11 +1156,14 @@ class EndpointDetector:
     @staticmethod
     def _next_route_path(file_path: str) -> str:
         normalized = file_path.replace("\\", "/")
-        match = re.search(r"(?:^|/)app/(.+)/route\.(?:[jt]sx?)$", normalized)
+        match = re.search(r"(?:^|/)app(?:/(.+))?/route\.(?:[jt]sx?)$", normalized)
         if not match:
             return "/"
+        route_parts = match.group(1) or ""
+        if not route_parts:
+            return "/"
         parts: list[str] = []
-        for part in match.group(1).split("/"):
+        for part in route_parts.split("/"):
             if part.startswith("(") and part.endswith(")"):
                 continue
             if part.startswith("[[...") and part.endswith("]]"):
