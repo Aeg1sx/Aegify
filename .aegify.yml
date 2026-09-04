@@ -27,6 +27,8 @@ scan:
     - "**/.next/**"
     - "**/generated/**"
     - "**/__generated__/**"
+    # Owned vulnerable controls are exercised only by the digest-bound benchmark gate.
+    - "scanner/benchmarks/**"
 
 rules:
   severity_threshold: medium

@@ -140,6 +140,20 @@ Regression tests cover caller isolation, factory-return receivers, field stores
 and loads, exact imported targets, safe overwrite, sanitizer categories, and
 nearby decoys.
 
+## Heuristic call graph language contract
+
+All parser-supported languages—Python, JavaScript, TypeScript, Java, Go, Rust,
+Swift, and Kotlin—produce call-graph nodes and resolved intra-file edges. Import
+resolution is repository-scoped and recognizes language-native dotted, slash,
+and `::` module forms, JS/TS extensionless relative imports, directory index
+modules, Go package directories, Rust `crate` paths, and aliased Python/JS/TS
+imports. Ambiguous same-name targets remain unresolved instead of being guessed.
+
+This is a source-level heuristic graph. `Yes` in the support matrix means the
+parser-backed contract test succeeds for that language; it does not mean
+compiler-accurate virtual dispatch, reflection, generated-code, or runtime
+framework completeness.
+
 ## Frontend and runtime correlation
 
 Static frontend extraction recognizes supported `fetch` and axios-style calls,

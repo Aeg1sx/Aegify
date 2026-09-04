@@ -1,6 +1,6 @@
 # Aegify Open-Source Quality Assessment
 
-Assessment date: 2026-08-25
+Assessment date: 2026-09-04
 
 ## Decision
 
@@ -20,8 +20,9 @@ exploit impact proof are separate evidence states.
 
 | Area | Result | Evidence and boundary |
 |---|---:|---|
-| Scanner regression | Pass | 351 passed, 1 skipped |
-| Bundled-rule precision | Pass | 17 passed; fallback retention and evidence-only blocking are covered |
+| Scanner regression | Pass | 407 passed, 1 skipped; 79.78% measured line coverage |
+| Bundled-rule precision | Pass | 18 passed; fallback retention and evidence-only blocking are covered |
+| Owned precision corpus | Pass | `core-v1`; 5 scoped taint rules, 9 positive findings plus paired negative controls; TP 9, FP 0, FN 0; source and manifest SHA-256 recorded |
 | Python quality | Pass | Ruff and strict mypy across 79 source files |
 | Rules | Pass | 311 definitions; 303 enabled; 8 explicitly disabled; 980/980 enabled patterns executable; zero audit errors/warnings |
 | Packaging | Pass | v0.2.0 reproducible sdist-to-wheel build; 58 bundled rule files; isolated `aegify version` and rule-load smoke |
@@ -41,7 +42,7 @@ exploit impact proof are separate evidence states.
 | Finding lifecycle | Implemented | Persistent scan history, stable fingerprints, current occurrence boundary, baseline state, expiring triage, audit events |
 | AI review boundary | Implemented | Structured suggestions, no implicit status mutation, allowlisted read-only tools, prompt-injection boundary, secret redaction, owned-fixture proof templates |
 | Precision gate | Implemented | Owned ground-truth precision/recall/F1 report with per-rule and unmatched evidence, threshold exit code |
-| Aegify self-scan | Pass | 349 medium-or-higher candidates retained as advisory; 53 critical, 178 high, 118 medium; 0 blocking; exit code 0 |
+| Aegify self-scan | Pass | 356 medium-or-higher candidates retained as advisory; 53 critical, 179 high, 124 medium; benchmark fixtures excluded; 0 blocking; exit code 0 |
 
 ## Known precision limits
 
@@ -57,6 +58,9 @@ exploit impact proof are separate evidence states.
 - A runtime observation is not automatically exploit impact proof.
 - AI confidence is not measured scanner precision and never authorizes status
   changes or proof execution.
+- The `core-v1` 100% result applies only to its five declared rules and exact
+  digest-bound owned corpus. It is not a whole-product or real-world prevalence
+  estimate.
 
 Detailed evidence is in [Alpha Completion Audit](docs/project/alpha-completion-audit.mdx),
 [Technical Architecture](docs/architecture/technical-architecture.mdx), and

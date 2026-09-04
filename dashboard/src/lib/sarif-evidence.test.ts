@@ -127,7 +127,20 @@ test("fresh migration history persists normalized evidence with Prisma", async (
       },
     });
     const llmJob = await prisma.llmJob.create({
-      data: { scanId: scan.id, mode: "quick" },
+      data: { scanId: scan.id, activeKey: scan.id, mode: "quick" },
+    });
+    await assert.rejects(
+      prisma.llmJob.create({
+        data: { scanId: scan.id, activeKey: scan.id, mode: "deep" },
+      }),
+      /Unique constraint failed/,
+    );
+    await prisma.llmJob.update({
+      where: { id: llmJob.id },
+      data: { status: "completed", activeKey: null },
+    });
+    const nextLlmJob = await prisma.llmJob.create({
+      data: { scanId: scan.id, activeKey: scan.id, mode: "deep" },
     });
     const rule = await prisma.rule.create({
       data: {
@@ -196,6 +209,7 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     assert.equal(finding.scan.workspaceSnapshot, "sha256:workspace");
     assert.equal(JSON.parse(finding.provenance).contract_version, 1);
     assert.equal(llmJob.status, "pending");
+    assert.equal(nextLlmJob.activeKey, scan.id);
     assert.ok(rule.updatedAt instanceof Date);
     assert.equal(project.userId, user.id);
     const persistedIdentity = await prisma.findingIdentity.findUnique({

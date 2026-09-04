@@ -213,13 +213,21 @@ for graph layers, trust boundaries, and scaling details.
 | Language | CST/AST | Taint model pack | Heuristic call graph | Endpoint detection |
 |----------|:-------:|:--------------------:|:--------------------:|:------------------:|
 | Python | Yes | Yes | Yes | Flask, FastAPI, Django |
-| JavaScript | Yes | Yes | Partial | Express |
-| TypeScript | Yes | Yes | Partial | Express |
-| Java | Yes | Yes | Partial | Spring MVC/WebFlux annotations |
-| Go | Yes | Yes | Partial | net/http |
-| Rust | Yes | Yes | Partial | - |
-| Swift | Yes | Yes | Partial | - |
-| Kotlin | Yes | Yes | Partial | Spring annotations |
+| JavaScript | Yes | Yes | Yes | Express |
+| TypeScript | Yes | Yes | Yes | Express, NestJS, Next.js App Router |
+| Java | Yes | Yes | Yes | Spring MVC/WebFlux annotations |
+| Go | Yes | Yes | Yes | net/http, Gin, Echo, Fiber, Chi, Gorilla |
+| Rust | Yes | Yes | Yes | Actix Web, Axum, Rocket |
+| Swift | Yes | Yes | Yes | Vapor, Hummingbird |
+| Kotlin | Yes | Yes | Yes | Spring MVC/WebFlux annotations, Ktor |
+
+`Yes` is enforced by parser-backed contract tests for every language and every
+listed endpoint framework family. The call graph resolves heuristic intra-file
+calls for all eight languages and repository-scoped cross-file imports,
+including JS/TS relative and aliased imports. Endpoint coverage is 100% of this
+declared matrix; dynamic route construction, generated code, reflection, and
+unlisted frameworks remain explicit analysis limits rather than inferred
+coverage.
 
 The taint solver is a bounded source analyzer: it is flow-sensitive for locals,
 field-sensitive for normalized access paths, allocation-site-sensitive for
@@ -232,6 +240,22 @@ fixed-point JVM points-to overlay, and ships a strict, versioned JVM model pack.
 It is not an IFDS/IDE tabulation engine; unmodeled libraries, reflection,
 generated code, and runtime framework behavior still depend on conservative
 summaries or imported compiler/tool evidence.
+
+## Reproduce the core precision gate
+
+```bash
+cd scanner
+uv run aegify benchmark benchmarks/core-v1/sources \
+  --ground-truth benchmarks/core-v1/ground-truth.json \
+  --min-precision 1.0 \
+  --min-recall 1.0 \
+  --output-file benchmark-report.json
+```
+
+The versioned owned corpus covers five high-impact taint rules with nine
+positive controls and paired negative controls. A passing report is bound to
+the source-tree and ground-truth SHA-256 digests. It establishes 100% precision
+and recall only for that declared corpus and rule scope.
 
 ## Configuration
 

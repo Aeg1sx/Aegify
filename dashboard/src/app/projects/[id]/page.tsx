@@ -55,9 +55,10 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [connectorOpen, setConnectorOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
 
   const fetchProject = useCallback(() => {
-    fetch(`/api/projects/${params.id}`)
+    return fetch(`/api/projects/${params.id}`)
       .then((r) => r.json())
       .then(setProject)
       .finally(() => setLoading(false));
@@ -115,33 +116,21 @@ export default function ProjectDetailPage() {
 
   const startRepoScan = async () => {
     setScanning(true);
+    setScanError("");
     try {
-      await fetch(`/api/projects/${params.id}/scan`, {
+      const response = await fetch(`/api/projects/${params.id}/scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      // Poll for completion
-      const poll = setInterval(() => {
-        fetch(`/api/projects/${params.id}`)
-          .then((r) => r.json())
-          .then((data) => {
-            setProject(data);
-            const hasRunning = data.scans?.some(
-              (s: ScanSummary) => s.status === "running",
-            );
-            if (!hasRunning) {
-              clearInterval(poll);
-              setScanning(false);
-            }
-          });
-      }, 3000);
-      // Safety: stop polling after 5 minutes
-      setTimeout(() => {
-        clearInterval(poll);
-        setScanning(false);
-      }, 300_000);
-    } catch {
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Repository AI scan failed");
+      }
+      await fetchProject();
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : "Repository AI scan failed");
+    } finally {
       setScanning(false);
     }
   };
@@ -229,6 +218,11 @@ export default function ProjectDetailPage() {
                     </>
                   )}
                 </Button>
+                {scanError && (
+                  <p role="alert" className="max-w-64 text-xs text-destructive">
+                    {scanError}
+                  </p>
+                )}
                 <Button variant="outline" size="sm" onClick={disconnectRepo}>
                   <Unplug className="h-4 w-4" />
                 </Button>
@@ -306,9 +300,9 @@ export default function ProjectDetailPage() {
                       <div>
                         <span className="text-sm font-medium">
                           {scan.branch || "main"}
-                          {scan.scanType === "repo-scan" && (
+                          {scan.scanType === "repo-ai-candidate" && (
                             <span className="ml-2 text-xs text-muted-foreground font-normal">
-                              repo scan
+                              evidence-bound AI candidate scan
                             </span>
                           )}
                           {scan.status === "running" && (

@@ -179,7 +179,7 @@ async function fetchGitHubTree(
   accessToken: string,
   ownerSlug: string,
   ref: string,
-): Promise<GitHubTreeEntry[]> {
+): Promise<{ entries: GitHubTreeEntry[]; resolvedRef: string; truncated: boolean }> {
   // First resolve the ref to a commit SHA, then get the tree
   const commitRes = await fetch(
     `https://api.github.com/repos/${ownerSlug}/commits/${encodeURIComponent(ref)}`,
@@ -196,8 +196,9 @@ async function fetchGitHubTree(
   }
 
   const commit = await commitRes.json();
+  const commitSha = commit.sha;
   const treeSha = commit.commit?.tree?.sha;
-  if (!treeSha) throw new Error("Could not resolve tree SHA from commit");
+  if (!commitSha || !treeSha) throw new Error("Could not resolve immutable commit and tree SHA");
 
   const treeRes = await fetch(
     `https://api.github.com/repos/${ownerSlug}/git/trees/${treeSha}?recursive=true`,
@@ -214,7 +215,11 @@ async function fetchGitHubTree(
   }
 
   const treeData = await treeRes.json();
-  return treeData.tree || [];
+  return {
+    entries: treeData.tree || [],
+    resolvedRef: commitSha,
+    truncated: treeData.truncated === true,
+  };
 }
 
 async function fetchGitHubFileRaw(
@@ -242,7 +247,7 @@ async function fetchGitLabTree(
   accessToken: string,
   providerRepoId: string,
   ref: string,
-): Promise<GitLabTreeEntry[]> {
+): Promise<{ entries: GitLabTreeEntry[]; truncated: boolean }> {
   const entries: GitLabTreeEntry[] = [];
   let page = 1;
 
@@ -256,16 +261,37 @@ async function fetchGitLabTree(
       if (page === 1) {
         throw new Error(`GitLab tree fetch failed (${res.status}): ${await res.text()}`);
       }
-      break;
+      return { entries, truncated: true };
     }
 
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) break;
     entries.push(...data);
+    const nextPage = res.headers.get("x-next-page");
+    if (!nextPage) return { entries, truncated: false };
     page++;
   }
 
-  return entries;
+  return { entries, truncated: true };
+}
+
+async function resolveGitLabRef(
+  accessToken: string,
+  providerRepoId: string,
+  ref: string,
+): Promise<string> {
+  const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(providerRepoId)}/repository/commits/${encodeURIComponent(ref)}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(`GitLab commit lookup failed (${response.status}): ${await response.text()}`);
+  }
+  const commit = await response.json();
+  if (!commit.id || typeof commit.id !== "string") {
+    throw new Error("Could not resolve immutable GitLab commit SHA");
+  }
+  return commit.id;
 }
 
 async function fetchGitLabFileRaw(
@@ -295,12 +321,27 @@ export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle
   // Step 1: Get tree listing
   type TreeEntry = { path: string; mode: string; type: string; size?: number };
   let treeEntries: TreeEntry[];
+  let resolvedRef: string;
+  let truncated: boolean;
 
   if (config.provider === "github") {
-    treeEntries = await fetchGitHubTree(config.accessToken, config.ownerSlug, config.ref);
+    const resolved = await fetchGitHubTree(config.accessToken, config.ownerSlug, config.ref);
+    treeEntries = resolved.entries;
+    resolvedRef = resolved.resolvedRef;
+    truncated = resolved.truncated;
   } else {
-    const glEntries = await fetchGitLabTree(config.accessToken, config.providerRepoId, config.ref);
-    treeEntries = glEntries.map((e) => ({
+    resolvedRef = await resolveGitLabRef(
+      config.accessToken,
+      config.providerRepoId,
+      config.ref,
+    );
+    const gitLabTree = await fetchGitLabTree(
+      config.accessToken,
+      config.providerRepoId,
+      resolvedRef,
+    );
+    truncated = gitLabTree.truncated;
+    treeEntries = gitLabTree.entries.map((e) => ({
       path: e.path,
       mode: e.mode,
       type: e.type,
@@ -337,6 +378,7 @@ export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle
     // Pre-filter by size if available (GitHub provides size in tree)
     if (entry.size !== undefined && entry.size > maxFileSize) {
       skippedFiles++;
+      truncated = true;
       continue;
     }
 
@@ -344,7 +386,7 @@ export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle
   }
 
   // Enforce max file count
-  const truncated = candidates.length > maxFiles;
+  truncated ||= candidates.length > maxFiles;
   const filesToFetch = candidates.slice(0, maxFiles);
 
   // Step 3: Fetch file contents with concurrency control
@@ -353,24 +395,38 @@ export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle
   const concurrency = 10;
 
   for (let i = 0; i < filesToFetch.length; i += concurrency) {
-    if (totalBytes >= maxTotal) break;
+    if (totalBytes >= maxTotal) {
+      truncated = true;
+      break;
+    }
 
     const batch = filesToFetch.slice(i, i + concurrency);
     const results = await Promise.allSettled(
       batch.map(async (filePath) => {
         let content: string | null;
         if (config.provider === "github") {
-          content = await fetchGitHubFileRaw(config.accessToken, config.ownerSlug, filePath, config.ref);
+          content = await fetchGitHubFileRaw(
+            config.accessToken,
+            config.ownerSlug,
+            filePath,
+            resolvedRef,
+          );
         } else {
-          content = await fetchGitLabFileRaw(config.accessToken, config.providerRepoId, filePath, config.ref);
+          content = await fetchGitLabFileRaw(
+            config.accessToken,
+            config.providerRepoId,
+            filePath,
+            resolvedRef,
+          );
         }
         return { filePath, content };
       }),
     );
 
     for (const result of results) {
-      if (result.status !== "fulfilled" || !result.value.content) {
+      if (result.status !== "fulfilled" || result.value.content === null) {
         skippedFiles++;
+        truncated = true;
         continue;
       }
 
@@ -380,12 +436,14 @@ export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle
       // Enforce per-file size limit
       if (sizeBytes > maxFileSize) {
         skippedFiles++;
+        truncated = true;
         continue;
       }
 
       // Enforce total size limit
       if (totalBytes + sizeBytes > maxTotal) {
         skippedFiles++;
+        truncated = true;
         continue;
       }
 
@@ -399,7 +457,7 @@ export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle
     totalBytes,
     skippedFiles,
     truncated,
-    ref: config.ref,
+    ref: resolvedRef,
     fetchedAt: new Date().toISOString(),
   };
 }

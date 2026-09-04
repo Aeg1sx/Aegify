@@ -23,6 +23,38 @@ Every AI review records one of `likely_true_positive`,
 The dashboard stores this as a suggestion. A user must separately accept or
 reject the suggestion through the finding lifecycle.
 
+Dashboard AI review runs as a separately tracked `LlmJob`; it never rewrites
+the deterministic source scan status. Next.js tracks the post-response task,
+provider requests have a bounded timeout, and abandoned jobs are failed after
+the execution bound. A model must return one valid review per supplied finding.
+Omitted or failed batches produce `partial` or `failed`, never a false
+`completed` state. `needs_review` remains unresolved and is not counted as a
+true positive. Provider responses and parsed review counts are size-bounded,
+including for custom endpoints that ignore requested token limits.
+Each persisted review names its producer, provider, model, and prompt digest.
+Suggested remediation stays inside the AI review record and does not overwrite
+the scanner-authored remediation field before human acceptance.
+The database also holds a nullable unique lease for each active scan review, so
+concurrent requests cannot create duplicate provider work or conflicting
+updates.
+
+## Repository AI candidate scan
+
+The dashboard repository action resolves the selected GitHub or GitLab ref to
+an immutable commit before reading its tree or files. A model response is not
+stored merely because it is valid JSON: the rule ID, file path, approximate
+line, and redacted code snippet must bind back to the exact fetched source
+batch. Aegify derives source and snippet digests for every retained candidate;
+hallucinated paths, snippets, and locations are rejected.
+
+These records use `repo-ai-candidate`, `candidate`, and `advisory`. They do not
+replace the deterministic scanner or establish reachability. Provider tree
+truncation, file/byte bounds, model output bounds, or a failed batch make the
+scan `partial` or `failed`. An incomplete or non-default-branch scan may add
+observed candidates but cannot mark unseen older candidates absent; only an
+exhaustive successful default-branch snapshot can reconcile project-level
+absence and current-occurrence state.
+
 ## Allowlisted analysis tools
 
 `aegify.llm.tools.ToolRegistry` accepts only explicitly registered, read-only
@@ -90,16 +122,21 @@ Use owned, versioned ground truth to measure scanner behavior instead of using
 model confidence as a quality claim:
 
 ```bash
-aegify benchmark ./fixtures \
-  --ground-truth ./ground-truth.json \
-  --min-precision 0.95 \
-  --min-recall 0.90 \
+cd scanner
+uv run aegify benchmark benchmarks/core-v1/sources \
+  --ground-truth benchmarks/core-v1/ground-truth.json \
+  --min-precision 1.0 \
+  --min-recall 1.0 \
   --output-file benchmark-report.json
 ```
 
-The report includes true positives, false positives, false negatives, per-rule
-metrics, and exact unmatched evidence identities. The command exits non-zero
-when either threshold is missed.
+The committed `core-v1` corpus pairs positive and negative controls for five
+high-impact taint rules. Its report records the corpus version, source and
+manifest SHA-256 digests, evaluated rule IDs, true positives, false positives,
+false negatives, per-rule metrics, and exact unmatched evidence identities.
+CI currently requires `TP 9 / FP 0 / FN 0`, so precision, recall, and F1 must
+all equal `1.0` inside this declared scope. This is a reproducible regression
+contract, not a universal accuracy claim for every rule, framework, or program.
 
 ## Proof boundary
 

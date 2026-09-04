@@ -1,6 +1,43 @@
 const SENSITIVE_KEY = /token|secret|password|authorization|api[_-]?key/i;
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const DESTRUCTIVE_TEMPLATE = /(?:\b(?:rm\s+-rf|drop\s+(?:database|table)|truncate\s+table|shutdown|reboot|mkfs|dd\s+if=|nc\s+-e|bash\s+-i|169\.254\.169\.254|(?:curl|wget)\b[^\n|]*\|\s*(?:sh|bash))\b|\/etc\/shadow)/i;
+const DEFAULT_LLM_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+export async function readBoundedLLMResponseText(
+  response: Response,
+  limit = DEFAULT_LLM_RESPONSE_BYTES,
+): Promise<string> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > limit) {
+    await response.body?.cancel();
+    throw new Error(`LLM response exceeds ${limit} bytes`);
+  }
+  if (!response.body) return "";
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel();
+        throw new Error(`LLM response exceeds ${limit} bytes`);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export async function readBoundedLLMJson(response: Response): Promise<unknown> {
+  return JSON.parse(await readBoundedLLMResponseText(response));
+}
 
 export function sanitizeLLMText(value: unknown, limit = 20_000): string {
   if (typeof value !== "string") return "";

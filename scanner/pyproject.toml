@@ -22,7 +22,7 @@ dependencies = [
     "tree-sitter-kotlin>=1.1.0",
     "tree-sitter-swift>=0.0.1",
     "networkx>=3.4",
-    "anthropic>=0.42.0",
+    "anthropic>=1.0.0,<2.0.0",
     "typer>=0.15.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
@@ -78,7 +78,7 @@ python_version = "3.14"
 strict = true
 
 [tool.uv]
-required-version = "==0.12.5"
+required-version = "==0.12.9"
 
 [tool.uv.audit]
 malware-check = true

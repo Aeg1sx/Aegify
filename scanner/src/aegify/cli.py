@@ -288,17 +288,46 @@ def benchmark(
     ] = None,
 ) -> None:
     """Measure precision and recall against versioned, owned ground truth."""
-    from aegify.quality.benchmark import ExpectedFinding, evaluate_findings
+    from pydantic import ValidationError
+
+    from aegify.quality.benchmark import (
+        GroundTruthManifest,
+        digest_bytes,
+        digest_source_tree,
+        evaluate_findings,
+    )
     from aegify.scanner.engine import ScanEngine
 
-    payload = json.loads(ground_truth.read_text(encoding="utf-8"))
-    expected_payload = payload.get("expected", []) if isinstance(payload, dict) else []
-    expected = [ExpectedFinding.model_validate(item) for item in expected_payload]
+    try:
+        ground_truth_bytes = ground_truth.read_bytes()
+        payload = json.loads(ground_truth_bytes)
+        manifest = GroundTruthManifest.model_validate(payload)
+        source_digest = digest_source_tree(target)
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValidationError,
+        ValueError,
+    ) as error:
+        console.print(f"[red]Invalid benchmark corpus: {error}[/red]")
+        raise typer.Exit(code=2) from error
+
     config = AegifyConfig.load(target if target.is_dir() else target.parent)
     config.rules.severity_threshold = "low"
     config.llm.enabled = False
     result = ScanEngine(config=config).scan(target)
-    report = evaluate_findings(result.findings, expected)
+    target_root = target if target.is_dir() else target.parent
+    report = evaluate_findings(
+        result.findings,
+        manifest.expected,
+        target_root=target_root,
+        rule_scope=manifest.rule_scope,
+        corpus_id=manifest.corpus_id,
+        corpus_version=manifest.corpus_version,
+        source_digest=source_digest,
+        ground_truth_digest=digest_bytes(ground_truth_bytes),
+    )
     rendered = report.model_dump_json(indent=2)
     if output_file:
         output_file.write_text(rendered + "\n", encoding="utf-8")

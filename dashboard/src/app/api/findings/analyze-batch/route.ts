@@ -55,7 +55,6 @@ export async function POST(request: NextRequest) {
             aiConfidence: result.confidence,
             aiReviewStatus: "suggested",
             aiProof: JSON.stringify(result.proof),
-            ...(result.remediation && { remediation: result.remediation }),
           },
         });
 

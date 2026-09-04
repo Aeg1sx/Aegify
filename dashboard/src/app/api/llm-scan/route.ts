@@ -1,6 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { reviewScanFindings } from "@/lib/llm-scanner";
+import { failStaleLlmJobs } from "@/lib/llm-job-operations";
+
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,18 +32,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Scan has no findings to review" }, { status: 400 });
     }
 
-    // Fire async review (fire-and-forget)
-    reviewScanFindings(scanId, mode).catch((err) =>
-      console.error("LLM review failed", { scanId, error: err }),
-    );
+    await failStaleLlmJobs();
+    const existing = await prisma.llmJob.findFirst({
+      where: { scanId, status: { in: ["pending", "running"] } },
+    });
+    if (existing) {
+      return NextResponse.json(
+        { error: "A review is already running for this scan", jobId: existing.id },
+        { status: 409 },
+      );
+    }
+
+    const job = await prisma.llmJob.create({
+      data: {
+        scanId,
+        activeKey: scanId,
+        mode,
+        status: "pending",
+        totalFindings: scan._count.findings,
+        totalBatches: Math.ceil(scan._count.findings / 50),
+      },
+    });
+
+    after(async () => {
+      try {
+        await reviewScanFindings(scanId, mode, job.id);
+      } catch (error) {
+        console.error(`LLM job ${job.id} failed:`, error);
+      }
+    });
 
     return NextResponse.json({
       scanId,
+      jobId: job.id,
       mode,
-      status: "running",
+      status: "pending",
       findingsCount: scan._count.findings,
-    });
+    }, { status: 202 });
   } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      return NextResponse.json(
+        { error: "A review is already running for this scan" },
+        { status: 409 },
+      );
+    }
     console.error("LLM scan error:", error);
     return NextResponse.json(
       { error: "Review failed" },

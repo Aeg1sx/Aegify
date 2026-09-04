@@ -65,7 +65,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.5"
+          version: "0.12.9"
           enable-cache: true
           cache-dependency-glob: scanner/uv.lock
 
@@ -90,6 +90,23 @@ jobs:
 
       - name: Test with coverage
         run: uv run pytest -v --cov=aegify --cov-report=term-missing --cov-fail-under=60
+
+      - name: Gate versioned core precision corpus
+        run: |
+          uv run aegify benchmark benchmarks/core-v1/sources \
+            --ground-truth benchmarks/core-v1/ground-truth.json \
+            --min-precision 1.0 \
+            --min-recall 1.0 \
+            --output-file benchmark-report.json
+
+      - name: Upload precision evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aegify-core-precision-report
+          path: scanner/benchmark-report.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Build wheel
         run: uv build --wheel
@@ -226,3 +243,36 @@ jobs:
         run: |
           test "$(docker image inspect --format '{{.Config.User}}' aegify-dashboard:ci)" = "nextjs"
           docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges aegify-dashboard:ci node --version
+
+      - name: Verify dashboard migration and fail-closed startup
+        shell: bash
+        run: |
+          container_id="$(docker run --detach \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001 \
+            --tmpfs /data:rw,nosuid,nodev,uid=1001,gid=1001 \
+            --tmpfs /app/.next/cache:rw,noexec,nosuid,nodev,uid=1001,gid=1001 \
+            --env DATABASE_URL=file:/data/ci.db \
+            --env AUTH_SECRET=ci-only-auth-secret-32-characters \
+            --env ENCRYPTION_SECRET=ci-only-encryption-secret-32-chars \
+            --env AUTH_URL=http://localhost:3000 \
+            --env AUTH_GITHUB_ID=ci-only-client-id \
+            --env AUTH_GITHUB_SECRET=ci-only-client-secret \
+            --env AEGIFY_UPLOAD_TOKEN=ci-only-upload-token \
+            aegify-dashboard:ci)"
+          trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if ! docker inspect --format '{{.State.Running}}' "$container_id" | grep -qx true; then
+              docker logs "$container_id"
+              exit 1
+            fi
+            if docker exec "$container_id" node -e \
+              'fetch("http://127.0.0.1:3000", {redirect:"manual"}).then(r => process.exit(r.status === 307 ? 0 : 1)).catch(() => process.exit(1))'; then
+              break
+            fi
+            test "$attempt" -lt 30
+            sleep 1
+          done
+          docker exec "$container_id" ./node_modules/.bin/prisma migrate status

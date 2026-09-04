@@ -209,7 +209,7 @@ class ScanEngine:
 
             file_asts: list[FileAST] = []
             for f in files:
-                ast = self.ast_parser.parse_file(f)
+                ast = self.ast_parser.parse_file(f, repository_root=repo_root)
                 if ast is not None:
                     file_asts.append(ast)
 
@@ -1692,6 +1692,16 @@ class ScanEngine:
             # Allow GC between batches for large codebases
             if len(files_to_parse) > batch_size:
                 gc.collect()
+
+        # Single-repository scans still need module-qualified callable IDs.
+        # Without this, common route names such as GET/POST collapse across
+        # files in both the call graph and normalized program graph.
+        for ast in results:
+            self.ast_parser.apply_repository_context(
+                ast,
+                repository_id="",
+                repository_root=target,
+            )
 
         current_paths = {str(path) for path in files}
         self.storage.store_index(

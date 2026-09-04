@@ -110,7 +110,7 @@ class ASTParser:
         extractor = _get_extractor(lang)
         ast = extractor.extract(tree.root_node, source, str(file_path), lang)
         self._apply_callable_identities(ast)
-        if repository_id:
+        if repository_id or repository_root is not None:
             self.apply_repository_context(
                 ast,
                 repository_id=repository_id,
@@ -159,11 +159,11 @@ class ASTParser:
         repository_id: str,
         repository_root: Path,
     ) -> None:
-        """Attach stable, repository-qualified symbol identities to an AST.
+        """Attach stable module- and optionally repository-qualified identities.
 
         Display names intentionally remain language-native (for example,
         ``UserController.getUser``). ``symbol_id`` is the collision-resistant
-        graph identity used by workspace scans.
+        graph identity used by directory and workspace scans.
         """
         file_path = Path(ast.file_path).resolve()
         root = repository_root.resolve()
@@ -184,7 +184,11 @@ class ASTParser:
             seen.add(id(func))
             func.repository_id = repository_id
             func.module_path = module_path
-            func.symbol_id = f"repo:{repository_id}:{module_path}::{func.callable_name}"
+            func.symbol_id = (
+                f"repo:{repository_id}:{module_path}::{func.callable_name}"
+                if repository_id
+                else f"file:{module_path}::{func.callable_name}"
+            )
         ASTParser._bind_callers(ast, functions)
         for call in ast.calls:
             call.repository_id = repository_id
@@ -197,7 +201,7 @@ class ASTParser:
         exclude = set(exclude_patterns or [])
 
         for file_path in self._collect_files(directory, exclude):
-            ast = self.parse_file(file_path)
+            ast = self.parse_file(file_path, repository_root=directory)
             if ast is not None:
                 results.append(ast)
 
@@ -336,22 +340,50 @@ class _PythonExtractor(_BaseExtractor):
 
     def _extract_imports(self, root: Node, source: bytes, imports: list[ImportInfo]) -> None:
         for node in self._find_nodes(root, "import_statement"):
-            text = self._node_text(node, source)
-            module = text.replace("import ", "").strip()
-            imports.append(ImportInfo(module=module, line=node.start_point[0] + 1))
+            for child in node.named_children:
+                if child.type == "dotted_name":
+                    imports.append(
+                        ImportInfo(
+                            module=self._node_text(child, source),
+                            line=node.start_point[0] + 1,
+                        )
+                    )
+                elif child.type == "aliased_import":
+                    name_node = child.child_by_field_name("name")
+                    alias_node = child.child_by_field_name("alias")
+                    if name_node:
+                        imports.append(
+                            ImportInfo(
+                                module=self._node_text(name_node, source),
+                                alias=(self._node_text(alias_node, source) if alias_node else None),
+                                line=node.start_point[0] + 1,
+                            )
+                        )
 
         for node in self._find_nodes(root, "import_from_statement"):
             module_node = node.child_by_field_name("module_name")
             module = self._node_text(module_node, source) if module_node else ""
             names: list[str] = []
+            bindings: dict[str, str] = {}
             for child in node.children:
                 if child.type == "dotted_name" and child != module_node:
                     names.append(self._node_text(child, source))
                 elif child.type == "aliased_import":
                     name_node = child.child_by_field_name("name")
+                    alias_node = child.child_by_field_name("alias")
                     if name_node:
-                        names.append(self._node_text(name_node, source))
-            imports.append(ImportInfo(module=module, names=names, line=node.start_point[0] + 1))
+                        imported = self._node_text(name_node, source)
+                        names.append(imported)
+                        if alias_node:
+                            bindings[self._node_text(alias_node, source)] = imported
+            imports.append(
+                ImportInfo(
+                    module=module,
+                    names=names,
+                    bindings=bindings,
+                    line=node.start_point[0] + 1,
+                )
+            )
 
     def _extract_functions(
         self,
@@ -547,11 +579,28 @@ class _JavaScriptExtractor(_BaseExtractor):
             if source_node:
                 module = self._node_text(source_node, source).strip("'\"")
             names: list[str] = []
+            bindings: dict[str, str] = {}
             for child in self._find_nodes(node, "import_specifier"):
                 name_node = child.child_by_field_name("name")
                 if name_node:
-                    names.append(self._node_text(name_node, source))
-            imports.append(ImportInfo(module=module, names=names, line=node.start_point[0] + 1))
+                    imported = self._node_text(name_node, source)
+                    names.append(imported)
+                    alias_node = child.child_by_field_name("alias")
+                    if alias_node:
+                        bindings[self._node_text(alias_node, source)] = imported
+            statement = self._node_text(node, source)
+            namespace = re.search(r"\*\s+as\s+([A-Za-z_$][\w$]*)", statement)
+            default = re.match(r"\s*import\s+([A-Za-z_$][\w$]*)", statement)
+            alias = namespace.group(1) if namespace else (default.group(1) if default else None)
+            imports.append(
+                ImportInfo(
+                    module=module,
+                    names=names,
+                    alias=alias,
+                    bindings=bindings,
+                    line=node.start_point[0] + 1,
+                )
+            )
 
     def _extract_functions(
         self, root: Node, source: bytes, file_path: str, functions: list[FunctionDef]

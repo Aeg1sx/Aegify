@@ -24,6 +24,16 @@ from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
 
 logger = logging.getLogger(__name__)
 
+_FIXED_HTTP_ORIGIN_RE = re.compile(
+    r"""(?ix)
+    ^\s*[rubf]*[\"'`]
+    https?://
+    (?:\[[0-9a-f:.]+\]|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)
+    (?::\d{1,5})?
+    [/?#]
+    """
+)
+
 # Map string language names to Language enum
 LANG_MAP: dict[str, Language] = {
     "python": Language.PYTHON,
@@ -191,7 +201,7 @@ class YAMLRule(SecurityRule):
             # Filter by language using O(1) index lookup
             if rule_languages:
                 file_ast = fp_index.get(flow.sink.file_path)
-                if file_ast and file_ast.language not in rule_languages:
+                if file_ast is None or file_ast.language not in rule_languages:
                     continue
 
             # Check sink function pattern (pre-compiled regex)
@@ -203,6 +213,13 @@ class YAMLRule(SecurityRule):
             if taint._source_pattern_re:
                 if not taint._source_pattern_re.search(flow.source.variable):
                     continue
+
+            # A tainted path or query component on a statically fixed HTTP(S)
+            # origin is not, by itself, SSRF. Keep authority-controlled URLs
+            # blocking, but do not turn ordinary REST resource identifiers
+            # into CWE-918 findings merely because they reach fetch().
+            if self.definition.cwe_id == 918 and self._has_fixed_http_origin(flow, fp_index):
+                continue
 
             findings.append(
                 self._create_finding(
@@ -228,6 +245,28 @@ class YAMLRule(SecurityRule):
             )
 
         return findings
+
+    @staticmethod
+    def _has_fixed_http_origin(flow: TaintFlow, fp_index: dict[str, FileAST]) -> bool:
+        """Return true when every matching sink on the line has a literal origin."""
+        ast = fp_index.get(flow.sink.file_path)
+        if ast is None or flow.sink.argument_index < 0:
+            return False
+
+        matching_calls = []
+        for call in ast.calls:
+            call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
+            if call.line == flow.sink.line and call_text == flow.sink.function:
+                matching_calls.append(call)
+        if not matching_calls:
+            return False
+
+        argument_index = flow.sink.argument_index
+        return all(
+            len(call.arguments) > argument_index
+            and _FIXED_HTTP_ORIGIN_RE.match(call.arguments[argument_index]) is not None
+            for call in matching_calls
+        )
 
     @staticmethod
     def _safe_format(template: str, **kwargs: Any) -> str:
