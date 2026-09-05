@@ -439,8 +439,13 @@ class EndpointDetector:
         if not path.startswith("/"):
             return False
 
-        # Reject empty, root, or wildcard-only paths
-        if path in ("/", "/*", "/**", "*"):
+        # An explicit framework route at the application root is a real attack
+        # surface (for example Next.js ``app/route.ts``). Keep rejecting an
+        # unclassified root and wildcard-only paths so coarse imports do not
+        # manufacture a public endpoint.
+        if path == "/" and not ep.framework:
+            return False
+        if path in ("/*", "/**", "*"):
             return False
 
         # Reject single-segment parameter-only paths: /{id}, /:id, <int:id>

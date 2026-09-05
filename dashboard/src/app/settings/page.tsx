@@ -16,6 +16,7 @@ import {
   Globe,
   Plus,
   Trash2,
+  TicketCheck,
 } from "lucide-react";
 
 interface SettingsMap {
@@ -56,6 +57,14 @@ export default function SettingsPage() {
   const [slackChannel, setSlackChannel] = useState("#security-alerts");
   const [slackSeverity, setSlackSeverity] = useState("high");
 
+  // Jira form
+  const [jiraBaseUrl, setJiraBaseUrl] = useState("");
+  const [jiraEmail, setJiraEmail] = useState("");
+  const [jiraToken, setJiraToken] = useState("");
+  const [jiraProjectKey, setJiraProjectKey] = useState("");
+  const [jiraIssueType, setJiraIssueType] = useState("Bug");
+  const [jiraEnabled, setJiraEnabled] = useState(false);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
@@ -87,6 +96,10 @@ export default function SettingsPage() {
         setSlackEnabled(s["slack.enabled"]?.value === "true");
         setSlackChannel(s["slack.channel"]?.value || "#security-alerts");
         setSlackSeverity(s["slack.notify_severity"]?.value || "high");
+        setJiraBaseUrl(s["jira.base_url"]?.value || "");
+        setJiraProjectKey(s["jira.project_key"]?.value || "");
+        setJiraIssueType(s["jira.issue_type"]?.value || "Bug");
+        setJiraEnabled(s["jira.enabled"]?.value === "true");
       })
       .finally(() => setLoading(false));
   }, []);
@@ -205,6 +218,46 @@ export default function SettingsPage() {
         text: data.error || "Failed to send test",
       });
     }
+  };
+
+  const saveJira = async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    const updates: Record<string, string> = {
+      "jira.base_url": jiraBaseUrl,
+      "jira.project_key": jiraProjectKey,
+      "jira.issue_type": jiraIssueType,
+      "jira.enabled": jiraEnabled ? "true" : "false",
+    };
+    if (jiraEmail) updates["jira.email"] = jiraEmail;
+    if (jiraToken) updates["jira.api_token"] = jiraToken;
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: updates }),
+    });
+    const data = await res.json();
+    setSaveMsg({
+      type: res.ok ? "success" : "error",
+      text: res.ok ? "Jira settings saved" : data.error || "Failed to save Jira settings",
+    });
+    if (res.ok) {
+      setJiraEmail("");
+      setJiraToken("");
+      const refreshed = await (await fetch("/api/settings")).json();
+      setSettings(refreshed.settings || {});
+    }
+    setSaving(false);
+  };
+
+  const testJira = async () => {
+    setSaveMsg(null);
+    const res = await fetch("/api/settings/test-jira", { method: "POST" });
+    const data = await res.json();
+    setSaveMsg({
+      type: res.ok ? "success" : "error",
+      text: res.ok ? data.message : data.error || "Jira test failed",
+    });
   };
 
   if (loading) {
@@ -730,6 +783,84 @@ export default function SettingsPage() {
             <Button variant="outline" onClick={testSlack}>
               Test Webhook
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Jira Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TicketCheck className="h-5 w-5" />
+            Jira Vulnerability Workflow
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Create remediation tickets with repository, revision, evidence state,
+            exact code location, and code-level remediation context.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="jira-enabled"
+              checked={jiraEnabled}
+              onChange={(event) => setJiraEnabled(event.target.checked)}
+              className="rounded border-input"
+            />
+            <label htmlFor="jira-enabled" className="text-sm font-medium">Enable Jira integration</label>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm text-muted-foreground">Jira base URL</label>
+              <Input
+                type="url"
+                placeholder="https://company.atlassian.net"
+                value={jiraBaseUrl}
+                onChange={(event) => setJiraBaseUrl(event.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Atlassian Cloud only by default. Self-hosted domains require AEGIFY_JIRA_ALLOWED_HOSTS.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Account email</label>
+              <Input
+                type="email"
+                placeholder={settings["jira.email"]?.value === "configured" ? `Configured (${settings["jira.email"]?.masked})` : "security@example.com"}
+                value={jiraEmail}
+                onChange={(event) => setJiraEmail(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">API token</label>
+              <Input
+                type="password"
+                placeholder={settings["jira.api_token"]?.value === "configured" ? `Configured (${settings["jira.api_token"]?.masked})` : "Atlassian API token"}
+                value={jiraToken}
+                onChange={(event) => setJiraToken(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Project key</label>
+              <Input
+                placeholder="SEC"
+                value={jiraProjectKey}
+                onChange={(event) => setJiraProjectKey(event.target.value.toUpperCase())}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Issue type</label>
+              <Input
+                placeholder="Bug"
+                value={jiraIssueType}
+                onChange={(event) => setJiraIssueType(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button onClick={saveJira} disabled={saving}><Save className="mr-2 h-4 w-4" />Save Jira Settings</Button>
+            <Button variant="outline" onClick={testJira}>Test Connection</Button>
           </div>
         </CardContent>
       </Card>

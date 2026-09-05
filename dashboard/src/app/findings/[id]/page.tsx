@@ -25,6 +25,8 @@ import {
   Maximize2,
   Focus,
   Search,
+  TicketCheck,
+  Save,
 } from "lucide-react";
 import { CodeHighlight } from "@/components/code-highlight";
 import { AIEvidencePanel, type AIReviewView } from "@/components/finding/ai-evidence-panel";
@@ -105,6 +107,13 @@ interface FindingDetail {
   aiConfidence: number | null;
   aiReviewStatus: string;
   aiProof: string;
+  owner: string;
+  dueAt: string | null;
+  priority: string;
+  tags: string;
+  ticketProvider: string;
+  ticketKey: string;
+  ticketUrl: string;
   createdAt: string;
   identity: FindingIdentityView | null;
   scan: {
@@ -186,6 +195,11 @@ export default function FindingDetailPage() {
   const [triageReason, setTriageReason] = useState("");
   const [triageExpiresAt, setTriageExpiresAt] = useState("");
   const [triageError, setTriageError] = useState("");
+  const [owner, setOwner] = useState("");
+  const [dueAt, setDueAt] = useState("");
+  const [priority, setPriority] = useState("");
+  const [tags, setTags] = useState("");
+  const [jiraCreating, setJiraCreating] = useState(false);
 
   // LLM analysis state
   const [analyzing, setAnalyzing] = useState(false);
@@ -217,6 +231,14 @@ export default function FindingDetailPage() {
         setFinding(data);
         setTriageReason(data.identity?.triageReason || "");
         setTriageExpiresAt(data.identity?.triageExpiresAt?.slice(0, 10) || "");
+        setOwner(data.owner || "");
+        setDueAt(data.dueAt?.slice(0, 10) || "");
+        setPriority(data.priority || "");
+        try {
+          setTags(Array.isArray(JSON.parse(data.tags || "[]")) ? JSON.parse(data.tags || "[]").join(", ") : "");
+        } catch {
+          setTags("");
+        }
         // Load saved LLM analysis (two possible formats)
         if (data.llmAnalysis) {
           try {
@@ -278,6 +300,52 @@ export default function FindingDetailPage() {
       setTriageError(error instanceof Error ? error.message : "Triage update failed");
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const saveManagement = async () => {
+    if (!finding) return;
+    setUpdating(true);
+    setTriageError("");
+    try {
+      const response = await fetch(`/api/findings/${finding.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner,
+          dueAt: dueAt || null,
+          priority,
+          tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Management update failed");
+      setFinding((current) => current ? { ...current, ...data } : current);
+    } catch (error) {
+      setTriageError(error instanceof Error ? error.message : "Management update failed");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const createJiraTicket = async () => {
+    if (!finding) return;
+    setJiraCreating(true);
+    setTriageError("");
+    try {
+      const response = await fetch(`/api/findings/${finding.id}/jira`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Jira ticket creation failed");
+      setFinding((current) => current ? {
+        ...current,
+        ticketProvider: "jira",
+        ticketKey: data.key,
+        ticketUrl: data.url,
+      } : current);
+    } catch (error) {
+      setTriageError(error instanceof Error ? error.message : "Jira ticket creation failed");
+    } finally {
+      setJiraCreating(false);
     }
   };
 
@@ -654,6 +722,36 @@ export default function FindingDetailPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardContent className="space-y-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Vulnerability ownership & delivery</p>
+              <p className="text-xs text-muted-foreground">Assign remediation, SLA priority, tags, and an auditable Jira ticket.</p>
+            </div>
+            {finding.ticketUrl ? (
+              <a href={finding.ticketUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-medium hover:bg-accent">
+                <TicketCheck className="h-3.5 w-3.5" />{finding.ticketKey}<ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <Button variant="outline" size="sm" onClick={createJiraTicket} disabled={jiraCreating}>
+                {jiraCreating ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <TicketCheck className="mr-1 h-3.5 w-3.5" />}
+                Create Jira ticket
+              </Button>
+            )}
+          </div>
+          <div className="grid gap-2 md:grid-cols-[1fr_140px_160px_1fr_auto]">
+            <input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Owner / team" aria-label="Finding owner" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+            <select value={priority} onChange={(event) => setPriority(event.target.value)} aria-label="Remediation priority" className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">Priority</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option><option value="p3">P3</option>
+            </select>
+            <input type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} aria-label="Remediation due date" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="internet-facing, auth" aria-label="Finding tags" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+            <Button size="sm" className="h-9" onClick={saveManagement} disabled={updating}><Save className="mr-1 h-3.5 w-3.5" />Save</Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
@@ -672,6 +770,8 @@ export default function FindingDetailPage() {
                   code={finding.codeSnippet}
                   language={finding.filePath?.split(".").pop()}
                   lineStart={finding.lineStart}
+                  highlightStart={finding.lineStart}
+                  highlightEnd={finding.lineEnd}
                 />
               </div>
             </CardContent>

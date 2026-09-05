@@ -52,7 +52,48 @@ export async function PATCH(
     return NextResponse.json({ error: "Finding not found" }, { status: 404 });
   }
 
-  if (!body.status) return NextResponse.json(current);
+  const managementData: {
+    owner?: string;
+    dueAt?: Date | null;
+    priority?: string;
+    tags?: string;
+  } = {};
+  if (body.owner !== undefined) {
+    if (typeof body.owner !== "string" || body.owner.length > 200) {
+      return NextResponse.json({ error: "Invalid owner" }, { status: 400 });
+    }
+    managementData.owner = body.owner.trim();
+  }
+  if (body.dueAt !== undefined) {
+    if (body.dueAt === null || body.dueAt === "") {
+      managementData.dueAt = null;
+    } else {
+      const dueAt = new Date(body.dueAt);
+      if (Number.isNaN(dueAt.getTime())) {
+        return NextResponse.json({ error: "Invalid due date" }, { status: 400 });
+      }
+      managementData.dueAt = dueAt;
+    }
+  }
+  if (body.priority !== undefined) {
+    if (!["", "p0", "p1", "p2", "p3"].includes(body.priority)) {
+      return NextResponse.json({ error: "Invalid priority" }, { status: 400 });
+    }
+    managementData.priority = body.priority;
+  }
+  if (body.tags !== undefined) {
+    if (!Array.isArray(body.tags) || body.tags.length > 20
+      || body.tags.some((tag: unknown) => typeof tag !== "string" || tag.length > 50)) {
+      return NextResponse.json({ error: "Invalid tags" }, { status: 400 });
+    }
+    managementData.tags = JSON.stringify([...new Set(body.tags.map((tag: string) => tag.trim()).filter(Boolean))]);
+  }
+  if (!body.status) {
+    const updated = Object.keys(managementData).length > 0
+      ? await prisma.finding.update({ where: { id }, data: managementData })
+      : current;
+    return NextResponse.json(updated);
+  }
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
   if (["false_positive", "accepted_risk"].includes(body.status) && !reason) {
     return NextResponse.json(
@@ -73,7 +114,7 @@ export async function PATCH(
   const finding = await prisma.$transaction(async (tx) => {
     const updated = await tx.finding.update({
       where: { id },
-      data: { status: body.status },
+      data: { status: body.status, ...managementData },
     });
     if (current.identityId) {
       await tx.findingIdentity.update({

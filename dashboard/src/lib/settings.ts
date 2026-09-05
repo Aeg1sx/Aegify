@@ -70,3 +70,22 @@ export async function getSlackConfig() {
     notifySeverity: severity || "high",
   };
 }
+
+export async function getJiraConfig() {
+  const [baseUrl, email, apiToken, projectKey, issueType, enabled] = await Promise.all([
+    getSetting("jira.base_url"),
+    getSetting("jira.email"),
+    getSetting("jira.api_token"),
+    getSetting("jira.project_key"),
+    getSetting("jira.issue_type"),
+    getSetting("jira.enabled"),
+  ]);
+  return {
+    baseUrl: baseUrl.replace(/\/+$/, ""),
+    email,
+    apiToken,
+    projectKey,
+    issueType: issueType || "Bug",
+    enabled: enabled === "true",
+  };
+}

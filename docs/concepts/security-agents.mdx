@@ -1,0 +1,133 @@
+---
+title: "Security agent platform"
+description: "Operate Aegify's six evidence-bound agents across deterministic, API, Codex, and Claude Code runtimes."
+icon: "bot"
+---
+
+Aegify 0.3 adds a six-stage security-agent control plane. The agents enrich a
+retained scanner artifact; they do not replace its deterministic facts. Model
+output cannot silently confirm a vulnerability, execute a payload, suppress a
+finding, or teach a production prompt without a separate evidence gate.
+
+## Agent roster
+
+| Agent | Responsibility | Required output |
+|---|---|---|
+| 해태 (Haetae) | Environment analysis and threat modeling | Services, endpoints, trust boundaries, auth controls, assets, attack vectors, and framework coverage |
+| 매눈 (Maenun) | Lite or deep static diagnosis | Source/sink evidence, vulnerable location, bounded payload template, reachability, gaps, and remediation |
+| 살쾡이 (Salgwaengi) | Dynamic validation | Owned-fixture-only plan, approval scope, negative control, observed signal, and retained evidence digest |
+| 장승 (Jangseung) | Result synthesis | Deduplicated static/runtime conclusion, evidence state, exploit prerequisites, likelihood, severity, and code/framework fix |
+| 거북선 (Geobukseon) | CVE applicability | Version, configuration, exposure, reachability, runtime, and impact layers kept distinct |
+| 한울 (Hanul) | Self-improvement governance | Failure clusters and proposed prompt/rule/evaluation changes; never automatic production rollout |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Snapshot["Immutable scan + workspace digest"] --> Haetae["해태 · surface"]
+  Haetae --> Maenun["매눈 · static"]
+  Maenun --> Gate{"Approval gate"}
+  Gate -->|approved owned fixture| Salgwaengi["살쾡이 · dynamic harness"]
+  Gate -->|not approved| Awaiting["Awaiting evidence"]
+  Salgwaengi --> Jangseung["장승 · synthesis"]
+  Maenun --> Jangseung
+  CVE["CVE evidence"] --> Geobukseon["거북선 · applicability"]
+  Geobukseon --> Jangseung
+  Jangseung --> Hanul["한울 · eval-gated proposal"]
+  Hanul -.->|review + regression gate| Catalog["Versioned prompt/rule catalog"]
+  Jangseung --> Console["Findings · flow · code · remediation · Jira/Slack"]
+```
+
+Every reachability trace names its entry point, ordered hops, sink, fidelity,
+and missing proof. `complete=true` requires an entry and hops.
+`impact_proven=true` additionally requires runtime observation. An unresolved
+heuristic path stays a candidate; it is never described as a demonstrated
+attack.
+
+## Runtimes
+
+First create an immutable JSON scan result, then run the pipeline:
+
+```bash
+aegify scan ./src --output json --output-file scan.json --no-llm
+aegify agent-run scan.json --mode deep --output-file agent-run.json
+```
+
+The default runtime is deterministic and does not send source to a provider.
+Optional narrative adapters use the same strict output contract:
+
+```bash
+ANTHROPIC_API_KEY=... aegify agent-run scan.json \
+  --provider anthropic-api --model claude-opus-5
+
+OPENAI_API_KEY=... aegify agent-run scan.json \
+  --provider openai-api --model gpt-5.5
+
+aegify agent-run scan.json --provider codex --workspace ./repo
+aegify agent-run scan.json --provider claude --workspace ./repo
+```
+
+Codex runs ephemerally in a read-only sandbox with a JSON output schema.
+Claude Code runs non-interactively in plan permission mode with one turn.
+Neither adapter invokes a shell, inherits the whole environment, or permits the
+model to mutate deterministic facts. Inputs, outputs, runtime, and byte counts
+are bounded. Secrets are redacted before model use and persistence.
+
+## Tools and MCP boundary
+
+Agents may request only role-scoped read-only tools: workspace summary, attack
+surface, finding context, bounded call path, and harness planning. Unknown or
+write-capable tools are rejected. The MCP bridge accepts results only from an
+operator-configured allowlist, normalizes and redacts them, and stores input and
+output digests. It does not let a model discover or open arbitrary MCP servers.
+
+Prompts are versioned and hashed. Repository content, tool results, issue text,
+and CVE descriptions are explicitly treated as untrusted data rather than
+instructions. Structured Pydantic contracts reject unknown fields and invalid
+state combinations.
+
+## Dynamic evidence
+
+살쾡이 produces a plan, not a success claim. Execution requires all of the
+following:
+
+1. An owned or explicitly authorized fixture.
+2. Explicit approval recorded against the exact workspace digest and plan.
+3. A non-destructive, loopback/no-network harness with a digest-pinned image.
+4. A positive signal and negative control.
+5. A bounded evidence artifact containing the exact approval-scope digest and
+   step-output hashes.
+6. Import into the run before the stage can become `completed`.
+
+Use the existing HTTP, browser, proxy, or container verification command for
+execution. Approval alone moves a run to `awaiting_evidence`; it is not proof.
+
+## Dashboard and API
+
+The **AI Agents** console creates and inspects runs, shows all six stages,
+attack surfaces and reachability, highlights the vulnerable source line, and
+keeps remediation beside evidence gaps. Dynamic plans expose approve/reject and
+evidence-import controls. The finding detail view adds owner, due date,
+priority, tags, Jira linkage, code highlighting, attack flow, and audit history.
+
+The authenticated control-plane endpoints are:
+
+| Endpoint | Use |
+|---|---|
+| `GET/POST /api/agent-runs` | List or create a run from an existing scan |
+| `GET /api/agent-runs/:id` | Read stages, facts, approvals, evidence, and audit events |
+| `POST /api/agent-runs/:id/approvals/:approvalId` | Approve or reject one exact dynamic plan |
+| `POST /api/agent-runs/:id/evidence` | Validate and import harness evidence |
+| `POST /api/findings/:id/jira` | Create and link one Jira issue |
+
+Slack webhooks are restricted to the exact Slack webhook host. Jira defaults to
+Atlassian Cloud; self-hosted Jira requires an explicit
+`AEGIFY_JIRA_ALLOWED_HOSTS` allowlist. Credentials are encrypted at rest and
+never returned through the settings API.
+
+<Warning>
+  A commercial deployment must still configure durable database backups,
+  enterprise identity and authorization policy, isolated worker capacity,
+  approved target inventories, egress policy, secret rotation, retention, and
+  incident monitoring. Aegify's software gates do not grant testing authority.
+</Warning>

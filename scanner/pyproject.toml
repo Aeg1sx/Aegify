@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aegify-sast"
-version = "0.2.0"
+version = "0.3.0"
 description = "Next-gen SAST tool with Call Graph analysis, Dataflow tracking, and LLM-augmented verification"
 readme = "README.md"
 license = "MIT"
@@ -22,7 +22,7 @@ dependencies = [
     "tree-sitter-kotlin>=1.1.0",
     "tree-sitter-swift>=0.0.1",
     "networkx>=3.4",
-    "anthropic>=1.0.0,<2.0.0",
+    "anthropic>=1.4.0,<2.0.0",
     "typer>=0.15.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",

@@ -102,6 +102,46 @@ export function validateEndpointUrl(url: string): UrlValidationResult {
   return { valid: true };
 }
 
+export function validateSlackWebhookUrl(url: string): UrlValidationResult {
+  const common = validateEndpointUrl(url);
+  if (!common.valid) return common;
+  const parsed = new URL(url);
+  if (parsed.hostname.toLowerCase() !== "hooks.slack.com") {
+    return { valid: false, error: "Slack webhook host must be hooks.slack.com" };
+  }
+  if (!/^\/services\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(parsed.pathname)) {
+    return { valid: false, error: "Invalid Slack webhook path" };
+  }
+  if (parsed.search || parsed.hash) {
+    return { valid: false, error: "Slack webhook URL cannot contain query or fragment" };
+  }
+  return { valid: true };
+}
+
+export function validateJiraBaseUrl(url: string): UrlValidationResult {
+  const common = validateEndpointUrl(url);
+  if (!common.valid) return common;
+  const parsed = new URL(url);
+  if (parsed.search || parsed.hash) {
+    return { valid: false, error: "Jira base URL cannot contain query or fragment" };
+  }
+  if (parsed.pathname !== "/" && parsed.pathname !== "") {
+    return { valid: false, error: "Jira base URL must not include an API path" };
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  const configuredHosts = (process.env.AEGIFY_JIRA_ALLOWED_HOSTS || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (!hostname.endsWith(".atlassian.net") && !configuredHosts.includes(hostname)) {
+    return {
+      valid: false,
+      error: "Jira host must be Atlassian Cloud or listed in AEGIFY_JIRA_ALLOWED_HOSTS",
+    };
+  }
+  return { valid: true };
+}
+
 /**
  * Validate custom headers - block dangerous headers that could
  * be used for request smuggling or abuse.

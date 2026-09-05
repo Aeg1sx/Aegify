@@ -16,6 +16,7 @@ import {
   Moon,
   Sun,
   Loader2,
+  Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
@@ -35,6 +36,7 @@ const navSections = [
     items: [
       { href: "/projects", label: "Projects", icon: FolderKanban },
       { href: "/endpoints", label: "Endpoints", icon: Globe },
+      { href: "/agents", label: "AI Agents", icon: Workflow },
       { href: "/llm-scan", label: "LLM Scan", icon: Bot },
     ],
   },
@@ -191,7 +193,7 @@ export function Sidebar() {
       <div className="p-3 border-t border-border space-y-1">
         <UserMenu />
         <ThemeToggle />
-        <p className="text-[10px] text-muted-foreground/50 px-3">v0.2.0</p>
+        <p className="text-[10px] text-muted-foreground/50 px-3">v0.3.0</p>
       </div>
     </aside>
   );

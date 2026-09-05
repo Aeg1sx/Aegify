@@ -1,4 +1,5 @@
 import { getSlackConfig } from "@/lib/settings";
+import { validateSlackWebhookUrl } from "@/lib/url-validator";
 
 interface FindingSummary {
   ruleId: string;
@@ -37,6 +38,9 @@ export async function sendSlackNotification(
   const config = await getSlackConfig();
 
   if (!config.enabled || !config.webhookUrl) {
+    return false;
+  }
+  if (!validateSlackWebhookUrl(config.webhookUrl).valid) {
     return false;
   }
 
@@ -124,6 +128,8 @@ export async function sendSlackNotification(
   try {
     const res = await fetch(config.webhookUrl, {
       method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(message),
     });

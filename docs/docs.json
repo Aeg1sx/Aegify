@@ -54,7 +54,8 @@
                 "pages": [
                   "concepts/evidence-gates",
                   "concepts/multi-repository",
-                  "concepts/attack-surface"
+                  "concepts/attack-surface",
+                  "concepts/security-agents"
                 ]
               },
               {

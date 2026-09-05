@@ -4,6 +4,8 @@ import { encrypt, decrypt, maskApiKey } from "@/lib/crypto";
 import {
   validateEndpointUrl,
   validateCustomHeaders,
+  validateJiraBaseUrl,
+  validateSlackWebhookUrl,
 } from "@/lib/url-validator";
 
 // Keys that should be encrypted
@@ -12,6 +14,8 @@ const ENCRYPTED_KEYS = new Set([
   "llm.openai_api_key",
   "llm.google_api_key",
   "slack.webhook_url",
+  "jira.api_token",
+  "jira.email",
 ]);
 
 // Keys that should be masked in GET responses
@@ -20,6 +24,8 @@ const MASKED_KEYS = new Set([
   "llm.openai_api_key",
   "llm.google_api_key",
   "slack.webhook_url",
+  "jira.api_token",
+  "jira.email",
 ]);
 
 // Keys that contain URLs requiring SSRF validation
@@ -49,6 +55,12 @@ const ALLOWED_KEYS = new Set([
   "slack.enabled",
   "slack.channel",
   "slack.notify_severity",
+  "jira.base_url",
+  "jira.email",
+  "jira.api_token",
+  "jira.project_key",
+  "jira.issue_type",
+  "jira.enabled",
 ]);
 
 export async function GET() {
@@ -84,6 +96,16 @@ function validateSettingValue(
   // Validate URL keys against SSRF
   if (URL_KEYS.has(key) && value) {
     return validateEndpointUrl(value);
+  }
+  if (key === "slack.webhook_url" && value) {
+    return validateSlackWebhookUrl(value);
+  }
+  if (key === "jira.base_url" && value) {
+    return validateJiraBaseUrl(value);
+  }
+
+  if (key === "jira.project_key" && value && !/^[A-Z][A-Z0-9_]{1,19}$/.test(value)) {
+    return { valid: false, error: "Jira project key must use uppercase letters or digits" };
   }
 
   // Validate header keys

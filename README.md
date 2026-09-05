@@ -77,12 +77,16 @@ _Dashboard preview using demo scan data._
 - **Reproducible evidence contract** with workspace snapshots, analyzer/rule provenance, and stable evidence IDs preserved through SARIF and dashboard ingestion
 - **Evidence-gated findings** that retain broad heuristics as candidate/advisory results while only taint or structured semantic evidence can block CI; SARIF and the dashboard preserve both evidence state and gate disposition
 - **Evidence-bound AI review** with structured likely-TP/likely-FP/needs-review suggestions, explicit evidence gaps, remediation, and approval-gated owned-fixture proof templates; AI never mutates finding status
+- **Six evidence-bound security agents** for threat modeling, lite/deep static analysis, approval-gated dynamic validation, result synthesis, CVE applicability, and evaluation-gated self-improvement, with Korean operational identities and immutable prompt digests
+- **Deterministic, API, Codex, and Claude Code runtimes** with strict structured output, read-only CLI sandboxes, bounded model I/O, credential redaction, and allowlisted tool/MCP evidence
 - **Allowlisted AI analysis tools** for finding context, call paths, attack surface, workspace summaries, and harness planning, with bounded custom read-only tool registration
 - **Persistent finding lifecycle** with stable SARIF fingerprints, new/unchanged/updated/regressed baselines, current-vs-history views, time-bounded triage, and actor-stamped audit events
 - **Reproducible precision gates** with owned ground truth, per-rule precision/recall/F1, unmatched evidence, and threshold-based CI exit codes
 - **SARIF 2.1.0 output** for GitHub Code Scanning, SonarQube, and VS Code integration
 - **API endpoint detection** for Flask, FastAPI, Django, Express, Spring, and Go net/http
 - **Web dashboard** with finding triage, call graph visualization, and severity charts
+- **Security operations console** with six-stage run timelines, attack-flow and reachability views, vulnerable-line code highlighting, dynamic-evidence approval/import, remediation ownership, SLA priority/tags, and Jira issue creation
+- **Slack and Jira integrations** with encrypted credentials, exact-host validation, bounded responses, and auditable finding linkage
 - **DefectDojo integration** for centralized vulnerability management
 - **Parallel parsing** with deterministic fallback for restricted CI environments
 - **Isolated verification plans** with digest-pinned images, no-network Docker policy, explicit approval, and hashed evidence
@@ -127,6 +131,14 @@ aegify scan-workspace ../aegify-workspace.yml \
 aegify scan-workspace ../aegify-workspace.yml \
   --ai-tools --max-ai-findings 50 \
   --output sarif --output-file results.sarif
+
+# Run the six-agent pipeline deterministically from a retained scan artifact
+aegify agent-run results.json --mode deep --output-file agent-run.json
+
+# Or add model narrative through an API or read-only local coding agent
+OPENAI_API_KEY=... aegify agent-run results.json --provider openai-api --model gpt-5.5
+aegify agent-run results.json --provider codex --workspace /path/to/repository
+aegify agent-run results.json --provider claude --workspace /path/to/repository
 
 # Gate a versioned owned benchmark corpus on measured precision and recall
 aegify benchmark ../fixtures --ground-truth ../ground-truth.json \
