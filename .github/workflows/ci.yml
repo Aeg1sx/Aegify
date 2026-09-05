@@ -132,6 +132,7 @@ jobs:
       AUTH_URL: http://localhost:3000
       AUTH_GITHUB_ID: ci-only-client-id
       AUTH_GITHUB_SECRET: ci-only-client-secret
+      AUTH_ALLOWED_EMAILS: ci-only@example.test
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
@@ -258,6 +259,7 @@ jobs:
             --env AUTH_SECRET=ci-only-auth-secret-32-characters \
             --env ENCRYPTION_SECRET=ci-only-encryption-secret-32-chars \
             --env AUTH_URL=http://localhost:3000 \
+            --env AUTH_ALLOWED_EMAILS=ci-only@example.test \
             --env AUTH_GITHUB_ID=ci-only-client-id \
             --env AUTH_GITHUB_SECRET=ci-only-client-secret \
             --env AEGIFY_UPLOAD_TOKEN=ci-only-upload-token \

@@ -1,18 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { SessionProvider } from "next-auth/react";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Aegify",
@@ -34,13 +25,14 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
       >
         <SessionProvider>
-          <div className="flex h-screen">
+          <a href="#workspace" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-3">Skip to workspace</a>
+          <div className="flex h-dvh">
             <Sidebar />
-            <main className="flex-1 overflow-auto">
-              <div className="container mx-auto p-6">{children}</div>
+            <main id="workspace" className="min-w-0 flex-1 overflow-auto">
+              <div className="mx-auto max-w-[1920px] p-4 md:p-7">{children}</div>
             </main>
           </div>
         </SessionProvider>

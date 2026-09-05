@@ -4,6 +4,34 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Workbench primitives: shared hierarchy, density, and semantic state. */
+@layer components {
+  .workbench-panel { @apply min-w-0 overflow-hidden rounded-lg border border-border bg-card; }
+  .workbench-heading { @apply flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3; }
+  .eyebrow { @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground; }
+  .data-table { @apply w-full border-collapse text-left text-[13px]; }
+  .data-table th { @apply sticky top-0 z-10 border-b border-border bg-muted px-4 py-2.5 text-[11px] font-medium text-muted-foreground; }
+  .data-table td { @apply border-b border-border/60 px-4 py-3 align-middle; }
+  .data-table tbody tr { @apply transition-colors hover:bg-accent/50; }
+  .data-table tbody tr:last-child td { @apply border-b-0; }
+  .data-table.compact td { @apply py-2; }
+  .workbench-select { @apply h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs; }
+}
+
+button, a, input, select, textarea { touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+[data-slot="card"] { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+@media print {
+  .app-sidebar, .no-print { display: none !important; }
+  #workspace { overflow: visible !important; }
+  body, main, body > div { height: auto !important; }
+  .code-scroll { max-height: none !important; overflow: visible !important; }
+  .code-frame { break-inside: avoid; print-color-adjust: exact; }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -48,8 +76,8 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.985 0.002 247);
+  --radius: 0.5rem;
+  --background: oklch(0.98 0.002 247);
   --foreground: oklch(0.17 0.017 260);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.17 0.017 260);

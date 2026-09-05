@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { boundedInteger } from "@/lib/finding-view";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  const page = parseInt(url.searchParams.get("page") || "1", 10);
-  const limit = parseInt(url.searchParams.get("limit") || "50", 10);
+  const page = boundedInteger(url.searchParams.get("page"), 1, 100_000);
+  const limit = boundedInteger(url.searchParams.get("limit"), 50, 100);
   const skip = (page - 1) * limit;
 
   const scanId = url.searchParams.get("scanId");
@@ -39,6 +40,10 @@ export async function GET(request: NextRequest) {
   if (!scanId && !history) where.isCurrent = true;
   if (severity) where.severity = severity;
   if (status) where.status = status;
+  const evidenceState = url.searchParams.get("evidenceState");
+  if (["candidate", "reachable", "observed", "impact_proven"].includes(evidenceState || "")) where.evidenceState = evidenceState;
+  const baselineState = url.searchParams.get("baselineState");
+  if (["new", "regressed", "updated", "unchanged"].includes(baselineState || "")) where.baselineState = baselineState;
   if (ruleId) where.ruleId = ruleId;
   if (source) where.source = source;
   if (disposition === "blocking" || disposition === "advisory") {
@@ -68,7 +73,9 @@ export async function GET(request: NextRequest) {
   const [findings, total] = await Promise.all([
     prisma.finding.findMany({
       where,
-      orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
+      orderBy: url.searchParams.get("sort") === "file" ? [{ filePath: "asc" }, { lineStart: "asc" }, { id: "asc" }]
+        : url.searchParams.get("sort") === "rule" ? [{ ruleName: "asc" }, { id: "asc" }]
+        : [{ createdAt: url.searchParams.get("sort") === "oldest" ? "asc" : "desc" }, { id: "asc" }],
       skip,
       take: limit,
     }),

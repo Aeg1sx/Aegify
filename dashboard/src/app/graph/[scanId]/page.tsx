@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
+import { StructureExplorer } from "@/components/structure-explorer";
 import {
   ArrowLeft,
   Search,
@@ -117,22 +118,30 @@ export default function CallGraphPage({
   const [graphMode, setGraphMode] = useState<"summary" | "full">("summary");
   const [totalNodes, setTotalNodes] = useState(0);
   const [totalEdges, setTotalEdges] = useState(0);
+  const [view, setView] = useState<"structure" | "network">("structure");
+  const [error, setError] = useState("");
 
   // Fetch data
   useEffect(() => {
+    const controller = new AbortController();
     fetch(
-      `/api/graph/${encodeURIComponent(scanId)}?mode=${graphMode}&maxNodes=3000`
+      `/api/graph/${encodeURIComponent(scanId)}?mode=${graphMode}&maxNodes=3000`,
+      { signal: controller.signal },
     )
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error("Unable to load the graph"); return r.json(); })
       .then((data) => {
-        if (data.nodes && data.nodes.length > 0) {
+        if (!controller.signal.aborted && Array.isArray(data.nodes)) {
           setNodes(data.nodes);
           setEdges(data.edges || []);
           setTotalNodes(data.totalNodes || data.nodes.length);
           setTotalEdges(data.totalEdges || data.edges?.length || 0);
+          setError("");
+          setSelectedNode(null);
         }
       })
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!controller.signal.aborted) setError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [scanId, graphMode]);
 
   // Track container size
@@ -155,7 +164,7 @@ export default function CallGraphPage({
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [loading]);
+  }, [loading, view]);
 
   // Dynamic node scale based on graph size
   const nodeScale = useMemo(() => {
@@ -353,6 +362,7 @@ export default function CallGraphPage({
     );
   }
 
+  if (error) return <div role="alert" className="workbench-panel p-5">{error} <Link className="text-primary" href={`/scans/${scanId}`}>Return to scan</Link></div>;
   if (nodes.length === 0) {
     return (
       <div className="space-y-4">
@@ -381,7 +391,7 @@ export default function CallGraphPage({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link
             href={`/scans/${scanId}`}
@@ -395,7 +405,7 @@ export default function CallGraphPage({
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative w-56">
+          <div className={view === "network" ? "relative w-56" : "hidden"}>
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="Search nodes..."
@@ -405,9 +415,10 @@ export default function CallGraphPage({
             />
           </div>
           <select
+            aria-label="Filter network node types"
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+            className={view === "network" ? "h-7 rounded-md border border-input bg-background px-2 text-xs" : "hidden"}
           >
             <option value="">All types</option>
             <option value="entry_point">Entry points</option>
@@ -418,8 +429,7 @@ export default function CallGraphPage({
           <div className="h-7 rounded-md border border-input bg-background flex text-xs overflow-hidden">
             <button
               onClick={() => {
-                setLoading(true);
-                setGraphMode("summary");
+                if (graphMode !== "summary") { setLoading(true); setGraphMode("summary"); }
               }}
               className={`px-2.5 transition-colors ${
                 graphMode === "summary"
@@ -431,8 +441,7 @@ export default function CallGraphPage({
             </button>
             <button
               onClick={() => {
-                setLoading(true);
-                setGraphMode("full");
+                if (graphMode !== "full") { setLoading(true); setGraphMode("full"); }
               }}
               className={`px-2.5 transition-colors border-l border-input ${
                 graphMode === "full"
@@ -470,7 +479,11 @@ export default function CallGraphPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_260px] gap-3 h-[calc(100vh-10rem)]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
+        {(["structure", "network"] as const).map((name) => <button key={name} type="button" aria-pressed={view === name} onClick={() => setView(name)} className={`rounded-md px-3 py-2 text-xs font-medium ${view === name ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"}`}>{name === "structure" ? "Structure & source" : "Network canvas"}</button>)}
+        <span className="ml-auto text-xs text-muted-foreground">{nodes.length} / {totalNodes} nodes loaded · recorded calls, not runtime proof</span>
+      </div>
+      {view === "structure" ? <StructureExplorer nodes={nodes} edges={edges} scanId={scanId} /> : <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px] h-[calc(100vh-13rem)]">
         {/* Graph */}
         <div
           ref={containerRef}
@@ -522,7 +535,7 @@ export default function CallGraphPage({
           />
 
           {/* Legend */}
-          <div className="absolute bottom-2.5 left-2.5 bg-background/80 backdrop-blur-sm rounded-md px-2.5 py-2 text-[10px] space-y-1 pointer-events-none border border-border/50">
+          <div className="absolute bottom-2.5 left-2.5 bg-background/80 backdrop-blur-sm rounded-md px-2.5 py-2 text-xs space-y-1 pointer-events-none border border-border/50">
             <div className="flex items-center gap-1.5">
               <span
                 className="w-2.5 h-2.5 rounded-full"
@@ -564,7 +577,7 @@ export default function CallGraphPage({
           </div>
 
           {/* HUD */}
-          <div className="absolute bottom-2.5 right-2.5 bg-background/80 backdrop-blur-sm rounded-md px-2 py-1 text-[10px] font-mono text-muted-foreground pointer-events-none border border-border/50">
+          <div className="absolute bottom-2.5 right-2.5 bg-background/80 backdrop-blur-sm rounded-md px-2 py-1 text-xs font-mono text-muted-foreground pointer-events-none border border-border/50">
             {graphData.nodes.length.toLocaleString()} /{" "}
             {totalNodes.toLocaleString()} nodes &middot;{" "}
             {graphData.links.length.toLocaleString()} /{" "}
@@ -579,45 +592,45 @@ export default function CallGraphPage({
         <div className="space-y-2.5 overflow-y-auto">
           <Card>
             <CardHeader className="py-2.5 px-3">
-              <CardTitle className="text-[11px] font-medium">
+              <CardTitle className="text-xs font-medium">
                 Graph Statistics
               </CardTitle>
             </CardHeader>
             <CardContent className="px-3 pb-2.5 space-y-1">
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Total Nodes</span>
-                <span className="font-mono text-[11px]">
+                <span className="font-mono text-xs">
                   {totalNodes.toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Total Edges</span>
-                <span className="font-mono text-[11px]">
+                <span className="font-mono text-xs">
                   {totalEdges.toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Visible</span>
-                <span className="font-mono text-[11px]">
+                <span className="font-mono text-xs">
                   {graphData.nodes.length.toLocaleString()} nodes
                 </span>
               </div>
               <div className="border-t border-border/50 my-1" />
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Entry Points</span>
-                <span className="font-mono text-[11px] text-green-500">
+                <span className="font-mono text-xs text-green-500">
                   {entryPoints.length}
                 </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Sinks</span>
-                <span className="font-mono text-[11px] text-red-500">
+                <span className="font-mono text-xs text-red-500">
                   {sinks.length}
                 </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">With Findings</span>
-                <span className="font-mono text-[11px] text-orange-500">
+                <span className="font-mono text-xs text-orange-500">
                   {withFindings.length}
                 </span>
               </div>
@@ -627,34 +640,34 @@ export default function CallGraphPage({
           {selectedNode && (
             <Card className="border-primary/30">
               <CardHeader className="py-2.5 px-3">
-                <CardTitle className="text-[11px] font-medium">
+                <CardTitle className="text-xs font-medium">
                   Selected Node
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-3 pb-2.5 space-y-1.5">
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
                     Name
                   </span>
-                  <p className="text-[11px] font-mono break-all leading-tight">
+                  <p className="text-xs font-mono break-all leading-tight">
                     {selectedNode.qualifiedName}
                   </p>
                 </div>
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
                     File
                   </span>
-                  <p className="text-[11px] font-mono break-all leading-tight text-muted-foreground">
+                  <p className="text-xs font-mono break-all leading-tight text-muted-foreground">
                     {selectedNode.filePath.split("/").slice(-3).join("/")}:
                     {selectedNode.lineStart}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
                     Type
                   </span>
                   <span
-                    className="text-[11px] capitalize px-1.5 py-0.5 rounded text-white"
+                    className="text-xs capitalize px-1.5 py-0.5 rounded text-white"
                     style={{
                       backgroundColor:
                         NODE_COLORS[selectedNode.nodeType] || "#64748b",
@@ -665,13 +678,13 @@ export default function CallGraphPage({
                 </div>
                 {selectedNode.hasFinding && selectedNode.findingSeverity && (
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
                       Finding
                     </span>
                     <SeverityBadge severity={selectedNode.findingSeverity} />
                   </div>
                 )}
-                <div className="flex gap-3 text-[11px] font-mono pt-0.5">
+                <div className="flex gap-3 text-xs font-mono pt-0.5">
                   <span className="text-muted-foreground">
                     {
                       edges.filter(
@@ -696,7 +709,7 @@ export default function CallGraphPage({
           {entryPoints.length > 0 && (
             <Card>
               <CardHeader className="py-2.5 px-3">
-                <CardTitle className="text-[11px] font-medium">
+                <CardTitle className="text-xs font-medium">
                   Entry Points ({entryPoints.length})
                 </CardTitle>
               </CardHeader>
@@ -706,7 +719,7 @@ export default function CallGraphPage({
                     <button
                       key={n.id}
                       onClick={() => setSelectedNode(n)}
-                      className={`block w-full text-left text-[11px] font-mono truncate py-0.5 px-1 rounded transition-colors ${
+                      className={`block w-full text-left text-xs font-mono truncate py-0.5 px-1 rounded transition-colors ${
                         selectedNode?.id === n.id
                           ? "bg-primary/10 text-foreground"
                           : "hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -716,7 +729,7 @@ export default function CallGraphPage({
                     </button>
                   ))}
                   {entryPoints.length > 30 && (
-                    <p className="text-[10px] text-muted-foreground pt-1">
+                    <p className="text-xs text-muted-foreground pt-1">
                       +{entryPoints.length - 30} more...
                     </p>
                   )}
@@ -728,7 +741,7 @@ export default function CallGraphPage({
           {sinks.length > 0 && (
             <Card>
               <CardHeader className="py-2.5 px-3">
-                <CardTitle className="text-[11px] font-medium">
+                <CardTitle className="text-xs font-medium">
                   Sinks ({sinks.length})
                 </CardTitle>
               </CardHeader>
@@ -738,7 +751,7 @@ export default function CallGraphPage({
                     <button
                       key={n.id}
                       onClick={() => setSelectedNode(n)}
-                      className={`block w-full text-left text-[11px] font-mono truncate py-0.5 px-1 rounded transition-colors ${
+                      className={`block w-full text-left text-xs font-mono truncate py-0.5 px-1 rounded transition-colors ${
                         selectedNode?.id === n.id
                           ? "bg-primary/10 text-foreground"
                           : "hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -748,7 +761,7 @@ export default function CallGraphPage({
                     </button>
                   ))}
                   {sinks.length > 30 && (
-                    <p className="text-[10px] text-muted-foreground pt-1">
+                    <p className="text-xs text-muted-foreground pt-1">
                       +{sinks.length - 30} more...
                     </p>
                   )}
@@ -757,7 +770,7 @@ export default function CallGraphPage({
             </Card>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

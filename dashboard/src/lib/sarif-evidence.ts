@@ -82,3 +82,27 @@ export function normalizeFindingClassification(
     disposition: FINDING_DISPOSITIONS.has(disposition) ? disposition : "advisory",
   };
 }
+
+interface SnippetRegion { startLine?: number; endLine?: number; snippet?: { text?: string } }
+export function normalizeSourceSnippet(location?: { region?: SnippetRegion; contextRegion?: SnippetRegion }): {
+  codeSnippet: string; snippetStartLine: number | null;
+} {
+  const region = location?.region;
+  const context = location?.contextRegion;
+  const positiveLine = (line: unknown): line is number => typeof line === "number" && Number.isSafeInteger(line) && line > 0;
+  if (typeof context?.snippet?.text === "string" && positiveLine(context.startLine)
+      && positiveLine(region?.startLine) && context.startLine <= region.startLine) {
+    const lines = context.snippet.text.replace(/\r\n/g, "\n").split("\n");
+    const last = context.startLine + lines.length - 1;
+    const end = region.endLine ?? region.startLine;
+    if (positiveLine(end) && end >= region.startLine && last >= end && (context.endLine === undefined || context.endLine === last)) {
+      return { codeSnippet: context.snippet.text, snippetStartLine: context.startLine };
+    }
+  }
+  const text = typeof region?.snippet?.text === "string" ? region.snippet.text : "";
+  const count = text.replace(/\r\n/g, "\n").split("\n").length;
+  // Legacy Aegify reports sometimes put context in region.snippet without its offset.
+  const end = region?.endLine ?? region?.startLine;
+  const known = positiveLine(region?.startLine) && positiveLine(end) && count <= end - region.startLine + 1;
+  return { codeSnippet: text, snippetStartLine: known ? region!.startLine! : null };
+}

@@ -22,8 +22,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown> : null;
 }
 
-function approximateLine(source: string, key: string): number | undefined {
-  const index = source.split("\n").findIndex((line) => line.includes(key));
+function ruleLine(source: string, id: string, occurrence = 0): number | undefined {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^\\s*(?:-\\s*)?["']?id["']?\\s*:\\s*["']?${escaped}["']?\\s*(?:#.*)?$`);
+  const matches = source.split("\n").map((line, index) => pattern.test(line) ? index : -1).filter((index) => index >= 0);
+  const index = matches[occurrence] ?? -1;
   return index >= 0 ? index + 1 : undefined;
 }
 
@@ -49,7 +52,7 @@ export function validateRuleYaml(
 
   let parsed: unknown;
   try {
-    parsed = load(source, { json: false });
+    parsed = load(source, { json: false, maxDepth: 40, maxAliases: 0 });
   } catch (error) {
     const mark = asRecord(error)?.mark as { line?: number } | undefined;
     return {
@@ -67,6 +70,9 @@ export function validateRuleYaml(
   if (!root) {
     return { valid: false, ruleCount: 0, diagnostics: [{ level: "error", message: "The YAML root must be an object." }] };
   }
+  if (Object.hasOwn(root, "rules") && !Array.isArray(root.rules)) {
+    return { valid: false, ruleCount: 0, diagnostics: [{ level: "error", message: "rules must be a list of rule objects." }] };
+  }
   const rawRules = Array.isArray(root.rules) ? root.rules : [root];
   if (rawRules.length === 0) {
     return { valid: false, ruleCount: 0, diagnostics: [{ level: "error", message: "At least one rule is required." }] };
@@ -80,6 +86,7 @@ export function validateRuleYaml(
   }
 
   const ids = new Set<string>();
+  const occurrences = new Map<string, number>();
   for (const [index, rawRule] of rawRules.entries()) {
     const rule = asRecord(rawRule);
     if (!rule) {
@@ -87,7 +94,9 @@ export function validateRuleYaml(
       continue;
     }
     const id = typeof rule.id === "string" ? rule.id : "";
-    const line = id ? approximateLine(source, `id: ${id}`) : undefined;
+    const occurrence = occurrences.get(id) || 0;
+    const line = id ? ruleLine(source, id, occurrence) : undefined;
+    occurrences.set(id, occurrence + 1);
     if (!RULE_ID.test(id)) {
       diagnostics.push({ level: "error", message: "Rule ID must use the AEG-UPPERCASE-ID format.", line, ruleId: id || undefined });
     } else if (ids.has(id)) {
@@ -108,8 +117,8 @@ export function validateRuleYaml(
     if (!SEVERITIES.has(String(rule.severity))) {
       diagnostics.push({ level: "error", message: "Severity must be critical, high, medium, or low.", line, ruleId: id || undefined });
     }
-    if (!Array.isArray(rule.languages) || rule.languages.some((item) => typeof item !== "string")) {
-      diagnostics.push({ level: "error", message: "Languages must be a YAML list of language names.", line, ruleId: id || undefined });
+    if (!Array.isArray(rule.languages) || rule.languages.length === 0 || rule.languages.some((item) => typeof item !== "string" || !item.trim())) {
+      diagnostics.push({ level: "error", message: "Languages must be a non-empty YAML list of language names.", line, ruleId: id || undefined });
     }
     if (typeof rule.message !== "string" || !rule.message.trim()) {
       diagnostics.push({ level: "warning", message: "Add a finding message for actionable output.", line, ruleId: id || undefined });
@@ -117,8 +126,28 @@ export function validateRuleYaml(
     if (!rule.patterns && !rule.taint && !rule.pattern && !rule.dependencies && !rule.dependency_patterns) {
       diagnostics.push({ level: "warning", message: "No pattern, taint, or dependency detector is declared.", line, ruleId: id || undefined });
     }
-    if (typeof rule.confidence === "number" && (rule.confidence < 0 || rule.confidence > 1)) {
-      diagnostics.push({ level: "error", message: "Confidence must be between 0 and 1.", line, ruleId: id || undefined });
+    if (rule.confidence !== undefined && (typeof rule.confidence !== "number" || !Number.isFinite(rule.confidence) || rule.confidence < 0 || rule.confidence > 1)) {
+      diagnostics.push({ level: "error", message: "Confidence must be a finite number between 0 and 1.", line, ruleId: id || undefined });
+    }
+    if (rule.patterns !== undefined) {
+      if (!Array.isArray(rule.patterns) || rule.patterns.length === 0 || rule.patterns.some((pattern) => !asRecord(pattern))) {
+        diagnostics.push({ level: "error", message: "Patterns must be a non-empty list of detector objects.", line, ruleId: id || undefined });
+      } else {
+        for (const [patternIndex, rawPattern] of rule.patterns.entries()) {
+          const pattern = asRecord(rawPattern)!;
+          for (const field of ["callee", "pattern", "args_match", "context_match"]) {
+            if (pattern[field] !== undefined && (typeof pattern[field] !== "string" || !String(pattern[field]).trim())) {
+              diagnostics.push({ level: "error", message: `Pattern ${patternIndex + 1}: ${field} must be a non-empty string.`, line, ruleId: id || undefined });
+            }
+          }
+        }
+      }
+    }
+    if (rule.taint !== undefined && !asRecord(rule.taint)) {
+      diagnostics.push({ level: "error", message: "Taint must be a source/sink configuration object.", line, ruleId: id || undefined });
+    }
+    if (rule.cwe_id !== undefined && rule.cwe_id !== null && (typeof rule.cwe_id !== "number" || !Number.isSafeInteger(rule.cwe_id) || rule.cwe_id <= 0)) {
+      diagnostics.push({ level: "error", message: "CWE ID must be a positive integer or null.", line, ruleId: id || undefined });
     }
   }
 

@@ -1,72 +1,18 @@
 "use client";
+import Link from "next/link";
+import { SeverityBadge } from "@/components/severity-badge";
 
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from "recharts";
-
-const COLORS: Record<string, string> = {
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#3b82f6",
-};
-
-interface SeverityChartProps {
-  severities: Record<string, number>;
-}
-
-export function SeverityChart({ severities }: SeverityChartProps) {
-  const data = Object.entries(severities)
-    .filter(([, count]) => count > 0)
-    .map(([name, value]) => ({
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-      value,
-      key: name,
-    }));
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[200px] text-muted-foreground">
-        No findings
-      </div>
-    );
-  }
-
-  return (
-    <ResponsiveContainer width="100%" height={200}>
-      <PieChart>
-        <Pie
-          data={data}
-          cx="50%"
-          cy="50%"
-          innerRadius={50}
-          outerRadius={80}
-          paddingAngle={3}
-          dataKey="value"
-        >
-          {data.map((entry) => (
-            <Cell
-              key={entry.key}
-              fill={COLORS[entry.key] || "#64748b"}
-              stroke="transparent"
-            />
-          ))}
-        </Pie>
-        <Tooltip
-          contentStyle={{
-            backgroundColor: "hsl(var(--card))",
-            border: "1px solid hsl(var(--border))",
-            borderRadius: "8px",
-            color: "hsl(var(--card-foreground))",
-          }}
-        />
-        <Legend />
-      </PieChart>
-    </ResponsiveContainer>
-  );
+export function SeverityChart({ severities }: { severities: Record<string, number> }) {
+  const order = ["critical", "high", "medium", "low"];
+  const maximum = Math.max(1, ...order.map((s) => severities[s] || 0));
+  const total = Object.values(severities).reduce((sum, n) => sum + n, 0);
+  return <div className="space-y-5" aria-label="Severity distribution">
+    {order.map((severity) => {
+      const count = severities[severity] || 0;
+      return <Link key={severity} href={"/findings?severity=" + severity} className="group grid grid-cols-[70px_1fr_42px] items-center gap-3" aria-label={severity + ": " + count + " findings"}>
+        <SeverityBadge severity={severity} /><span className="h-2 overflow-hidden rounded-sm bg-muted"><span className="block h-full rounded-sm transition-[width] group-hover:opacity-70" style={{ width: (count / maximum * 100) + "%", background: "var(--severity-" + severity + ")" }} /></span><span className="text-right font-mono text-sm tabular-nums">{count}</span>
+      </Link>;
+    })}
+    <p className="border-t border-border pt-3 text-xs text-muted-foreground">{total.toLocaleString()} current occurrences · select a severity to investigate</p>
+  </div>;
 }

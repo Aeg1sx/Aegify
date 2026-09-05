@@ -1,869 +1,188 @@
 "use client";
-
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Brain, MessageSquare, TicketCheck, ShieldCheck, Save, RotateCcw, Eye, EyeOff, Check, AlertCircle, Loader2, PlugZap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Brain,
-  Bot,
-  Key,
-  Save,
-  MessageSquare,
-  Shield,
-  CheckCircle,
-  AlertCircle,
-  Globe,
-  Plus,
-  Trash2,
-  TicketCheck,
-} from "lucide-react";
+import { SECRET_SETTINGS, settingsChanges, settingsDraft, settingTypeError, type SettingsView } from "@/lib/settings-contract";
+import { PROVIDER_PRESETS, PROVIDER_PROTOCOLS, providerProtocol, providerUrl } from "@/lib/provider-catalog";
 
-interface SettingsMap {
-  [key: string]: { value: string; masked?: string };
+type Section = "llm" | "slack" | "jira" | "security";
+interface Field {
+  key: string; label: string; hint?: string; kind?: "boolean" | "secret" | "number" | "select";
+  options?: Array<[string, string]>; placeholder?: string;
+  min?: number; max?: number; step?: number;
 }
-
-interface HeaderEntry {
-  key: string;
-  value: string;
-}
-
+const SECTIONS = [
+  { id: "llm", label: "AI review", description: "Providers, credentials, and review policy", icon: Brain },
+  { id: "slack", label: "Slack", description: "Notification delivery", icon: MessageSquare },
+  { id: "jira", label: "Jira", description: "Remediation issue tracking", icon: TicketCheck },
+  { id: "security", label: "Security", description: "Server configuration readiness", icon: ShieldCheck },
+] as const;
+const FIELDS: Record<Exclude<Section, "security">, Field[]> = {
+  llm: [
+    { key: "llm.enabled", label: "Enable AI review", kind: "boolean", hint: "AI recommendations do not automatically confirm findings or change triage status." },
+    { key: "llm.provider", label: "Provider protocol", kind: "select", options: PROVIDER_PROTOCOLS.map(([id, name]) => [id, name]), hint: "Native request and response adapters. Provider presets configure compatible services without inventing a new protocol." },
+    { key: "llm.model", label: "Model ID", placeholder: "Exact model identifier from your provider", hint: "Use an identifier available to your account. Changing providers does not overwrite this field." },
+    { key: "llm.anthropic_api_key", label: "Anthropic API key", kind: "secret" },
+    { key: "llm.openai_api_key", label: "OpenAI API key", kind: "secret" },
+    { key: "llm.google_api_key", label: "Google Gemini API key", kind: "secret" },
+    { key: "llm.custom_endpoint", label: "Custom HTTPS endpoint", placeholder: "https://your-provider.example/api", hint: "Optional protocol-compatible endpoint. Private network addresses are blocked; direct-provider keys are never forwarded to custom endpoints." },
+    { key: "llm.custom_headers", label: "Custom request headers", kind: "secret", placeholder: '{"Authorization":"Bearer …"}', hint: "JSON object with string values; at most 20 headers. Stored header values are never returned to the browser. Enter a complete replacement or leave blank to keep them." },
+    { key: "llm.max_output_tokens", label: "Output token budget", kind: "number", min: 128, max: 32768, step: 128, hint: "Maximum generated tokens per review request. Model-specific limits still apply." },
+    { key: "llm.timeout_seconds", label: "Request timeout (seconds)", kind: "number", min: 5, max: 300, step: 5, hint: "No automatic retry: a timeout may still incur provider usage." },
+    { key: "llm.chat_token_parameter", label: "Chat token parameter", kind: "select", options: [["max_tokens", "max_tokens · compatible APIs"], ["max_completion_tokens", "max_completion_tokens · reasoning models"]], hint: "Used only by Chat Completions. Choose the parameter accepted by your model/provider." },
+    { key: "llm.auto_verify", label: "Automatically request AI review", kind: "boolean", hint: "Uses the saved review policy. Model suggestions remain separate from scanner evidence." },
+    { key: "llm.verify_threshold", label: "Review confidence threshold", kind: "number", min: 0, max: 1, step: 0.05, hint: "A value from 0 to 1. This is a review setting, not proof of runtime impact." },
+    { key: "llm.language", label: "Finding analysis language", kind: "select", options: [["en", "English"], ["ko", "Korean"], ["ja", "Japanese"], ["zh", "Chinese"], ["es", "Spanish"], ["de", "German"], ["fr", "French"], ["pt", "Portuguese"]], hint: "Applies to finding-analysis prose. Agent interface labels and generated agent explanations use English." },
+  ],
+  slack: [
+    { key: "slack.enabled", label: "Enable Slack notifications", kind: "boolean" },
+    { key: "slack.webhook_url", label: "Incoming webhook", kind: "secret", placeholder: "https://hooks.slack.com/services/…", hint: "Only official Slack incoming webhook URLs are accepted." },
+    { key: "slack.channel", label: "Channel label", placeholder: "#security-alerts", hint: "The webhook configuration ultimately controls where Slack delivers the message." },
+    { key: "slack.notify_severity", label: "Minimum severity", kind: "select", options: [["critical", "Critical"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]] },
+  ],
+  jira: [
+    { key: "jira.enabled", label: "Enable Jira integration", kind: "boolean" },
+    { key: "jira.base_url", label: "Jira site origin", placeholder: "https://your-team.atlassian.net", hint: "Use the site origin without an API path. Self-hosted domains require the server-side allowlist." },
+    { key: "jira.email", label: "Account email", kind: "secret", placeholder: "security@example.com" },
+    { key: "jira.api_token", label: "API token", kind: "secret" },
+    { key: "jira.project_key", label: "Project key", placeholder: "SEC" },
+    { key: "jira.issue_type", label: "Issue type", placeholder: "Bug" },
+  ],
+};
+interface Security { encryptionConfigured: boolean; authenticationConfigured: boolean; production: boolean; accessPolicyConfigured: boolean; localAuthentication: boolean; emailConfigured: boolean; authOrigin: string | null }
+interface Notice { ok: boolean; text: string }
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsMap>({});
+  const [saved, setSaved] = useState<SettingsView>({});
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [section, setSection] = useState<Section>("llm");
+  const [security, setSecurity] = useState<Security | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testingLLM, setTestingLLM] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-
-  // LLM form
-  const [llmProvider, setLlmProvider] = useState("anthropic");
-  const [llmModel, setLlmModel] = useState("claude-opus-5");
-  const [llmEnabled, setLlmEnabled] = useState(false);
-  const [llmAutoVerify, setLlmAutoVerify] = useState(false);
-  const [llmThreshold, setLlmThreshold] = useState("0.7");
-  const [anthropicKey, setAnthropicKey] = useState("");
-  const [openaiKey, setOpenaiKey] = useState("");
-  const [googleKey, setGoogleKey] = useState("");
-  const [llmLanguage, setLlmLanguage] = useState("en");
-  const [customEndpoint, setCustomEndpoint] = useState("");
-  const [customHeaders, setCustomHeaders] = useState<HeaderEntry[]>([]);
-
-  // Slack form
-  const [slackWebhook, setSlackWebhook] = useState("");
-  const [slackEnabled, setSlackEnabled] = useState(false);
-  const [slackChannel, setSlackChannel] = useState("#security-alerts");
-  const [slackSeverity, setSlackSeverity] = useState("high");
-
-  // Jira form
-  const [jiraBaseUrl, setJiraBaseUrl] = useState("");
-  const [jiraEmail, setJiraEmail] = useState("");
-  const [jiraToken, setJiraToken] = useState("");
-  const [jiraProjectKey, setJiraProjectKey] = useState("");
-  const [jiraIssueType, setJiraIssueType] = useState("Bug");
-  const [jiraEnabled, setJiraEnabled] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((data) => {
-        const s = data.settings || {};
-        setSettings(s);
-        setLlmProvider(s["llm.provider"]?.value || "anthropic");
-        setLlmModel(s["llm.model"]?.value || "claude-opus-5");
-        setLlmEnabled(s["llm.enabled"]?.value === "true");
-        setLlmAutoVerify(s["llm.auto_verify"]?.value === "true");
-        setLlmThreshold(s["llm.verify_threshold"]?.value || "0.7");
-        setLlmLanguage(s["llm.language"]?.value || "en");
-        setCustomEndpoint(s["llm.custom_endpoint"]?.value || "");
-        // Parse custom headers from JSON
-        const headersStr = s["llm.custom_headers"]?.value || "";
-        if (headersStr) {
-          try {
-            const obj = JSON.parse(headersStr);
-            setCustomHeaders(
-              Object.entries(obj).map(([k, v]) => ({
-                key: k,
-                value: v as string,
-              }))
-            );
-          } catch {
-            setCustomHeaders([]);
-          }
-        }
-        setSlackEnabled(s["slack.enabled"]?.value === "true");
-        setSlackChannel(s["slack.channel"]?.value || "#security-alerts");
-        setSlackSeverity(s["slack.notify_severity"]?.value || "high");
-        setJiraBaseUrl(s["jira.base_url"]?.value || "");
-        setJiraProjectKey(s["jira.project_key"]?.value || "");
-        setJiraIssueType(s["jira.issue_type"]?.value || "Bug");
-        setJiraEnabled(s["jira.enabled"]?.value === "true");
-      })
-      .finally(() => setLoading(false));
+  const [loadError, setLoadError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [tests, setTests] = useState<Record<string, Notice & { time: string }>>({});
+  const reload = useCallback(async () => {
+    setLoading(true); setLoadError("");
+    try {
+      const response = await fetch("/api/settings", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok || !data.settings) throw new Error(data.error || "Unable to load settings.");
+      setSaved(data.settings); setDraft(settingsDraft(data.settings)); setSecurity(data.security);
+      setRemoved(new Set()); setNotice(null);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Unable to load settings."); }
+    finally { setLoading(false); }
   }, []);
-
-  const addHeader = () => {
-    setCustomHeaders([...customHeaders, { key: "", value: "" }]);
-  };
-
-  const removeHeader = (index: number) => {
-    setCustomHeaders(customHeaders.filter((_, i) => i !== index));
-  };
-
-  const updateHeader = (
-    index: number,
-    field: "key" | "value",
-    val: string
-  ) => {
-    const updated = [...customHeaders];
-    updated[index] = { ...updated[index], [field]: val };
-    setCustomHeaders(updated);
-  };
-
-  const headersToJson = (): string => {
-    const obj: Record<string, string> = {};
-    for (const h of customHeaders) {
-      if (h.key.trim()) {
-        obj[h.key.trim()] = h.value;
-      }
-    }
-    return Object.keys(obj).length > 0 ? JSON.stringify(obj) : "";
-  };
-
-  const saveLLM = async () => {
-    setSaving(true);
-    setSaveMsg(null);
-
-    const updates: Record<string, string> = {
-      "llm.provider": llmProvider,
-      "llm.model": llmModel,
-      "llm.enabled": llmEnabled ? "true" : "false",
-      "llm.auto_verify": llmAutoVerify ? "true" : "false",
-      "llm.verify_threshold": llmThreshold,
-      "llm.language": llmLanguage,
-      "llm.custom_endpoint": customEndpoint,
-      "llm.custom_headers": headersToJson(),
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => { void reload(); });
+    return () => cancelAnimationFrame(frame);
+  }, [reload]);
+  const changes = useMemo(() => Object.assign({}, ...["llm", "slack", "jira"].map((key) => settingsChanges(draft, saved, removed, key))) as Record<string, string>, [draft, saved, removed]);
+  const dirty = !loading && Object.keys(changes).length > 0;
+  const sectionChanges = section === "security" ? {} : settingsChanges(draft, saved, removed, section);
+  const pending = Object.keys(sectionChanges).length;
+  useEffect(() => {
+    if (!dirty) return;
+    const unload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    const navigate = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+      const link = (event.target as Element)?.closest("a[href]") as HTMLAnchorElement | null;
+      if (link && link.target !== "_blank" && new URL(link.href).pathname !== window.location.pathname && !window.confirm("Discard unsaved settings and leave this page?")) { event.preventDefault(); event.stopPropagation(); }
     };
-
-    if (anthropicKey) updates["llm.anthropic_api_key"] = anthropicKey;
-    if (openaiKey) updates["llm.openai_api_key"] = openaiKey;
-    if (googleKey) updates["llm.google_api_key"] = googleKey;
-
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: updates }),
-    });
-
-    if (res.ok) {
-      setSaveMsg({ type: "success", text: "LLM settings saved" });
-      setAnthropicKey("");
-      setOpenaiKey("");
-      setGoogleKey("");
-      const data = await (await fetch("/api/settings")).json();
-      setSettings(data.settings || {});
-    } else {
-      const err = await res.json();
-      setSaveMsg({
-        type: "error",
-        text: err.error || "Failed to save LLM settings",
-      });
-    }
-    setSaving(false);
+    window.addEventListener("beforeunload", unload); document.addEventListener("click", navigate, true);
+    return () => { window.removeEventListener("beforeunload", unload); document.removeEventListener("click", navigate, true); };
+  }, [dirty]);
+  const edit = (key: string, value: string) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setFieldErrors((errors) => { const next = { ...errors }; delete next[key]; return next; });
+    setNotice(null);
+  };
+  const discard = () => {
+    const baseline = settingsDraft(saved);
+    setDraft((current) => ({ ...current, ...Object.fromEntries(Object.entries(baseline).filter(([key]) => key.startsWith(section + "."))) }));
+    setRemoved((current) => new Set([...current].filter((key) => !key.startsWith(section + "."))));
+    setNotice(null); setFieldErrors({});
+  };
+  const save = async () => {
+    const errors = Object.fromEntries(Object.entries(sectionChanges).map(([key, value]) => [key, settingTypeError(key, value)]).filter(([, error]) => error)) as Record<string, string>;
+    if (Object.keys(errors).length) { setFieldErrors(errors); setNotice({ ok: false, text: "Review the highlighted fields." }); return; }
+    if (Object.keys(sectionChanges).some((key) => removed.has(key)) && !window.confirm("Remove the selected stored credentials? Integrations that use them may stop working.")) return;
+    setBusy(true); setNotice(null);
+    try {
+      const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: sectionChanges }) });
+      const data = await response.json();
+      if (!response.ok) { setFieldErrors(data.fields || {}); throw new Error(data.error || "Save failed."); }
+      // Apply only this section so drafts in other sections cannot be lost on save.
+      const nextSaved = { ...saved };
+      for (const [key, value] of Object.entries(sectionChanges)) nextSaved[key] = SECRET_SETTINGS.has(key) ? { value: value ? "configured" : "", masked: value ? "••••••••" : "", encrypted: true } : { value };
+      setSaved(nextSaved);
+      setDraft((current) => ({ ...current, ...Object.fromEntries(Object.entries(settingsDraft(nextSaved)).filter(([key]) => key.startsWith(section + "."))) }));
+      setRemoved((current) => new Set([...current].filter((key) => !key.startsWith(section + "."))));
+      setRevealed(new Set()); setFieldErrors({});
+      setTests((current) => { const next = { ...current }; delete next[section]; return next; });
+      setNotice({ ok: true, text: "Settings saved. Connection status has not been verified." });
+    } catch (error) { setNotice({ ok: false, text: error instanceof Error ? error.message : "Unable to save settings. Your draft is preserved." }); }
+    finally { setBusy(false); }
+  };
+  const testConnection = async () => {
+    const question = section === "slack" ? "Send a test notification to the saved Slack webhook?" : section === "llm" ? "Send a small test request using the saved AI configuration? Provider usage may be billed." : "Check account connectivity with the saved Jira configuration? No issue will be created.";
+    if (!window.confirm(question)) return;
+    setBusy(true); setNotice(null);
+    try {
+      const response = await fetch("/api/settings/test-" + (section === "llm" ? "llm" : section), { method: "POST" });
+      const data = await response.json();
+      const result = { ok: response.ok && data.success !== false, text: data.message || data.error || (response.ok ? "Connection test completed." : "Connection test failed."), time: new Date().toLocaleTimeString() };
+      setTests((current) => ({ ...current, [section]: result }));
+    } catch { setTests((current) => ({ ...current, [section]: { ok: false, text: "Connection request failed. No success has been recorded.", time: new Date().toLocaleTimeString() } })); }
+    finally { setBusy(false); }
   };
 
-  const saveSlack = async () => {
-    setSaving(true);
-    setSaveMsg(null);
-
-    const updates: Record<string, string> = {
-      "slack.enabled": slackEnabled ? "true" : "false",
-      "slack.channel": slackChannel,
-      "slack.notify_severity": slackSeverity,
-    };
-    if (slackWebhook) updates["slack.webhook_url"] = slackWebhook;
-
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: updates }),
-    });
-
-    if (res.ok) {
-      setSaveMsg({ type: "success", text: "Slack settings saved" });
-      setSlackWebhook("");
-      const data = await (await fetch("/api/settings")).json();
-      setSettings(data.settings || {});
-    } else {
-      const err = await res.json();
-      setSaveMsg({
-        type: "error",
-        text: err.error || "Failed to save Slack settings",
-      });
-    }
-    setSaving(false);
-  };
-
-  const testSlack = async () => {
-    setSaveMsg(null);
-    const res = await fetch("/api/settings/test-slack", { method: "POST" });
-    const data = await res.json();
-    if (res.ok) {
-      setSaveMsg({ type: "success", text: "Test message sent to Slack" });
-    } else {
-      setSaveMsg({
-        type: "error",
-        text: data.error || "Failed to send test",
-      });
-    }
-  };
-
-  const saveJira = async () => {
-    setSaving(true);
-    setSaveMsg(null);
-    const updates: Record<string, string> = {
-      "jira.base_url": jiraBaseUrl,
-      "jira.project_key": jiraProjectKey,
-      "jira.issue_type": jiraIssueType,
-      "jira.enabled": jiraEnabled ? "true" : "false",
-    };
-    if (jiraEmail) updates["jira.email"] = jiraEmail;
-    if (jiraToken) updates["jira.api_token"] = jiraToken;
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: updates }),
-    });
-    const data = await res.json();
-    setSaveMsg({
-      type: res.ok ? "success" : "error",
-      text: res.ok ? "Jira settings saved" : data.error || "Failed to save Jira settings",
-    });
-    if (res.ok) {
-      setJiraEmail("");
-      setJiraToken("");
-      const refreshed = await (await fetch("/api/settings")).json();
-      setSettings(refreshed.settings || {});
-    }
-    setSaving(false);
-  };
-
-  const testJira = async () => {
-    setSaveMsg(null);
-    const res = await fetch("/api/settings/test-jira", { method: "POST" });
-    const data = await res.json();
-    setSaveMsg({
-      type: res.ok ? "success" : "error",
-      text: res.ok ? data.message : data.error || "Jira test failed",
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">
-          Configure integrations and API keys
-        </p>
-      </div>
-
-      {saveMsg && (
-        <div
-          className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md ${
-            saveMsg.type === "success"
-              ? "bg-[var(--status-fixed-bg)] text-[var(--status-fixed)]"
-              : "bg-[var(--status-open-bg)] text-[var(--status-open)]"
-          }`}
-        >
-          {saveMsg.type === "success" ? (
-            <CheckCircle className="h-4 w-4" />
-          ) : (
-            <AlertCircle className="h-4 w-4" />
-          )}
-          {saveMsg.text}
-        </div>
-      )}
-
-      {/* LLM Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5" />
-            LLM Verification
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Configure LLM to automatically verify findings, reduce false
-            positives, and generate remediation suggestions.
-          </p>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="llm-enabled"
-              checked={llmEnabled}
-              onChange={(e) => setLlmEnabled(e.target.checked)}
-              className="rounded border-input"
-            />
-            <label htmlFor="llm-enabled" className="text-sm font-medium">
-              Enable LLM Verification
-            </label>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Provider</label>
-              <select
-                value={llmProvider}
-                onChange={(e) => {
-                  const p = e.target.value;
-                  setLlmProvider(p);
-                  if (p === "anthropic") setLlmModel("claude-opus-5");
-                  else if (p === "openai") setLlmModel("gpt-5.2");
-                  else if (p === "google") setLlmModel("gemini-2.5-flash");
-                }}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openai">OpenAI (GPT)</option>
-                <option value="google">Google (Gemini)</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Model</label>
-              <select
-                value={llmModel}
-                onChange={(e) => setLlmModel(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                {llmProvider === "anthropic" ? (
-                  <>
-                    <optgroup label="Latest">
-                      <option value="claude-opus-5">
-                        Claude Opus 5
-                      </option>
-                      <option value="claude-sonnet-5">
-                        Claude Sonnet 5
-                      </option>
-                      <option value="claude-opus-4-8">
-                        Claude Opus 4.8
-                      </option>
-                    </optgroup>
-                    <optgroup label="Previous">
-                      <option value="claude-opus-4-6">
-                        Claude Opus 4.6
-                      </option>
-                      <option value="claude-sonnet-4-5-20250929">
-                        Claude Sonnet 4.5
-                      </option>
-                      <option value="claude-haiku-4-5-20251001">
-                        Claude Haiku 4.5
-                      </option>
-                    </optgroup>
-                    <optgroup label="Legacy">
-                      <option value="claude-opus-4-5">
-                        Claude Opus 4.5
-                      </option>
-                      <option value="claude-sonnet-4-0">
-                        Claude Sonnet 4
-                      </option>
-                      <option value="claude-opus-4-0">Claude Opus 4</option>
-                      <option value="claude-3-7-sonnet-latest">
-                        Claude Sonnet 3.7
-                      </option>
-                    </optgroup>
-                  </>
-                ) : llmProvider === "openai" ? (
-                  <>
-                    <optgroup label="GPT Series">
-                      <option value="gpt-5.2">GPT-5.2 Thinking</option>
-                      <option value="gpt-5.2-pro">GPT-5.2 Pro</option>
-                      <option value="gpt-5">GPT-5</option>
-                      <option value="gpt-4.1">GPT-4.1</option>
-                      <option value="gpt-4o">GPT-4o</option>
-                      <option value="gpt-4o-mini">GPT-4o mini</option>
-                    </optgroup>
-                    <optgroup label="Reasoning (o-series)">
-                      <option value="o3">o3</option>
-                      <option value="o3-pro">o3 Pro</option>
-                      <option value="o4-mini">o4-mini</option>
-                      <option value="o3-mini">o3-mini</option>
-                    </optgroup>
-                  </>
-                ) : (
-                  <>
-                    <optgroup label="Latest">
-                      <option value="gemini-2.5-flash">
-                        Gemini 2.5 Flash
-                      </option>
-                      <option value="gemini-2.5-pro">
-                        Gemini 2.5 Pro
-                      </option>
-                    </optgroup>
-                    <optgroup label="Preview">
-                      <option value="gemini-3-pro">Gemini 3 Pro</option>
-                      <option value="gemini-3-flash">
-                        Gemini 3 Flash
-                      </option>
-                    </optgroup>
-                    <optgroup label="Legacy (retiring Mar 2026)">
-                      <option value="gemini-2.0-flash">
-                        Gemini 2.0 Flash
-                      </option>
-                      <option value="gemini-2.0-flash-lite">
-                        Gemini 2.0 Flash Lite
-                      </option>
-                    </optgroup>
-                  </>
-                )}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Analysis Language</label>
-              <select
-                value={llmLanguage}
-                onChange={(e) => setLlmLanguage(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="en">English</option>
-                <option value="ko">한국어</option>
-                <option value="ja">日本語</option>
-                <option value="zh">中文</option>
-              </select>
-            </div>
-          </div>
-
-          {/* API Keys */}
-          <div className="space-y-4 border-t border-border pt-4">
-            <h3 className="text-sm font-medium flex items-center gap-2">
-              <Key className="h-4 w-4" />
-              API Keys
-              <span className="text-xs text-muted-foreground font-normal">
-                (encrypted with AES-256-GCM)
-              </span>
-            </h3>
-
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">
-                Anthropic API Key
-              </label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="password"
-                  placeholder={
-                    settings["llm.anthropic_api_key"]?.value === "configured"
-                      ? `Configured (${settings["llm.anthropic_api_key"]?.masked})`
-                      : "sk-ant-..."
-                  }
-                  value={anthropicKey}
-                  onChange={(e) => setAnthropicKey(e.target.value)}
-                />
-                {settings["llm.anthropic_api_key"]?.value ===
-                  "configured" && (
-                  <Shield className="h-4 w-4 text-[var(--status-fixed)] shrink-0" />
-                )}
+  if (loading) return <p role="status" className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading settings…</p>;
+  if (loadError) return <div role="alert" className="workbench-panel p-6">{loadError}<Button className="ml-4" variant="outline" onClick={reload}>Retry</Button></div>;
+  let resolvedEndpoint = "";
+  try { if (providerProtocol(draft["llm.provider"]) && draft["llm.model"]) resolvedEndpoint = providerUrl(draft["llm.provider"], draft["llm.custom_endpoint"], draft["llm.model"]); } catch { resolvedEndpoint = "Complete the model and endpoint fields to preview the request URL."; }
+  const active = SECTIONS.find((item) => item.id === section)!;
+  const fields = section === "security" ? [] : FIELDS[section];
+  const secretCount = [...SECRET_SETTINGS].filter((key) => saved[key]?.value === "configured").length;
+  return <div className="space-y-6 pb-10">
+    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow mb-2">Workspace configuration</p><h1 className="text-3xl font-semibold tracking-tight">Settings</h1><p className="mt-2 text-sm text-muted-foreground">Configure integrations with explicit saves and verifiable connection state.</p></div><span className="rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">{dirty ? Object.keys(changes).length + " unsaved changes" : "No unsaved changes"}</span></header>
+    <div className="grid items-start gap-5 lg:grid-cols-[220px_minmax(0,1fr)_260px]">
+      <nav className="workbench-panel p-2" aria-label="Settings sections">{SECTIONS.map((item) => {
+        const count = item.id === "security" ? 0 : Object.keys(settingsChanges(draft, saved, removed, item.id)).length;
+        return <button type="button" key={item.id} disabled={busy} onClick={() => { setSection(item.id); setNotice(null); setFieldErrors({}); }} aria-current={section === item.id ? "page" : undefined} className={"mb-1 flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm " + (section === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent")}><item.icon className="h-4 w-4 shrink-0" /><span className="flex-1">{item.label}</span>{count > 0 && <span className="font-mono text-xs">{count}</span>}</button>;
+      })}</nav>
+      <section className="workbench-panel">
+        <div className="workbench-heading"><div><h2 className="text-base font-semibold">{active.label}</h2><p className="mt-1 text-xs text-muted-foreground">{active.description}</p></div></div>
+        {notice && <p role={notice.ok ? "status" : "alert"} className={"border-b border-border px-5 py-3 text-sm " + (notice.ok ? "text-emerald-700 dark:text-emerald-400" : "text-destructive")}>{notice.text}</p>}
+        {section === "security" ? <div className="space-y-5 p-5">
+          {[["Encryption secret", security?.encryptionConfigured, "Required to save API keys, incoming webhooks, Jira credentials, or custom headers."], ["Authentication", security?.authenticationConfigured, "Requires an auth secret and a configured password or SSO method. This indicator does not test provider login."], ["Production mode", security?.production, "Production requires authentication, encryption, an access allowlist, and an HTTPS origin (loopback excepted)."]].map(([label, configured, hint]) => <div key={String(label)} className="border-b border-border pb-4"><div className="flex justify-between gap-3 text-sm"><span className="font-medium">{label}</span><span className="text-xs text-muted-foreground">{configured ? "Configured" : "Not configured / development"}</span></div><p className="mt-2 text-xs leading-6 text-muted-foreground">{hint}</p></div>)}
+          <div className="space-y-3 rounded-md border p-4 text-xs"><p className="font-medium">Account & identity</p><p className="text-muted-foreground">Access policy: {security?.accessPolicyConfigured ? "Configured" : "Not configured"} · Password sign-in: {security?.localAuthentication ? "Configured" : "Not configured"} · Email delivery: {security?.emailConfigured ? "Configured, not tested" : "Not configured"}</p><p className="break-all font-mono text-[11px] text-muted-foreground">Google callback: {security?.authOrigin || "AUTH_URL"}/api/auth/callback/google</p><p className="break-all font-mono text-[11px] text-muted-foreground">Okta callback: {security?.authOrigin || "AUTH_URL"}/api/auth/callback/okta</p><div className="flex flex-wrap gap-3 pt-2"><a href="/auth/signin" className="text-primary">Sign-in page</a><a href="/auth/forgot-password" className="text-primary">Reset password</a><button type="button" className="text-destructive" disabled={busy || !security?.authenticationConfigured} onClick={async () => { if (!window.confirm("Sign out every session for your account, including this browser? Unsaved changes will be lost.")) return; setBusy(true); try { const response = await fetch("/api/account/revoke-sessions", { method: "POST" }); if (!response.ok) throw new Error("Unable to revoke sessions."); window.location.assign("/auth/signin"); } catch { setNotice({ ok: false, text: "Unable to revoke sessions. No success has been recorded." }); setBusy(false); } }}>Sign out all sessions</button></div></div>
+          <p className="text-xs leading-6 text-muted-foreground">Server secrets are managed through the deployment environment, not this page. No secret values are returned by the settings API. Existing plaintext custom headers are masked here; replacing them stores an encrypted value.</p>
+        </div> : <fieldset disabled={busy} className="min-w-0">
+          <div className="divide-y divide-border px-5">
+            {section === "llm" && <div className="space-y-3 py-5"><label htmlFor="provider-preset" className="text-sm font-medium">Service preset</label><select id="provider-preset" className="workbench-select w-full" defaultValue="" onChange={(event) => { const preset = PROVIDER_PRESETS.find((item) => item.id === event.target.value); if (!preset) return; edit("llm.provider", preset.protocol); edit("llm.custom_endpoint", preset.endpoint); edit("llm.chat_token_parameter", preset.tokenParameter); setNotice({ ok: true, text: preset.hint + " Review and save these changes. Model and credential fields are preserved." }); }}><option value="">Choose a service preset…</option>{PROVIDER_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><p className="text-xs leading-6 text-muted-foreground">Presets change only protocol, endpoint, and token parameter. When changing services, explicitly replace or remove stored custom headers.</p>{resolvedEndpoint && <div className="rounded-md border bg-muted/20 p-3"><p className="eyebrow">Request URL preview</p><p className="mt-2 break-all font-mono text-xs">{resolvedEndpoint}</p></div>}</div>}
+            {fields.map((field) => {
+            const secret = field.kind === "secret"; const stored = saved[field.key];
+            const invalid = fieldErrors[field.key];
+            return <div key={field.key} className="grid gap-3 py-5 xl:grid-cols-[180px_minmax(0,1fr)]">
+              <div><label htmlFor={field.key} className="text-sm font-medium">{field.label}</label>{secret && <p className={"mt-1 text-[11px] " + (stored?.unreadable ? "text-destructive" : "text-muted-foreground")}>{stored?.unreadable ? "Stored value cannot be decrypted" : stored?.value === "configured" ? stored.encrypted ? "Stored · encrypted" : "Stored · legacy storage" : "Not configured"}</p>}</div>
+              <div className="min-w-0 space-y-2">
+                {field.kind === "boolean" ? <label className="inline-flex cursor-pointer items-center gap-3 text-sm"><input id={field.key} type="checkbox" checked={draft[field.key] === "true"} onChange={(e) => edit(field.key, e.target.checked ? "true" : "false")} className="h-4 w-4 accent-blue-600" /><span>{draft[field.key] === "true" ? "Enabled" : "Disabled"}</span></label> : field.kind === "select" ? <select id={field.key} className="workbench-select w-full" value={draft[field.key]} aria-invalid={Boolean(invalid)} onChange={(e) => edit(field.key, e.target.value)}>{!field.options?.some(([value]) => value === draft[field.key]) && <option value={draft[field.key]} disabled>{draft[field.key]} (unsupported)</option>}{field.options?.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : <div className="flex gap-2"><input id={field.key} autoComplete={secret ? "new-password" : "off"} spellCheck={false} type={secret && !revealed.has(field.key) ? "password" : field.kind === "number" ? "number" : "text"} min={field.min} max={field.max} step={field.step} value={draft[field.key] || ""} disabled={removed.has(field.key) || busy} placeholder={stored?.value === "configured" && secret ? "Leave blank to keep stored value" : field.placeholder} aria-invalid={Boolean(invalid)} aria-describedby={invalid ? field.key + "-error" : undefined} className="h-10 min-w-0 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50" onChange={(e) => edit(field.key, e.target.value)} />{secret && <button type="button" aria-label={revealed.has(field.key) ? "Hide " + field.label : "Show entered " + field.label} className="rounded-md border px-2.5 text-muted-foreground" onClick={() => setRevealed((current) => { const next = new Set(current); if (next.has(field.key)) next.delete(field.key); else next.add(field.key); return next; })}>{revealed.has(field.key) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>}</div>}
+                {invalid && <p id={field.key + "-error"} role="alert" className="text-xs text-destructive">{invalid}</p>}
+                {field.hint && <p className="text-xs leading-5 text-muted-foreground">{field.hint}</p>}
+                {secret && (stored?.value === "configured" || stored?.unreadable) && <label className="inline-flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={removed.has(field.key)} onChange={(e) => setRemoved((current) => { const next = new Set(current); if (e.target.checked) next.add(field.key); else next.delete(field.key); return next; })} />Remove stored value on save</label>}
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">
-                OpenAI API Key
-              </label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="password"
-                  placeholder={
-                    settings["llm.openai_api_key"]?.value === "configured"
-                      ? `Configured (${settings["llm.openai_api_key"]?.masked})`
-                      : "sk-..."
-                  }
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                />
-                {settings["llm.openai_api_key"]?.value === "configured" && (
-                  <Shield className="h-4 w-4 text-[var(--status-fixed)] shrink-0" />
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">
-                Google AI API Key
-              </label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="password"
-                  placeholder={
-                    settings["llm.google_api_key"]?.value === "configured"
-                      ? `Configured (${settings["llm.google_api_key"]?.masked})`
-                      : "AIza..."
-                  }
-                  value={googleKey}
-                  onChange={(e) => setGoogleKey(e.target.value)}
-                />
-                {settings["llm.google_api_key"]?.value === "configured" && (
-                  <Shield className="h-4 w-4 text-[var(--status-fixed)] shrink-0" />
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Custom Endpoint */}
-          <div className="space-y-4 border-t border-border pt-4">
-            <h3 className="text-sm font-medium flex items-center gap-2">
-              <Globe className="h-4 w-4" />
-              Custom Endpoint
-              <span className="text-xs text-muted-foreground font-normal">
-                (AI Gateway / Proxy)
-              </span>
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Route LLM requests through an AI gateway (e.g. Portkey, LiteLLM,
-              Cloudflare AI Gateway). Leave empty to use provider defaults.
-              HTTPS only.
-            </p>
-
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">
-                Endpoint URL
-              </label>
-              <Input
-                type="url"
-                placeholder="https://gateway.example.com/v1"
-                value={customEndpoint}
-                onChange={(e) => setCustomEndpoint(e.target.value)}
-              />
-              {customEndpoint && !customEndpoint.startsWith("https://") && (
-                <p className="text-xs text-destructive">
-                  Only HTTPS URLs are allowed
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-muted-foreground">
-                  Custom Headers
-                </label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addHeader}
-                  className="flex items-center gap-1 h-7 text-xs"
-                >
-                  <Plus className="h-3 w-3" />
-                  Add Header
-                </Button>
-              </div>
-              {customHeaders.length === 0 && (
-                <p className="text-xs text-muted-foreground italic">
-                  No custom headers configured
-                </p>
-              )}
-              <div className="space-y-2">
-                {customHeaders.map((header, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input
-                      placeholder="X-Gateway-Key"
-                      value={header.key}
-                      onChange={(e) => updateHeader(i, "key", e.target.value)}
-                      className="flex-1"
-                    />
-                    <Input
-                      placeholder="value"
-                      value={header.value}
-                      onChange={(e) => updateHeader(i, "value", e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeHeader(i)}
-                      className="h-9 w-9 p-0 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Auto-verify & Threshold */}
-          <div className="grid grid-cols-2 gap-4 border-t border-border pt-4">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="llm-auto"
-                checked={llmAutoVerify}
-                onChange={(e) => setLlmAutoVerify(e.target.checked)}
-                className="rounded border-input"
-              />
-              <label htmlFor="llm-auto" className="text-sm">
-                Auto-verify on upload
-              </label>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">
-                Confidence threshold (below = send to LLM)
-              </label>
-              <Input
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                value={llmThreshold}
-                onChange={(e) => setLlmThreshold(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={saveLLM}
-              disabled={saving}
-              className="flex items-center gap-2"
-            >
-              <Save className="h-4 w-4" />
-              {saving ? "Saving..." : "Save LLM Settings"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={async () => {
-                setTestingLLM(true);
-                setSaveMsg(null);
-                try {
-                  const res = await fetch("/api/settings/test-llm", { method: "POST" });
-                  const data = await res.json();
-                  setSaveMsg({
-                    type: res.ok ? "success" : "error",
-                    text: data.message,
-                  });
-                } catch {
-                  setSaveMsg({ type: "error", text: "Connection test failed" });
-                } finally {
-                  setTestingLLM(false);
-                }
-              }}
-              disabled={testingLLM}
-            >
-              {testingLLM ? "Testing..." : "Test Connection"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* LLM Scanning */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5" />
-            LLM Scanning
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            The LLM Scan feature uses your configured LLM provider to perform
-            AI-powered security analysis on source code files. It supports two
-            modes:
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-3 rounded-md border border-border">
-              <p className="text-sm font-medium mb-1">Quick Scan</p>
-              <p className="text-xs text-muted-foreground">
-                Analyzes individual files for common security vulnerabilities.
-                Fast and suitable for spot-checking specific files.
-              </p>
-            </div>
-            <div className="p-3 rounded-md border border-border">
-              <p className="text-sm font-medium mb-1">Deep Scan</p>
-              <p className="text-xs text-muted-foreground">
-                Uses call graph context from a previous SAST scan to perform
-                cross-function analysis. Detects data flow and business logic
-                vulnerabilities.
-              </p>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            LLM scanning uses the same provider and API key configured above.
-            Findings are stored with source &quot;llm&quot; and can be filtered
-            in the Findings page.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Slack Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            Slack Notifications
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Receive notifications about new vulnerabilities via Slack webhook.
-          </p>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="slack-enabled"
-              checked={slackEnabled}
-              onChange={(e) => setSlackEnabled(e.target.checked)}
-              className="rounded border-input"
-            />
-            <label htmlFor="slack-enabled" className="text-sm font-medium">
-              Enable Slack Notifications
-            </label>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm text-muted-foreground">Webhook URL</label>
-            <Input
-              type="password"
-              placeholder={
-                settings["slack.webhook_url"]?.value === "configured"
-                  ? `Configured (${settings["slack.webhook_url"]?.masked})`
-                  : "https://hooks.slack.com/services/..."
-              }
-              value={slackWebhook}
-              onChange={(e) => setSlackWebhook(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Channel</label>
-              <Input
-                placeholder="#security-alerts"
-                value={slackChannel}
-                onChange={(e) => setSlackChannel(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">
-                Minimum Severity
-              </label>
-              <select
-                value={slackSeverity}
-                onChange={(e) => setSlackSeverity(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="critical">Critical only</option>
-                <option value="high">High and above</option>
-                <option value="medium">Medium and above</option>
-                <option value="low">All</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={saveSlack}
-              disabled={saving}
-              className="flex items-center gap-2"
-            >
-              <Save className="h-4 w-4" />
-              {saving ? "Saving..." : "Save Slack Settings"}
-            </Button>
-            <Button variant="outline" onClick={testSlack}>
-              Test Webhook
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Jira Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TicketCheck className="h-5 w-5" />
-            Jira Vulnerability Workflow
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Create remediation tickets with repository, revision, evidence state,
-            exact code location, and code-level remediation context.
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="jira-enabled"
-              checked={jiraEnabled}
-              onChange={(event) => setJiraEnabled(event.target.checked)}
-              className="rounded border-input"
-            />
-            <label htmlFor="jira-enabled" className="text-sm font-medium">Enable Jira integration</label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm text-muted-foreground">Jira base URL</label>
-              <Input
-                type="url"
-                placeholder="https://company.atlassian.net"
-                value={jiraBaseUrl}
-                onChange={(event) => setJiraBaseUrl(event.target.value)}
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Atlassian Cloud only by default. Self-hosted domains require AEGIFY_JIRA_ALLOWED_HOSTS.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Account email</label>
-              <Input
-                type="email"
-                placeholder={settings["jira.email"]?.value === "configured" ? `Configured (${settings["jira.email"]?.masked})` : "security@example.com"}
-                value={jiraEmail}
-                onChange={(event) => setJiraEmail(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">API token</label>
-              <Input
-                type="password"
-                placeholder={settings["jira.api_token"]?.value === "configured" ? `Configured (${settings["jira.api_token"]?.masked})` : "Atlassian API token"}
-                value={jiraToken}
-                onChange={(event) => setJiraToken(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Project key</label>
-              <Input
-                placeholder="SEC"
-                value={jiraProjectKey}
-                onChange={(event) => setJiraProjectKey(event.target.value.toUpperCase())}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Issue type</label>
-              <Input
-                placeholder="Bug"
-                value={jiraIssueType}
-                onChange={(event) => setJiraIssueType(event.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <Button onClick={saveJira} disabled={saving}><Save className="mr-2 h-4 w-4" />Save Jira Settings</Button>
-            <Button variant="outline" onClick={testJira}>Test Connection</Button>
-          </div>
-        </CardContent>
-      </Card>
+            </div>;
+          })}</div>
+          <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-5 py-4"><span className="text-xs text-muted-foreground">{pending ? pending + " changes in this section" : "This section is up to date"}</span><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={discard} disabled={!pending || busy}><RotateCcw className="mr-1 h-3.5 w-3.5" />Discard</Button><Button size="sm" onClick={save} disabled={!pending || busy}>{busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}Save changes</Button></div></div>
+        </fieldset>}
+      </section>
+      <aside className="space-y-4">
+        {section !== "security" && <section className="workbench-panel p-5"><h2 className="flex items-center gap-2 text-sm font-semibold"><PlugZap className="h-4 w-4 text-muted-foreground" />Connection check</h2><p className="mt-3 text-xs leading-6 text-muted-foreground">Checks use saved settings. Save or discard changes in this section before testing. External requests run only after confirmation.</p><Button variant="outline" className="mt-4 w-full" size="sm" disabled={busy || pending > 0} onClick={testConnection}>{busy ? "Working…" : section === "slack" ? "Send test notification" : "Test saved connection"}</Button>{tests[section] ? <div role="status" className={"mt-4 rounded border p-3 text-xs leading-5 " + (tests[section].ok ? "border-emerald-500/20" : "border-destructive/20")}><p className="flex items-center gap-2 font-medium">{tests[section].ok ? <Check className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}{tests[section].ok ? "Test succeeded" : "Test failed"} · {tests[section].time}</p><p className="mt-2 break-words text-muted-foreground">{tests[section].text}</p></div> : <p className="mt-3 text-[11px] text-muted-foreground">Not tested in this session</p>}</section>}
+        <section className="workbench-panel p-5"><p className="eyebrow">Credential storage</p><p className="mt-3 font-mono text-2xl">{secretCount}</p><p className="mt-2 text-xs text-muted-foreground">Configured secret fields · not a connection health score</p>{!security?.encryptionConfigured && <p className="mt-3 text-xs leading-5 text-amber-700 dark:text-amber-300">Encryption is not configured. Saving new credentials is blocked until the server has an encryption secret.</p>}</section>
+      </aside>
     </div>
-  );
+  </div>;
 }

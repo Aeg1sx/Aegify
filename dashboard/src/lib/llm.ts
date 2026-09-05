@@ -1,7 +1,6 @@
+import { callProvider } from "@/lib/provider-client";
 import { getLLMConfig } from "@/lib/settings";
 import {
-  buildLLMRequestHeaders,
-  extractAnthropicText,
   sanitizeLLMRecord,
   sanitizeLLMStrings,
   sanitizeLLMText,
@@ -177,80 +176,6 @@ function buildUserPrompt(finding: FindingContext): string {
   return sanitizeLLMText(prompt, 100_000);
 }
 
-async function callAnthropic(
-  apiKey: string,
-  model: string,
-  systemPrompt: string,
-  userPrompt: string,
-  endpoint?: string,
-  headers?: Record<string, string>,
-): Promise<string> {
-  const isCustomEndpoint = !!endpoint;
-  const baseUrl = (endpoint || "https://api.anthropic.com").replace(/\/+$/, "");
-  const url = baseUrl.endsWith("/v1/messages") ? baseUrl : `${baseUrl}/v1/messages`;
-
-  const reqHeaders = buildLLMRequestHeaders(
-    "anthropic", apiKey, isCustomEndpoint, headers,
-  );
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: reqHeaders,
-    body: JSON.stringify({
-      model,
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Anthropic API error ${res.status}: ${sanitizeLLMText(body, 1_000)}`);
-  }
-
-  const data = await res.json();
-  return extractAnthropicText(data);
-}
-
-async function callOpenAI(
-  apiKey: string,
-  model: string,
-  systemPrompt: string,
-  userPrompt: string,
-  endpoint?: string,
-  headers?: Record<string, string>,
-): Promise<string> {
-  const isCustomEndpoint = !!endpoint;
-  const baseUrl = (endpoint || "https://api.openai.com").replace(/\/+$/, "");
-  const url = baseUrl.endsWith("/v1/chat/completions") ? baseUrl : `${baseUrl}/v1/chat/completions`;
-
-  const reqHeaders = buildLLMRequestHeaders(
-    "openai", apiKey, isCustomEndpoint, headers,
-  );
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: reqHeaders,
-    body: JSON.stringify({
-      model,
-      max_tokens: 2048,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`OpenAI API error ${res.status}: ${sanitizeLLMText(body, 1_000)}`);
-  }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || "";
-}
-
 function extractJson(raw: string): string {
   // Strategy 1: Try raw string directly
   const trimmed = raw.trim();
@@ -336,88 +261,20 @@ export async function analyzeFinding(finding: FindingContext, languageOverride?:
 
   const userPrompt = buildUserPrompt(finding);
   const systemPrompt = getSystemPrompt(languageOverride || config.language);
-  let rawResponse: string;
-
-  const hasCustomEndpoint = !!config.customEndpoint;
-  const hasCustomHeaders = Object.keys(config.customHeaders).length > 0;
-
-  if (config.provider === "anthropic") {
-    if (!config.anthropicApiKey && !hasCustomEndpoint) {
-      throw new Error("Anthropic API key is not configured. Set an API key or configure a custom endpoint.");
-    }
-    rawResponse = await callAnthropic(
-      config.anthropicApiKey,
-      config.model,
-      systemPrompt,
-      userPrompt,
-      config.customEndpoint || undefined,
-      hasCustomHeaders ? config.customHeaders : undefined,
-    );
-  } else if (config.provider === "openai") {
-    if (!config.openaiApiKey && !hasCustomEndpoint) {
-      throw new Error("OpenAI API key is not configured. Set an API key or configure a custom endpoint.");
-    }
-    rawResponse = await callOpenAI(
-      config.openaiApiKey,
-      config.model,
-      systemPrompt,
-      userPrompt,
-      config.customEndpoint || undefined,
-      hasCustomHeaders ? config.customHeaders : undefined,
-    );
-  } else {
-    throw new Error(`Unsupported LLM provider: ${config.provider}`);
-  }
+  const rawResponse = await callProvider(config, systemPrompt, userPrompt, 2048);
 
   return parseResponse(rawResponse);
 }
 
 export async function testLLMConnection(): Promise<{ success: boolean; message: string }> {
-  const config = await getLLMConfig();
-
-  if (!config.enabled) {
-    return { success: false, message: "LLM analysis is not enabled." };
-  }
-
   try {
-    const testPrompt = "Respond with exactly: {\"status\": \"ok\"}";
-    const hasCustomEndpoint = !!config.customEndpoint;
-    const hasCustomHeaders = Object.keys(config.customHeaders).length > 0;
-
-    if (config.provider === "anthropic") {
-      if (!config.anthropicApiKey && !hasCustomEndpoint) {
-        return { success: false, message: "Anthropic API key is not configured. Set an API key or configure a custom endpoint." };
-      }
-      await callAnthropic(
-        config.anthropicApiKey,
-        config.model,
-        "You are a test assistant.",
-        testPrompt,
-        config.customEndpoint || undefined,
-        hasCustomHeaders ? config.customHeaders : undefined,
-      );
-    } else if (config.provider === "openai") {
-      if (!config.openaiApiKey && !hasCustomEndpoint) {
-        return { success: false, message: "OpenAI API key is not configured. Set an API key or configure a custom endpoint." };
-      }
-      await callOpenAI(
-        config.openaiApiKey,
-        config.model,
-        "You are a test assistant.",
-        testPrompt,
-        config.customEndpoint || undefined,
-        hasCustomHeaders ? config.customHeaders : undefined,
-      );
-    } else {
-      return { success: false, message: `Unsupported provider: ${config.provider}` };
-    }
-
-    const endpointInfo = hasCustomEndpoint ? ` via ${config.customEndpoint}` : "";
-    return { success: true, message: `Connected to ${config.provider} (${config.model})${endpointInfo}` };
-  } catch (err) {
-    return {
-      success: false,
-      message: err instanceof Error ? err.message : "Connection failed",
-    };
+    const config = await getLLMConfig();
+    const text = await callProvider(config, "Return only the requested JSON.", 'Respond with exactly: {"status":"ok"}', 128);
+    let status: unknown;
+    try { status = JSON.parse(text).status; } catch { status = null; }
+    if (status !== "ok") return { success: false, message: "The provider responded, but the structured response check failed." };
+    return { success: true, message: "Connected to " + config.provider + " (" + config.model + "). Structured response received." };
+  } catch (error) {
+    return { success: false, message: error instanceof Error ? error.message : "Connection failed." };
   }
 }

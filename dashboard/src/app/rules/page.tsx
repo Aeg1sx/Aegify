@@ -72,9 +72,9 @@ export default function RulesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Rules</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Rules</h1>
           <p className="text-muted-foreground">
             {rules.length} security rules loaded
           </p>
@@ -138,7 +138,7 @@ export default function RulesPage() {
             {filtered.length} rules
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-pulse text-muted-foreground">Loading...</div>
@@ -148,35 +148,10 @@ export default function RulesPage() {
               No rules found
             </div>
           ) : (
-            <div className="space-y-1">
-              <div className="grid grid-cols-[1fr_2fr_auto_auto_auto_auto] gap-4 px-3 py-2 text-xs text-muted-foreground font-medium border-b border-border">
-                <span>ID</span>
-                <span>Name</span>
-                <span>Severity</span>
-                <span>CWE</span>
-                <span>OWASP</span>
-                <span className="text-right">Findings</span>
-              </div>
-              {filtered.map((rule) => (
-                <Link
-                  key={rule.id}
-                  href={`/rules/${encodeURIComponent(rule.id)}`}
-                  className="grid grid-cols-[1fr_2fr_auto_auto_auto_auto] gap-4 px-3 py-2 rounded-md hover:bg-muted/50 items-center cursor-pointer"
-                >
-                  <span className="text-xs font-mono truncate">{rule.id}</span>
-                  <span className="text-sm truncate">{rule.name}</span>
-                  <SeverityBadge severity={rule.severity} />
-                  <span className="text-xs text-muted-foreground w-16">
-                    {rule.cweId ? `CWE-${rule.cweId}` : "-"}
-                  </span>
-                  <span className="text-xs text-muted-foreground w-20 truncate">
-                    {rule.owaspCategory || "-"}
-                  </span>
-                  <span className="text-sm font-mono text-right">
-                    {rule.findingCount}
-                  </span>
-                </Link>
-              ))}
+            <div className="max-h-[68vh] overflow-auto">
+              <table className="data-table compact"><caption className="sr-only">Vulnerability detection rules</caption><thead><tr><th>Rule / identity</th><th>Severity</th><th>Languages</th><th>CWE</th><th>State</th><th>Findings</th></tr></thead><tbody>
+                {filtered.map((rule) => <tr key={rule.id}><td><Link href={`/rules/${encodeURIComponent(rule.id)}`} className="font-medium hover:text-primary">{rule.name}</Link><p className="mt-1 font-mono text-[11px] text-muted-foreground">{rule.id}</p></td><td><SeverityBadge severity={rule.severity} /></td><td className="max-w-44 text-xs text-muted-foreground">{rule.languages || "Not specified"}</td><td className="whitespace-nowrap font-mono text-xs text-muted-foreground">{rule.cweId ? `CWE-${rule.cweId}` : "—"}</td><td className="text-xs text-muted-foreground">{rule.enabled ? "Enabled" : "Disabled"}</td><td><Link className="font-mono text-xs text-primary" href={`/findings?ruleId=${encodeURIComponent(rule.id)}`}>{rule.findingCount}</Link></td></tr>)}
+              </tbody></table>
             </div>
           )}
         </CardContent>

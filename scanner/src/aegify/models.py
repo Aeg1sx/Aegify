@@ -318,6 +318,7 @@ class Finding(BaseModel):
     line_start: int
     line_end: int
     code_snippet: str = ""
+    code_snippet_start_line: int | None = Field(default=None, ge=1)
     message: str = ""
     call_chain: list[CallChainStep] = Field(default_factory=list)
     taint_flow: TaintFlow | None = None

@@ -325,13 +325,21 @@ jobs:
 
 ```bash
 # Start dashboard
-# First configure AUTH_SECRET, ENCRYPTION_SECRET, an OAuth provider, and the
+# First configure AUTH_SECRET, ENCRYPTION_SECRET, an authentication method,
+# AUTH_ALLOWED_EMAILS (or AUTH_ALLOWED_DOMAINS), and the
 # dedicated AEGIFY_UPLOAD_TOKEN in a local ignored .env or via Vault.
 docker compose up dashboard
 
 # Run a scan
 docker compose run scanner scan /scan/target --output sarif --output-file /scan/target/results.sarif --no-llm
 ```
+
+Password accounts require email-first verification (`AUTH_LOCAL_ENABLED=true`,
+`RESEND_API_KEY`, `AUTH_EMAIL_FROM`). Google OAuth and Okta OIDC are also supported.
+There is no default account or public signup: explicitly allow workspace identities.
+Back up the database and apply migrations before deployment. See
+[authentication setup](docs/operations/authentication.mdx) and
+[AI provider configuration](docs/operations/ai-providers.mdx).
 
 ## Project Structure
 

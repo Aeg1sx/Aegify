@@ -1,226 +1,61 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowUpRight, ArrowRight, Loader2, ScanSearch } from "lucide-react";
 import { SeverityBadge } from "@/components/severity-badge";
 import { SeverityChart } from "@/components/severity-chart";
-import {
-  Shield,
-  ScanSearch,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  FileCode,
-} from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { EVIDENCE_LABELS } from "@/lib/code-evidence";
 
 interface Stats {
-  totalScans: number;
-  totalFindings: number;
-  severities: Record<string, number>;
-  statuses: Record<string, number>;
-  recentScans: Array<{
-    id: string;
-    repository: string;
-    branch: string;
-    status: string;
-    filesScanned: number;
-    duration: number;
-    createdAt: string;
-    findingsCount: number;
-  }>;
-  topRules: Array<{
-    ruleId: string;
-    ruleName: string;
-    severity: string;
-    count: number;
-  }>;
+  totalScans: number; totalFindings: number; severities: Record<string, number>;
+  statuses: Record<string, number>; evidence: Record<string, number>; regressions: number; overdue: number;
+  priorityQueue: Array<{ id: string; ruleName: string; severity: string; filePath: string; lineStart: number; evidenceState: string; owner: string; baselineState: string }>;
+  recentScans: Array<{ id: string; repository: string; branch: string; status: string; filesScanned: number; duration: number; createdAt: string; findingsCount: number }>;
+  topRules: Array<{ ruleId: string; ruleName: string; severity: string; count: number }>;
 }
-
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then(setStats)
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!stats || stats.totalScans === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-        <Shield className="h-16 w-16 text-muted-foreground" />
-        <h2 className="text-xl font-semibold">No scans yet</h2>
-        <p className="text-muted-foreground text-center max-w-md">
-          Upload a SARIF report from your Aegify scan to get started.
-        </p>
-        <Link
-          href="/upload"
-          className="mt-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm"
-        >
-          Upload SARIF
-        </Link>
-      </div>
-    );
-  }
-
-  const openCount = stats.statuses?.open || 0;
-  const fixedCount = stats.statuses?.fixed || 0;
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">Security posture overview</p>
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Scans</p>
-                <p className="text-3xl font-bold">{stats.totalScans}</p>
-              </div>
-              <ScanSearch className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Findings</p>
-                <p className="text-3xl font-bold">{stats.totalFindings}</p>
-              </div>
-              <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Open</p>
-                <p className="text-3xl font-bold text-[var(--status-open)]">{openCount}</p>
-              </div>
-              <FileCode className="h-8 w-8 text-[var(--status-open)]" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Fixed</p>
-                <p className="text-3xl font-bold text-[var(--status-fixed)]">{fixedCount}</p>
-              </div>
-              <CheckCircle className="h-8 w-8 text-[var(--status-fixed)]" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Severity breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Severity Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SeverityChart severities={stats.severities} />
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              {Object.entries(stats.severities).map(([sev, count]) => (
-                <div
-                  key={sev}
-                  className="flex items-center justify-between p-2 rounded-md bg-muted/50"
-                >
-                  <SeverityBadge severity={sev} />
-                  <span className="font-mono text-sm">{count}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent scans */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Recent Scans</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {stats.recentScans.slice(0, 5).map((scan) => (
-                <Link
-                  key={scan.id}
-                  href={`/scans/${scan.id}`}
-                  className="block p-3 rounded-md border border-border hover:bg-accent/50 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ScanSearch className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">
-                        {scan.repository || "unnamed"}
-                      </span>
-                    </div>
-                    <span className="text-sm font-mono">
-                      {scan.findingsCount} findings
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {formatDistanceToNow(new Date(scan.createdAt), {
-                        addSuffix: true,
-                      })}
-                    </span>
-                    <span>{scan.filesScanned} files</span>
-                    <span>{scan.duration.toFixed(1)}s</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Top rules */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Top Triggered Rules</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {stats.topRules.map((rule, i) => (
-              <div
-                key={`${rule.ruleId}-${i}`}
-                className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-mono text-muted-foreground w-24 truncate">
-                    {rule.ruleId}
-                  </span>
-                  <span className="text-sm">{rule.ruleName}</span>
-                  <SeverityBadge severity={rule.severity} />
-                </div>
-                <span className="font-mono text-sm">{rule.count}</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+    const controller = new AbortController();
+    fetch("/api/stats", { signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw new Error("Unable to load security overview");
+      const data = await response.json();
+      if (!controller.signal.aborted) { setStats(data); setError(""); }
+    }).catch((e) => { if (!controller.signal.aborted) setError(e.message); });
+    return () => controller.abort();
+  }, [attempt]);
+  if (error) return <div role="alert" className="workbench-panel p-6">{error}<button type="button" className="ml-4 text-primary" onClick={() => setAttempt((n) => n + 1)}>Retry</button></div>;
+  if (!stats) return <div role="status" className="flex items-center gap-3 p-8 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading security overview…</div>;
+  const unresolved = ["open", "triaged", "confirmed", "in_progress"].reduce((n, status) => n + (stats.statuses[status] || 0), 0);
+  const maxEvidence = Math.max(1, ...Object.values(stats.evidence));
+  return <div className="space-y-6">
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div><p className="eyebrow mb-2">Security operations</p><h1 className="text-3xl font-semibold tracking-tight">Overview</h1><p className="mt-2 text-sm text-muted-foreground">Current exposure, evidence coverage, and work that needs attention.</p></div>
+      <Link href="/upload" className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-xs font-medium text-primary-foreground"><ScanSearch className="h-4 w-4" />Import scan</Link>
+    </header>
+    <div className="grid grid-cols-2 divide-x divide-border border-y border-border bg-card py-5 lg:grid-cols-4">
+      {[["Unresolved", unresolved, "Current active findings"], ["Regressions", stats.regressions, "Reopened in a later scan"], ["Past due", stats.overdue, "Unresolved · assigned deadline"], ["Scans recorded", stats.totalScans, "Across all repositories"]].map(([label, count, hint]) => <div key={label} className="px-5 py-2"><p className="eyebrow">{label}</p><p className="my-2 font-mono text-3xl tabular-nums tracking-tight">{Number(count).toLocaleString()}</p><p className="text-xs text-muted-foreground">{hint}</p></div>)}
     </div>
-  );
+    {stats.totalScans === 0 && <div className="workbench-panel p-6"><h2 className="font-semibold">Build your first security baseline</h2><p className="mt-2 text-sm text-muted-foreground">Import a scan artifact to populate this workspace. No sample findings or synthetic trends are shown.</p></div>}
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <section className="workbench-panel">
+        <div className="workbench-heading"><div><h2 className="text-sm font-semibold">High-risk work queue</h2><p className="mt-1 text-xs text-muted-foreground">Unresolved critical & high · critical first, then newest</p></div><Link href="/findings" className="flex items-center gap-1 text-xs text-primary">All findings <ArrowUpRight className="h-3.5 w-3.5" /></Link></div>
+        <div className="overflow-x-auto"><table className="data-table"><thead><tr><th>Severity</th><th>Finding / source</th><th>Evidence</th><th>Owner</th></tr></thead><tbody>
+          {stats.priorityQueue.map((finding) => <tr key={finding.id}><td><SeverityBadge severity={finding.severity} /></td><td><Link href={"/findings/" + finding.id} className="font-medium hover:text-primary">{finding.ruleName}</Link><p className="mt-1 max-w-sm truncate font-mono text-[11px] text-muted-foreground">{finding.filePath}:{finding.lineStart}</p></td><td className="whitespace-nowrap text-xs">{EVIDENCE_LABELS[finding.evidenceState] || "Unclassified"}</td><td className="text-xs text-muted-foreground">{finding.owner || "Unassigned"}</td></tr>)}
+          {!stats.priorityQueue.length && <tr><td colSpan={4} className="h-36 text-center text-muted-foreground">No unresolved critical or high findings in the current records.</td></tr>}
+        </tbody></table></div>
+      </section>
+      <section className="workbench-panel"><div className="workbench-heading"><h2 className="text-sm font-semibold">Severity distribution</h2></div><div className="p-5"><SeverityChart severities={stats.severities} /></div></section>
+    </div>
+    <div className="grid gap-5 lg:grid-cols-2">
+      <section className="workbench-panel">
+        <div className="workbench-heading"><div><h2 className="text-sm font-semibold">Evidence coverage</h2><p className="mt-1 text-xs text-muted-foreground">Recorded classification · not a confidence score</p></div></div>
+        <div className="space-y-5 p-5">{Object.entries(EVIDENCE_LABELS).map(([key, label]) => <Link key={key} href={"/findings?evidenceState=" + key} className="block"><div className="mb-2 flex items-center justify-between text-xs"><span>{label}</span><span className="font-mono tabular-nums">{stats.evidence[key] || 0}</span></div><div className="h-1.5 rounded-sm bg-muted"><div className="h-full rounded-sm bg-primary/65" style={{ width: ((stats.evidence[key] || 0) / maxEvidence * 100) + "%" }} /></div></Link>)}</div>
+      </section>
+      <section className="workbench-panel"><div className="workbench-heading"><h2 className="text-sm font-semibold">Most frequent rules</h2><Link href="/rules" aria-label="View rules"><ArrowUpRight className="h-4 w-4 text-muted-foreground" /></Link></div><div className="divide-y divide-border">{stats.topRules.slice(0, 5).map((rule, index) => <Link key={rule.ruleId + rule.severity} href={"/findings?ruleId=" + encodeURIComponent(rule.ruleId)} className="flex items-center gap-3 px-5 py-4 hover:bg-accent/40"><span className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</span><div className="min-w-0 flex-1"><p className="truncate text-sm">{rule.ruleName}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">{rule.ruleId}</p></div><span className="font-mono text-sm">{rule.count}</span></Link>)}{!stats.topRules.length && <p className="p-5 text-sm text-muted-foreground">No rule occurrences yet.</p>}</div></section>
+    </div>
+    <section className="workbench-panel"><div className="workbench-heading"><div><h2 className="text-sm font-semibold">Scan activity</h2><p className="mt-1 text-xs text-muted-foreground">Individual scan snapshots · findings are not a deduplicated trend</p></div><Link href="/scans" className="flex items-center gap-1 text-xs text-primary">Scan history <ArrowRight className="h-3.5 w-3.5" /></Link></div><div className="overflow-x-auto"><table className="data-table"><thead><tr><th>Repository</th><th>Branch</th><th>Status</th><th>Files</th><th>Findings</th><th>Recorded</th></tr></thead><tbody>{stats.recentScans.slice(0, 6).map((scan) => <tr key={scan.id}><td><Link className="font-medium hover:text-primary" href={"/scans/" + scan.id}>{scan.repository || "Unnamed scan"}</Link></td><td className="font-mono text-xs text-muted-foreground">{scan.branch || "—"}</td><td className="text-xs">{scan.status}</td><td className="font-mono text-xs">{scan.filesScanned.toLocaleString()}</td><td className="font-mono text-xs">{scan.findingsCount}</td><td className="whitespace-nowrap text-xs text-muted-foreground">{new Date(scan.createdAt).toLocaleString()}</td></tr>)}</tbody></table></div></section>
+  </div>;
 }

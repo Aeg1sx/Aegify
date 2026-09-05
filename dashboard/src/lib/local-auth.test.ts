@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { PrismaClient } from "@prisma/client";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { createClient } from "@libsql/client";
+import { authClientKey, consumeAuthLimit, createLocalAuthService, resendAuthMailer, tokenHash, type AuthMail } from "./local-auth.ts";
+
+test("email-first activation, one-time reset, policy checks, and throttling persist in a migrated database", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "aegify-auth-test-"));
+  const url = "file:" + join(directory, "auth.db");
+  const sql = createClient({ url });
+  const migrations = fileURLToPath(new URL("../../prisma/migrations/", import.meta.url));
+  for (const entry of (await readdir(migrations, { withFileTypes: true })).filter((entry) => entry.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) await sql.executeMultiple(await readFile(join(migrations, entry.name, "migration.sql"), "utf8"));
+  sql.close();
+  const db = new PrismaClient({ adapter: new PrismaLibSql({ url }) });
+  const env = { AUTH_SECRET: "test-secret-at-least-32-characters-long", AUTH_URL: "https://workspace.example.test", AUTH_ALLOWED_EMAILS: "owner@example.test,expired@example.test" };
+  const outbox: AuthMail[] = [];
+  const service = createLocalAuthService(db, env, async (mail) => { outbox.push(mail); });
+  const token = (mail: AuthMail) => new URLSearchParams(new URL(mail.url).hash.slice(1)).get("token")!;
+  const firstPassword = "Unique test passphrase number one!";
+  const nextPassword = "Unique test passphrase number two!";
+  try {
+    await service.requestEmail("blocked@example.test", "activate"); assert.equal(outbox.length, 0);
+    await service.requestEmail("owner@example.test", "activate"); assert.equal(outbox.length, 1);
+    assert.equal(await db.user.count(), 0, "No pre-registration password or account is stored before email proof");
+    const raw = token(outbox[0]);
+    const stored = await db.authActionToken.findFirst(); assert.equal(stored?.tokenHash, tokenHash(raw)); assert.notEqual(stored?.tokenHash, raw);
+    assert.equal(await service.complete("invalid-token", "activate", firstPassword, "owner"), false);
+    assert.equal(await service.complete(raw, "activate", firstPassword, "owner"), true);
+    assert.equal(await service.complete(raw, "activate", firstPassword, "owner"), false);
+    const user = await service.authenticate("OWNER", firstPassword); assert.ok(user?.id);
+    assert.ok(await service.authenticate("owner@example.test", firstPassword));
+    assert.equal(await service.authenticate("owner", "wrong password"), null);
+    await service.requestEmail("owner@example.test", "activate"); assert.equal(outbox.length, 1, "Existing identities are never overwritten");
+    await service.requestEmail("owner@example.test", "reset");
+    const reset = token(outbox[1]);
+    assert.equal(await service.complete(reset, "activate", nextPassword, "owner"), false, "Purpose binding prevents cross-use");
+    assert.equal(await service.complete(reset, "reset", nextPassword), true);
+    assert.equal(await service.complete(reset, "reset", nextPassword), false);
+    assert.equal((await db.user.findUnique({ where: { id: user!.id } }))?.sessionVersion, 1);
+    assert.equal(await service.authenticate("owner", firstPassword), null); assert.ok(await service.authenticate("owner", nextPassword));
+    const restricted = createLocalAuthService(db, { ...env, AUTH_ALLOWED_EMAILS: "different@example.test" }, async () => {});
+    assert.equal(await restricted.authenticate("owner", nextPassword), null);
+    await db.user.update({ where: { id: user!.id }, data: { disabled: true } });
+    assert.equal(await service.authenticate("owner", nextPassword), null);
+    await service.requestEmail("expired@example.test", "activate");
+    const expired = token(outbox.at(-1)!);
+    await db.authActionToken.update({ where: { tokenHash: tokenHash(expired) }, data: { expiresAt: new Date(0) } });
+    assert.equal(await service.complete(expired, "activate", firstPassword, "expired"), false);
+    const allowed = await Promise.all(Array.from({ length: 8 }, () => consumeAuthLimit(db, env, "test", "identity", 3, 60_000, 1000)));
+    assert.equal(allowed.filter(Boolean).length, 3);
+    assert.equal(await consumeAuthLimit(db, env, "test", "identity", 3, 60_000, 61_000), true);
+    const request = new Request("https://workspace.example.test", { headers: { "x-forwarded-for": "203.0.113.10" } });
+    assert.equal(authClientKey(request, env), "shared");
+    assert.equal(authClientKey(request, { ...env, AUTH_TRUST_PROXY: "true" }), "203.0.113.10");
+  } finally { await db.$disconnect(); }
+});
+
+test("mail transport has a fixed destination, no redirects, and no body disclosure", async () => {
+  const calls: Array<{ url: string; options?: RequestInit }> = [];
+  const transport: typeof fetch = async (input, options) => { calls.push({ url: String(input), options }); return new Response("{}", { status: 200 }); };
+  const send = resendAuthMailer({ AUTH_URL: "https://workspace.example.test", RESEND_API_KEY: "synthetic-mail-key", AUTH_EMAIL_FROM: "auth@example.test" }, transport);
+  await send({ to: "owner@example.test", purpose: "activate", url: "https://workspace.example.test/auth/activate#token=synthetic", idempotencyKey: "test-mail" });
+  assert.equal(calls[0].url, "https://api.resend.com/emails"); assert.equal(calls[0].options?.redirect, "error");
+  assert.equal(new Headers(calls[0].options?.headers).get("idempotency-key"), "test-mail");
+});

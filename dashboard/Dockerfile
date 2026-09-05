@@ -23,6 +23,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN AUTH_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')" \
     ENCRYPTION_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')" \
     AUTH_URL=http://localhost:3000 \
+    AUTH_ALLOWED_EMAILS=build-only@example.test \
     AUTH_GITHUB_ID=build-only-client-id \
     AUTH_GITHUB_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')" \
     npm run build

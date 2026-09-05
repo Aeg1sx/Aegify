@@ -1,6 +1,7 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
+import { isValidElement, type ReactNode } from "react";
 import remarkGfm from "remark-gfm";
 import { CodeHighlight } from "@/components/code-highlight";
 
@@ -14,28 +15,18 @@ export function Markdown({ content }: MarkdownProps) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        code({ className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || "");
-          const isInline = !match;
-          const codeStr = String(children).replace(/\n$/, "");
-
-          if (isInline) {
-            return (
-              <code
-                className="px-1.5 py-0.5 rounded bg-muted text-sm font-mono"
-                {...props}
-              >
-                {children}
-              </code>
-            );
+        pre({ children }) {
+          if (isValidElement<{ className?: string; children?: ReactNode }>(children)) {
+            const language = /language-([^\s]+)/.exec(children.props.className || "")?.[1];
+            return <CodeHighlight code={String(children.props.children ?? "").replace(/\n$/, "")} language={language || "text"} label="Code / suggested change" />;
           }
-
-          return (
-            <CodeHighlight
-              code={codeStr}
-              language={match?.[1]}
-            />
-          );
+          return <pre className="overflow-auto">{children}</pre>;
+        },
+        code({ children }) {
+          return <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">{children}</code>;
+        },
+        table({ children }) {
+          return <div className="overflow-x-auto"><table className="data-table">{children}</table></div>;
         },
         p({ children }) {
           return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>;

@@ -16,20 +16,24 @@ export async function getSetting(key: string): Promise<string> {
 
 export async function getLLMConfig() {
   const [
-    provider, model, anthropicKey, openaiKey,
+    provider, model, anthropicKey, openaiKey, googleKey,
     enabled, autoVerify, threshold,
-    customEndpoint, customHeaders, language,
+    customEndpoint, customHeaders, language, maxOutputTokens, timeoutSeconds, chatTokenParameter,
   ] = await Promise.all([
     getSetting("llm.provider"),
     getSetting("llm.model"),
     getSetting("llm.anthropic_api_key"),
     getSetting("llm.openai_api_key"),
+    getSetting("llm.google_api_key"),
     getSetting("llm.enabled"),
     getSetting("llm.auto_verify"),
     getSetting("llm.verify_threshold"),
     getSetting("llm.custom_endpoint"),
     getSetting("llm.custom_headers"),
     getSetting("llm.language"),
+    getSetting("llm.max_output_tokens"),
+    getSetting("llm.timeout_seconds"),
+    getSetting("llm.chat_token_parameter"),
   ]);
 
   let parsedHeaders: Record<string, string> = {};
@@ -43,15 +47,19 @@ export async function getLLMConfig() {
 
   return {
     provider: provider || "anthropic",
-    model: model || "claude-opus-5",
+    model,
     anthropicApiKey: anthropicKey,
     openaiApiKey: openaiKey,
+    googleApiKey: googleKey,
     enabled: enabled === "true",
     autoVerify: autoVerify === "true",
-    verifyThreshold: parseFloat(threshold) || 0.7,
+    verifyThreshold: threshold.trim() && Number.isFinite(Number(threshold)) && Number(threshold) >= 0 && Number(threshold) <= 1 ? Number(threshold) : 0.7,
     customEndpoint: customEndpoint || "",
     customHeaders: parsedHeaders,
     language: language || "en",
+    maxOutputTokens: maxOutputTokens ? Number(maxOutputTokens) : 4096,
+    timeoutSeconds: timeoutSeconds ? Number(timeoutSeconds) : Number(process.env.AEGIFY_LLM_REQUEST_TIMEOUT_MS || 60_000) / 1000,
+    chatTokenParameter: chatTokenParameter || "max_tokens",
   };
 }
 
