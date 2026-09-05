@@ -329,6 +329,23 @@ def test_scan_engine_links_every_same_named_next_handler(tmp_path: Path) -> None
     } <= set(engine._last_program_graph)
 
 
+def test_scan_engine_detects_next_app_root_route(tmp_path: Path) -> None:
+    path = tmp_path / "app" / "route.ts"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("export function GET(): Response { return new Response(); }\n")
+
+    config = AegifyConfig()
+    config.llm.enabled = False
+    config.scan.max_workers = 1
+    engine = ScanEngine(config=config)
+
+    result = engine.scan(tmp_path)
+
+    assert {(endpoint.path, endpoint.handler_function) for endpoint in result.endpoints} == {
+        ("/", "GET"),
+    }
+
+
 ENDPOINT_CASES = [
     (
         Language.PYTHON,
