@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handlerRange } from "@/lib/endpoint-evidence";
+import { endpointContractContext } from "@/lib/openapi-context";
 
 export async function GET(
   _request: NextRequest,
@@ -43,5 +44,6 @@ export async function GET(
     prisma.endpoint.count({ where: siblingWhere }),
   ]);
 
-  return NextResponse.json({ endpoint, relatedFindings, relatedFindingCount, association: range ? "handler_range_overlap" : "unavailable_handler_range", siblings, siblingCount }, { headers: { "Cache-Control": "no-store" } });
+  const apiContractContext = await endpointContractContext(prisma, endpoint);
+  return NextResponse.json({ endpoint, apiContractContext, relatedFindings, relatedFindingCount, association: range ? "handler_range_overlap" : "unavailable_handler_range", siblings, siblingCount }, { headers: { "Cache-Control": "no-store" } });
 }

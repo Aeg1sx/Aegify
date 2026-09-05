@@ -17,9 +17,9 @@ const POLICIES: Record<
     label: "SARIF",
   },
   openapi: {
-    extensions: new Set([".json"]),
-    mediaTypes: new Set(["", "application/json"]),
-    maxBytes: 10 * 1024 * 1024,
+    extensions: new Set([".json", ".yaml", ".yml"]),
+    mediaTypes: new Set(["", "application/json", "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml", "text/plain", "application/octet-stream"]),
+    maxBytes: 2 * 1024 * 1024,
     label: "OpenAPI",
   },
 };

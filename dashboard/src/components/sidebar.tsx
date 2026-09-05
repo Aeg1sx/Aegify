@@ -36,6 +36,7 @@ const navSections = [
     items: [
       { href: "/projects", label: "Projects", icon: FolderKanban },
       { href: "/endpoints", label: "Endpoints", icon: Globe },
+      { href: "/api-specs", label: "API Specifications", icon: BookOpen },
       { href: "/agents", label: "AI Agents", icon: Workflow },
       { href: "/llm-scan", label: "LLM Scan", icon: Bot },
     ],

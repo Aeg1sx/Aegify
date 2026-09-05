@@ -95,6 +95,7 @@ interface LlmJob {
 
 export default function LLMScanPage() {
   const [mode, setMode] = useState<"quick" | "deep">("quick");
+  const [includeApiContracts, setIncludeApiContracts] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [scans, setScans] = useState<ScanOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -116,19 +117,24 @@ export default function LLMScanPage() {
 
   // Fetch scans when project changes
   useEffect(() => {
+    const controller = new AbortController();
     const url = selectedProjectId
-      ? `/api/scans?projectId=${selectedProjectId}&limit=50`
+      ? `/api/scans?projectId=${encodeURIComponent(selectedProjectId)}&limit=50`
       : "/api/scans?limit=50";
-    fetch(url)
+    fetch(url, { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
+        if (controller.signal.aborted) return;
         const scanList = (data.scans || []).filter(
           (s: ScanOption) => s.status === "completed" && s._count.findings > 0
         );
         setScans(scanList);
       })
       .catch(() => {})
-      .finally(() => setLoadingScans(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingScans(false);
+      });
+    return () => controller.abort();
   }, [selectedProjectId]);
 
   // Fetch job history
@@ -193,7 +199,7 @@ export default function LLMScanPage() {
   }, [activeJob, fetchHistory]);
 
   const startReview = async () => {
-    if (!selectedScanId) return;
+    if (scanning || loadingScans || !selectedScanId) return;
 
     setScanning(true);
     setResult(null);
@@ -203,7 +209,7 @@ export default function LLMScanPage() {
       const res = await fetch("/api/llm-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scanId: selectedScanId, mode }),
+        body: JSON.stringify({ scanId: selectedScanId, mode, includeApiContracts }),
       });
 
       const data = await res.json();
@@ -302,18 +308,26 @@ export default function LLMScanPage() {
             Select Scan to Review
           </CardTitle>
         </CardHeader>
+        {/* Firefox otherwise restores dynamic disabled/checked state before hydration. */}
+        <form autoComplete="off" onSubmit={(event) => {
+          event.preventDefault();
+          void startReview();
+        }}>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <label htmlFor="review-project" className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                 <FolderKanban className="h-3 w-3" />
                 Project (optional)
               </label>
               <select
+                id="review-project"
                 value={selectedProjectId}
                 onChange={(e) => {
+                  if (e.target.value === selectedProjectId) return;
                   setSelectedProjectId(e.target.value);
                   setSelectedScanId("");
+                  setScans([]);
                   setLoadingScans(true);
                 }}
                 className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -328,11 +342,12 @@ export default function LLMScanPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <label htmlFor="review-scan" className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                 <ScanSearch className="h-3 w-3" />
                 Scan
               </label>
               <select
+                id="review-scan"
                 value={selectedScanId}
                 onChange={(e) => setSelectedScanId(e.target.value)}
                 className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -350,10 +365,14 @@ export default function LLMScanPage() {
             </div>
           </div>
 
+          <label className="flex items-start gap-3 rounded-md border p-3 text-xs leading-6">
+            <input type="checkbox" className="mt-1.5" checked={includeApiContracts} disabled={scanning} onChange={(event) => setIncludeApiContracts(event.target.checked)} />
+            <span><span className="block font-medium">Include API contract context</span><span className="text-muted-foreground">Send bounded, matching OpenAPI/Swagger requirements to the configured AI provider for defensive review. Documentation does not prove enforcement or resolve findings automatically. Off by default.</span></span>
+          </label>
           <div className="flex items-center gap-3">
             <Button
-              onClick={startReview}
-              disabled={scanning || !selectedScanId}
+              type="submit"
+              disabled={scanning || loadingScans || !selectedScanId}
               className="flex items-center gap-2"
             >
               {scanning ? (
@@ -370,6 +389,7 @@ export default function LLMScanPage() {
             </Button>
           </div>
         </CardContent>
+        </form>
       </Card>
 
       {/* Active Job Progress */}

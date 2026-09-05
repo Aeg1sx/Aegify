@@ -1,0 +1,58 @@
+---
+title: API Specifications
+description: Import OpenAPI and Swagger contracts and compare them with a specific source scan.
+---
+
+## Import a specification
+
+Open **API Specifications** in the Security navigation, or use **API Specifications** on the Endpoints page.
+
+1. Select an existing scan snapshot and its repository scope. Imports never silently attach to the newest scan.
+2. Upload a `.json`, `.yaml`, or `.yml` file, or provide an authorized public HTTPS URL for the raw specification.
+3. Preview the extracted operations and any extraction warnings.
+4. Attach the snapshot. URL imports fetch again and verify that the SHA-256 matches the preview; changed documents require a new preview.
+
+Supported document versions are Swagger 2.0 and OpenAPI 3.0, 3.1, and 3.2. This is a bounded contract extractor, not a full specification or JSON Schema validator. The source file limit is 2 MiB and the operation limit is 1,000. Split larger documents by service.
+
+## What is extracted
+
+- Operation IDs, exact paths, methods, tags, deprecation, and local JSON Pointer provenance.
+- Path-level parameters with operation-level overrides, using location and name as identity.
+- Global and operation security requirements, including optional alternatives and explicit removal of requirements.
+- Local `$ref` definitions, request bodies, response schemas, required properties, types, and common constraints.
+- Root/path/operation server precedence and default server-variable values. Unresolved or ambiguous relative server URLs are not guessed for source matching.
+- Swagger base paths and OpenAPI 3.2 QUERY/additional operations.
+
+Examples and raw document bodies are not persisted. The normalized snapshot retains its original-content SHA-256, import time, source filename or URL, scan identity, repository identity, and extraction warnings. Review specs for sensitive descriptions or identifiers before importing; omission of examples is not a general secret-redaction guarantee.
+
+## Compare with a scan
+
+The workbench distinguishes exact method/path associations, ambiguous associations, specification-only operations, and source routes absent from the selected document. Source links open endpoint details with associated findings, code snippets, and remediation. A finding receives documentation context only when its source range overlaps a handler in the same scan and repository.
+
+The Endpoint **Contract** tab and finding detail **API contract context** panel expose these references. Context panels inspect the ten most recent specification snapshots in the scope and retain separate references when documents disagree.
+
+<Warning>
+Documented authentication is not evidence of actual enforcement. A spec-only operation is not proof that an endpoint is deployed. Code-only routes may be covered by another document. These comparisons do not change finding severity, confirmation, false-positive status, source auth signals, or runtime verification.
+</Warning>
+
+This release connects contracts to the imported scan results for defensive review. It does not automatically rerun source analysis, produce payloads, or send requests to API operations. Improved precision/recall has not been benchmarked from this feature alone.
+
+## Optional AI review context
+
+On **LLM Scan**, enable **Include API contract context** before starting a Quick Review or Deep Analysis. This option is off by default. When enabled, matching documented security requirements and input constraints are sent to the configured AI provider alongside the existing findings. Importing a specification alone never makes an AI request.
+
+Only same-scan/repository, overlapping-handler, exact-route references are included. Context is bounded to three references and 6,000 bytes per finding, with an overall prompt budget. Review provenance records the specification IDs, content hashes, source endpoint IDs, JSON pointers, and omitted context. Provider prompts explicitly separate declarations from enforcement and prohibit deriving runtime verification or dismissing a finding solely from its specification. Conflicting snapshots remain separate. This is defensive triage/remediation context, not request execution or payload generation. Real-provider precision improvements require a separate labeled evaluation.
+
+## URL connections and refresh
+
+URLs must use HTTPS without embedded credentials, query strings, or fragments. DNS results are validated and pinned to the TLS connection. Private/reserved addresses, redirects, automatic retries, and external reference fetching are blocked. Fetching is bounded to ten seconds and 2 MiB.
+
+A Swagger UI HTML URL is not a specification URL. Copy its raw JSON/YAML URL instead. Authenticated or private-network documents should be exported and uploaded as files. No tokens, cookies, or custom authorization headers are forwarded.
+
+Use **Prepare URL refresh** on a saved URL snapshot to populate the import form. Refresh requires an explicit authorization confirmation, preview, and attach action. There is no background polling. Reimporting identical bytes in the same scan/repository is idempotent; changed content creates a new immutable snapshot. Each scan/repository permits 30 snapshots. History displays the newest 100 snapshots for the selected scan.
+
+External `$ref` documents, YAML aliases, and executable tags are not loaded. Bundle multi-file definitions before uploading. Recursion, depth, schema properties, media types, and response previews are bounded; visible warnings identify incomplete extraction. Webhooks and callbacks are not imported as callable server operations.
+
+## Deployment
+
+Apply the committed `20260906040000_api_specifications` Prisma migration and regenerate the Prisma client before serving this version. Specification requests use the existing workspace authentication boundary. Import mutations require the configured same origin and an explicitly selected repository scope.

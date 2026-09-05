@@ -33,6 +33,6 @@ test("rejects disguised and oversized uploads", () => {
       { name: "openapi.json", size: 11 * 1024 * 1024, type: "application/json" },
       "openapi",
     ) || "",
-    /10 MB limit/,
+    /2 MB limit/,
   );
 });

@@ -61,6 +61,7 @@ model Scan {
   endpoints  Endpoint[]
   llmJobs    LlmJob[]
   agentRuns  AgentRun[]
+  apiSpecifications ApiSpecification[]
 
   @@index([createdAt])
   @@index([repository])
@@ -262,6 +263,26 @@ model Endpoint {
 
   @@unique([scanId, repositoryId, path, method])
   @@index([scanId])
+}
+
+model ApiSpecification {
+  id             String   @id @default(cuid())
+  scanId         String
+  repositoryId   String   @default("")
+  sourceType     String
+  sourceName     String
+  sourceUrl      String   @default("")
+  contentHash    String
+  title          String
+  specVersion    String
+  apiVersion     String
+  contract       String
+  operationCount Int
+  createdAt      DateTime @default(now())
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, repositoryId, contentHash])
+  @@index([scanId, repositoryId, createdAt])
 }
 
 model LlmJob {

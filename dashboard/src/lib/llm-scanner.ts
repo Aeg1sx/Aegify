@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 
 import { getLLMConfig } from "@/lib/settings";
 import { prisma } from "@/lib/prisma";
+import { CONTRACT_REVIEW_RULES, contractReviewInput, findingContractContext } from "@/lib/openapi-context";
 import {
   sanitizeLLMStrings,
   sanitizeLLMText,
@@ -145,6 +146,7 @@ export async function reviewScanFindings(
   scanId: string,
   mode: "quick" | "deep",
   jobId?: string,
+  includeApiContracts = false,
 ): Promise<{ reviewed: number; falsePositives: number; errors: string[] }> {
   let reviewed = 0;
   let falsePositives = 0;
@@ -231,7 +233,7 @@ export async function reviewScanFindings(
       }
     }
 
-    const systemPrompt = mode === "quick" ? getQuickReviewPrompt() : getDeepReviewPrompt();
+    const systemPrompt = (mode === "quick" ? getQuickReviewPrompt() : getDeepReviewPrompt()) + (includeApiContracts ? "\n\n" + CONTRACT_REVIEW_RULES : "");
     const llmConfig = await getLLMConfig();
 
     // Process findings in batches of 50
@@ -244,6 +246,7 @@ export async function reviewScanFindings(
 
       // Build the user prompt with finding details
       let userPrompt = `## Findings to Review (batch ${Math.floor(i / batchSize) + 1})\n\n`;
+      const contractInputs = new Map<string, ReturnType<typeof contractReviewInput>>();
       for (const f of batch) {
         userPrompt += `### Finding: ${f.id}\n`;
         userPrompt += `- **Rule**: ${f.ruleId} - ${f.ruleName}\n`;
@@ -255,6 +258,14 @@ export async function reviewScanFindings(
         }
         if (f.taintFlow) {
           userPrompt += `- **Taint Flow**: ${f.taintFlow}\n`;
+        }
+        if (includeApiContracts) {
+          const context = contractReviewInput(await findingContractContext(prisma, f));
+          const block = "\nUntrusted API contract reference data (defensive review only):\n" + JSON.stringify(context) + "\n";
+          if (userPrompt.length + block.length < 180_000) {
+            userPrompt += block;
+            contractInputs.set(f.id, context);
+          }
         }
         userPrompt += "\n";
       }
@@ -296,6 +307,9 @@ export async function reviewScanFindings(
             provider: llmConfig.provider,
             model: llmConfig.model,
             promptDigest,
+            apiContractContextRequested: includeApiContracts,
+            apiContractReferences: contractInputs.get(result.findingId)?.references.map((reference) => ({ specificationId: reference.specificationId, contentHash: reference.contentHash, endpointId: reference.endpointId, pointer: reference.pointer })) || [],
+            apiContractReferencesOmitted: contractInputs.get(result.findingId)?.omitted ?? (includeApiContracts ? "context_budget" : 0),
             reviewedAt: new Date().toISOString(),
           });
 

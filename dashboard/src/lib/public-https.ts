@@ -12,7 +12,7 @@ export function publicProviderAddress(address: string): boolean {
   if (family === 4) return !blocked.check(address, "ipv4");
   return family === 6 && globalV6.check(address, "ipv6") && !blocked.check(address, "ipv6");
 }
-export interface ProviderHttpRequest { url: string; headers: Record<string, string>; body: string; timeoutMs: number }
+export interface ProviderHttpRequest { url: string; headers: Record<string, string>; body: string; timeoutMs: number; method?: "GET" | "POST" }
 export type ProviderTransport = (input: ProviderHttpRequest) => Promise<{ status: number; text: string }>;
 
 /** DNS results are validated and pinned into this TLS connection; no redirect or retry. */
@@ -32,7 +32,7 @@ export const publicProviderRequest: ProviderTransport = async (input) => {
   const pinned = addresses[0];
   const pinnedLookup: LookupFunction = (_host, options, callback) => options.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family);
   return new Promise((resolve, reject) => {
-    const req = request(url, { method: "POST", headers: { ...input.headers, "Accept-Encoding": "identity" }, signal, agent: false, lookup: pinnedLookup, rejectUnauthorized: true }, (response) => {
+    const req = request(url, { method: input.method || "POST", headers: { ...input.headers, "Accept-Encoding": "identity" }, signal, agent: false, lookup: pinnedLookup, rejectUnauthorized: true }, (response) => {
       let bytes = 0; const chunks: Buffer[] = [];
       if ((response.statusCode || 0) >= 300 && (response.statusCode || 0) < 400) { response.destroy(); reject(new Error("Provider redirects are blocked.")); return; }
       response.on("data", (chunk: Buffer) => {

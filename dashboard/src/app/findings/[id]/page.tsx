@@ -25,6 +25,7 @@ import {
   Save,
 } from "lucide-react";
 import { EvidenceWorkbench } from "@/components/finding/evidence-workbench";
+import { ApiContractPanel, type ApiContractContextView } from "@/components/finding/api-contract-panel";
 import { AIEvidencePanel, type AIReviewView } from "@/components/finding/ai-evidence-panel";
 import {
   FindingLifecyclePanel,
@@ -67,6 +68,7 @@ interface GraphEdge {
 }
 
 interface FindingDetail {
+  apiContractContext?: ApiContractContextView[];
   id: string;
   scanId: string;
   ruleId: string;
@@ -750,6 +752,7 @@ export default function FindingDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <EvidenceWorkbench key={finding.id} finding={finding} />
+          <ApiContractPanel contexts={finding.apiContractContext || []} scanId={finding.scanId} />
 
           {/* Per-finding Call Graph */}
           <Card>
