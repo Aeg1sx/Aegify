@@ -210,6 +210,14 @@ def test_cve_agent_separates_inventory_reachability_and_fixture_proof() -> None:
             runtime_verified=True,
             evidence_ids=["runtime-fixture-1"],
         ),
+        CveCandidate(
+            cve_id="CVE-2026-12349",
+            dependency_present=True,
+            version_affected=True,
+            component_reachable=True,
+            runtime_verified=True,
+            evidence_ids=["untrusted-runtime-claim"],
+        ),
     ]
     run = SecurityAgentPipeline().run(_scan(runtime=True), cves=candidates)
     cve_stage = next(stage for stage in run.stages if stage.role is AgentRole.CVE)
@@ -218,7 +226,11 @@ def test_cve_agent_separates_inventory_reachability_and_fixture_proof() -> None:
         CveApplicability.VERSION_EXPOSED,
         CveApplicability.REACHABLE,
         CveApplicability.EXPLOITABLE_IN_FIXTURE,
+        CveApplicability.REACHABLE,
     ]
+    assert "approved runtime evidence bound to this scan" in (
+        cve_stage.cve_assessments[-1].missing_evidence
+    )
 
 
 def test_model_narrative_is_bounded_and_does_not_replace_facts() -> None:

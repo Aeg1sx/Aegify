@@ -43,6 +43,7 @@ export async function createSecurityAgentRun(
           calledByFrontend: true,
           exposedViaGateway: true,
           runtimeObserved: true,
+          runtimeEvidence: true,
         },
       },
     },

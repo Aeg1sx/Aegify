@@ -84,7 +84,7 @@ class SecurityAgentPipeline:
             self._surface(scan, evidence),
             self._static(scan, traces, mode),
             self._dynamic(scan, traces),
-            self._cve(cves or []),
+            self._cve(cves or [], {observation.id for observation in scan.runtime_observations}),
             self._synthesis(scan, traces),
             self._steward(scan, traces),
         ]
@@ -361,7 +361,10 @@ class SecurityAgentPipeline:
         )
 
     @staticmethod
-    def _cve(candidates: list[CveCandidate]) -> AgentStageResult:
+    def _cve(
+        candidates: list[CveCandidate],
+        trusted_runtime_evidence: set[str],
+    ) -> AgentStageResult:
         spec = AGENT_CATALOG[AgentRole.CVE]
         assessments: list[CveAssessment] = []
         for candidate in candidates:
@@ -372,10 +375,16 @@ class SecurityAgentPipeline:
                 missing.append("affected version evaluation")
             if candidate.component_reachable is None:
                 missing.append("component reachability")
+            runtime_evidence_bound = bool(
+                candidate.runtime_verified
+                and trusted_runtime_evidence.intersection(candidate.evidence_ids)
+            )
+            if candidate.runtime_verified and not runtime_evidence_bound:
+                missing.append("approved runtime evidence bound to this scan")
             if candidate.dependency_present is False or candidate.version_affected is False:
                 applicability = CveApplicability.NOT_AFFECTED
                 rationale = "The supplied inventory or version evidence excludes this environment."
-            elif candidate.runtime_verified:
+            elif runtime_evidence_bound:
                 applicability = CveApplicability.EXPLOITABLE_IN_FIXTURE
                 rationale = "An approved owned-fixture validation was supplied as runtime evidence."
             elif candidate.component_reachable is True and candidate.version_affected is True:

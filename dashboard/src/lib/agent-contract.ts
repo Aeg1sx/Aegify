@@ -27,6 +27,7 @@ export interface AgentEndpointInput {
   calledByFrontend: boolean;
   exposedViaGateway: boolean;
   runtimeObserved: boolean;
+  runtimeEvidence?: string;
 }
 
 export interface AgentScanInput {
@@ -114,7 +115,8 @@ export function buildAgentBlueprint(
   const dynamicPlans = completePaths
     .filter((trace) => !trace.runtimeObserved)
     .map((trace) => dynamicPlan(trace));
-  const cveAssessments = cves.map(assessCve);
+  const trustedRuntimeEvidence = runtimeEvidenceIds(scan.endpoints);
+  const cveAssessments = cves.map((item) => assessCve(item, trustedRuntimeEvidence));
   const proposals: Array<Record<string, unknown>> = [];
   const unresolved = traces.filter((trace) => !trace.staticComplete).length;
   if (unresolved > 0) {
@@ -325,17 +327,22 @@ function dynamicPlan(trace: ReachabilityView): DynamicPlanView {
   };
 }
 
-function assessCve(item: CveInput): Record<string, unknown> {
+function assessCve(item: CveInput, trustedRuntimeEvidence: Set<string>): Record<string, unknown> {
   const missingEvidence: string[] = [];
   if (item.dependencyPresent === undefined) missingEvidence.push("component presence");
   if (item.versionAffected === undefined) missingEvidence.push("affected version evaluation");
   if (item.componentReachable === undefined) missingEvidence.push("component reachability");
+  const runtimeEvidenceBound = item.runtimeVerified === true
+    && (item.evidenceIds || []).some((id) => trustedRuntimeEvidence.has(id));
+  if (item.runtimeVerified && !runtimeEvidenceBound) {
+    missingEvidence.push("approved runtime evidence bound to this scan");
+  }
   let applicability = "needs_evidence";
   let rationale = "The supplied CVE cannot be classified without the missing evidence.";
   if (item.dependencyPresent === false || item.versionAffected === false) {
     applicability = "not_affected";
     rationale = "The supplied inventory or version evidence excludes this environment.";
-  } else if (item.runtimeVerified) {
+  } else if (runtimeEvidenceBound) {
     applicability = "exploitable_in_fixture";
     rationale = "An approved owned-fixture validation was supplied as runtime evidence.";
   } else if (item.componentReachable && item.versionAffected) {
@@ -354,6 +361,31 @@ function assessCve(item: CveInput): Record<string, unknown> {
     evidenceIds: item.evidenceIds || [],
     missingEvidence,
   };
+}
+
+function runtimeEvidenceIds(endpoints: AgentEndpointInput[]): Set<string> {
+  const ids = new Set<string>();
+  for (const endpoint of endpoints) {
+    if (!endpoint.runtimeEvidence || endpoint.runtimeEvidence.length > 1_000_000) continue;
+    try {
+      const parsed = JSON.parse(endpoint.runtimeEvidence);
+      if (!Array.isArray(parsed)) continue;
+      for (const raw of parsed.slice(0, 500)) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+        const item = raw as Record<string, unknown>;
+        const provenance = item.provenance && typeof item.provenance === "object"
+          ? item.provenance as Record<string, unknown>
+          : {};
+        for (const candidate of [item.id, item.evidence_id, provenance.evidence_id]) {
+          const value = String(candidate || "");
+          if (value && value.length <= 200) ids.add(value);
+        }
+      }
+    } catch {
+      // Malformed imported runtime evidence cannot authorize a CVE proof claim.
+    }
+  }
+  return ids;
 }
 
 function improvementProposal(

@@ -81,6 +81,34 @@ test("CVE parsing and assessment retain evidence boundaries", () => {
   const cve = result.stages.find((stage) => stage.role === "cve")!;
   assert.equal(cve.cveAssessments[0].applicability, "version_exposed");
   assert.throws(() => validateCveInputs([{ cveId: "not-a-cve" }]), /invalid CVE/);
+
+  const runtimeScan = scan(true);
+  runtimeScan.endpoints[0].runtimeEvidence = JSON.stringify([{ id: "runtime-fixture-1" }]);
+  const proofClaims = validateCveInputs([
+    {
+      cveId: "CVE-2026-12346",
+      dependencyPresent: true,
+      versionAffected: true,
+      componentReachable: true,
+      runtimeVerified: true,
+      evidenceIds: ["forged-runtime-id"],
+    },
+    {
+      cveId: "CVE-2026-12347",
+      dependencyPresent: true,
+      versionAffected: true,
+      componentReachable: true,
+      runtimeVerified: true,
+      evidenceIds: ["runtime-fixture-1"],
+    },
+  ]);
+  const proofResult = buildAgentBlueprint(runtimeScan, "deep", proofClaims);
+  const assessments = proofResult.stages.find((stage) => stage.role === "cve")!.cveAssessments;
+  assert.equal(assessments[0].applicability, "reachable");
+  assert.deepEqual(assessments[0].missingEvidence, [
+    "approved runtime evidence bound to this scan",
+  ]);
+  assert.equal(assessments[1].applicability, "exploitable_in_fixture");
 });
 
 test("harness evidence requires execution, image pinning, and output digests", () => {
