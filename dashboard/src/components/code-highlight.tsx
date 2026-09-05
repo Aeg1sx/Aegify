@@ -7,6 +7,8 @@ interface CodeHighlightProps {
   code: string;
   language?: string;
   lineStart?: number;
+  highlightStart?: number;
+  highlightEnd?: number;
 }
 
 const EXT_MAP: Record<string, string> = {
@@ -51,6 +53,8 @@ export function CodeHighlight({
   code,
   language,
   lineStart = 1,
+  highlightStart,
+  highlightEnd,
 }: CodeHighlightProps) {
   const highlightKey = `${language || "auto"}\u0000${code}`;
   const [highlight, setHighlight] = useState<{
@@ -72,7 +76,17 @@ export function CodeHighlight({
       theme: "github-dark",
     })
       .then((result) => {
-        if (!cancelled) setHighlight({ key: highlightKey, html: result });
+        let currentLine = lineStart;
+        const marked = result.replace(/<span class="line">/g, () => {
+          const vulnerable = highlightStart !== undefined
+            && currentLine >= highlightStart
+            && currentLine <= (highlightEnd ?? highlightStart);
+          currentLine += 1;
+          return vulnerable
+            ? '<span class="line aegify-vulnerable-line">'
+            : '<span class="line">';
+        });
+        if (!cancelled) setHighlight({ key: highlightKey, html: marked });
       })
       .catch(() => {
         // Fallback: plain text
@@ -81,7 +95,7 @@ export function CodeHighlight({
     return () => {
       cancelled = true;
     };
-  }, [code, language, highlightKey]);
+  }, [code, language, highlightKey, highlightStart, highlightEnd, lineStart]);
 
   if (!code) {
     return (
@@ -108,8 +122,13 @@ export function CodeHighlight({
         <table className="w-full text-xs font-mono">
           <tbody>
             {lines.map((line, i) => (
-              <tr key={i} className="hover:bg-white/5">
-                <td className="px-3 py-0.5 text-right text-gray-500 select-none w-10 align-top">
+              <tr
+                key={i}
+                className={lineIsHighlighted(lineStart + i, highlightStart, highlightEnd)
+                  ? "bg-red-500/10"
+                  : "hover:bg-white/5"}
+              >
+                <td className={`px-3 py-0.5 text-right select-none w-10 align-top ${lineIsHighlighted(lineStart + i, highlightStart, highlightEnd) ? "border-l-2 border-red-500 text-red-300" : "text-gray-500"}`}>
                   {lineStart + i}
                 </td>
                 <td className="px-3 py-0.5 text-[#c9d1d9] whitespace-pre">
@@ -132,19 +151,29 @@ export function CodeHighlight({
           {lines.map((_, i) => (
             <div
               key={i}
-              className="text-xs font-mono text-gray-500 leading-[1.45rem]"
+              className={`text-xs font-mono leading-[1.45rem] ${lineIsHighlighted(lineStart + i, highlightStart, highlightEnd) ? "border-l-2 border-red-500 pl-1 text-red-300" : "text-gray-500"}`}
             >
               {lineStart + i}
             </div>
           ))}
         </div>
         <div
-          className="flex-1 overflow-x-auto [&>pre]:!bg-transparent [&>pre]:!m-0 [&>pre]:!p-4 [&>pre>code]:!text-xs [&>pre>code>.line]:leading-[1.45rem]"
+          className="flex-1 overflow-x-auto [&>pre]:!bg-transparent [&>pre]:!m-0 [&>pre]:!p-4 [&>pre>code]:!text-xs [&>pre>code>.line]:leading-[1.45rem] [&_.aegify-vulnerable-line]:-mx-4 [&_.aegify-vulnerable-line]:border-l-2 [&_.aegify-vulnerable-line]:border-red-500 [&_.aegify-vulnerable-line]:bg-red-500/10 [&_.aegify-vulnerable-line]:px-4"
           dangerouslySetInnerHTML={{ __html: highlight.html }}
         />
       </div>
     </div>
   );
+}
+
+function lineIsHighlighted(
+  line: number,
+  highlightStart?: number,
+  highlightEnd?: number,
+): boolean {
+  return highlightStart !== undefined
+    && line >= highlightStart
+    && line <= (highlightEnd ?? highlightStart);
 }
 
 export function YamlHighlight({ code }: { code: string }) {

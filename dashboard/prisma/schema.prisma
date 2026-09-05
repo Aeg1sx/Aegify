@@ -60,6 +60,7 @@ model Scan {
   graphEdges CallGraphEdge[]
   endpoints  Endpoint[]
   llmJobs    LlmJob[]
+  agentRuns  AgentRun[]
 
   @@index([createdAt])
   @@index([repository])
@@ -101,6 +102,14 @@ model Finding {
   aiConfidence   Float?
   aiReviewStatus String   @default("unreviewed") // unreviewed, suggested, accepted, rejected
   aiProof         String   @default("{}") // bounded PoC/payload/harness guidance
+  owner           String   @default("")
+  dueAt           DateTime?
+  priority        String   @default("")
+  tags            String   @default("[]")
+  ticketProvider  String   @default("")
+  ticketKey       String   @default("")
+  ticketUrl       String   @default("")
+  lastNotifiedAt  DateTime?
   createdAt      DateTime @default(now())
 
   scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
@@ -118,6 +127,9 @@ model Finding {
   @@index([baselineState])
   @@index([identityId])
   @@index([isCurrent])
+  @@index([owner])
+  @@index([dueAt])
+  @@index([ticketKey])
 }
 
 model FindingIdentity {
@@ -273,6 +285,115 @@ model LlmJob {
   @@index([status])
   @@index([scanId])
   @@index([createdAt])
+}
+
+model AgentRun {
+  id                String    @id @default(cuid())
+  scanId            String
+  mode              String    @default("deep") // lite, deep
+  provider          String    @default("deterministic")
+  status            String    @default("running") // running, awaiting_approval, completed, partial, failed, cancelled
+  currentRole       String    @default("surface")
+  workspaceSnapshot String    @default("")
+  requestPayload    String    @default("{}")
+  artifactDigest    String    @default("")
+  errorMessage      String    @default("")
+  createdAt         DateTime  @default(now())
+  startedAt         DateTime  @default(now())
+  completedAt       DateTime?
+
+  scan       Scan                  @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  stages     AgentStage[]
+  approvals  AgentApproval[]
+  events     AgentEvent[]
+  evidence   AgentEvidenceRecord[]
+
+  @@index([scanId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AgentStage {
+  id                   String    @id @default(cuid())
+  runId                String
+  sequence             Int
+  role                 String
+  agentCode            String
+  agentName            String
+  status               String    @default("pending")
+  summary              String    @default("")
+  facts                String    @default("{}")
+  evidenceIds          String    @default("[]")
+  reachability         String    @default("[]")
+  dynamicPlans         String    @default("[]")
+  cveAssessments       String    @default("[]")
+  improvementProposals String    @default("[]")
+  narrative            String    @default("{}")
+  promptDigest         String    @default("")
+  errorMessage         String    @default("")
+  startedAt            DateTime  @default(now())
+  completedAt          DateTime?
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, sequence])
+  @@index([runId, role])
+  @@index([status])
+}
+
+model AgentApproval {
+  id            String    @id @default(cuid())
+  runId         String
+  action        String    @default("dynamic_validation")
+  resourceId    String
+  status        String    @default("pending") // pending, approved, rejected, consumed, expired
+  scopeDigest   String
+  requestedBy   String    @default("")
+  decidedBy     String    @default("")
+  decisionNote  String    @default("")
+  requestedAt   DateTime  @default(now())
+  decidedAt     DateTime?
+  expiresAt     DateTime?
+
+  run      AgentRun             @relation(fields: [runId], references: [id], onDelete: Cascade)
+  evidence AgentEvidenceRecord[]
+
+  @@unique([runId, resourceId])
+  @@index([runId, status])
+  @@index([expiresAt])
+}
+
+model AgentEvent {
+  id        String   @id @default(cuid())
+  runId     String
+  type      String
+  actor     String   @default("system")
+  message   String
+  payload   String   @default("{}")
+  createdAt DateTime @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+}
+
+model AgentEvidenceRecord {
+  id          String   @id @default(cuid())
+  runId       String
+  approvalId  String?
+  kind        String
+  producer    String
+  status      String
+  digest      String
+  payload     String
+  createdAt   DateTime @default(now())
+
+  run      AgentRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  approval AgentApproval? @relation(fields: [approvalId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, digest])
+  @@index([runId, kind])
+  @@index([approvalId])
 }
 
 // Auth.js (NextAuth v5) models

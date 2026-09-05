@@ -201,6 +201,54 @@ test("fresh migration history persists normalized evidence with Prisma", async (
       },
       include: { scan: true },
     });
+    const agentRun = await prisma.agentRun.create({
+      data: {
+        scanId: scan.id,
+        mode: "deep",
+        status: "awaiting_approval",
+        workspaceSnapshot: scan.workspaceSnapshot,
+        artifactDigest: `sha256:${"a".repeat(64)}`,
+      },
+    });
+    const agentStage = await prisma.agentStage.create({
+      data: {
+        runId: agentRun.id,
+        sequence: 2,
+        role: "dynamic",
+        agentCode: "salgwaengi",
+        agentName: "살쾡이",
+        status: "waiting_approval",
+      },
+    });
+    const approval = await prisma.agentApproval.create({
+      data: {
+        runId: agentRun.id,
+        resourceId: "plan-fixture",
+        scopeDigest: `sha256:${"b".repeat(64)}`,
+      },
+    });
+    const runtimeEvidence = await prisma.agentEvidenceRecord.create({
+      data: {
+        runId: agentRun.id,
+        approvalId: approval.id,
+        kind: "dynamic_harness",
+        producer: "aegify-http-harness",
+        status: "passed",
+        digest: `sha256:${"c".repeat(64)}`,
+        payload: "{}",
+      },
+    });
+    const managedFinding = await prisma.finding.update({
+      where: { id: finding.id },
+      data: {
+        owner: "appsec",
+        priority: "p1",
+        tags: JSON.stringify(["internet-facing"]),
+        ticketProvider: "jira",
+        ticketKey: "SEC-123",
+        ticketUrl: "https://company.atlassian.net/browse/SEC-123",
+      },
+    });
 
     assert.equal(finding.evidenceId, "ev:integration");
     assert.equal(finding.repositoryId, "orders");
@@ -218,6 +266,10 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     });
     assert.equal(persistedIdentity?.triageEvents[0].reason, "fixture evidence reviewed");
     assert.equal(finding.identityId, identity.id);
+    assert.equal(agentStage.agentName, "살쾡이");
+    assert.equal(runtimeEvidence.approvalId, approval.id);
+    assert.equal(managedFinding.owner, "appsec");
+    assert.equal(managedFinding.ticketKey, "SEC-123");
   } finally {
     await prisma.$disconnect();
   }

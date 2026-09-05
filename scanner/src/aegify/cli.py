@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -1090,6 +1091,152 @@ def verify_proxy(
         console.print_json(payload)
     if execute and report.status != "passed":
         raise typer.Exit(code=1)
+
+
+@app.command("agent-run")
+def agent_run(
+    scan_result_file: Annotated[
+        Path,
+        typer.Argument(
+            help="Aegify JSON scan result",
+            exists=True,
+            dir_okay=False,
+        ),
+    ],
+    output_file: Annotated[
+        Path | None,
+        typer.Option("--output-file", "-o", help="Write the agent-run evidence artifact"),
+    ] = None,
+    mode: Annotated[
+        str,
+        typer.Option("--mode", help="Analysis depth: lite or deep"),
+    ] = "deep",
+    provider: Annotated[
+        str,
+        typer.Option(
+            "--provider",
+            help="deterministic, anthropic-api, openai-api, codex, or claude",
+        ),
+    ] = "deterministic",
+    model: Annotated[
+        str,
+        typer.Option("--model", help="Provider model ID; provider default when omitted"),
+    ] = "",
+    workspace: Annotated[
+        Path,
+        typer.Option(
+            "--workspace",
+            help="Read-only workspace exposed to Codex or Claude Code",
+            exists=True,
+            file_okay=False,
+        ),
+    ] = Path("."),
+    cve_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--cve-file",
+            help="Optional JSON array of evidence-bound CVE candidates",
+            exists=True,
+            dir_okay=False,
+        ),
+    ] = None,
+) -> None:
+    """Run the six-agent pipeline from an immutable Aegify scan artifact."""
+    from pydantic import TypeAdapter, ValidationError
+
+    from aegify.agents.backends import (
+        AgentBackend,
+        AnthropicAPIBackend,
+        CommandAgentBackend,
+        CommandBackendConfig,
+        OpenAIResponsesBackend,
+    )
+    from aegify.agents.models import AgentRunMode, CveCandidate
+    from aegify.agents.pipeline import SecurityAgentPipeline
+    from aegify.llm.budget import TokenBudget
+    from aegify.llm.client import LLMClient
+
+    if mode not in {"lite", "deep"}:
+        console.print("[red]--mode must be lite or deep[/red]")
+        raise typer.Exit(code=2)
+    if provider not in {
+        "deterministic",
+        "anthropic-api",
+        "openai-api",
+        "codex",
+        "claude",
+    }:
+        console.print("[red]Unsupported agent provider[/red]")
+        raise typer.Exit(code=2)
+    try:
+        if scan_result_file.stat().st_size > 100_000_000:
+            raise ValueError("scan result exceeds 100 MB")
+        scan_result = ScanResult.model_validate_json(scan_result_file.read_text(encoding="utf-8"))
+        candidates: list[CveCandidate] = []
+        if cve_file is not None:
+            if cve_file.stat().st_size > 5_000_000:
+                raise ValueError("CVE input exceeds 5 MB")
+            candidates = TypeAdapter(list[CveCandidate]).validate_json(
+                cve_file.read_text(encoding="utf-8")
+            )
+    except (OSError, UnicodeError, ValueError, ValidationError) as error:
+        console.print(f"[red]Invalid agent input: {error}[/red]")
+        raise typer.Exit(code=2) from error
+
+    backend: AgentBackend | None = None
+    config = AegifyConfig.load(workspace)
+    if provider == "anthropic-api":
+        if not config.anthropic_api_key:
+            console.print("[red]anthropic-api requires ANTHROPIC_API_KEY[/red]")
+            raise typer.Exit(code=2)
+        selected_model = model or config.llm.model
+        client = LLMClient(
+            api_key=config.anthropic_api_key,
+            model=selected_model,
+            budget=TokenBudget(total_budget=config.llm.token_budget),
+            base_url=config.llm.base_url,
+        )
+        backend = AnthropicAPIBackend(client)
+    elif provider == "openai-api":
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            console.print("[red]openai-api requires OPENAI_API_KEY[/red]")
+            raise typer.Exit(code=2)
+        backend = OpenAIResponsesBackend(
+            api_key,
+            model=model or "gpt-5.5",
+        )
+    elif provider in {"codex", "claude"}:
+        try:
+            backend = CommandAgentBackend(
+                CommandBackendConfig(
+                    kind=provider,
+                    executable=provider,
+                    model=model,
+                ),
+                workspace,
+            )
+        except ValueError as error:
+            console.print(f"[red]Agent provider unavailable: {error}[/red]")
+            raise typer.Exit(code=2) from error
+
+    try:
+        run = SecurityAgentPipeline(backend).run(
+            scan_result,
+            mode=AgentRunMode(mode),
+            cves=candidates,
+        )
+    except (RuntimeError, ValueError, ValidationError) as error:
+        console.print(f"[red]Agent run failed: {error}[/red]")
+        raise typer.Exit(code=2) from error
+    rendered = run.model_dump_json(indent=2)
+    if output_file is not None:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(rendered + "\n", encoding="utf-8")
+        console.print(f"Agent evidence written to {output_file}")
+        console.print(f"Artifact digest: {run.artifact_digest}")
+    else:
+        console.print_json(rendered)
 
 
 @app.command("scan-pr")

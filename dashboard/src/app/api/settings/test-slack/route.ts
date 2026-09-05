@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSlackConfig } from "@/lib/settings";
+import { validateSlackWebhookUrl } from "@/lib/url-validator";
 
 export async function POST() {
   const config = await getSlackConfig();
@@ -10,10 +11,16 @@ export async function POST() {
       { status: 400 }
     );
   }
+  const validation = validateSlackWebhookUrl(config.webhookUrl);
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
+  }
 
   try {
     const res = await fetch(config.webhookUrl, {
       method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text: "Aegify - Test notification. Slack integration is working.",
