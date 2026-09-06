@@ -11,8 +11,15 @@ import { createClient } from "@libsql/client";
 import {
   normalizeFindingClassification,
   normalizeFindingEvidence,
+  normalizeSourceSnippet,
   workspaceSnapshotForRun,
 } from "./sarif-evidence.ts";
+
+test("imports a SARIF context region without moving the reported finding", () => {
+  assert.deepEqual(normalizeSourceSnippet({ region: { startLine: 12, endLine: 12, snippet: { text: "reported" } }, contextRegion: { startLine: 11, endLine: 13, snippet: { text: "before\nreported\nafter" } } }), { codeSnippet: "before\nreported\nafter", snippetStartLine: 11 });
+  assert.deepEqual(normalizeSourceSnippet({ region: { startLine: 12, endLine: 12, snippet: { text: "before\nreported\nafter" } } }), { codeSnippet: "before\nreported\nafter", snippetStartLine: null });
+  assert.deepEqual(normalizeSourceSnippet({ region: { startLine: 12, snippet: { text: "reported" } }, contextRegion: { startLine: 15, snippet: { text: "wrong context" } } }), { codeSnippet: "reported", snippetStartLine: 12 });
+});
 
 test("prefers the run-level snapshot and accepts invocation fallback", () => {
   assert.equal(

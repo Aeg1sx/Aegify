@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LogOut, User } from "lucide-react";
+import { signOut } from "next-auth/react";
 
 interface SessionUser {
   name?: string | null;
@@ -38,15 +39,14 @@ export function UserMenu() {
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium truncate">{user.name || user.email}</p>
       </div>
-      <form action="/api/auth/signout" method="POST">
         <button
-          type="submit"
+          type="button"
+          onClick={() => signOut({ callbackUrl: "/auth/signin" })}
           className="text-muted-foreground hover:text-foreground transition-colors"
           title="Sign out"
         >
           <LogOut className="h-3.5 w-3.5" />
         </button>
-      </form>
     </div>
   );
 }

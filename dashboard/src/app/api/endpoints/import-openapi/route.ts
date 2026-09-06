@@ -1,199 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseApiContract, record, SPEC_MAX_BYTES, type ApiContract } from "@/lib/openapi-contract";
+import { contractRepositoryIds, fetchApiContract, importApiContract, inspectApiContract, readSpecBody, specMutationOriginAllowed } from "@/lib/openapi-import";
 import { uploadValidationError } from "@/lib/upload-validation";
 
-interface OpenAPIPath {
-  [method: string]: {
-    operationId?: string;
-    summary?: string;
-    tags?: string[];
-    security?: Record<string, string[]>[];
-    parameters?: Array<{
-      name: string;
-      in: string;
-      schema?: { type?: string };
-      type?: string;
-    }>;
-  };
+const headers = { "Cache-Control": "no-store" };
+export async function GET(request: NextRequest) {
+  const scanId = request.nextUrl.searchParams.get("scanId");
+  if (!scanId || !await prisma.scan.findUnique({ where: { id: scanId }, select: { id: true } })) return NextResponse.json({ error: "Select an existing scan." }, { status: 404, headers });
+  const id = request.nextUrl.searchParams.get("id");
+  if (id) {
+    const spec = await prisma.apiSpecification.findFirst({ where: { id, scanId } });
+    if (!spec) return NextResponse.json({ error: "Specification not found in this scan." }, { status: 404, headers });
+    const contract = JSON.parse(spec.contract) as ApiContract;
+    return NextResponse.json({ spec: { ...spec, contract }, comparison: await inspectApiContract(prisma, scanId, spec.repositoryId, contract) }, { headers });
+  }
+  const repositoryIds = await contractRepositoryIds(prisma, scanId);
+  const specifications = await prisma.apiSpecification.findMany({ where: { scanId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100, select: { id: true, scanId: true, repositoryId: true, sourceType: true, sourceName: true, sourceUrl: true, contentHash: true, title: true, apiVersion: true, specVersion: true, operationCount: true, createdAt: true } });
+  return NextResponse.json({ repositoryIds, specifications, total: await prisma.apiSpecification.count({ where: { scanId } }) }, { headers });
 }
-
-interface OpenAPISpec {
-  openapi?: string;
-  swagger?: string;
-  basePath?: string;
-  servers?: Array<{ url: string }>;
-  paths?: Record<string, OpenAPIPath>;
-  security?: Record<string, string[]>[];
-}
-
-const HTTP_METHODS = new Set([
-  "get", "post", "put", "delete", "patch", "head", "options",
-]);
-
-/**
- * POST /api/endpoints/import-openapi
- * Import endpoints from an OpenAPI/Swagger spec file.
- * Accepts JSON body or multipart form data with file upload.
- * Query param: scanId (required) - which scan to associate endpoints with.
- */
 export async function POST(request: NextRequest) {
+  if (!specMutationOriginAllowed(request, process.env)) return NextResponse.json({ error: "Same-origin request required." }, { status: 403, headers });
+  const scanId = request.nextUrl.searchParams.get("scanId");
+  if (!scanId || !await prisma.scan.findUnique({ where: { id: scanId }, select: { id: true } })) return NextResponse.json({ error: "Select an existing scan." }, { status: 404, headers });
+  const repositoryId = request.nextUrl.searchParams.get("repositoryId");
+  if (repositoryId === null || !(await contractRepositoryIds(prisma, scanId)).includes(repositoryId)) return NextResponse.json({ error: "Select a repository belonging to this scan." }, { status: 400, headers });
   try {
-    const url = new URL(request.url);
-    const scanId = url.searchParams.get("scanId");
-
-    if (!scanId) {
-      return NextResponse.json(
-        { error: "scanId query parameter is required" },
-        { status: 400 },
-      );
-    }
-
-    // Verify scan exists
-    const scan = await prisma.scan.findUnique({ where: { id: scanId } });
-    if (!scan) {
-      return NextResponse.json({ error: "Scan not found" }, { status: 404 });
-    }
-
-    // Parse spec from request body
-    let spec: OpenAPISpec;
     const contentType = request.headers.get("content-type") || "";
-
+    const bytes = await readSpecBody(request, SPEC_MAX_BYTES + 64 * 1024);
+    let contract: ApiContract; let sourceType = "upload"; let sourceName = "inline-specification"; let sourceUrl = "";
     if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData();
-      const file = formData.get("file") as File;
-      if (!file) {
-        return NextResponse.json({ error: "No file provided" }, { status: 400 });
-      }
-      const uploadError = uploadValidationError(file, "openapi");
-      if (uploadError) {
-        const status = uploadError.includes("exceeds") ? 413 : 415;
-        return NextResponse.json({ error: uploadError }, { status });
-      }
-      const text = await file.text();
-      // Try JSON first, then YAML
-      try {
-        spec = JSON.parse(text);
-      } catch {
-        // Simple YAML parsing for common OpenAPI patterns
-        // In production, use a proper YAML library
-        return NextResponse.json(
-          { error: "Only JSON OpenAPI specs are supported via upload. Convert YAML to JSON first." },
-          { status: 400 },
-        );
-      }
+      const form = await new Response(bytes, { headers: { "Content-Type": contentType } }).formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new Error("Choose a JSON or YAML specification file.");
+      const error = uploadValidationError(file, "openapi"); if (error) throw new Error(error);
+      sourceName = file.name.split(/[\\/]/).pop()?.slice(0, 200) || "uploaded-specification";
+      contract = parseApiContract(await file.text());
     } else {
-      spec = await request.json();
+      const source = new TextDecoder().decode(bytes);
+      let json: Record<string, unknown> = {}; try { json = record(JSON.parse(source)); } catch { /* YAML may be posted directly. */ }
+      if (Object.hasOwn(json, "url") && !json.openapi && !json.swagger) {
+        if (json.authorized !== true) throw new Error("Confirm you may retrieve this specification URL.");
+        if (typeof json.url !== "string") throw new Error("Enter a specification URL.");
+        const fetched = await fetchApiContract(json.url); contract = fetched.contract;
+        sourceType = "url"; sourceUrl = fetched.source; sourceName = new URL(sourceUrl).hostname + new URL(sourceUrl).pathname;
+      } else contract = parseApiContract(source);
     }
-
-    // Validate it's an OpenAPI spec
-    if (!spec.openapi && !spec.swagger) {
-      return NextResponse.json(
-        { error: "Invalid OpenAPI/Swagger specification: missing openapi or swagger version field" },
-        { status: 400 },
-      );
-    }
-
-    // Extract base path
-    let basePath = "";
-    if (spec.swagger && spec.basePath) {
-      basePath = spec.basePath.replace(/\/$/, "");
-    } else if (spec.servers?.[0]?.url) {
-      try {
-        const serverUrl = new URL(spec.servers[0].url);
-        basePath = serverUrl.pathname.replace(/\/$/, "");
-      } catch {
-        basePath = spec.servers[0].url.replace(/\/$/, "");
-      }
-    }
-
-    // Parse endpoints
-    const globalSecurity = spec.security || [];
-    const endpoints: Array<{
-      scanId: string;
-      path: string;
-      method: string;
-      handlerFunction: string;
-      filePath: string;
-      framework: string;
-      authRequired: boolean;
-      parameters: string;
-      middleware: string;
-    }> = [];
-
-    const paths = spec.paths || {};
-    for (const [pathStr, pathItem] of Object.entries(paths)) {
-      if (!pathItem || typeof pathItem !== "object") continue;
-
-      const fullPath = basePath + pathStr;
-
-      for (const [methodStr, operation] of Object.entries(pathItem)) {
-        if (!HTTP_METHODS.has(methodStr) || !operation || typeof operation !== "object") continue;
-
-        // Check auth
-        const opSecurity = operation.security || globalSecurity;
-        const authRequired = Array.isArray(opSecurity) && opSecurity.some(
-          (s: Record<string, string[]>) => Object.keys(s).length > 0,
-        );
-
-        // Extract parameters
-        const params = (operation.parameters || []).map(
-          (p: { name: string; in: string; schema?: { type?: string }; type?: string }) => ({
-            name: p.name,
-            location: p.in || "unknown",
-            paramType: p.schema?.type || p.type || "",
-          }),
-        );
-
-        const handler = operation.operationId || operation.summary || `${methodStr.toUpperCase()} ${fullPath}`;
-        const tags = operation.tags || [];
-
-        endpoints.push({
-          scanId,
-          path: fullPath,
-          method: methodStr.toUpperCase(),
-          handlerFunction: handler,
-          filePath: "openapi-import",
-          framework: "OpenAPI",
-          authRequired,
-          parameters: JSON.stringify(params),
-          middleware: JSON.stringify(tags),
-        });
-      }
-    }
-
-    if (endpoints.length === 0) {
-      return NextResponse.json(
-        { error: "No endpoints found in specification", imported: 0 },
-        { status: 200 },
-      );
-    }
-
-    // Deduplicate against existing endpoints for this scan
-    const existing = await prisma.endpoint.findMany({
-      where: { scanId },
-      select: { path: true, method: true },
-    });
-    const existingKeys = new Set(existing.map((e) => `${e.method}:${e.path}`));
-
-    const newEndpoints = endpoints.filter(
-      (ep) => !existingKeys.has(`${ep.method}:${ep.path}`),
-    );
-
-    if (newEndpoints.length > 0) {
-      await prisma.endpoint.createMany({ data: newEndpoints });
-    }
-
-    return NextResponse.json({
-      imported: newEndpoints.length,
-      skipped: endpoints.length - newEndpoints.length,
-      total: endpoints.length,
-      specVersion: spec.openapi || spec.swagger,
-    });
+    const comparison = await inspectApiContract(prisma, scanId, repositoryId, contract);
+    if (request.nextUrl.searchParams.get("preview") === "true") return NextResponse.json({ contract, comparison, sourceName }, { headers });
+    const expectedHash = request.nextUrl.searchParams.get("expectedHash");
+    if (expectedHash !== contract.digest) return NextResponse.json({ error: "Preview this exact specification before importing. If its contents changed, preview it again." }, { status: 409, headers });
+    if (!contract.operations.length) throw new Error("No supported path operations found. No snapshot was saved.");
+    const result = await importApiContract(prisma, { scanId, repositoryId, sourceType, sourceName, sourceUrl, contract });
+    return NextResponse.json({ ...result, total: contract.operations.length, specVersion: contract.version, warnings: contract.warnings }, { status: 200, headers });
   } catch (error) {
-    console.error("OpenAPI import error:", error);
-    return NextResponse.json(
-      { error: "Import failed" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error && error.name === "Error" ? error.message.slice(0, 350) : "Specification import failed." }, { status: 400, headers });
   }
 }

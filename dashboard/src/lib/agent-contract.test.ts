@@ -43,11 +43,11 @@ function scan(runtimeObserved = false): AgentScanInput {
   };
 }
 
-test("agent blueprint exposes six Korean agents and approval-gated dynamic work", () => {
+test("agent blueprint exposes six English-display agents and approval-gated dynamic work", () => {
   const result = buildAgentBlueprint(scan(), "deep");
   assert.equal(result.status, "awaiting_approval");
   assert.deepEqual(result.stages.map((stage) => stage.agentName), [
-    "해태", "매눈", "살쾡이", "거북선", "장승", "한울",
+    "Haetae", "Maenun", "Salgwaengi", "Geobukseon", "Jangseung", "Hanul",
   ]);
   assert.equal(SECURITY_AGENTS.length, 6);
   const dynamic = result.stages.find((stage) => stage.role === "dynamic")!;

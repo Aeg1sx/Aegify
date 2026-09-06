@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { handlerRange } from "@/lib/endpoint-evidence";
+import { endpointContractContext } from "@/lib/openapi-context";
 
 export async function GET(
   _request: NextRequest,
@@ -14,6 +16,7 @@ export async function GET(
           id: true,
           repository: true,
           branch: true,
+          commitSha: true,
           createdAt: true,
         },
       },
@@ -24,15 +27,23 @@ export async function GET(
     return NextResponse.json({ error: "Endpoint not found" }, { status: 404 });
   }
 
-  // Find related findings in the same file
-  const relatedFindings = await prisma.finding.findMany({
-    where: {
+  // An overlapping source range is a location association, not proof of an attack path.
+  const range = handlerRange(endpoint.lineStart, endpoint.lineEnd);
+  const where = range ? {
       scanId: endpoint.scanId,
       filePath: endpoint.filePath,
-      lineStart: { gte: endpoint.lineStart, lte: endpoint.lineEnd || 99999 },
-    },
-    orderBy: { severity: "asc" },
-  });
+      repositoryId: endpoint.repositoryId,
+      lineStart: { gte: 1, lte: range.end },
+      lineEnd: { gte: range.start },
+  } : null;
+  const siblingWhere = { scanId: endpoint.scanId, repositoryId: endpoint.repositoryId, filePath: endpoint.filePath, id: { not: endpoint.id } };
+  const [relatedFindings, relatedFindingCount, siblings, siblingCount] = await Promise.all([
+    where ? prisma.finding.findMany({ where, orderBy: [{ lineStart: "asc" }, { id: "asc" }], take: 100 }) : [],
+    where ? prisma.finding.count({ where }) : 0,
+    prisma.endpoint.findMany({ where: siblingWhere, select: { id: true, method: true, path: true, handlerFunction: true, lineStart: true, lineEnd: true, authRequired: true }, orderBy: [{ lineStart: "asc" }, { id: "asc" }], take: 12 }),
+    prisma.endpoint.count({ where: siblingWhere }),
+  ]);
 
-  return NextResponse.json({ endpoint, relatedFindings });
+  const apiContractContext = await endpointContractContext(prisma, endpoint);
+  return NextResponse.json({ endpoint, apiContractContext, relatedFindings, relatedFindingCount, association: range ? "handler_range_overlap" : "unavailable_handler_range", siblings, siblingCount }, { headers: { "Cache-Control": "no-store" } });
 }

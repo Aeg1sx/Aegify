@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import {
   normalizeFindingClassification,
   normalizeFindingEvidence,
+  normalizeSourceSnippet,
   workspaceSnapshotForRun,
 } from "@/lib/sarif-evidence";
 import {
@@ -47,6 +48,7 @@ interface SARIFResult {
     physicalLocation?: {
       artifactLocation?: { uri: string };
       region?: { startLine: number; endLine?: number; snippet?: { text: string } };
+      contextRegion?: { startLine: number; endLine?: number; snippet?: { text: string } };
     };
   }>;
   properties?: {
@@ -364,6 +366,7 @@ export async function POST(request: NextRequest) {
         LEVEL_TO_SEVERITY[result.level] ||
         "medium";
       const evidence = normalizeFindingEvidence(result.properties);
+      const sourceSnippet = normalizeSourceSnippet(loc);
       const classification = normalizeFindingClassification(result.properties);
 
       // Extract CWE from rule
@@ -400,14 +403,14 @@ export async function POST(request: NextRequest) {
         ruleId: result.ruleId,
         ruleName: rule?.name || rule?.shortDescription?.text || result.ruleId,
         severity,
-        confidence: result.properties?.confidence || 0.8,
+        confidence: result.properties?.confidence ?? 0.8,
         evidenceState: classification.evidenceState,
         disposition: classification.disposition,
         status: "open",
         filePath: loc?.artifactLocation?.uri || "",
         lineStart: loc?.region?.startLine || 0,
         lineEnd: loc?.region?.endLine || loc?.region?.startLine || 0,
-        codeSnippet: loc?.region?.snippet?.text || "",
+        codeSnippet: sourceSnippet.codeSnippet,
         message: result.message.text,
         cweId,
         owaspCategory,
@@ -423,7 +426,7 @@ export async function POST(request: NextRequest) {
         evidenceId: evidence.evidenceId,
         repositoryId: evidence.repositoryId,
         modulePath: evidence.modulePath,
-        provenance: evidence.provenance,
+        provenance: JSON.stringify({ ...JSON.parse(evidence.provenance), snippet_start_line: sourceSnippet.snippetStartLine }),
         fingerprint: stableFindingFingerprint({
           ruleId: result.ruleId,
           filePath: loc?.artifactLocation?.uri || "",

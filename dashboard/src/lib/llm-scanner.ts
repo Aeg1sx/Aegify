@@ -1,12 +1,10 @@
+import { callProvider } from "@/lib/provider-client";
 import { createHash } from "node:crypto";
 
 import { getLLMConfig } from "@/lib/settings";
 import { prisma } from "@/lib/prisma";
+import { CONTRACT_REVIEW_RULES, contractReviewInput, findingContractContext } from "@/lib/openapi-context";
 import {
-  buildLLMRequestHeaders,
-  extractAnthropicText,
-  readBoundedLLMJson,
-  readBoundedLLMResponseText,
   sanitizeLLMStrings,
   sanitizeLLMText,
 } from "@/lib/llm-safety";
@@ -15,15 +13,7 @@ import {
   llmJobTerminalStatus,
 } from "@/lib/llm-job-state";
 
-const DEFAULT_LLM_REQUEST_TIMEOUT_MS = 60_000;
 type LLMConfig = Awaited<ReturnType<typeof getLLMConfig>>;
-
-function llmRequestTimeoutMs(): number {
-  const configured = Number(process.env.AEGIFY_LLM_REQUEST_TIMEOUT_MS);
-  return Number.isInteger(configured) && configured >= 1_000 && configured <= 300_000
-    ? configured
-    : DEFAULT_LLM_REQUEST_TIMEOUT_MS;
-}
 
 interface LLMReviewResult {
   findingId: string;
@@ -38,93 +28,8 @@ interface LLMReviewResult {
   evidenceGaps: string[];
 }
 
-export async function callLLM(
-  systemPrompt: string,
-  userPrompt: string,
-  configured?: LLMConfig,
-): Promise<string> {
-  const config = configured || await getLLMConfig();
-
-  if (!config.enabled) {
-    throw new Error("LLM analysis is not enabled. Configure it in Settings.");
-  }
-
-  const hasCustomEndpoint = !!config.customEndpoint;
-  const hasCustomHeaders = Object.keys(config.customHeaders).length > 0;
-
-  if (config.provider === "anthropic") {
-    if (!config.anthropicApiKey && !hasCustomEndpoint) {
-      throw new Error("Anthropic API key not configured.");
-    }
-    const baseUrl = (config.customEndpoint || "https://api.anthropic.com").replace(/\/+$/, "");
-    const url = baseUrl.endsWith("/v1/messages") ? baseUrl : `${baseUrl}/v1/messages`;
-
-    const reqHeaders = buildLLMRequestHeaders(
-      "anthropic",
-      config.anthropicApiKey,
-      hasCustomEndpoint,
-      hasCustomHeaders ? config.customHeaders : {},
-    );
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: reqHeaders,
-      signal: AbortSignal.timeout(llmRequestTimeoutMs()),
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: "user", content: sanitizeLLMText(userPrompt, 200_000) }],
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await readBoundedLLMResponseText(res, 100_000);
-      throw new Error(`Anthropic API error ${res.status}: ${sanitizeLLMText(body, 1_000)}`);
-    }
-
-    const data = await readBoundedLLMJson(res);
-    return extractAnthropicText(data);
-  } else if (config.provider === "openai") {
-    if (!config.openaiApiKey && !hasCustomEndpoint) {
-      throw new Error("OpenAI API key not configured.");
-    }
-    const baseUrl = (config.customEndpoint || "https://api.openai.com").replace(/\/+$/, "");
-    const url = baseUrl.endsWith("/v1/chat/completions") ? baseUrl : `${baseUrl}/v1/chat/completions`;
-
-    const reqHeaders = buildLLMRequestHeaders(
-      "openai",
-      config.openaiApiKey,
-      hasCustomEndpoint,
-      hasCustomHeaders ? config.customHeaders : {},
-    );
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: reqHeaders,
-      signal: AbortSignal.timeout(llmRequestTimeoutMs()),
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: 4096,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: sanitizeLLMText(userPrompt, 200_000) },
-        ],
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await readBoundedLLMResponseText(res, 100_000);
-      throw new Error(`OpenAI API error ${res.status}: ${sanitizeLLMText(body, 1_000)}`);
-    }
-
-    const data = await readBoundedLLMJson(res) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return data.choices?.[0]?.message?.content || "";
-  }
-
-  throw new Error(`Unsupported provider: ${config.provider}`);
+export async function callLLM(systemPrompt: string, userPrompt: string, configured?: LLMConfig): Promise<string> {
+  return callProvider(configured || await getLLMConfig(), systemPrompt, userPrompt);
 }
 
 function getQuickReviewPrompt(): string {
@@ -241,6 +146,7 @@ export async function reviewScanFindings(
   scanId: string,
   mode: "quick" | "deep",
   jobId?: string,
+  includeApiContracts = false,
 ): Promise<{ reviewed: number; falsePositives: number; errors: string[] }> {
   let reviewed = 0;
   let falsePositives = 0;
@@ -327,7 +233,7 @@ export async function reviewScanFindings(
       }
     }
 
-    const systemPrompt = mode === "quick" ? getQuickReviewPrompt() : getDeepReviewPrompt();
+    const systemPrompt = (mode === "quick" ? getQuickReviewPrompt() : getDeepReviewPrompt()) + (includeApiContracts ? "\n\n" + CONTRACT_REVIEW_RULES : "");
     const llmConfig = await getLLMConfig();
 
     // Process findings in batches of 50
@@ -340,6 +246,7 @@ export async function reviewScanFindings(
 
       // Build the user prompt with finding details
       let userPrompt = `## Findings to Review (batch ${Math.floor(i / batchSize) + 1})\n\n`;
+      const contractInputs = new Map<string, ReturnType<typeof contractReviewInput>>();
       for (const f of batch) {
         userPrompt += `### Finding: ${f.id}\n`;
         userPrompt += `- **Rule**: ${f.ruleId} - ${f.ruleName}\n`;
@@ -351,6 +258,14 @@ export async function reviewScanFindings(
         }
         if (f.taintFlow) {
           userPrompt += `- **Taint Flow**: ${f.taintFlow}\n`;
+        }
+        if (includeApiContracts) {
+          const context = contractReviewInput(await findingContractContext(prisma, f));
+          const block = "\nUntrusted API contract reference data (defensive review only):\n" + JSON.stringify(context) + "\n";
+          if (userPrompt.length + block.length < 180_000) {
+            userPrompt += block;
+            contractInputs.set(f.id, context);
+          }
         }
         userPrompt += "\n";
       }
@@ -392,6 +307,9 @@ export async function reviewScanFindings(
             provider: llmConfig.provider,
             model: llmConfig.model,
             promptDigest,
+            apiContractContextRequested: includeApiContracts,
+            apiContractReferences: contractInputs.get(result.findingId)?.references.map((reference) => ({ specificationId: reference.specificationId, contentHash: reference.contentHash, endpointId: reference.endpointId, pointer: reference.pointer })) || [],
+            apiContractReferencesOmitted: contractInputs.get(result.findingId)?.omitted ?? (includeApiContracts ? "context_budget" : 0),
             reviewedAt: new Date().toISOString(),
           });
 

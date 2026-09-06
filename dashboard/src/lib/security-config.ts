@@ -1,3 +1,5 @@
+import { accessPolicyConfigured, authOrigin, localAuthEnabled, mailConfigured, validOktaIssuer } from "./auth-policy.ts";
+
 type Environment = Record<string, string | undefined>;
 
 function completePair(left: string | undefined, right: string | undefined): boolean {
@@ -24,7 +26,10 @@ function validAuthOrigin(value: string | undefined): boolean {
 export function dashboardAuthConfigured(environment: Environment): boolean {
   const providerConfigured =
     completePair(environment.AUTH_GITHUB_ID, environment.AUTH_GITHUB_SECRET) ||
-    completePair(environment.AUTH_GITLAB_ID, environment.AUTH_GITLAB_SECRET);
+    completePair(environment.AUTH_GITLAB_ID, environment.AUTH_GITLAB_SECRET) ||
+    completePair(environment.AUTH_GOOGLE_ID, environment.AUTH_GOOGLE_SECRET) ||
+    (completePair(environment.AUTH_OKTA_ID, environment.AUTH_OKTA_SECRET) && validOktaIssuer(environment.AUTH_OKTA_ISSUER)) ||
+    localAuthEnabled(environment);
   return Boolean(environment.AUTH_SECRET) && providerConfigured;
 }
 
@@ -33,17 +38,21 @@ export function productionSecurityErrors(environment: Environment): string[] {
 
   const errors: string[] = [];
   if (!environment.AUTH_SECRET) errors.push("AUTH_SECRET is required");
+  else if (environment.AUTH_SECRET.length < 32) errors.push("AUTH_SECRET must contain at least 32 characters");
   if (!environment.ENCRYPTION_SECRET) {
     errors.push("ENCRYPTION_SECRET is required");
   }
   if (!dashboardAuthConfigured(environment)) {
-    errors.push("a complete GitHub or GitLab OAuth provider is required");
+    errors.push("at least one complete authentication method is required");
   }
   if (!environment.AUTH_URL) {
     errors.push("AUTH_URL is required");
   } else if (!validAuthOrigin(environment.AUTH_URL)) {
     errors.push("AUTH_URL must be an HTTP(S) origin without credentials or a path");
   }
+  if (environment.AUTH_URL && validAuthOrigin(environment.AUTH_URL) && !authOrigin(environment)) errors.push("AUTH_URL requires HTTPS except on loopback hosts");
+  if (!accessPolicyConfigured(environment)) errors.push("AUTH_ALLOWED_EMAILS or AUTH_ALLOWED_DOMAINS is required");
+  if (localAuthEnabled(environment) && !mailConfigured(environment)) errors.push("local authentication requires RESEND_API_KEY and AUTH_EMAIL_FROM for verification and recovery");
   return errors;
 }
 

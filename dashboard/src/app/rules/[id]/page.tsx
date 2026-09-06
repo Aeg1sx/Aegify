@@ -292,6 +292,7 @@ export default function RuleDetailPage({
           {editingYaml ? (
             <RuleEditor
               value={yamlDraft}
+              originalValue={rule.yamlContent}
               expectedRuleId={rule.id}
               onChange={setYamlDraft}
               onValidityChange={setYamlValid}

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Plus, Code } from "lucide-react";
+import { RuleEditor } from "@/components/rules/rule-editor";
 
 const YAML_TEMPLATE = `id: AEG-CUSTOM-001
 name: Custom Rule Name
@@ -39,6 +40,7 @@ export default function NewRulePage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [yamlValid, setYamlValid] = useState(false);
 
   const [form, setForm] = useState({
     id: "",
@@ -103,7 +105,7 @@ export default function NewRulePage() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       <Link
         href="/rules"
         className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -230,13 +232,7 @@ export default function NewRulePage() {
             </div>
           </CardHeader>
           <CardContent>
-            <textarea
-              value={form.yamlContent}
-              onChange={(e) => update("yamlContent", e.target.value)}
-              placeholder="Paste or write your YAML rule definition here..."
-              className="w-full h-96 bg-[#0d1117] text-[#c9d1d9] font-mono text-xs p-4 rounded-md border border-border resize-y focus:outline-none focus:ring-1 focus:ring-primary"
-              spellCheck={false}
-            />
+            <RuleEditor value={form.yamlContent} expectedRuleId={form.id || undefined} onChange={(value) => update("yamlContent", value)} onValidityChange={setYamlValid} />
             <p className="text-xs text-muted-foreground mt-2">
               Define detection patterns, taint sources/sinks, and message templates.
               Click &quot;Load Template&quot; for an example structure.
@@ -251,7 +247,7 @@ export default function NewRulePage() {
         )}
 
         <div className="flex items-center gap-3">
-          <Button type="submit" disabled={saving} className="flex items-center gap-2">
+          <Button type="submit" disabled={saving || !yamlValid} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             {saving ? "Creating..." : "Create Rule"}
           </Button>

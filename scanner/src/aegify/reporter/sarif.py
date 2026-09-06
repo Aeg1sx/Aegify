@@ -434,6 +434,21 @@ class SARIFReporter:
 
     def _build_result(self, finding: Finding) -> dict[str, Any]:
         """Build a SARIF result from a Finding."""
+        snippet_lines = finding.code_snippet.splitlines()
+        snippet_start = finding.code_snippet_start_line
+        region_snippet = finding.code_snippet
+        context_region: dict[str, Any] = {}
+        if snippet_start is not None and snippet_lines:
+            offset = finding.line_start - snippet_start
+            length = finding.line_end - finding.line_start + 1
+            region_snippet = "\n".join(snippet_lines[offset : offset + length])
+            context_region = {
+                "contextRegion": {
+                    "startLine": snippet_start,
+                    "endLine": snippet_start + len(snippet_lines) - 1,
+                    "snippet": {"text": finding.code_snippet},
+                }
+            }
         result: dict[str, Any] = {
             "ruleId": finding.rule_id,
             "level": (
@@ -454,11 +469,12 @@ class SARIFReporter:
                             "startLine": finding.line_start,
                             "endLine": finding.line_end,
                             **(
-                                {"snippet": {"text": finding.code_snippet}}
+                                {"snippet": {"text": region_snippet}}
                                 if finding.code_snippet
                                 else {}
                             ),
                         },
+                        **context_region,
                     }
                 }
             ],

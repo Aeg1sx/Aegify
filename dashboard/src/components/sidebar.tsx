@@ -36,6 +36,7 @@ const navSections = [
     items: [
       { href: "/projects", label: "Projects", icon: FolderKanban },
       { href: "/endpoints", label: "Endpoints", icon: Globe },
+      { href: "/api-specs", label: "API Specifications", icon: BookOpen },
       { href: "/agents", label: "AI Agents", icon: Workflow },
       { href: "/llm-scan", label: "LLM Scan", icon: Bot },
     ],
@@ -149,19 +150,21 @@ function ThemeToggle() {
 export function Sidebar() {
   const pathname = usePathname();
 
+  if (pathname.startsWith("/auth/")) return null;
+
   return (
-    <aside className="w-60 border-r border-border bg-sidebar flex flex-col">
+    <aside className="app-sidebar w-16 shrink-0 border-r border-border bg-sidebar flex flex-col md:w-52">
       <div className="p-4 border-b border-border">
         <Link href="/" className="flex items-center gap-2">
           <Shield className="h-6 w-6 text-primary" />
-          <span className="font-semibold text-lg text-foreground">Aegify</span>
+          <span className="hidden font-semibold text-lg tracking-tight text-foreground md:inline">Aegify<span className="ml-1 text-primary">.</span></span>
         </Link>
-        <p className="text-xs text-muted-foreground mt-1">SAST Dashboard</p>
+        <p className="hidden text-[11px] text-muted-foreground mt-1 md:block">Security workspace</p>
       </div>
       <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
         {navSections.map((section) => (
           <div key={section.label}>
-            <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <p className="hidden px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:block">
               {section.label}
             </p>
             <div className="space-y-0.5">
@@ -173,15 +176,18 @@ export function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    title={item.label}
+                    aria-label={item.label}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors relative",
+                      "flex items-center gap-3 px-2 md:px-3 py-2 rounded-md text-[13px] transition-colors relative",
                       isActive
                         ? "bg-accent text-foreground font-medium before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary"
                         : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                     )}
                   >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    <span className="hidden md:inline">{item.label}</span>
                   </Link>
                 );
               })}
@@ -189,8 +195,8 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
-      <LlmJobIndicator />
-      <div className="p-3 border-t border-border space-y-1">
+      <div className="hidden md:block"><LlmJobIndicator /></div>
+      <div className="hidden p-3 border-t border-border space-y-1 md:block">
         <UserMenu />
         <ThemeToggle />
         <p className="text-[10px] text-muted-foreground/50 px-3">v0.3.0</p>

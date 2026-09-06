@@ -1,596 +1,215 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Search, SlidersHorizontal, Save, Bot, Loader2, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
 import { StatusBadge } from "@/components/status-badge";
-import {
-  Search,
-  FileCode,
-  AlertTriangle,
-  Bot,
-  Loader2,
-  CheckSquare,
-  Square,
-  X,
-  CheckCircle,
-  AlertCircle,
-  History,
-} from "lucide-react";
+import { EvidenceWorkbench, type FindingEvidenceView } from "@/components/finding/evidence-workbench";
+import { EVIDENCE_LABELS } from "@/lib/code-evidence";
+import { findingFilters, filterQuery, type FindingFilters } from "@/lib/finding-view";
 
-interface Finding {
-  id: string;
-  scanId: string;
-  ruleId: string;
-  ruleName: string;
-  severity: string;
-  confidence: number;
-  evidenceState: string;
-  disposition: string;
-  status: string;
-  filePath: string;
-  lineStart: number;
-  lineEnd: number;
-  message: string;
-  cweId: number | null;
-  owaspCategory: string | null;
-  llmAnalysis: string | null;
-  aiVerdict: string;
-  baselineState: string;
-  isCurrent: boolean;
-  createdAt: string;
-}
-
-interface RuleOption {
-  id: string;
-  name: string;
-  findingCount: number;
-}
-
-interface BatchResult {
-  success: boolean;
-  data?: {
-    analysis: string;
-    remediation: string;
-    riskAssessment: string;
-    confidence: number;
-  };
-  error?: string;
-}
-
-const RISK_COLORS: Record<string, string> = {
-  CRITICAL: "text-[var(--severity-critical)]",
-  HIGH: "text-[var(--severity-high)]",
-  MEDIUM: "text-[var(--severity-medium)]",
-  LOW: "text-[var(--severity-low)]",
-  FALSE_POSITIVE: "text-[var(--status-fixed)]",
-  likely_true_positive: "text-red-500",
-  likely_false_positive: "text-emerald-500",
-  needs_review: "text-amber-500",
-};
+interface Finding extends FindingEvidenceView { aiVerdict: string; createdAt: string; confidence: number }
+interface SavedView { name: string; query: string }
+const presets = [
+  { name: "All findings", values: {} },
+  { name: "Critical / open", values: { severity: "critical", status: "open" } },
+  { name: "Regressions", values: { baselineState: "regressed" } },
+  { name: "Static candidates", values: { evidenceState: "candidate" } },
+];
 
 export default function FindingsPage() {
+  const [filters, setFilters] = useState(findingFilters());
+  const [ready, setReady] = useState(false);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [status, setStatus] = useState("");
-  const [ruleId, setRuleId] = useState("");
-  const [language, setLanguage] = useState("");
-  const [page, setPage] = useState(1);
-  const [rules, setRules] = useState<RuleOption[]>([]);
-  const [languages, setLanguages] = useState<string[]>([]);
-  const [projectId, setProjectId] = useState("");
-  const [source, setSource] = useState("");
-  const [disposition, setDisposition] = useState("");
-  const [includeHistory, setIncludeHistory] = useState(false);
-  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
-
-  // Multi-select state
-  const [selectMode, setSelectMode] = useState(false);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [advanced, setAdvanced] = useState(false);
+  const [compact, setCompact] = useState(true);
+  const [showOwner, setShowOwner] = useState(true);
+  const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  // Batch analysis state
-  const [batchAnalyzing, setBatchAnalyzing] = useState(false);
-  const [batchProgress, setBatchProgress] = useState("");
-  const [batchResults, setBatchResults] = useState<Record<string, BatchResult> | null>(null);
-  const [batchSummary, setBatchSummary] = useState<{ total: number; success: number; failed: number } | null>(null);
-
-  useEffect(() => {
-    fetch("/api/rules")
-      .then((r) => r.json())
-      .then((data) => setRules(data.rules || []));
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then((data) => setProjects(data.projects || []));
-  }, []);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchMessage, setBatchMessage] = useState("");
+  const [saved, setSaved] = useState<SavedView[]>([]);
+  const [saveName, setSaveName] = useState("");
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [rules, setRules] = useState<Array<{ id: string; name: string }>>([]);
+  const [languages, setLanguages] = useState<string[]>([]);
+  const rowButtons = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   useEffect(() => {
-    fetch("/api/findings/languages")
-      .then((r) => r.json())
-      .then((data) => setLanguages(data.languages || []))
-      .catch(() => {});
-  }, []);
-
-  const fetchFindings = useCallback(() => {
-    const params = new URLSearchParams();
-    params.set("page", page.toString());
-    params.set("limit", "50");
-    if (search) params.set("search", search);
-    if (severity) params.set("severity", severity);
-    if (status) params.set("status", status);
-    if (ruleId) params.set("ruleId", ruleId);
-    if (language) params.set("language", language);
-    if (projectId) params.set("projectId", projectId);
-    if (source) params.set("source", source);
-    if (disposition) params.set("disposition", disposition);
-    if (includeHistory) params.set("history", "true");
-
-    fetch(`/api/findings?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setFindings(data.findings);
-        setTotal(data.total);
-      })
-      .finally(() => setLoading(false));
-  }, [page, search, severity, status, ruleId, language, projectId, source, disposition, includeHistory]);
-
-  useEffect(() => {
-    const timer = setTimeout(fetchFindings, 300);
-    return () => clearTimeout(timer);
-  }, [fetchFindings]);
-
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+    const restore = () => setFilters(findingFilters(new URLSearchParams(window.location.search)));
+    const frame = requestAnimationFrame(() => {
+      restore();
+      try {
+        const parsed: unknown = JSON.parse(localStorage.getItem("aegify.findingViews.v1") || "[]");
+        if (Array.isArray(parsed)) setSaved(parsed.filter((v): v is SavedView => typeof v?.name === "string" && typeof v?.query === "string").slice(0, 12));
+        setCompact(localStorage.getItem("aegify.tableDensity") !== "comfortable");
+        setShowOwner(localStorage.getItem("aegify.findingOwner") !== "hidden");
+      } catch { /* Storage may be unavailable. The workbench remains usable. */ }
+      setReady(true);
     });
-  };
-
-  const selectAll = () => {
-    if (selected.size === findings.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(findings.map((f) => f.id)));
+    window.addEventListener("popstate", restore);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("popstate", restore); };
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    async function options(path: string) {
+      const response = await fetch(path, { signal: controller.signal });
+      if (!response.ok) throw new Error("Filter options unavailable");
+      return response.json();
     }
-  };
-
-  const cancelSelect = () => {
-    setSelectMode(false);
-    setSelected(new Set());
-    setBatchResults(null);
-    setBatchSummary(null);
-  };
-
-  const runBatchAnalysis = async () => {
-    if (selected.size === 0) return;
-    setBatchAnalyzing(true);
-    setBatchResults(null);
-    setBatchSummary(null);
-    setBatchProgress("");
-
-    const allIds = [...selected];
-    const CHUNK_SIZE = 20;
-    const chunks: string[][] = [];
-    for (let i = 0; i < allIds.length; i += CHUNK_SIZE) {
-      chunks.push(allIds.slice(i, i + CHUNK_SIZE));
-    }
-
-    const allResults: Record<string, BatchResult> = {};
-    let totalSuccess = 0;
-    let totalFailed = 0;
-
-    try {
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        setBatchProgress(`${i * CHUNK_SIZE + 1}-${Math.min((i + 1) * CHUNK_SIZE, allIds.length)} / ${allIds.length}`);
-
-        try {
-          const res = await fetch("/api/findings/analyze-batch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ids: chunk }),
-          });
-          const data = await res.json();
-
-          if (res.ok && data.results) {
-            Object.assign(allResults, data.results);
-            totalSuccess += data.summary?.success || 0;
-            totalFailed += data.summary?.failed || 0;
-
-            // Update local findings incrementally
-            setFindings((prev) =>
-              prev.map((f) => {
-                const result = data.results?.[f.id];
-                if (result?.success && result.data) {
-                  return { ...f, llmAnalysis: JSON.stringify(result.data) };
-                }
-                return f;
-              })
-            );
-          } else {
-            totalFailed += chunk.length;
-            for (const id of chunk) {
-              allResults[id] = { success: false, error: data.error || "Request failed" };
-            }
-          }
-        } catch {
-          totalFailed += chunk.length;
-          for (const id of chunk) {
-            allResults[id] = { success: false, error: "Network error" };
-          }
+    Promise.allSettled([options("/api/projects"), options("/api/rules"), options("/api/findings/languages")]).then(([p, r, l]) => {
+      if (controller.signal.aborted) return;
+      if (p.status === "fulfilled") setProjects(p.value.projects || []);
+      if (r.status === "fulfilled") setRules(r.value.rules || []);
+      if (l.status === "fulfilled") setLanguages(l.value.languages || []);
+    });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => {
+    if (!ready) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setLoading(true); setError("");
+      const query = filterQuery(filters);
+      window.history.replaceState(null, "", "/findings?" + query);
+      try {
+        const response = await fetch("/api/findings?" + query + "&limit=50", { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data.findings)) throw new Error(data.error || "Unable to load findings.");
+        if (!controller.signal.aborted) {
+          setFindings(data.findings); setTotal(data.total); setSelected(new Set());
+          setInspectedId((id) => data.findings.some((f: Finding) => f.id === id) ? id : null);
         }
+      } catch (e) {
+        if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : "Unable to load findings."); setFindings([]); }
+      } finally { if (!controller.signal.aborted) setLoading(false); }
+    }, 220);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [filters, ready, retry]);
 
-        // Update summary progressively
-        setBatchSummary({ total: allIds.length, success: totalSuccess, failed: totalFailed });
-      }
-
-      setBatchResults(allResults);
-      setBatchSummary({ total: allIds.length, success: totalSuccess, failed: totalFailed });
-    } finally {
-      setBatchAnalyzing(false);
-      setBatchProgress("");
+  const change = (key: keyof FindingFilters, value: string) => setFilters((f) => ({ ...f, [key]: value, page: key === "page" ? value : "1" }));
+  const closeInspector = useCallback(() => {
+    if (inspectedId) rowButtons.current.get(inspectedId)?.focus();
+    setInspectedId(null);
+  }, [inspectedId]);
+  const inspected = findings.find((finding) => finding.id === inspectedId);
+  useEffect(() => {
+    if (inspectedId && window.matchMedia("(max-width: 1279px)").matches) {
+      document.querySelector('[aria-label="Finding evidence inspector"]')?.scrollIntoView({ block: "start" });
     }
-  };
-
-  const totalPages = Math.ceil(total / 50);
-
-  const getLlmBadge = (finding: Finding) => {
-    if (finding.aiVerdict) return finding.aiVerdict;
-    if (!finding.llmAnalysis) return null;
+  }, [inspectedId]);
+  const page = Number(filters.page);
+  const pages = Math.max(1, Math.ceil(total / 50));
+  const toggle = (id: string) => setSelected((previous) => {
+    const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next;
+  });
+  const batchAnalyze = async () => {
+    const ids = [...selected];
+    setBatchRunning(true);
+    let succeeded = 0; let failed = 0;
     try {
-      const parsed = JSON.parse(finding.llmAnalysis);
-      return parsed.riskAssessment as string;
-    } catch {
-      return null;
-    }
+      for (let index = 0; index < ids.length; index += 20) {
+        const chunk = ids.slice(index, index + 20);
+        setBatchMessage("Reviewing " + (index + 1) + "–" + Math.min(index + 20, ids.length) + " / " + ids.length);
+        try {
+          const response = await fetch("/api/findings/analyze-batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: chunk }) });
+          const data = await response.json();
+          if (!response.ok) throw new Error("Review failed");
+          succeeded += data.summary?.success || 0; failed += data.summary?.failed || 0;
+        } catch { failed += chunk.length; }
+      }
+      setBatchMessage(succeeded + " reviews succeeded · " + failed + " failed. AI suggestions do not change triage status.");
+      setRetry((n) => n + 1);
+    } finally { setBatchRunning(false); }
   };
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Findings</h1>
-        <p className="text-muted-foreground">All security findings across scans</p>
+  function selectFilter(key: keyof FindingFilters, label: string, values: Array<[string, string]>) {
+    return <select aria-label={label} className="workbench-select" value={filters[key]} onChange={(e) => change(key, e.target.value)}>
+      <option value="">{label}</option>{values.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
+    </select>;
+  }
+
+  return <div className="space-y-5">
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div><p className="eyebrow mb-2">Triage workspace</p><h1 className="text-3xl font-semibold tracking-tight">Findings <span className="ml-2 font-mono text-lg font-normal text-muted-foreground">{loading ? "…" : total.toLocaleString()}</span></h1><p className="mt-2 text-sm text-muted-foreground">Inspect the source. Follow the evidence. Decide what to fix.</p></div>
+      <div className="flex items-center gap-2">
+        <select className="workbench-select" aria-label="Table density" value={compact ? "compact" : "comfortable"} onChange={(e) => { setCompact(e.target.value === "compact"); try { localStorage.setItem("aegify.tableDensity", e.target.value); } catch {} }}><option value="compact">Compact rows</option><option value="comfortable">Comfortable rows</option></select>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showOwner} onChange={(e) => { setShowOwner(e.target.checked); try { localStorage.setItem("aegify.findingOwner", e.target.checked ? "visible" : "hidden"); } catch {} }} />Owner column</label>
       </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by message, file, or rule..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="pl-9"
-          />
-        </div>
-        <select
-          value={severity}
-          onChange={(e) => {
-            setSeverity(e.target.value);
-            setPage(1);
-          }}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="">All severities</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <select
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="">All statuses</option>
-          <option value="open">Open</option>
-          <option value="triaged">Triaged</option>
-          <option value="false_positive">False Positive</option>
-          <option value="fixed">Fixed</option>
-        </select>
-        <select
-          value={ruleId}
-          onChange={(e) => {
-            setRuleId(e.target.value);
-            setPage(1);
-          }}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm max-w-[200px]"
-        >
-          <option value="">All rules</option>
-          {rules.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.id} ({r.findingCount})
-            </option>
-          ))}
-        </select>
-        <select
-          value={language}
-          onChange={(e) => {
-            setLanguage(e.target.value);
-            setPage(1);
-          }}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="">All languages</option>
-          {languages.map((lang) => (
-            <option key={lang} value={lang}>
-              {lang}
-            </option>
-          ))}
-        </select>
-        <select
-          value={projectId}
-          onChange={(e) => {
-            setProjectId(e.target.value);
-            setPage(1);
-          }}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm max-w-[180px]"
-        >
-          <option value="">All projects</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={source}
-          onChange={(e) => {
-            setSource(e.target.value);
-            setPage(1);
-          }}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="">All sources</option>
-          <option value="sast">SAST</option>
-          <option value="llm">LLM</option>
-        </select>
-        <select
-          value={disposition}
-          onChange={(e) => {
-            setDisposition(e.target.value);
-            setPage(1);
-          }}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="">All gates</option>
-          <option value="blocking">Blocking</option>
-          <option value="advisory">Advisory</option>
-        </select>
-      </div>
-
-      {/* Batch analysis summary */}
-      {batchSummary && (
-        <div
-          className={`flex items-center gap-2 text-sm px-4 py-3 rounded-md ${
-            batchSummary.failed === 0
-              ? "bg-[var(--status-fixed-bg)] text-[var(--status-fixed)]"
-              : batchSummary.success === 0
-                ? "bg-[var(--status-open-bg)] text-[var(--status-open)]"
-                : "bg-[var(--status-triaged-bg)] text-[var(--status-triaged)]"
-          }`}
-        >
-          {batchSummary.failed === 0 ? (
-            <CheckCircle className="h-4 w-4" />
-          ) : (
-            <AlertCircle className="h-4 w-4" />
-          )}
-          {batchAnalyzing ? "Analyzing" : "Batch analysis complete"}: {batchSummary.success}/{batchSummary.total} succeeded
-          {batchSummary.failed > 0 && `, ${batchSummary.failed} failed`}
-        </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
-              {total} findings
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              {selectMode ? (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={selectAll}
-                  >
-                    {selected.size === findings.length ? "Deselect All" : "Select All"}
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={runBatchAnalysis}
-                    disabled={selected.size === 0 || batchAnalyzing}
-                  >
-                    {batchAnalyzing ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    ) : (
-                      <Bot className="h-4 w-4 mr-1" />
-                    )}
-                    {batchProgress ? `Analyzing ${batchProgress}` : `Analyze ${selected.size > 0 ? `(${selected.size})` : ""}`}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={cancelSelect}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant={includeHistory ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setIncludeHistory((value) => !value);
-                      setPage(1);
-                    }}
-                  >
-                    <History className="h-4 w-4 mr-1" />
-                    History
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectMode(true)}
-                  >
-                    <Bot className="h-4 w-4 mr-1" />
-                    Batch Analyze
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-pulse text-muted-foreground">Loading...</div>
-            </div>
-          ) : findings.length === 0 ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              No findings match your filters
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {findings.map((finding) => {
-                const isSelected = selected.has(finding.id);
-                const llmRisk = getLlmBadge(finding);
-                const batchResult = batchResults?.[finding.id];
-
-                return (
-                  <div
-                    key={finding.id}
-                    className={`flex items-start gap-3 p-3 rounded-md border transition-colors ${
-                      isSelected
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-accent/30"
-                    }`}
-                  >
-                    {selectMode && (
-                      <button
-                        onClick={() => toggleSelect(finding.id)}
-                        className="mt-1 shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="h-4 w-4 text-primary" />
-                        ) : (
-                          <Square className="h-4 w-4" />
-                        )}
-                      </button>
-                    )}
-                    <Link
-                      href={`/findings/${finding.id}`}
-                      className="flex-1 min-w-0"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <SeverityBadge severity={finding.severity} />
-                            <StatusBadge status={finding.status} />
-                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                              finding.baselineState === "regressed"
-                                ? "bg-red-500/10 text-red-600"
-                                : finding.baselineState === "new"
-                                  ? "bg-violet-500/10 text-violet-600"
-                                  : finding.baselineState === "updated"
-                                    ? "bg-amber-500/10 text-amber-600"
-                                    : "bg-emerald-500/10 text-emerald-600"
-                            }`}>{finding.baselineState}</span>
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                                finding.disposition === "advisory"
-                                  ? "bg-amber-500/10 text-amber-600"
-                                  : "bg-red-500/10 text-red-600"
-                              }`}
-                            >
-                              {finding.disposition}
-                            </span>
-                            <span className="text-[10px] uppercase text-muted-foreground">
-                              {finding.evidenceState}
-                            </span>
-                            <span className="text-xs font-mono text-muted-foreground">
-                              {finding.ruleId}
-                            </span>
-                            {finding.cweId && (
-                              <span className="text-xs text-muted-foreground">
-                                CWE-{finding.cweId}
-                              </span>
-                            )}
-                            {finding.owaspCategory && (
-                              <span className="text-xs text-muted-foreground">
-                                {finding.owaspCategory}
-                              </span>
-                            )}
-                            {llmRisk && (
-                              <span
-                                className={`text-xs font-bold flex items-center gap-1 ${
-                                  RISK_COLORS[llmRisk] || "text-muted-foreground"
-                                }`}
-                              >
-                                <Bot className="h-3 w-3" />
-                                {llmRisk.replaceAll("_", " ")}
-                              </span>
-                            )}
-                            {batchResult && !batchResult.success && (
-                              <span className="text-xs text-[var(--status-open)] flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" />
-                                Failed
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm truncate">{finding.message}</p>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                            <FileCode className="h-3 w-3" />
-                            <span className="font-mono">
-                              {finding.filePath}:{finding.lineStart}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {(finding.confidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-6">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-3 py-1 rounded-md border text-sm disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-3 py-1 rounded-md border text-sm disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+    </header>
+    <div className="flex flex-wrap gap-1 border-b border-border pb-3">
+      {presets.map((preset) => <button key={preset.name} type="button" className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-accent" onClick={() => setFilters({ ...findingFilters(), ...preset.values })}>{preset.name}</button>)}
+      {saved.map((view, index) => <span key={view.name + index} className="inline-flex items-center rounded-md border bg-card">
+        <button type="button" className="px-3 py-1.5 text-xs" onClick={() => setFilters(findingFilters(new URLSearchParams(view.query)))}>{view.name}</button>
+        <button type="button" aria-label={"Delete saved view " + view.name} className="px-2 text-muted-foreground" onClick={() => { const next = saved.filter((_, i) => i !== index); setSaved(next); try { localStorage.setItem("aegify.findingViews.v1", JSON.stringify(next)); } catch {} }}>×</button>
+      </span>)}
     </div>
-  );
+    <div className="workbench-panel">
+      <div className="flex flex-wrap items-center gap-2 p-3">
+        <div className="relative min-w-52 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><input aria-label="Search findings" placeholder="Search rule, file, or message…" className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm" value={filters.search} onChange={(e) => change("search", e.target.value)} /></div>
+        {selectFilter("severity", "All severities", ["critical", "high", "medium", "low"].map((v) => [v, v]))}
+        {selectFilter("status", "All statuses", ["open", "triaged", "confirmed", "in_progress", "false_positive", "accepted_risk", "fixed"].map((v) => [v, v.replaceAll("_", " ")]))}
+        {selectFilter("evidenceState", "All evidence", Object.entries(EVIDENCE_LABELS))}
+        <Button variant="outline" size="sm" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}><SlidersHorizontal className="mr-1 h-3.5 w-3.5" />Filters</Button>
+        <select aria-label="Sort findings" className="workbench-select" value={filters.sort} onChange={(e) => change("sort", e.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="file">Source location</option><option value="rule">Rule name</option></select>
+      </div>
+      {advanced && <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/30 p-3">
+        {selectFilter("projectId", "All projects", projects.map((p) => [p.id, p.name]))}
+        {selectFilter("ruleId", "All rules", rules.map((r) => [r.id, r.id]))}
+        {selectFilter("language", "All languages", languages.map((l) => [l, l]))}
+        {selectFilter("source", "All sources", [["sast", "SAST"], ["llm", "AI review"]])}
+        {selectFilter("disposition", "All gates", [["blocking", "Blocking"], ["advisory", "Advisory"]])}
+        <label className="flex items-center gap-2 px-2 text-xs"><input type="checkbox" checked={filters.history === "true"} onChange={(e) => change("history", e.target.checked ? "true" : "")} />Include history</label>
+        <input aria-label="Saved view name" placeholder="Name this view" maxLength={40} value={saveName} onChange={(e) => setSaveName(e.target.value)} className="workbench-select w-36" />
+        <Button variant="outline" size="sm" disabled={!saveName.trim() || saved.length >= 12} onClick={() => {
+          const next = [...saved, { name: saveName.trim(), query: filterQuery({ ...filters, page: "1" }) }]; setSaved(next); setSaveName("");
+          try { localStorage.setItem("aegify.findingViews.v1", JSON.stringify(next)); } catch { setError("Browser storage is unavailable. This view will only last for this session."); }
+        }}><Save className="mr-1 h-3.5 w-3.5" />Save view</Button>
+        <button type="button" className="px-2 text-xs text-primary" onClick={() => setFilters(findingFilters())}>Reset filters</button>
+      </div>}
+    </div>
+    {batchMessage && <p role="status" className="text-sm text-muted-foreground">{batchMessage}</p>}
+    {error && <div role="alert" className="flex items-center justify-between rounded-md border border-destructive/30 p-4 text-sm text-destructive">{error}<Button variant="outline" size="sm" onClick={() => setRetry((n) => n + 1)}>Retry</Button></div>}
+    <div className={"grid items-start gap-4 " + (inspected ? "2xl:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_420px]" : "")}>
+      <section className="workbench-panel">
+        <div className="workbench-heading">
+          <p className="text-xs text-muted-foreground">{filters.history === "true" ? "All recorded occurrences" : "Current occurrences"} · {selected.size ? selected.size + " selected" : "Select a finding to inspect"}</p>
+          {selected.size > 0 && <Button size="sm" disabled={batchRunning || loading} onClick={batchAnalyze}>{batchRunning ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Bot className="mr-1 h-3.5 w-3.5" />}Review selected</Button>}
+        </div>
+        <div className="max-h-[68vh] overflow-auto" aria-busy={loading}>
+          <table className={"data-table " + (compact ? "compact" : "")}>
+            <caption className="sr-only">Security findings. Use up and down arrows on a finding title to inspect adjacent rows.</caption>
+            <thead><tr>
+              <th className="w-10"><input aria-label="Select all visible findings" type="checkbox" disabled={loading || !findings.length} checked={findings.length > 0 && selected.size === findings.length} onChange={() => setSelected(selected.size === findings.length ? new Set() : new Set(findings.map((f) => f.id)))} /></th>
+              <th>Severity</th><th className="min-w-64">Finding / source</th><th className="min-w-32">Evidence</th><th>Status</th>{showOwner && <th>Owner</th>}<th><span className="sr-only">Details</span></th>
+            </tr></thead>
+            <tbody>{loading ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading findings…</td></tr> : findings.length === 0 ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground">No findings match this view. <button type="button" className="text-primary" onClick={() => setFilters(findingFilters())}>Clear filters</button></td></tr> : findings.map((finding, index) => <tr key={finding.id} className={inspectedId === finding.id ? "!bg-primary/5" : ""} aria-selected={inspectedId === finding.id}>
+              <td><input aria-label={"Select " + finding.ruleName + " at " + finding.filePath} type="checkbox" checked={selected.has(finding.id)} onChange={() => toggle(finding.id)} /></td>
+              <td><SeverityBadge severity={finding.severity} /></td>
+              <td><button type="button" ref={(el) => { if (el) rowButtons.current.set(finding.id, el); else rowButtons.current.delete(finding.id); }} className="block max-w-lg text-left font-medium hover:text-primary" onClick={() => setInspectedId(finding.id)} onKeyDown={(event) => {
+                if (event.key === "Escape") { closeInspector(); return; }
+                if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+                event.preventDefault(); const next = findings[index + (event.key === "ArrowDown" ? 1 : -1)];
+                if (next) { setInspectedId(next.id); rowButtons.current.get(next.id)?.focus(); }
+              }}>{finding.ruleName}</button><p title={finding.filePath} className="mt-1 max-w-sm truncate font-mono text-[11px] text-muted-foreground">{finding.filePath}:{finding.lineStart}</p>{finding.baselineState === "regressed" && <span className="text-[11px] text-destructive">↳ Regressed</span>}</td>
+              <td><span className="text-xs">{EVIDENCE_LABELS[finding.evidenceState] || "Unclassified"}</span>{finding.aiVerdict && <p className="mt-1 text-[10px] text-muted-foreground">AI suggestion available</p>}</td>
+              <td><StatusBadge status={finding.status} /></td>{showOwner && <td className="text-xs text-muted-foreground">{finding.owner || "Unassigned"}</td>}
+              <td><Link href={"/findings/" + finding.id} aria-label={"Full details for " + finding.ruleName}><ArrowUpRight className="h-4 w-4 text-muted-foreground" /></Link></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <footer className="flex items-center justify-between gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground">
+          <span>{total ? ((page - 1) * 50 + 1) + "–" + Math.min(page * 50, total) : 0} of {total} · 50 per page</span>
+          <div className="flex items-center gap-3"><Button variant="ghost" size="sm" disabled={loading || page <= 1} onClick={() => change("page", String(page - 1))}>Previous</Button><span>{page} / {pages}</span><Button variant="ghost" size="sm" disabled={loading || page >= pages} onClick={() => change("page", String(page + 1))}>Next</Button></div>
+        </footer>
+      </section>
+      {inspected && <EvidenceWorkbench key={inspected.id} finding={inspected} onClose={closeInspector} />}
+    </div>
+  </div>;
 }

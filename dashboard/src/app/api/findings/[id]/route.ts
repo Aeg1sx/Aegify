@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { findingContractContext } from "@/lib/openapi-context";
 
 export async function GET(
   _request: NextRequest,
@@ -24,7 +25,8 @@ export async function GET(
       })
     : null;
 
-  return NextResponse.json({ ...finding, identity });
+  const apiContractContext = await findingContractContext(prisma, finding);
+  return NextResponse.json({ ...finding, identity, apiContractContext }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(

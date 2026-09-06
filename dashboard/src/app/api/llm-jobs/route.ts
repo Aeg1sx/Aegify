@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { scanId, mode } = body;
+    if (body.includeApiContracts !== undefined && typeof body.includeApiContracts !== "boolean") return NextResponse.json({ error: "includeApiContracts must be a boolean" }, { status: 400 });
 
     if (typeof scanId !== "string" || !/^[a-z0-9]{20,40}$/.test(scanId)) {
       return NextResponse.json({ error: "a valid scanId is required" }, { status: 400 });
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     after(async () => {
       try {
-        await reviewScanFindings(scanId, mode, job.id);
+        await reviewScanFindings(scanId, mode, job.id, body.includeApiContracts === true);
       } catch (error) {
         console.error(`LLM job ${job.id} failed:`, error);
       }

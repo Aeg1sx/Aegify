@@ -1,0 +1,63 @@
+---
+title: "AI provider configuration"
+description: "Native protocols, compatible gateways, explicit model IDs, and credential isolation."
+---
+
+## Protocols and services
+
+Settings → AI review supports four implemented wire protocols. Service presets set
+an endpoint and protocol; they do not claim a separate native adapter for every vendor.
+
+| Protocol | Operation | Authentication on the default host |
+| --- | --- | --- |
+| Anthropic Messages | `/v1/messages` | Stored Anthropic key |
+| OpenAI Chat Completions | `/v1/chat/completions` | Stored OpenAI key |
+| OpenAI Responses | `/v1/responses` | Stored OpenAI key |
+| Google Gemini | `/v1beta/models/MODEL:generateContent` | Stored Google key |
+
+Presets cover Anthropic, OpenAI Responses/Chat, Google Gemini, Azure OpenAI v1,
+OpenRouter, Groq, and a custom HTTPS gateway. Azure uses the deployment name as
+the model ID and an explicit `api-key` custom header. OpenRouter and Groq use a
+dedicated `Authorization: Bearer ...` custom header. Do not paste an API key into
+the endpoint field. Legacy Azure endpoints that require a dated `api-version`
+query are not part of the Azure v1 preset.
+
+Choose an exact model identifier available to your account. The UI does not guess
+a "latest" model, silently replace a model on provider change, or assert that a
+particular model is enabled for your account. Set the request timeout, output token
+budget, and—when using Chat Completions—the token parameter accepted by the model:
+`max_tokens` or `max_completion_tokens`.
+
+API origins, versioned base paths, and complete operation URLs are supported without
+duplicating `/v1`. The request URL preview shows the resulting URL before saving.
+OpenAI Responses requests use `store: false`. This is not a guarantee about all
+provider retention policies. Tool calls and thought parts are not executed or
+treated as answer text. No new autonomous tool-execution workflow is enabled.
+
+## Credentials and egress
+
+Direct-provider keys are only attached to the built-in default endpoints. Any custom
+endpoint—including a preset vendor endpoint—uses only explicitly entered custom
+headers. Those headers are encrypted and are never returned to the browser, even
+for legacy plaintext records. Changing endpoint/protocol requires explicitly
+replacing or removing existing custom headers to avoid forwarding a credential to
+another service. Blank untouched secret fields preserve their stored values.
+
+Requests require HTTPS, public DNS addresses, certificate verification, and a
+connection pinned to the validated DNS result. Redirects, private/loopback endpoints,
+credential-bearing URLs, and unbounded responses are rejected. The transport caps
+responses at 2 MiB and does not retry automatically. Use an approved public HTTPS
+gateway for a private model deployment; direct local Ollama access is not enabled.
+Bedrock SigV4, Vertex service-account authentication, and native local-model
+protocols are not advertised as implemented adapters.
+
+Saving validates configuration; it does not contact an external service. "Test
+saved connection" asks for confirmation and sends a small structured-response
+probe using saved settings. This can incur usage. Unit tests use mocked provider
+responses, and do not establish real credentials, quota, or model availability.
+
+References: [OpenAI Responses](https://developers.openai.com/api/reference/cli/resources/responses/methods/create),
+[Gemini generateContent](https://ai.google.dev/api/generate-content),
+[Azure OpenAI v1](https://learn.microsoft.com/en-us/rest/api/microsoft-foundry/azureopenai/chat),
+[OpenRouter](https://openrouter.ai/docs/api_reference/overview), and
+[Groq compatibility](https://console.groq.com/docs/openai).

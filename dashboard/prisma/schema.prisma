@@ -61,6 +61,7 @@ model Scan {
   endpoints  Endpoint[]
   llmJobs    LlmJob[]
   agentRuns  AgentRun[]
+  apiSpecifications ApiSpecification[]
 
   @@index([createdAt])
   @@index([repository])
@@ -264,6 +265,26 @@ model Endpoint {
   @@index([scanId])
 }
 
+model ApiSpecification {
+  id             String   @id @default(cuid())
+  scanId         String
+  repositoryId   String   @default("")
+  sourceType     String
+  sourceName     String
+  sourceUrl      String   @default("")
+  contentHash    String
+  title          String
+  specVersion    String
+  apiVersion     String
+  contract       String
+  operationCount Int
+  createdAt      DateTime @default(now())
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, repositoryId, contentHash])
+  @@index([scanId, repositoryId, createdAt])
+}
+
 model LlmJob {
   id             String    @id @default(cuid())
   scanId         String
@@ -403,6 +424,10 @@ model User {
   name          String?
   image         String?
   emailVerified DateTime?
+  username      String?   @unique
+  passwordHash  String?
+  sessionVersion Int      @default(0)
+  disabled      Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
@@ -442,4 +467,23 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model AuthActionToken {
+  tokenHash  String   @id
+  identifier String
+  purpose    String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@unique([identifier, purpose])
+  @@index([expiresAt])
+}
+
+model AuthRateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }

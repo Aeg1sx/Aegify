@@ -11,11 +11,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft,
-  FileCode,
-  GitBranch,
   ExternalLink,
-  ChevronDown,
-  ChevronRight,
   Bot,
   Loader2,
   AlertCircle,
@@ -28,7 +24,8 @@ import {
   TicketCheck,
   Save,
 } from "lucide-react";
-import { CodeHighlight } from "@/components/code-highlight";
+import { EvidenceWorkbench } from "@/components/finding/evidence-workbench";
+import { ApiContractPanel, type ApiContractContextView } from "@/components/finding/api-contract-panel";
 import { AIEvidencePanel, type AIReviewView } from "@/components/finding/ai-evidence-panel";
 import {
   FindingLifecyclePanel,
@@ -38,12 +35,6 @@ import {
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
 });
-
-interface TaintStep {
-  file: string;
-  line: number;
-  message: string;
-}
 
 interface BatchReviewAnalysis {
   isFalsePositive: boolean;
@@ -77,6 +68,7 @@ interface GraphEdge {
 }
 
 interface FindingDetail {
+  apiContractContext?: ApiContractContextView[];
   id: string;
   scanId: string;
   ruleId: string;
@@ -190,7 +182,7 @@ export default function FindingDetailPage() {
   const router = useRouter();
   const [finding, setFinding] = useState<FindingDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showTaintFlow, setShowTaintFlow] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [updating, setUpdating] = useState(false);
   const [triageReason, setTriageReason] = useState("");
   const [triageExpiresAt, setTriageExpiresAt] = useState("");
@@ -225,9 +217,16 @@ export default function FindingDetailPage() {
   const [dimensions, setDimensions] = useState({ width: 600, height: 500 });
 
   useEffect(() => {
-    fetch(`/api/findings/${params.id}`)
-      .then((r) => r.json())
+    const controller = new AbortController();
+    fetch(`/api/findings/${params.id}`, { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.scan) throw new Error(data.error || "Unable to load finding.");
+        return data;
+      })
       .then((data) => {
+        if (controller.signal.aborted) return;
+        setLoadError("");
         setFinding(data);
         setTriageReason(data.identity?.triageReason || "");
         setTriageExpiresAt(data.identity?.triageExpiresAt?.slice(0, 10) || "");
@@ -257,7 +256,9 @@ export default function FindingDetailPage() {
           }
         }
       })
-      .finally(() => setLoading(false));
+      .catch((error) => { if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : "Unable to load finding."); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [params.id]);
 
   // Observe container size for graph
@@ -621,6 +622,7 @@ export default function FindingDetailPage() {
     []
   );
 
+  if (loadError || (!loading && !finding)) return <div className="workbench-panel space-y-4 p-6"><p role="alert">{loadError || "Finding not found."}</p><Link href="/findings" className="text-sm text-primary">Back to findings →</Link></div>;
   if (loading || !finding) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -629,13 +631,6 @@ export default function FindingDetailPage() {
     );
   }
 
-  let taintSteps: TaintStep[] = [];
-  try {
-    const parsed = finding.taintFlow ? JSON.parse(finding.taintFlow) : [];
-    taintSteps = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    taintSteps = [];
-  }
   let evidenceProvenance: EvidenceProvenance = {};
   try {
     evidenceProvenance = finding.provenance
@@ -646,7 +641,7 @@ export default function FindingDetailPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div className="flex items-start gap-3">
         <button
           type="button"
@@ -676,10 +671,12 @@ export default function FindingDetailPage() {
               {finding.ruleId}
             </span>
           </div>
-          <h1 className="text-xl font-bold">{finding.ruleName}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{finding.ruleName}</h1>
           <p className="text-muted-foreground mt-1">{finding.message}</p>
         </div>
       </div>
+
+      <div className="flex gap-4 text-xs text-primary no-print"><Link href={`/findings/${finding.id}/report`}>Open vulnerability report →</Link><a href={`/api/findings/${finding.id}/report`}>Download Markdown</a></div>
 
       <Card>
         <CardContent className="space-y-3 py-4">
@@ -754,71 +751,8 @@ export default function FindingDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <FileCode className="h-4 w-4" />
-                Location
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="font-mono text-sm">
-                <div className="text-muted-foreground mb-2 text-xs">
-                  {finding.filePath}:{finding.lineStart}-{finding.lineEnd}
-                </div>
-                <CodeHighlight
-                  code={finding.codeSnippet}
-                  language={finding.filePath?.split(".").pop()}
-                  lineStart={finding.lineStart}
-                  highlightStart={finding.lineStart}
-                  highlightEnd={finding.lineEnd}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {taintSteps.length > 0 && (
-            <Card>
-              <CardHeader>
-                <button
-                  onClick={() => setShowTaintFlow(!showTaintFlow)}
-                  className="flex items-center gap-2 w-full text-left"
-                >
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <GitBranch className="h-4 w-4" />
-                    Taint Flow ({taintSteps.length} steps)
-                  </CardTitle>
-                  {showTaintFlow ? (
-                    <ChevronDown className="h-4 w-4 ml-auto" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 ml-auto" />
-                  )}
-                </button>
-              </CardHeader>
-              {showTaintFlow && (
-                <CardContent>
-                  <div className="space-y-0">
-                    {taintSteps.map((step, i) => (
-                      <div key={i} className="flex items-start gap-3">
-                        <div className="flex flex-col items-center">
-                          <div className="w-2 h-2 rounded-full bg-primary mt-2" />
-                          {i < taintSteps.length - 1 && (
-                            <div className="w-px h-8 bg-border" />
-                          )}
-                        </div>
-                        <div className="pb-4">
-                          <p className="text-sm">{step.message}</p>
-                          <p className="text-xs font-mono text-muted-foreground">
-                            {step.file}:{step.line}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )}
+          <EvidenceWorkbench key={finding.id} finding={finding} />
+          <ApiContractPanel contexts={finding.apiContractContext || []} scanId={finding.scanId} />
 
           {/* Per-finding Call Graph */}
           <Card>

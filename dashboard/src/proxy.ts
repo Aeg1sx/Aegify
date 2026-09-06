@@ -16,8 +16,8 @@ export default auth((req) => {
 
   // Allow auth routes, API auth routes, and static assets
   if (
-    pathname.startsWith("/auth") ||
-    pathname.startsWith("/api/auth") ||
+    pathname === "/auth" || pathname.startsWith("/auth/") ||
+    pathname === "/api/auth" || pathname.startsWith("/api/auth/") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon")
   ) {
@@ -31,8 +31,9 @@ export default auth((req) => {
 
   // If not authenticated, redirect to sign in
   if (!req.auth) {
+    if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Authentication required." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const signInUrl = new URL("/auth/signin", req.nextUrl.origin);
-    signInUrl.searchParams.set("callbackUrl", pathname);
+    signInUrl.searchParams.set("callbackUrl", pathname + req.nextUrl.search);
     return NextResponse.redirect(signInUrl);
   }
 

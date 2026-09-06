@@ -122,12 +122,12 @@ def test_pipeline_runs_six_named_agents_and_waits_for_dynamic_approval() -> None
 
     assert run.status is AgentRunStatus.AWAITING_APPROVAL
     assert [stage.agent_name for stage in run.stages] == [
-        "해태",
-        "매눈",
-        "살쾡이",
-        "거북선",
-        "장승",
-        "한울",
+        "Haetae",
+        "Maenun",
+        "Salgwaengi",
+        "Geobukseon",
+        "Jangseung",
+        "Hanul",
     ]
     assert {stage.role for stage in run.stages} == set(AgentRole)
     dynamic = next(stage for stage in run.stages if stage.role is AgentRole.DYNAMIC)

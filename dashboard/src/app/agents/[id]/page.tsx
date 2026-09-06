@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 
+import { SECURITY_AGENTS } from "@/lib/agent-catalog";
 import { CodeHighlight } from "@/components/code-highlight";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,12 +104,12 @@ interface AgentRun {
 }
 
 const ROLE_LABEL: Record<string, string> = {
-  surface: "환경·위협 모델",
-  static: "정적 진단",
-  dynamic: "동적 진단",
-  cve: "CVE 적용성",
-  synthesis: "최종 결과",
-  steward: "자가 개선",
+  surface: "Environment & threats",
+  static: "Static analysis",
+  dynamic: "Dynamic validation",
+  cve: "CVE applicability",
+  synthesis: "Final assessment",
+  steward: "Quality review",
 };
 
 const ROLE_ACCENT: Record<string, string> = {
@@ -133,7 +134,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/agent-runs/${id}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "실행을 불러오지 못했습니다.");
+    if (!response.ok) throw new Error(data.error || "Unable to load this run.");
     setRun(data);
   }, [id]);
 
@@ -159,11 +160,11 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
         body: JSON.stringify({ decision, note }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "승인 상태를 변경하지 못했습니다.");
+      if (!response.ok) throw new Error(data.error || "Unable to update approval status.");
       setNote("");
       await refresh();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "승인 처리에 실패했습니다.");
+      setActionError(error instanceof Error ? error.message : "Approval update failed.");
     } finally {
       setActing(false);
     }
@@ -180,11 +181,11 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
         body: JSON.stringify({ approvalId, evidence: parsed }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "증거를 가져오지 못했습니다.");
+      if (!response.ok) throw new Error(data.error || "Unable to import evidence.");
       setEvidenceJson("");
       await refresh();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "올바른 JSON 증거가 아닙니다.");
+      setActionError(error instanceof Error ? error.message : "Evidence must be valid JSON.");
     } finally {
       setActing(false);
     }
@@ -210,7 +211,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
               </div>
               <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-400">
                 <span className="flex items-center gap-1.5"><GitBranch className="h-3.5 w-3.5" />{run.scan.branch || "default"} · {run.scan.commitSha?.slice(0, 12) || "snapshot"}</span>
-                <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{new Date(run.createdAt).toLocaleString()}</span>
+                <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{new Date(run.createdAt).toLocaleString("en-US")}</span>
                 <span className="flex items-center gap-1.5"><Fingerprint className="h-3.5 w-3.5" />{run.artifactDigest.slice(0, 24)}…</span>
               </div>
             </div>
@@ -238,7 +239,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
                 <span className="font-mono text-[10px] text-muted-foreground">0{index + 1}</span>
                 <StageIcon status={stage.status} />
               </div>
-              <p className="mt-3 text-sm font-semibold">{stage.agentName}</p>
+              <p className="mt-3 text-sm font-semibold">{SECURITY_AGENTS.find((agent) => agent.role === stage.role)?.name || stage.agentCode}</p>
               <p className="text-[10px] text-muted-foreground">{ROLE_LABEL[stage.role]}</p>
               {index < run.stages.length - 1 && <ChevronRight className="absolute -right-2.5 top-1/2 z-10 hidden h-4 w-4 -translate-y-1/2 text-muted-foreground xl:block" />}
             </button>
@@ -255,7 +256,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[.18em] text-primary">{activeStage.agentCode}</p>
-                    <CardTitle className="mt-1 text-xl">{activeStage.agentName} · {ROLE_LABEL[activeStage.role]}</CardTitle>
+                    <CardTitle className="mt-1 text-xl">{SECURITY_AGENTS.find((agent) => agent.role === activeStage.role)?.name || activeStage.agentCode} · {ROLE_LABEL[activeStage.role]}</CardTitle>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{activeStage.summary}</p>
                   </div>
                   <StatusPill status={activeStage.status} />
@@ -294,7 +295,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
                   <div key={event.id} className="relative border-l pl-3 text-xs">
                     <span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-primary" />
                     <p className="font-medium">{event.message}</p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">{event.actor} · {new Date(event.createdAt).toLocaleString()}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">{event.actor} · {new Date(event.createdAt).toLocaleString("en-US")}</p>
                   </div>
                 ))}
               </CardContent>
@@ -349,7 +350,7 @@ function SurfacePanel({ facts }: { facts: Record<string, unknown> }) {
               {scenario.runtimeObserved === true && <span className="h-2 w-2 rounded-full bg-emerald-500" title="runtime observed" />}
             </div>
           ))}
-          {scenarios.length === 0 && <Empty text="위협 시나리오를 만들 엔드포인트가 없습니다." />}
+          {scenarios.length === 0 && <Empty text="No endpoints are available for threat scenarios." />}
         </div>
       </div>
     </div>
@@ -397,8 +398,8 @@ function ReachabilityPanel({ traces }: { traces: Reachability[] }) {
                     <p className="mb-2 font-mono text-[10px] text-muted-foreground">{hop.filePath}:{hop.line}</p>
                     <CodeHighlight
                       code={hop.snippet}
-                      language={hop.filePath}
-                      lineStart={hop.line}
+                      filePath={hop.filePath}
+                      lineStart={hop.snippet.includes("\n") ? null : hop.line > 0 ? hop.line : null}
                       highlightStart={hop.line}
                       highlightEnd={hop.line}
                     />
@@ -409,7 +410,7 @@ function ReachabilityPanel({ traces }: { traces: Reachability[] }) {
           </div>
         </div>
       ))}
-      {traces.length === 0 && <Empty text="이 스캔에는 리치어빌리티를 계산할 파인딩이 없습니다." />}
+      {traces.length === 0 && <Empty text="No findings are available for reachability review." />}
     </div>
   );
 }
@@ -437,11 +438,11 @@ function DynamicPanel(props: Parameters<typeof StageContent>[0]) {
             </div>
             {approval?.status === "pending" && (
               <div className="mt-4 rounded-xl border bg-background p-3">
-                <label className="text-xs font-medium">승인 범위와 fixture 소유권 근거</label>
+                <label className="text-xs font-medium">Approval scope and fixture ownership</label>
                 <textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  placeholder="예: local fixture /run, 테스트 데이터만 사용, 종료 후 컨테이너 삭제"
+                  placeholder="Example: owned local fixture, test data only, remove the container after validation"
                   className="mt-2 min-h-20 w-full rounded-lg border bg-background p-2 text-xs outline-none focus:border-primary"
                 />
                 <div className="mt-2 flex gap-2">
@@ -453,7 +454,7 @@ function DynamicPanel(props: Parameters<typeof StageContent>[0]) {
             {approval?.status === "approved" && (
               <div className="mt-4 rounded-xl border bg-background p-3">
                 <label className="flex items-center gap-2 text-xs font-medium"><FileJson className="h-3.5 w-3.5" />Aegify harness evidence JSON</label>
-                <p className="mt-1 text-[10px] text-muted-foreground">`verify-http`, `verify-browser`, `verify-proxy` 실행 결과에 아래 승인 범위 digest를 결합해야 합니다.</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">Bind the approved scope digest below to the recorded harness output.</p>
                 <textarea
                   value={evidenceJson}
                   onChange={(event) => setEvidenceJson(event.target.value)}
@@ -466,13 +467,13 @@ function DynamicPanel(props: Parameters<typeof StageContent>[0]) {
           </div>
         );
       })}
-      {stage.dynamicPlans.length === 0 && <Empty text="추가 실행이 필요한 미관측 정적 경로가 없습니다." />}
+      {stage.dynamicPlans.length === 0 && <Empty text="No unobserved static paths require an additional validation plan." />}
     </div>
   );
 }
 
 function CvePanel({ assessments }: { assessments: Array<Record<string, unknown>> }) {
-  return assessments.length === 0 ? <Empty text="이 실행에 전달된 CVE가 없습니다. API 또는 CLI에서 CVE 후보를 추가할 수 있습니다." /> : (
+  return assessments.length === 0 ? <Empty text="No CVE candidates were supplied. Candidates can be included through the API or CLI." /> : (
     <div className="space-y-3">
       {assessments.map((item) => (
         <div key={String(item.cveId)} className="rounded-xl border p-4">
@@ -489,7 +490,7 @@ function CvePanel({ assessments }: { assessments: Array<Record<string, unknown>>
 }
 
 function ImprovementPanel({ proposals }: { proposals: Array<Record<string, unknown>> }) {
-  return proposals.length === 0 ? <Empty text="이번 실행에서 새 개선 제안이 생성되지 않았습니다." /> : (
+  return proposals.length === 0 ? <Empty text="No new improvement proposals were generated for this run." /> : (
     <div className="grid gap-3 md:grid-cols-2">
       {proposals.map((item) => (
         <div key={String(item.id)} className="rounded-2xl border bg-gradient-to-br from-amber-500/5 to-transparent p-4">
@@ -497,7 +498,7 @@ function ImprovementPanel({ proposals }: { proposals: Array<Record<string, unkno
           <h3 className="mt-3 text-sm font-semibold">{String(item.title)}</h3>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">{String(item.hypothesis)}</p>
           <div className="mt-3 rounded-lg bg-muted/40 p-2 text-[11px]">Target: {String(item.targetMetric)}</div>
-          <p className="mt-2 text-[10px] text-muted-foreground">최소 {String(item.minimumSamples)} samples · auto apply: false</p>
+          <p className="mt-2 text-[10px] text-muted-foreground">Minimum {String(item.minimumSamples)} samples · auto apply: false</p>
         </div>
       ))}
     </div>
@@ -521,7 +522,7 @@ function SynthesisPanel({ facts }: { facts: Record<string, unknown> }) {
           </div>
         </div>
       ))}
-      {findings.length === 0 && <Empty text="통합할 파인딩이 없습니다." />}
+      {findings.length === 0 && <Empty text="No findings are available to synthesize." />}
     </div>
   );
 }

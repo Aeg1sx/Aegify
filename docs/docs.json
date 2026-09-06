@@ -81,6 +81,9 @@
                 "icon": "shield-check",
                 "pages": [
                   "operations/secrets-management",
+                  "operations/authentication",
+                  "operations/ai-providers",
+                  "operations/api-specifications",
                   "security/reporting",
                   "security/threat-model",
                   "security/privacy",

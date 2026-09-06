@@ -1901,6 +1901,7 @@ class ScanEngine:
                 start = max(0, finding.line_start - 1 - ctx)
                 end = min(len(lines), finding.line_end + ctx)
                 finding.code_snippet = "\n".join(lines[start:end])
+                finding.code_snippet_start_line = start + 1
             except OSError:
                 pass
 

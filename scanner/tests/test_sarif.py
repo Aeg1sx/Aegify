@@ -6,11 +6,37 @@ from pathlib import Path
 import pytest
 
 from aegify.config import AegifyConfig
-from aegify.models import FindingDisposition
+from aegify.models import Finding, FindingDisposition, Severity
 from aegify.reporter.sarif import SARIFReporter
 from aegify.scanner.engine import ScanEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_context_snippet_retains_its_source_offset(tmp_path):
+    source = tmp_path / "context.py"
+    source.write_text("\n".join(f"line_{i}" for i in range(1, 21)))
+    finding = Finding(
+        rule_id="AEG-TEST-001",
+        rule_name="Context test",
+        severity=Severity.LOW,
+        confidence=0.5,
+        file_path=str(source),
+        line_start=10,
+        line_end=11,
+    )
+    ScanEngine(config=AegifyConfig())._enrich_snippets([finding])
+    assert finding.code_snippet_start_line == 5
+    assert finding.code_snippet.splitlines()[0] == "line_5"
+    location = SARIFReporter()._build_result(finding)["locations"][0]["physicalLocation"]
+    assert location["region"] == {
+        "startLine": 10,
+        "endLine": 11,
+        "snippet": {"text": "line_10\nline_11"},
+    }
+    assert location["contextRegion"]["startLine"] == 5
+    assert location["contextRegion"]["endLine"] == 16
+    assert location["contextRegion"]["snippet"]["text"] == finding.code_snippet
 
 
 class TestSARIFReporter:

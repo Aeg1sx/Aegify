@@ -41,3 +41,24 @@ patterns: [danger]
   assert.equal(result.valid, false);
   assert.match(result.diagnostics[0].message, /must remain AEG-EXPECTED-001/);
 });
+
+test("rejects malformed detector containers and non-finite confidence", () => {
+  const base = "id: AEG-TEST-001\nname: Test rule\nseverity: high\nlanguages: [python]\n";
+  for (const extra of ["patterns: text", "patterns: []", "patterns: [text]", "taint: text", "confidence: .nan", "confidence: '0.9'", "cwe_id: -1"]) {
+    assert.equal(validateRuleYaml(base + extra).valid, false, extra);
+  }
+  assert.equal(validateRuleYaml("rules: wrong").valid, false);
+  assert.equal(validateRuleYaml(base.replace("[python]", "[]")).valid, false);
+});
+
+test("quoted duplicate IDs navigate to the duplicate definition, not its description", () => {
+  const result = validateRuleYaml('rules:\n  - id: "AEG-TEST-001"\n    name: First\n    severity: high\n    languages: [python]\n  - id: "AEG-TEST-001"\n    name: Second\n    severity: high\n    languages: [python]\n');
+  assert.equal(result.diagnostics.find((d) => d.message.includes("Duplicate"))?.line, 6);
+});
+
+test("rejects aliases and malformed YAML with a navigable syntax diagnostic", () => {
+  assert.equal(validateRuleYaml("rules: &rules [*rules]").valid, false);
+  const result = validateRuleYaml("rules: [\n");
+  assert.equal(result.valid, false);
+  assert.ok(result.diagnostics[0].line);
+});

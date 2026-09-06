@@ -1,0 +1,101 @@
+---
+title: "Authentication and account access"
+description: "Configure verified password accounts, Google OAuth, and Okta OIDC for a restricted workspace."
+---
+
+## Access boundary
+
+Aegify currently uses a shared workspace, not tenant-isolated RBAC. Every admitted
+identity can access workspace findings, integrations, and project configuration.
+Configure exact `AUTH_ALLOWED_EMAILS` for a solo deployment, or explicitly authorize
+an entire domain with `AUTH_ALLOWED_DOMAINS`. Neither permits subdomain or suffix
+matches. Empty policies deny sign-in. Policy removals and disabled accounts revoke
+access on the next session read.
+
+There is no default username or password and no unrestricted public registration.
+Development without `AUTH_SECRET` retains the existing unauthenticated preview mode;
+bind that mode to loopback only. Production refuses to start without authentication,
+encryption, a valid origin, and an explicit access policy.
+
+## Required configuration
+
+Generate independent `AUTH_SECRET` and `ENCRYPTION_SECRET` values with
+`openssl rand -hex 32`; keep them in an ignored environment file or a secret manager.
+`AUTH_URL` must be the exact external HTTPS origin. HTTP is accepted only for a
+loopback origin. A proxy must preserve that origin and must not expose a second
+unprotected path to the application.
+
+Run `npx --no-install prisma migrate deploy` against a backed-up database before
+deploying this release. The new migration adds nullable credential fields and
+dedicated hashed-token and rate-limit tables without deleting existing accounts.
+The switch to bounded JWT sessions signs existing database-session users out once.
+
+## Username and password
+
+Set `AUTH_LOCAL_ENABLED=true`, `RESEND_API_KEY`, and `AUTH_EMAIL_FROM` (a bare email
+address on a verified Resend sending domain). Add the owner's email to
+`AUTH_ALLOWED_EMAILS`. Visit `/auth/request-access` to request an activation link.
+
+The email link opens `/auth/activate`. Only after proving email ownership does the
+user choose a username and password. Passwords use a unique salt and Node's scrypt
+KDF (`N=32768, r=8, p=3`, 32 MiB profile). Passphrases must be 15–128 characters.
+No password or raw verification token is returned through the settings API.
+
+Activation and reset links expire after 30 minutes, are purpose-bound, and are
+consumed atomically once. Only token hashes are stored. Tokens travel in the URL
+fragment and are removed from browser history after the form loads. Merely opening
+a link does not consume it, which avoids accidental consumption by email scanners.
+
+`/auth/forgot-password` sends a reset link only for an eligible verified password
+account. Resetting a password increments the account's session version and
+invalidates every existing session. An SSO-only account cannot acquire a password
+through this recovery route. Email requests return a generic eligibility message;
+check the mail provider dashboard for delivery failures.
+
+## Google OAuth and Okta SSO
+
+| Provider | Environment | Registered callback |
+| --- | --- | --- |
+| Google | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | `AUTH_URL/api/auth/callback/google` |
+| Okta OIDC | `AUTH_OKTA_ID`, `AUTH_OKTA_SECRET`, `AUTH_OKTA_ISSUER` | `AUTH_URL/api/auth/callback/okta` |
+
+Create an OIDC web application in Okta and use its exact issuer, including the
+authorization-server path when applicable. Both providers request `openid email
+profile`, use PKCE/state/nonce checks, and require a verified email claim plus the
+workspace allowlist. Configure the Okta application to emit `email_verified=true`
+only for verified identities. Enforce MFA and device policies in the identity
+provider; this release does not claim to implement local MFA or SAML.
+
+GitHub and GitLab sign-in remain available with their existing environment variables.
+All providers are subject to the workspace allowlist. Existing GitHub/GitLab
+repository scopes are retained for repository integration. Google and Okta request
+identity scopes only. Accounts with matching email addresses are not merged
+automatically: use the existing sign-in method. Provider registration and real
+callback validation require operator-supplied credentials; fixture tests are not
+evidence of a working production SSO configuration.
+
+## Session and request controls
+
+Sessions have an eight-hour absolute maximum, encrypted Auth.js cookies, and a
+durable per-user revocation version checked on every session read. Cookies use the
+Auth.js HTTP-only, SameSite, and HTTPS-aware Secure defaults. Settings → Security
+provides a "Sign out all sessions" action for the current account.
+
+Local account actions require same-origin JSON requests with an 8 KiB body limit.
+Auth.js supplies CSRF protection for sign-in/sign-out. Authentication failures do
+not disclose whether a password account exists. Rate limits are persisted in the
+database: 10 attempts per identifier per 15 minutes, 100 per client per 15 minutes,
+three email requests per address per hour, and a shared global cap. Counter keys
+use an HMAC and expired windows are cleaned up. Untrusted forwarded IPs are ignored.
+
+Enable `AUTH_TRUST_PROXY=true` only when a trusted ingress overwrites
+`X-Forwarded-For` and direct access is blocked. Otherwise clients share a conservative
+bucket. Add ingress body limits and global request throttling for production; these
+application controls do not replace network-layer availability protection. Keep
+OAuth account tokens and database backups protected by encrypted storage and narrow
+filesystem access. No real email or identity-provider request is made by unit tests.
+
+Implementation references: [Auth.js Credentials](https://authjs.dev/getting-started/authentication/credentials),
+[Google](https://authjs.dev/getting-started/providers/google),
+[Okta](https://authjs.dev/getting-started/providers/okta), and
+[OWASP password storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).

@@ -61,8 +61,6 @@ export default function EndpointsPage() {
   const [filterMethod, setFilterMethod] = useState("");
   const [filterAuth, setFilterAuth] = useState("");
   const [filterExposure, setFilterExposure] = useState("");
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [totalUnfiltered, setTotalUnfiltered] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -153,71 +151,6 @@ export default function EndpointsPage() {
     setExpandedHandlers(new Set());
   };
 
-  const handleOpenAPIUpload = async () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json,.yaml,.yml";
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      setImporting(true);
-      setImportResult(null);
-
-      try {
-        const scansRes = await fetch("/api/scans?limit=1");
-        const scansData = await scansRes.json();
-        const latestScan = scansData.scans?.[0];
-
-        if (!latestScan) {
-          setImportResult("No scan found. Run a scan first to import endpoints.");
-          setImporting(false);
-          return;
-        }
-
-        const text = await file.text();
-        let spec;
-        try {
-          spec = JSON.parse(text);
-        } catch {
-          setImportResult("Only JSON format is supported. Convert YAML to JSON first.");
-          setImporting(false);
-          return;
-        }
-
-        const res = await fetch(
-          `/api/endpoints/import-openapi?scanId=${latestScan.id}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(spec),
-          },
-        );
-        const data = await res.json();
-        if (res.ok) {
-          setImportResult(
-            `Imported ${data.imported} endpoints (${data.skipped} duplicates skipped)`,
-          );
-          const params = new URLSearchParams();
-          if (filterFramework) params.set("framework", filterFramework);
-          if (filterMethod) params.set("method", filterMethod);
-          if (filterAuth) params.set("authOnly", filterAuth);
-          const refreshRes = await fetch(`/api/endpoints?${params}`);
-          const refreshData = await refreshRes.json();
-          setEndpoints(refreshData.endpoints || []);
-          setFrameworks(refreshData.frameworks || []);
-        } else {
-          setImportResult(`Import failed: ${data.error}`);
-        }
-      } catch (err) {
-        setImportResult(`Import error: ${err}`);
-      } finally {
-        setImporting(false);
-      }
-    };
-    input.click();
-  };
-
   const authCount = filtered.filter((e) => e.authRequired).length;
   const noAuthCount = filtered.filter((e) => !e.authRequired).length;
   const frontendCount = filtered.filter((e) => e.calledByFrontend).length;
@@ -241,19 +174,7 @@ export default function EndpointsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {importResult && (
-            <span className="text-xs text-muted-foreground">{importResult}</span>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleOpenAPIUpload}
-            disabled={importing}
-            className="flex items-center gap-2"
-          >
-            <Upload className="h-4 w-4" />
-            {importing ? "Importing..." : "Import OpenAPI"}
-          </Button>
+          <Button variant="outline" size="sm" asChild><Link href="/api-specs"><Upload className="mr-2 h-4 w-4" />API Specifications</Link></Button>
         </div>
       </div>
 
@@ -289,7 +210,7 @@ export default function EndpointsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Auth Required</p>
+                <p className="text-sm text-muted-foreground">Auth Signal</p>
                 <p className="text-3xl font-bold text-[var(--status-fixed)]">
                   {authCount}
                 </p>
@@ -302,7 +223,7 @@ export default function EndpointsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">No Auth</p>
+                <p className="text-sm text-muted-foreground">No Auth Signal</p>
                 <p className="text-3xl font-bold text-[var(--status-open)]">
                   {noAuthCount}
                 </p>
@@ -380,8 +301,8 @@ export default function EndpointsPage() {
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">All auth states</option>
-            <option value="true">Auth required</option>
-            <option value="false">No auth</option>
+            <option value="true">Auth signal recorded</option>
+            <option value="false">No auth signal recorded</option>
           </select>
           <select
             value={filterExposure}
