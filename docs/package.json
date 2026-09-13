@@ -10,7 +10,7 @@
     "dev": "mint dev"
   },
   "devDependencies": {
-    "mint": "4.2.875"
+    "mint": "4.2.876"
   },
   "overrides": {
     "@puppeteer/browsers": "3.2.1",
