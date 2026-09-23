@@ -1,14 +1,18 @@
+import { requireAccess, projectScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const url = new URL(request.url);
   const showArchived = url.searchParams.get("archived") === "true";
 
   const projects = await prisma.project.findMany({
-    where: { archived: showArchived },
+    where: { AND: [{ archived: showArchived }, projectScope(access)] },
     orderBy: { updatedAt: "desc" },
     include: {
+      members: { where: { userId: access.userId || "" }, select: { role: true } },
       _count: { select: { scans: true } },
       scans: {
         include: { _count: { select: { findings: true } } },
@@ -25,6 +29,7 @@ export async function GET(request: NextRequest) {
     );
     return {
       id: p.id,
+      accessRole: access.workspaceAdmin ? "admin" : p.members[0]?.role || "viewer",
       name: p.name,
       repositoryUrl: p.repositoryUrl,
       defaultBranch: p.defaultBranch,
@@ -40,10 +45,12 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  return NextResponse.json({ projects: result });
+  return NextResponse.json({ projects: result, canCreate: access.workspaceAdmin });
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   try {
     const body = await request.json();
     const { name, repositoryUrl, defaultBranch, description, color } = body;
@@ -55,14 +62,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const project = await prisma.project.create({
+    const project = await prisma.$transaction(async (tx) => {
+      const created = await tx.project.create({
       data: {
         name: name.trim(),
+        userId: access.userId,
+        ...(access.userId ? { members: { create: { userId: access.userId, role: "admin" } } } : {}),
         repositoryUrl: repositoryUrl || "",
         defaultBranch: defaultBranch || "main",
         description: description || "",
         color: color || "#6366f1",
       },
+      });
+      await tx.auditEvent.create({ data: { projectId: created.id, actorId: access.userId || "development", action: "project.create", targetId: created.id } });
+      return created;
     });
 
     return NextResponse.json(project, { status: 201 });

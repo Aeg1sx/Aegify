@@ -4,6 +4,14 @@ This is the implementation and acceptance ledger for the 2026-09-24 request.
 The product remains alpha until the evidence below supports a narrower, explicit
 release contract. Passing existing tests is not a commercial-readiness claim.
 
+## Release priority
+
+The user selected team self-hosting first: one internal installation, project roles,
+CI identities and the common scan workflow. Prioritize installation and recovery,
+project authorization, project-bound CI uploads and durable workers before hosted
+multitenancy or billing. Source tools and AI evidence must obey the same project
+permissions and immutable source snapshots.
+
 ## Acceptance work
 
 | Workstream | Required outcome | Acceptance evidence | Status |
@@ -21,7 +29,7 @@ release contract. Passing existing tests is not a commercial-readiness claim.
 | Open-source evaluation | Pinned Juice Shop, DVWA and other relevant source corpora, with support gaps reported honestly | Static-only runs, scope inventory, reviewed labels and documented results | Pending |
 | Efficiency | Fixed-hardware latency/memory/cost baselines, dependency-aware incremental work and cache invalidation | p50/p95 and peak-memory reports; unchanged-result comparison | Pending |
 | Reproducibility | Engine/parser/rules/modelpack/config/source/provider manifests and replayable evidence | Clean-environment replay and artifact-digest checks | Pending |
-| Enterprise operations | Project roles, service identities, isolation, audit, retention, backups and migration recovery | Authorization integration and operational recovery tests | Pending |
+| Enterprise operations | Project roles, service identities, isolation, audit, retention, backups and migration recovery | Authorization integration and operational recovery tests | In progress |
 | Dependencies and PRs | Review and resolve the nine open dependency PRs without bypassing unexplained failed checks | Current PR heads, coordinated lockfiles, CI, merge/closure state | In progress |
 | Code scanning | Fix real defects; retain or explicitly explain uncertain and governance findings | Fresh analysis on the merged commit and per-alert disposition evidence | In progress |
 
@@ -94,6 +102,64 @@ with 52 omitted findings and two unsupported shell files; DVWA analyzed nine
 utility files and reported 168 in-scope unsupported PHP files. Both returned
 partial/exit 3. Labels remain unreviewed and all accuracy metrics are null.
 
-Replacement PR: https://github.com/Aeg1sx/Aegify/pull/35. CI, merge, superseded-PR
-closure and post-merge alert state must be verified before marking those rows
-complete.
+Foundation PR #35 merged at `01fe502484834714e4ddb5f5d9ec8897f56c64be` with a
+valid GitHub signature after every required check, CodeQL and self-scan passed on
+head `5fb28671d0d085180367d4d9cd2d23abd2d5c4d3`. Original dependency PRs #24,
+#25, #26, #27, #28, #30, #31, #33 and #34 are closed/superseded. The immediate
+post-merge Dependabot snapshot has zero open vulnerability alerts. New dependency
+PRs #36 and #37 are separate updates and require their own review. Code-scanning
+candidates still need per-alert triage; no mass dismissal occurred.
+
+## Team access and CI checkpoint: 2026-09-24
+
+Implemented project viewer/triager/maintainer/admin roles, exact operator-owned
+workspace administrator admission, scoped lists and aggregations, object checks
+on findings/graphs/endpoints/jobs, same-origin mutations, and private/no-store
+responses. Shared integration settings and rule management require a workspace
+administrator. Finding filter labels are derived only from readable findings.
+Legacy project owners receive admin membership during migration; unowned projects
+and unlinked scans stay accessible to workspace administrators for recovery.
+
+Project administrators can manage existing admitted accounts and create, inspect
+and revoke project-bound upload credentials. Credentials expire within 90 days,
+have only scan:upload scope, and store hashes; raw credentials appear once.
+The dashboard, production HTTP tests and scanner CLI exercise the same upload
+route. CLI delivery uses HTTPS or loopback, rejects redirects, bounds responses
+and returns exit 4 on failure. Legacy environment credentials require an explicit
+project binding. Member/service uploads cannot overwrite shared rule definitions.
+Membership, token, project, settings and import changes produce audit records;
+final import status, absence reconciliation and its audit event commit together.
+
+Verified locally:
+
+- Scanner suite: 460 passed, one skipped; Ruff and strict mypy passed.
+- Dashboard suite: 87 passed, including fresh/legacy migration, immediate role
+  revocation, last-admin preservation and audit-failure transaction rollback.
+- Production build, TypeScript, ESLint and supply-chain policy passed.
+- 65 real production HTTP/CLI checks with independent synthetic accounts covered
+  cross-project reads and writes, filtered counts, direct IDs, CSRF, token scope,
+  partial-report delivery, credential revocation and disabled accounts.
+- Isolated Chrome exercised member grant, one-time token issuance and revocation,
+  viewer restrictions, project selection during upload and the partial-analysis
+  banner. Browser requests were restricted to the local test origin.
+- Documentation, link and accessibility checks passed, retaining the existing
+  color recommendations beyond the minimum AA checks.
+
+The default local Docker daemon is unavailable. Remote CI passed the new named
+volume check, including non-root initialization and a persisted project after
+container restart. PR #42's first self-scan identified two blocking candidates:
+an HTTP client's `.open()` misclassified as a filesystem sink, and the test
+harness accepting an environment-selected executable. Exact Python file-open
+models now distinguish HTTP/UI methods, with eight positive/negative/bounded
+regressions; the optional CLI test uses the repository's fixed virtualenv path.
+The updated local self-scan completed without blocking findings or analysis gaps;
+all 468 scanner tests passed (one skipped), 65 production HTTP/CLI checks passed,
+and type/lint checks passed. Updated remote CI and the PR merge remain separate
+gates.
+This checkpoint does not establish live SSO, production deployment, durable scan
+workers, backups/restore drills, retention, immutable external audit storage, or
+commercial detection accuracy. Those acceptance rows remain open.
+
+Post-foundation code-scanning snapshot: 601 Aegify candidates and five Scorecard
+alerts remain open. Removing result caps intentionally retained additional
+candidates; the counts are not a precision or security verdict.

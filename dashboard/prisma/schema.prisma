@@ -26,6 +26,8 @@ model Project {
 
   scans Scan[]
   findingIdentities FindingIdentity[]
+  members ProjectMember[]
+  serviceTokens ProjectServiceToken[]
 
   @@index([name])
   @@index([userId])
@@ -433,6 +435,51 @@ model User {
   accounts      Account[]
   sessions      Session[]
   projects      Project[]
+  projectMemberships ProjectMember[]
+}
+
+model ProjectMember {
+  projectId String
+  userId String
+  role String // viewer, triager, maintainer, admin
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+}
+
+model ProjectServiceToken {
+  id String @id @default(cuid())
+  projectId String
+  name String
+  tokenHash String @unique
+  prefix String
+  scope String @default("scan:upload")
+  createdBy String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  lastUsedAt DateTime?
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([expiresAt])
+}
+
+model AuditEvent {
+  id String @id @default(cuid())
+  projectId String? // Retain the original ID after deletion; deliberately no cascade.
+  actorId String
+  action String
+  targetId String
+  details String @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model Account {

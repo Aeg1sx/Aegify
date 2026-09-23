@@ -172,8 +172,12 @@ aegify verify-proxy ../examples/verification-proxy.yml /path/to/repository
 - **VS Code**: Install the "SARIF Viewer" extension and open `results.sarif`
 - **DefectDojo**: Upload via CLI flag `--upload-defectdojo` or the REST API
 
-CI uploads to the dashboard use the `Authorization: Bearer <upload-token>`
-header. Keep `AEGIFY_UPLOAD_TOKEN` separate from `AUTH_SECRET`.
+For team self-hosting, configure exact `AUTH_ADMIN_EMAILS` alongside the sign-in
+allowlist. Assign project roles from the project screen. Create an expiring CI
+token there and inject it as `AEGIFY_UPLOAD_TOKEN` in the runner; it can upload
+only to its project. Use `aegify upload results.sarif --dashboard-url https://your-dashboard`.
+Upload failure exits `4`; preserve the separate scan result (including partial/exit `3`).
+See [project access and CI credentials](docs/operations/authentication.mdx).
 
 ## Architecture
 
@@ -326,8 +330,8 @@ jobs:
 ```bash
 # Start dashboard
 # First configure AUTH_SECRET, ENCRYPTION_SECRET, an authentication method,
-# AUTH_ALLOWED_EMAILS (or AUTH_ALLOWED_DOMAINS), and the
-# dedicated AEGIFY_UPLOAD_TOKEN in a local ignored .env or via Vault.
+# AUTH_ALLOWED_EMAILS (or AUTH_ALLOWED_DOMAINS), AUTH_ADMIN_EMAILS and AUTH_URL
+# in a local ignored .env or via Vault. Issue CI tokens inside each project.
 docker compose up dashboard
 
 # Run a scan

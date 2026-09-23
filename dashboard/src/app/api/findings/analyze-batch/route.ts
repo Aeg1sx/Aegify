@@ -1,12 +1,15 @@
+import { requireAccess, findingScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { analyzeFinding } from "@/lib/llm";
 
 export async function POST(request: NextRequest) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const body = await request.json();
   const ids: string[] = body.ids;
 
-  if (!Array.isArray(ids) || ids.length === 0) {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== "string" || id.length > 128)) {
     return NextResponse.json({ error: "No finding IDs provided" }, { status: 400 });
   }
 
@@ -15,10 +18,10 @@ export async function POST(request: NextRequest) {
   }
 
   const findings = await prisma.finding.findMany({
-    where: { id: { in: ids } },
+    where: { ...findingScope(access, "maintainer"), id: { in: ids } },
   });
 
-  if (findings.length === 0) {
+  if (findings.length !== new Set(ids).size) {
     return NextResponse.json({ error: "No findings found" }, { status: 404 });
   }
 

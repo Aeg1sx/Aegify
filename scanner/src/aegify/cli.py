@@ -211,36 +211,75 @@ def scan(
             else:
                 console.print("[red]DefectDojo upload failed[/red]")
 
-    # Upload to Aegify Dashboard
+    # Upload to Aegify Dashboard with a project CI credential from the environment.
     if upload_dashboard:
+        from aegify.reporter.dashboard import DashboardUploadError, upload_sarif
         from aegify.reporter.sarif import SARIFReporter
 
-        url = dashboard_url or "http://localhost:3000"
-        sarif_reporter = SARIFReporter()
-        sarif_data = sarif_reporter.generate(result, call_graph=engine._last_call_graph)
-        sarif_json = json.dumps(sarif_data).encode("utf-8")
-
-        import urllib.request
-
-        req = urllib.request.Request(
-            f"{url.rstrip('/')}/api/upload",
-            data=sarif_json,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        sarif_data = SARIFReporter().generate(result, call_graph=engine._last_call_graph)
         try:
-            with urllib.request.urlopen(req) as resp:
-                resp_data = json.loads(resp.read().decode())
-                console.print(
-                    f"[green]Uploaded to dashboard: scan={resp_data.get('scanId')}, "
-                    f"{resp_data.get('findingsCount', 0)} findings[/green]"
-                )
-        except Exception as e:
-            console.print(f"[red]Dashboard upload failed: {e}[/red]")
+            receipt = upload_sarif(
+                json.dumps(sarif_data).encode("utf-8"),
+                dashboard_url or os.environ.get("AEGIFY_DASHBOARD_URL", "http://localhost:3000"),
+                os.environ.get("AEGIFY_UPLOAD_TOKEN", ""),
+                project_id=os.environ.get("AEGIFY_PROJECT_ID", ""),
+                repository=result.repository,
+                branch=result.branch,
+                commit=result.commit_sha,
+            )
+            console.print(f"[green]Uploaded to dashboard: scan={receipt['scanId']}[/green]")
+        except DashboardUploadError as error:
+            console.print(f"[red]{error}[/red]")
+            raise typer.Exit(code=4) from None
 
     # Exit code
     if exit_code := _scan_exit_code(result):
         raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def upload(
+    report: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, help="SARIF report to upload")
+    ],
+    dashboard_url: Annotated[
+        str,
+        typer.Option(
+            "--dashboard-url", envvar="AEGIFY_DASHBOARD_URL", help="Exact dashboard origin"
+        ),
+    ] = "http://localhost:3000",
+    project_id: Annotated[str, typer.Option("--project-id", envvar="AEGIFY_PROJECT_ID")] = "",
+    repository: Annotated[str, typer.Option("--repository")] = "",
+    branch: Annotated[str, typer.Option("--branch")] = "",
+    commit: Annotated[str, typer.Option("--commit")] = "",
+) -> None:
+    """Upload existing SARIF using AEGIFY_UPLOAD_TOKEN; exit 4 on delivery failure."""
+    from aegify.reporter.dashboard import MAX_REPORT_BYTES, DashboardUploadError, upload_sarif
+
+    try:
+        with report.open("rb") as stream:
+            data = stream.read(MAX_REPORT_BYTES + 1)
+        receipt = upload_sarif(
+            data,
+            dashboard_url,
+            os.environ.get("AEGIFY_UPLOAD_TOKEN", ""),
+            project_id=project_id,
+            repository=repository,
+            branch=branch,
+            commit=commit,
+        )
+    except (DashboardUploadError, OSError) as error:
+        message = (
+            str(error)
+            if isinstance(error, DashboardUploadError)
+            else "Unable to read SARIF report."
+        )
+        console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=4) from None
+    console.print(
+        f"[green]Uploaded to dashboard: scan={receipt['scanId']}, "
+        f"{receipt['findingsCount']} findings[/green]"
+    )
 
 
 @app.command()

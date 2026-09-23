@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
@@ -10,6 +11,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "project", id, "maintainer");
+  if (access instanceof Response) return access;
 
   // Get user session for OAuth token lookup
   const session = await auth();
@@ -27,9 +30,7 @@ export async function POST(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  if (project.userId && project.userId !== userId) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
+  if (project.archived) return NextResponse.json({ error: "Restore the project before scanning." }, { status: 409 });
 
   if (!project.provider || !project.ownerSlug) {
     return NextResponse.json(

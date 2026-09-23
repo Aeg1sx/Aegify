@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -5,10 +6,12 @@ const MAX_NODES = 150;
 const MAX_HOPS = 2;
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "finding", id, "viewer");
+  if (access instanceof Response) return access;
 
   const finding = await prisma.finding.findUnique({
     where: { id },

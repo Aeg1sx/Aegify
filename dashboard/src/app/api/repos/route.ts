@@ -1,9 +1,13 @@
+import { requireAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getGitHubToken, listGitHubRepos } from "@/lib/github";
 import { getGitLabToken, listGitLabProjects } from "@/lib/gitlab";
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Provider tokens are loaded only from this caller's own OAuth account.
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });

@@ -1,3 +1,4 @@
+import { requireAccess, findingScope } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -19,9 +20,11 @@ const LANG_EXTENSIONS: Record<string, string> = {
   ".cs": "C#",
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const findings = await prisma.finding.findMany({
-    where: { isCurrent: true },
+    where: { ...findingScope(access), isCurrent: true },
     select: { filePath: true },
     distinct: ["filePath"],
   });

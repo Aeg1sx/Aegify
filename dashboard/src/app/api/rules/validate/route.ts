@@ -1,8 +1,11 @@
+import { requireAccess } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { validateRuleYaml } from "@/lib/rule-validation";
 
 export async function POST(request: NextRequest) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   let body;
   try { body = await request.json(); }
   catch { return NextResponse.json({ valid: false, ruleCount: 0, diagnostics: [{ level: "error", message: "Request body is not valid JSON." }] }, { status: 400 }); }

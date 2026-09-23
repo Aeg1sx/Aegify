@@ -5,10 +5,11 @@ import { prisma } from "@/lib/prisma";
 // worker cannot block all future reviews indefinitely.
 const STALE_LLM_JOB_AGE_MS = 6 * 60 * 1_000;
 
-export async function failStaleLlmJobs(now = new Date()): Promise<number> {
+export async function failStaleLlmJobs(scanId: string, now = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - STALE_LLM_JOB_AGE_MS);
   const result = await prisma.llmJob.updateMany({
     where: {
+      scanId,
       status: { in: ["pending", "running"] },
       OR: [
         { startedAt: { lt: cutoff } },

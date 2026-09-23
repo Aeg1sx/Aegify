@@ -1,8 +1,11 @@
+import { requireAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 
 import { testJiraConnection } from "@/lib/jira";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   try {
     const displayName = await testJiraConnection();
     return NextResponse.json({ success: true, message: `Connected as ${displayName}` });

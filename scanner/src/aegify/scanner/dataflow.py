@@ -150,7 +150,12 @@ class TaintConfig:
                     SinkPattern("subprocess.Popen", "os_command", 0),
                     SinkPattern("eval", "code_exec", 0),
                     SinkPattern("exec", "code_exec", 0),
-                    SinkPattern("open", "file_access", 0),
+                    # Python's builtin open is a free function. An arbitrary
+                    # object's .open() may be an HTTP client or a UI method;
+                    # sharing a method name is not a filesystem model.
+                    SinkPattern("open", "file_access", 0, exact=True),
+                    SinkPattern("builtins.open", "file_access", 0, exact=True),
+                    SinkPattern("io.open", "file_access", 0, exact=True),
                     SinkPattern("render_template_string", "xss", 0),
                     SinkPattern("Markup", "xss", 0),
                     SinkPattern("pickle.loads", "deserialization", 0),
@@ -350,6 +355,7 @@ class SinkPattern:
     pattern: str
     sink_type: str
     argument_index: int = 0
+    exact: bool = False
 
 
 class DataflowAnalyzer:
@@ -439,7 +445,12 @@ class DataflowAnalyzer:
         for call in ast.calls:
             call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
             for pattern in patterns:
-                if self._sink_pattern_matches(call_text, call.callee, pattern.pattern):
+                matches = (
+                    call_text == pattern.pattern
+                    if pattern.exact
+                    else self._sink_pattern_matches(call_text, call.callee, pattern.pattern)
+                )
+                if matches:
                     sinks.append(
                         TaintSink(
                             function=call_text,

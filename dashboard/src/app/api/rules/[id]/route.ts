@@ -1,11 +1,14 @@
+import { requireAccess } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateRuleYaml } from "@/lib/rule-validation";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   const { id } = await params;
   const rule = await prisma.rule.findUnique({ where: { id } });
 
@@ -57,6 +60,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   const { id } = await params;
   const body = await request.json();
 

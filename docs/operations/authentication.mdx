@@ -5,12 +5,30 @@ description: "Configure verified password accounts, Google OAuth, and Okta OIDC 
 
 ## Access boundary
 
-Aegify currently uses a shared workspace, not tenant-isolated RBAC. Every admitted
-identity can access workspace findings, integrations, and project configuration.
-Configure exact `AUTH_ALLOWED_EMAILS` for a solo deployment, or explicitly authorize
-an entire domain with `AUTH_ALLOWED_DOMAINS`. Neither permits subdomain or suffix
-matches. Empty policies deny sign-in. Policy removals and disabled accounts revoke
-access on the next session read.
+A self-hosted installation contains one workspace with explicit project membership.
+The sign-in allowlist admits an account; project roles determine which scans,
+findings, graphs, endpoints and AI jobs it can access. Set `AUTH_ADMIN_EMAILS` to
+exact administrator email addresses that also satisfy `AUTH_ALLOWED_EMAILS` or
+`AUTH_ALLOWED_DOMAINS`. Workspace administrators manage integrations, shared rules,
+project creation and recovery. Every API checks authorization at the data boundary.
+
+| Project role | Permissions |
+| --- | --- |
+| Viewer | Read the project's results, evidence, endpoints, graphs and job history |
+| Triager | Viewer access plus finding status, assignment and ticket actions |
+| Maintainer | Triager access plus SARIF uploads, API contract imports and AI reviews |
+| Admin | Maintainer access plus project settings, membership and CI credentials |
+
+In a project, use **Project access** to add an existing admitted account by email.
+Access changes take effect on the next request. Assign another administrator before
+removing the last project administrator. `AUTH_ADMIN_EMAILS` remains the operator's
+recovery path. Service credentials belong to the project and must be revoked
+separately when a CI integration is retired.
+
+On upgrade, recorded project owners become project administrators. Unowned legacy
+projects and unlinked scans are visible only to workspace administrators. An admin
+must explicitly delegate those projects; existing users do not acquire access to
+other teams' data. Back up the database and encryption secret before migration.
 
 There is no default username or password and no unrestricted public registration.
 Development without `AUTH_SECRET` retains the existing unauthenticated preview mode;
@@ -26,8 +44,8 @@ loopback origin. A proxy must preserve that origin and must not expose a second
 unprotected path to the application.
 
 Run `npx --no-install prisma migrate deploy` against a backed-up database before
-deploying this release. The new migration adds nullable credential fields and
-dedicated hashed-token and rate-limit tables without deleting existing accounts.
+deploying this release. Migrations add project membership, hashed service credentials and access audit
+events alongside the account and rate-limit tables without deleting existing accounts.
 The switch to bounded JWT sessions signs existing database-session users out once.
 
 ## Username and password
@@ -99,3 +117,46 @@ Implementation references: [Auth.js Credentials](https://authjs.dev/getting-star
 [Google](https://authjs.dev/getting-started/providers/google),
 [Okta](https://authjs.dev/getting-started/providers/okta), and
 [OWASP password storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+
+
+## CI service credentials
+
+Open a project as its administrator and create a named **CI upload token** with
+an expiry of 7, 30 or 90 days. Copy the credential once into the CI secret manager.
+A token has only `scan:upload` permission for that project. Token listings and audit
+events contain metadata, never the raw credential or its stored hash. Each project
+can have up to 50 active credentials. Revocation, expiry and project archival reject
+future uploads. Restore does not revive an explicitly revoked token.
+
+Use the installed scanner CLI to send a previously generated report:
+
+```bash
+# AEGIFY_UPLOAD_TOKEN is injected by the CI secret manager.
+aegify upload results.sarif \
+  --dashboard-url https://aegify.company.example \
+  --project-id PROJECT_ID \
+  --branch "$CI_COMMIT_REF_NAME" \
+  --commit "$CI_COMMIT_SHA"
+```
+
+The token already binds its project; a conflicting `--project-id` is rejected.
+`aegify scan --upload-dashboard` also reads `AEGIFY_UPLOAD_TOKEN`,
+`AEGIFY_DASHBOARD_URL`, and optional `AEGIFY_PROJECT_ID`. Credentials are sent only
+to the exact HTTPS origin (loopback HTTP is allowed for local checks); redirects
+are rejected. Install the organization's CA in the runner trust store when needed.
+Do not disable TLS verification. Upload failure exits with code 4; a successful
+upload is a delivery receipt and does not mean the scan passed its security gate.
+Preserve the original scan exit code in CI: 1 blocks on findings, 2 fails analysis,
+and 3 means incomplete coverage.
+
+The old environment credential works only when both `AEGIFY_UPLOAD_TOKEN` and
+`AEGIFY_UPLOAD_PROJECT_ID` are configured on the dashboard. This is a migration
+bridge with operator-managed rotation. Prefer expiring credentials created in the
+project. Bearer credentials cannot read dashboard APIs, create projects, change
+shared rules, or modify integration settings. Member/service uploads never replace
+the workspace rule definitions from untrusted report metadata.
+
+Project administrators can inspect recent membership, token and import events in
+the project screen. Events contain stable actor and resource IDs and survive project
+deletion in the database. These application records require the same protected
+backups as the database; they are not an external immutable audit sink.

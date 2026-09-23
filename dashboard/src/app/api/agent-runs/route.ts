@@ -1,3 +1,4 @@
+import { requireAccess, requireResource, scanScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { validateCveInputs } from "@/lib/agent-contract";
@@ -10,8 +11,10 @@ import {
 const SCAN_ID = /^[a-z0-9-]{8,64}$/;
 
 export async function GET(request: NextRequest) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const limit = Number(request.nextUrl.searchParams.get("limit") || "50");
-  const runs = await listAgentRuns(Number.isFinite(limit) ? limit : 50);
+  const runs = await listAgentRuns(Number.isFinite(limit) ? limit : 50, scanScope(access));
   return NextResponse.json({ runs });
 }
 
@@ -23,6 +26,8 @@ export async function POST(request: NextRequest) {
     }
     const body = await request.json();
     const scanId = String(body.scanId || "");
+    const access = await requireResource(request, "scan", scanId, "maintainer");
+    if (access instanceof Response) return access;
     const mode = String(body.mode || "deep");
     if (!SCAN_ID.test(scanId)) {
       return NextResponse.json({ error: "A valid scanId is required" }, { status: 400 });

@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -6,10 +7,12 @@ import { prisma } from "@/lib/prisma";
  * Returns progress info for running scans.
  */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "scan", id, "viewer");
+  if (access instanceof Response) return access;
 
   const scan = await prisma.scan.findUnique({
     where: { id },
@@ -42,6 +45,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "scan", id, "maintainer");
+  if (access instanceof Response) return access;
   const body = await request.json();
 
   const scan = await prisma.scan.update({

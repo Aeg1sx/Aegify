@@ -1,6 +1,12 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
+function privateResponse() {
+  const response = NextResponse.next();
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
@@ -8,10 +14,9 @@ export default auth((req) => {
   // route handler, which performs a timing-safe token verification.
   if (
     pathname === "/api/upload" &&
-    process.env.AEGIFY_UPLOAD_TOKEN &&
-    req.headers.get("authorization")?.startsWith("Bearer ")
+    (req.headers.has("authorization") || req.headers.has("x-aegify-token"))
   ) {
-    return NextResponse.next();
+    return privateResponse();
   }
 
   // Allow auth routes, API auth routes, and static assets
@@ -26,7 +31,7 @@ export default auth((req) => {
 
   // If AUTH_SECRET is not configured, skip auth (development mode)
   if (!process.env.AUTH_SECRET) {
-    return NextResponse.next();
+    return privateResponse();
   }
 
   // If not authenticated, redirect to sign in
@@ -37,7 +42,7 @@ export default auth((req) => {
     return NextResponse.redirect(signInUrl);
   }
 
-  return NextResponse.next();
+  return privateResponse();
 });
 
 export const config = {

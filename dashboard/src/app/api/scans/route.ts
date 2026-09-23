@@ -1,7 +1,10 @@
+import { requireAccess, scanScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const url = new URL(request.url);
   const page = parseInt(url.searchParams.get("page") || "1", 10);
   const limit = parseInt(url.searchParams.get("limit") || "20", 10);
@@ -23,7 +26,7 @@ export async function GET(request: NextRequest) {
 
   const [scans, total] = await Promise.all([
     prisma.scan.findMany({
-      where,
+      where: { AND: [where, scanScope(access)] },
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
@@ -32,7 +35,7 @@ export async function GET(request: NextRequest) {
       },
       // Include progress fields for running scans
     }),
-    prisma.scan.count({ where }),
+    prisma.scan.count({ where: { AND: [where, scanScope(access)] } }),
   ]);
 
   // Add severity breakdown for each scan

@@ -1,6 +1,8 @@
+import { requireUploadAccess } from "@/lib/upload-access";
+import { authorizeProject } from "@/lib/project-access";
+import { accessError } from "@/lib/access";
+import { readSpecBody } from "@/lib/openapi-import";
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   normalizeFindingClassification,
@@ -14,32 +16,11 @@ import {
   findingMessageDigest,
   stableFindingFingerprint,
 } from "@/lib/finding-lifecycle";
-import { anonymousUploadAllowed } from "@/lib/security-config";
 import { sendSlackNotification } from "@/lib/slack";
 import { uploadValidationError } from "@/lib/upload-validation";
 import { finalizeScanImport } from "@/lib/scan-reconciliation";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-
-async function isAuthorizedUpload(request: NextRequest): Promise<boolean> {
-  const session = await auth();
-  if (session?.user) return true;
-
-  const configuredToken = process.env.AEGIFY_UPLOAD_TOKEN;
-  const authorization = request.headers.get("authorization") || "";
-  const suppliedToken = authorization.startsWith("Bearer ")
-    ? authorization.slice("Bearer ".length)
-    : request.headers.get("x-aegify-token") || "";
-
-  if (configuredToken && suppliedToken) {
-    const expected = Buffer.from(configuredToken);
-    const actual = Buffer.from(suppliedToken);
-    return expected.length === actual.length && timingSafeEqual(expected, actual);
-  }
-
-  // Preserve zero-configuration development only. Production is fail-closed.
-  return anonymousUploadAllowed(process.env);
-}
 
 interface SARIFResult {
   ruleId: string;
@@ -259,12 +240,10 @@ const LEVEL_TO_SEVERITY: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
+  const principal = await requireUploadAccess(request);
+  if (principal instanceof Response) return principal;
   let importedScanId: string | undefined;
   try {
-    if (!(await isAuthorizedUpload(request))) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const contentLength = Number(request.headers.get("content-length") || 0);
     if (contentLength > MAX_UPLOAD_BYTES) {
       return NextResponse.json(
@@ -278,8 +257,9 @@ export async function POST(request: NextRequest) {
     let sarif: SARIFReport;
     let formProjectName: string | null = null;
 
+    const uploadBytes = await readSpecBody(request, MAX_UPLOAD_BYTES);
     if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData();
+      const formData = await new Response(uploadBytes, { headers: { "Content-Type": contentType } }).formData();
       const file = formData.get("file") as File;
       if (!file) {
         return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -293,7 +273,7 @@ export async function POST(request: NextRequest) {
       sarif = JSON.parse(text);
       formProjectName = (formData.get("projectName") as string) || null;
     } else {
-      const text = await request.text();
+      const text = new TextDecoder().decode(uploadBytes);
       if (Buffer.byteLength(text, "utf8") > MAX_UPLOAD_BYTES) {
         return NextResponse.json(
           { error: "SARIF upload exceeds the 100 MB limit" },
@@ -303,8 +283,8 @@ export async function POST(request: NextRequest) {
       sarif = JSON.parse(text);
     }
 
-    if (!sarif.runs || sarif.runs.length === 0) {
-      return NextResponse.json({ error: "Invalid SARIF: no runs" }, { status: 400 });
+    if (!sarif || !Array.isArray(sarif.runs) || sarif.runs.length !== 1 || !Array.isArray(sarif.runs[0]?.results) || !sarif.runs[0]?.tool?.driver) {
+      return NextResponse.json({ error: "Upload one SARIF run with a driver and results array." }, { status: 400 });
     }
 
     const run = sarif.runs[0];
@@ -324,10 +304,12 @@ export async function POST(request: NextRequest) {
     // Check for projectId query param or auto-match by repository/projectName
     const reqUrl = new URL(request.url);
     const repository = reqUrl.searchParams.get("repository") || "";
-    let projectId = reqUrl.searchParams.get("projectId") || null;
+    let projectId = principal.kind === "service" ? principal.projectId : reqUrl.searchParams.get("projectId") || null;
+    const canManageWorkspace = principal.kind === "user" && principal.access.workspaceAdmin;
+    if (!projectId && !canManageWorkspace) return NextResponse.json({ error: "Choose an existing project for this upload." }, { status: 400 });
 
     // Auto-link to project by repository URL if not explicitly provided
-    if (!projectId && repository) {
+    if (!projectId && repository && canManageWorkspace) {
       const matchedProject = await prisma.project.findFirst({
         where: { repositoryUrl: repository },
       });
@@ -335,7 +317,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Auto-create/link project from multipart projectName field or query param
-    if (!projectId) {
+    if (!projectId && canManageWorkspace) {
       const projectName = formProjectName || reqUrl.searchParams.get("projectName");
       if (projectName) {
         const existing = await prisma.project.findFirst({
@@ -345,15 +327,20 @@ export async function POST(request: NextRequest) {
           projectId = existing.id;
         } else {
           const created = await prisma.project.create({
-            data: { name: projectName, repositoryUrl: repository },
+            data: { name: projectName, repositoryUrl: repository, ...(principal.kind === "user" && principal.access.userId ? { userId: principal.access.userId, members: { create: { userId: principal.access.userId, role: "admin" } } } : {}) },
           });
           projectId = created.id;
         }
       }
     }
 
+    if (projectId && principal.kind === "user") {
+      try { await authorizeProject(prisma, principal.access, projectId, "maintainer"); }
+      catch (error) { return accessError(error); }
+    }
     const branch = reqUrl.searchParams.get("branch") || "";
     const project = projectId ? await prisma.project.findUnique({ where: { id: projectId } }) : null;
+    if (projectId && (!project || project.archived)) return NextResponse.json({ error: "Select an active project." }, { status: 409 });
     const isDefaultBranch = Boolean(branch && branch === project?.defaultBranch);
 
     // Create scan
@@ -372,6 +359,7 @@ export async function POST(request: NextRequest) {
     });
 
     importedScanId = scan.id;
+    await prisma.auditEvent.create({ data: { projectId, actorId: principal.kind === "service" ? principal.actorId : principal.access.userId || "development", action: "scan.import.started", targetId: scan.id } });
 
     // Insert findings
     const parsedFindings = run.results.map((result) => {
@@ -722,7 +710,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert rules
-    for (const [ruleId, rule] of ruleMap) {
+    for (const [ruleId, rule] of canManageWorkspace ? ruleMap : []) {
       const count = await prisma.finding.count({
         where: { ruleId, isCurrent: true },
       });
@@ -760,6 +748,7 @@ export async function POST(request: NextRequest) {
     await finalizeScanImport(prisma, {
       scanId: scan.id, projectId, branch,
       defaultBranch: project?.defaultBranch || "", health: scanHealth,
+      audit: { actorId: principal.kind === "service" ? principal.actorId : principal.access.userId || "development", findings: findings.length },
     });
 
     // Send Slack notification for new findings (non-blocking)
@@ -792,12 +781,15 @@ export async function POST(request: NextRequest) {
       }, {}),
     });
   } catch (error) {
+    if (!importedScanId && error instanceof Error && error.message === "Specification request exceeds the size limit.") return NextResponse.json({ error: "SARIF upload exceeds the 100 MB limit" }, { status: 413 });
+    if (!importedScanId && error instanceof SyntaxError) return NextResponse.json({ error: "SARIF must contain valid JSON." }, { status: 400 });
     console.error("Upload error:", error);
     if (importedScanId) {
       await prisma.scan.update({
         where: { id: importedScanId },
         data: { status: "failed", progressPhaseName: "Import failed", progressMessage: "Evidence import did not finish; existing absences were not reconciled." },
       }).catch((updateError) => console.error("Import status update failed:", updateError));
+      await prisma.auditEvent.create({ data: { actorId: principal.kind === "service" ? principal.actorId : principal.access.userId || "development", action: "scan.import.failed", targetId: importedScanId } }).catch(() => {});
     }
     return NextResponse.json(
       { error: "Upload failed" },

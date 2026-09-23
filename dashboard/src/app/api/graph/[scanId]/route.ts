@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -84,6 +85,8 @@ export async function GET(
   { params }: { params: Promise<{ scanId: string }> }
 ) {
   const { scanId } = await params;
+  const access = await requireResource(request, "scan", scanId, "viewer");
+  if (access instanceof Response) return access;
   const url = new URL(request.url);
   const mode = url.searchParams.get("mode") || "summary";
   const maxNodes = parseInt(url.searchParams.get("maxNodes") || "3000", 10);

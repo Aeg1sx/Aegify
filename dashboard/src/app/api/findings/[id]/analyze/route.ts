@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { analyzeFinding } from "@/lib/llm";
@@ -7,6 +8,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "finding", id, "maintainer");
+  if (access instanceof Response) return access;
 
   let language: string | undefined;
   try {

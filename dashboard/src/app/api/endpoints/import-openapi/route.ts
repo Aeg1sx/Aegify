@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseApiContract, record, SPEC_MAX_BYTES, type ApiContract } from "@/lib/openapi-contract";
@@ -7,6 +8,8 @@ import { uploadValidationError } from "@/lib/upload-validation";
 const headers = { "Cache-Control": "no-store" };
 export async function GET(request: NextRequest) {
   const scanId = request.nextUrl.searchParams.get("scanId");
+  const access = await requireResource(request, "scan", scanId, "viewer");
+  if (access instanceof Response) return access;
   if (!scanId || !await prisma.scan.findUnique({ where: { id: scanId }, select: { id: true } })) return NextResponse.json({ error: "Select an existing scan." }, { status: 404, headers });
   const id = request.nextUrl.searchParams.get("id");
   if (id) {
@@ -22,6 +25,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!specMutationOriginAllowed(request, process.env)) return NextResponse.json({ error: "Same-origin request required." }, { status: 403, headers });
   const scanId = request.nextUrl.searchParams.get("scanId");
+  const access = await requireResource(request, "scan", scanId, "maintainer");
+  if (access instanceof Response) return access;
   if (!scanId || !await prisma.scan.findUnique({ where: { id: scanId }, select: { id: true } })) return NextResponse.json({ error: "Select an existing scan." }, { status: 404, headers });
   const repositoryId = request.nextUrl.searchParams.get("repositoryId");
   if (repositoryId === null || !(await contractRepositoryIds(prisma, scanId)).includes(repositoryId)) return NextResponse.json({ error: "Select a repository belonging to this scan." }, { status: 400, headers });

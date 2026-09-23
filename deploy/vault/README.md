@@ -7,8 +7,10 @@ These files are reviewed templates, not a deployed Vault configuration.
 environment variables.
 
 The production dashboard fails closed unless the secret payload supplies
-`AUTH_SECRET`, `ENCRYPTION_SECRET`, and one complete GitHub or GitLab OAuth
-client pair. `AEGIFY_UPLOAD_TOKEN` remains a separate machine credential.
+`AUTH_SECRET`, `ENCRYPTION_SECRET`, `AUTH_URL`, an explicit sign-in allowlist,
+exact `AUTH_ADMIN_EMAILS`, and one complete authentication method. Issue expiring
+project CI credentials in the dashboard and store them in the runner's separate
+secret path. The optional legacy upload credential must include its project ID.
 
 Bind the production auth role to the exact repository and protected ref. For a
 GitHub OIDC/JWT flow, validate issuer, audience, repository owner, repository,

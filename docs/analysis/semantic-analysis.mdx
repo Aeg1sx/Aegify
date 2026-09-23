@@ -136,6 +136,12 @@ Sink models can select either a specific argument or the call receiver. This
 distinguishes an untrusted format program in `template.format(value)` from safe
 substitution data in `'value={}'.format(untrustedValue)`.
 
+Python file-open sinks currently cover the exact calls `open`, `builtins.open`,
+and `io.open`, with the filename in argument zero. Unrelated `.open()` methods
+(including HTTP clients) are not classified as filesystem access by name alone.
+Aliased functions, shadowed builtins and `pathlib` receiver types require richer
+symbol models; this contract does not claim complete Python filesystem coverage.
+
 Regression tests cover caller isolation, factory-return receivers, field stores
 and loads, exact imported targets, safe overwrite, sanitizer categories, and
 nearby decoys.

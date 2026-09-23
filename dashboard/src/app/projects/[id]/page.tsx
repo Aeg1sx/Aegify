@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SeverityChart } from "@/components/severity-chart";
+import { ProjectAccessPanel } from "@/components/project-access-panel";
 import { RepoConnector } from "@/components/repo-connector";
 import {
   ArrowLeft,
@@ -33,6 +34,7 @@ interface ScanSummary {
 }
 
 interface ProjectDetail {
+  accessRole: string;
   id: string;
   name: string;
   repositoryUrl: string;
@@ -56,11 +58,13 @@ export default function ProjectDetailPage() {
   const [connectorOpen, setConnectorOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const fetchProject = useCallback(() => {
     return fetch(`/api/projects/${params.id}`)
-      .then((r) => r.json())
+      .then(async (r) => { const data = await r.json(); if (!r.ok) throw new Error(data.error || "Project could not be loaded."); return data; })
       .then(setProject)
+      .catch((error) => setLoadError(error.message))
       .finally(() => setLoading(false));
   }, [params.id]);
 
@@ -69,8 +73,9 @@ export default function ProjectDetailPage() {
   }, [fetchProject]);
 
   const deleteProject = async () => {
-    if (!confirm("Delete this project? Scans will be unlinked, not deleted.")) return;
-    await fetch(`/api/projects/${params.id}`, { method: "DELETE" });
+    if (!confirm("Archive this project? Its scan history will be retained and new CI uploads will stop.")) return;
+    const response = await fetch(`/api/projects/${params.id}`, { method: "DELETE" });
+    if (!response.ok) { setScanError("Project could not be archived."); return; }
     router.push("/projects");
   };
 
@@ -135,6 +140,7 @@ export default function ProjectDetailPage() {
     }
   };
 
+  if (loadError) return <div className="space-y-3"><p role="alert">{loadError}</p><Link href="/projects" className="text-primary underline">Back to projects</Link></div>;
   if (loading || !project) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -143,6 +149,8 @@ export default function ProjectDetailPage() {
     );
   }
 
+  const canManage = project.accessRole === "admin";
+  const canScan = ["admin", "maintainer"].includes(project.accessRole);
   const hasRepo = !!project.provider && !!project.ownerSlug;
 
   return (
@@ -174,7 +182,7 @@ export default function ProjectDetailPage() {
             </a>
           )}
         </div>
-        <Button variant="outline" size="sm" onClick={deleteProject}>
+        <Button variant="outline" size="sm" onClick={deleteProject} disabled={!canManage} aria-label="Archive project">
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
@@ -204,7 +212,7 @@ export default function ProjectDetailPage() {
                   variant="default"
                   size="sm"
                   onClick={startRepoScan}
-                  disabled={scanning}
+                  disabled={scanning || !canScan}
                 >
                   {scanning ? (
                     <>
@@ -223,7 +231,7 @@ export default function ProjectDetailPage() {
                     {scanError}
                   </p>
                 )}
-                <Button variant="outline" size="sm" onClick={disconnectRepo}>
+                <Button variant="outline" size="sm" onClick={disconnectRepo} disabled={!canManage}>
                   <Unplug className="h-4 w-4" />
                 </Button>
               </div>
@@ -237,6 +245,7 @@ export default function ProjectDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
+                disabled={!canManage}
                 onClick={() => setConnectorOpen(true)}
               >
                 Connect Repository
@@ -300,6 +309,7 @@ export default function ProjectDetailPage() {
                       <div>
                         <span className="text-sm font-medium">
                           {scan.branch || "main"}
+                          <span className={`ml-2 rounded px-2 py-0.5 text-xs ${["partial", "failed"].includes(scan.status) ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200" : "bg-muted text-muted-foreground"}`}>{scan.status}</span>
                           {scan.scanType === "repo-ai-candidate" && (
                             <span className="ml-2 text-xs text-muted-foreground font-normal">
                               evidence-bound AI candidate scan
@@ -339,6 +349,8 @@ export default function ProjectDetailPage() {
           </Button>
         </Link>
       </div>
+
+      {canManage && <ProjectAccessPanel key={project.id} projectId={project.id} />}
 
       <RepoConnector
         open={connectorOpen}
