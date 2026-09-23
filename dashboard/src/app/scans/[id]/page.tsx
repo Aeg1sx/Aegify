@@ -49,6 +49,7 @@ interface ScanDetail {
   topRules: Array<{ ruleId: string; ruleName: string; count: number }>;
   hasCallGraph?: boolean;
   callGraphNodeCount?: number;
+  progressMessage?: string;
 }
 
 export default function ScanDetailPage() {
@@ -124,6 +125,16 @@ export default function ScanDetailPage() {
           </Link>
         )}
       </div>
+
+      {scan.status !== "completed" && (
+        <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+          <p className="font-semibold">
+            {scan.status === "partial" ? "Partial analysis" : scan.status === "failed" ? "Analysis failed" : "Analysis in progress"}
+          </p>
+          <p className="mt-1">Coverage is incomplete. An empty result does not mean this code is free of vulnerabilities.</p>
+          {scan.progressMessage && <p className="mt-2 text-muted-foreground break-words">{scan.progressMessage}</p>}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card>

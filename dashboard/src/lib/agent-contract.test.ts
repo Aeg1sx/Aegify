@@ -25,8 +25,8 @@ function scan(runtimeObserved = false): AgentScanInput {
       remediation: "Use an argv allowlist.",
       evidenceId: "static-fixture-1",
       callChain: JSON.stringify([
-        { function: "api.run", filePath: "src/handler.py", line: 10 },
-        { function: "service.execute", filePath: "src/handler.py", line: 19 },
+        { function: "api.run", filePath: "src/handler.py", line: 10, lineEnd: 18, symbolId: "api::run", nextSymbolId: "api::execute" },
+        { function: "service.execute", filePath: "src/handler.py", line: 19, lineEnd: 22, symbolId: "api::execute" },
       ]),
     }],
     endpoints: [{
@@ -56,6 +56,23 @@ test("agent blueprint exposes six English-display agents and approval-gated dyna
   assert.equal(dynamic.dynamicPlans[0].requiresApproval, true);
   assert.equal(dynamic.dynamicPlans[0].destructive, false);
   assert.match(result.artifactDigest, /^sha256:[0-9a-f]{64}$/);
+});
+
+test("reachability requires matching handler identity, directed edges and sink bounds", () => {
+  for (const kind of ["handler", "repository", "edge", "sink", "legacy"]) {
+    const input = scan();
+    const chain = JSON.parse(input.findings[0].callChain!);
+    if (kind === "handler") input.endpoints[0].handlerFunction = "api.unrelated";
+    if (kind === "repository") input.endpoints[0].repositoryId = "another-repo";
+    if (kind === "edge") chain[0].nextSymbolId = "unrelated";
+    if (kind === "sink") input.findings[0].lineStart = 100;
+    if (kind === "legacy") for (const hop of chain) delete hop.symbolId;
+    input.findings[0].callChain = JSON.stringify(chain);
+    const result = buildAgentBlueprint(input, "deep");
+    const trace = result.stages.find((stage) => stage.role === "static")!.reachability[0];
+    assert.equal(trace.staticComplete, false, kind);
+    assert.ok(trace.unresolvedLinks.length > 0, kind);
+  }
 });
 
 test("runtime observation removes an unnecessary execution plan without proving impact", () => {

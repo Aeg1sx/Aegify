@@ -126,3 +126,37 @@ class TestIncrementalBuild:
         monkeypatch.setattr("aegify.scanner.engine.ProcessPoolExecutor", fail_executor)
         second = engine._parse_directory_parallel(tmp_path)
         assert [ast.model_dump() for ast in second] == [ast.model_dump() for ast in first]
+
+    def test_cache_is_invalidated_by_source_and_parser_contract(self, tmp_path, monkeypatch):
+        source = tmp_path / "module.py"
+        source.write_text("def before():\n    return 1\n")
+        config = AegifyConfig()
+        config.scan.max_workers = 1
+        engine = ScanEngine(config=config)
+        first = engine._parse_directory_parallel(tmp_path)
+        assert first[0].functions[0].name == "before"
+        source.write_text("def after():\n    return 2\n")
+        second = engine._parse_directory_parallel(tmp_path)
+        assert second[0].functions[0].name == "after"
+        assert first[0].source_digest != second[0].source_digest
+
+        calls = []
+        original = engine.ast_parser.parse_file
+
+        def track_parse(path, **kwargs):
+            calls.append(path)
+            return original(path, **kwargs)
+
+        monkeypatch.setattr(engine.ast_parser, "parse_file", track_parse)
+        monkeypatch.setattr("aegify.scanner.engine.parser_fingerprint", lambda: "new-grammar")
+        third = engine._parse_directory_parallel(tmp_path)
+        assert calls == [source]
+        assert third[0].model_dump() == second[0].model_dump()
+
+    def test_cached_syntax_diagnostics_survive_replay(self, tmp_path):
+        (tmp_path / "broken.py").write_text("def broken(:\n    pass\n")
+        engine = ScanEngine()
+        first = engine.scan(tmp_path)
+        second = engine.scan(tmp_path)
+        assert first.status == second.status == ScanStatus.PARTIAL
+        assert first.parse_diagnostics == second.parse_diagnostics

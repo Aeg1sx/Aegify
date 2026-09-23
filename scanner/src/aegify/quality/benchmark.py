@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from aegify.models import Finding
+from aegify.models import AnalysisGap, Finding, ScanStatus
 
 
 class ExpectedFinding(BaseModel):
@@ -78,6 +78,8 @@ class BenchmarkReport(BaseModel):
     ground_truth_digest: str = ""
     line_tolerance: int = 3
     evaluated_rules: list[str] = Field(default_factory=list)
+    analysis_status: ScanStatus = ScanStatus.COMPLETED
+    analysis_gaps: list[AnalysisGap] = Field(default_factory=list)
     metrics: RuleMetrics
     by_rule: dict[str, RuleMetrics]
     unmatched_actual: list[str]
@@ -146,6 +148,8 @@ def evaluate_findings(
     source_digest: str = "",
     ground_truth_digest: str = "",
 ) -> BenchmarkReport:
+    if line_tolerance < 0:
+        raise ValueError("line_tolerance must be non-negative")
     scoped_rules = set(rule_scope or [])
     scoped_actual = [
         finding for finding in actual if not scoped_rules or finding.rule_id in scoped_rules
@@ -153,25 +157,33 @@ def evaluate_findings(
     if scoped_rules and any(item.rule_id not in scoped_rules for item in expected):
         raise ValueError("expected finding is outside the declared rule scope")
 
+    # Each rule/file group is an interval matching problem with one tolerance.
+    # Match sorted locations to the earliest feasible expected location. Crossing
+    # matches can always be uncrossed, so this maximizes cardinality without the
+    # input-order bias of taking the nearest still-unmatched expected location.
+    # Sorting also avoids a quadratic all-findings/all-labels search.
+    actual_groups: dict[tuple[str, str], list[tuple[int, int]]] = defaultdict(list)
+    expected_groups: dict[tuple[str, str], list[tuple[int, int]]] = defaultdict(list)
+    for index, finding in enumerate(scoped_actual):
+        actual_groups[(finding.rule_id, _path(finding.file_path, target_root))].append(
+            (finding.line_start, index)
+        )
+    for index, item in enumerate(expected):
+        expected_groups[(item.rule_id, _path(item.file_path))].append((item.line_start, index))
+
     unmatched_expected = set(range(len(expected)))
     actual_matches: dict[int, int] = {}
-    for actual_index, finding in enumerate(scoped_actual):
-        candidates = [
-            expected_index
-            for expected_index in unmatched_expected
-            if expected[expected_index].rule_id == finding.rule_id
-            and _path(expected[expected_index].file_path) == _path(finding.file_path, target_root)
-            and abs(expected[expected_index].line_start - finding.line_start) <= line_tolerance
-        ]
-        if candidates:
-            best = min(
-                candidates,
-                key=lambda expected_index: abs(
-                    expected[expected_index].line_start - finding.line_start
-                ),
-            )
-            unmatched_expected.remove(best)
-            actual_matches[actual_index] = best
+    for key, locations in actual_groups.items():
+        labels = sorted(expected_groups.get(key, []))
+        label_index = 0
+        for line, actual_index in sorted(locations):
+            while label_index < len(labels) and labels[label_index][0] < line - line_tolerance:
+                label_index += 1
+            if label_index < len(labels) and labels[label_index][0] <= line + line_tolerance:
+                expected_index = labels[label_index][1]
+                actual_matches[actual_index] = expected_index
+                unmatched_expected.remove(expected_index)
+                label_index += 1
 
     counts: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
     for rule_id in scoped_rules:
@@ -193,14 +205,14 @@ def evaluate_findings(
         evaluated_rules=sorted(scoped_rules),
         metrics=_metrics(tp, fp, fn),
         by_rule={rule_id: _metrics(*values) for rule_id, values in sorted(counts.items())},
-        unmatched_actual=[
+        unmatched_actual=sorted(
             f"{finding.rule_id}:{_path(finding.file_path, target_root)}:{finding.line_start}"
             for index, finding in enumerate(scoped_actual)
             if index not in actual_matches
-        ],
-        unmatched_expected=[
+        ),
+        unmatched_expected=sorted(
             f"{expected[index].rule_id}:{_path(expected[index].file_path)}:"
             f"{expected[index].line_start}"
-            for index in sorted(unmatched_expected)
-        ],
+            for index in unmatched_expected
+        ),
     )

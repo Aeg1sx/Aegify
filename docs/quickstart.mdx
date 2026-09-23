@@ -5,7 +5,7 @@ icon: "rocket"
 ---
 
 This guide runs the scanner locally without sending source code to an external
-model. Python 3.14 and uv 0.12.9 are required.
+model. Python 3.14 and uv 0.12.17 are required.
 
 <Steps>
   <Step title="Clone Aegify">
@@ -64,7 +64,10 @@ disposition:
 | Disposition | `advisory`, `blocking` | Whether the finding can fail CI |
 
 An advisory result remains reviewable even when its severity is high or
-critical. A blocking high or critical result changes the CLI exit code.
+critical. A blocking high or critical result changes the CLI exit code to `1`.
+Failed scans exit `2`; partial scans exit `3`. Inspect analysis gaps before
+treating an empty result as a successful gate. See [analysis health and evidence
+gates](/concepts/evidence-gates).
 
 <Note>
   LLM review is optional. Do not configure an API key until you have reviewed

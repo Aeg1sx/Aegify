@@ -461,7 +461,7 @@ function DynamicPanel(props: Parameters<typeof StageContent>[0]) {
                   placeholder={`{"contract_version":1,"executed":true,"approval_scope_sha256":"${approval.scopeDigest}",...}`}
                   className="mt-2 min-h-32 w-full rounded-lg border bg-[#0d1117] p-3 font-mono text-xs text-slate-200 outline-none focus:border-primary"
                 />
-                <Button size="sm" className="mt-2" onClick={() => importEvidence(approval.id)} disabled={acting || !evidenceJson.trim()}><Upload className="mr-1 h-3.5 w-3.5" />Verify & import evidence</Button>
+                <Button size="sm" className="mt-2" onClick={() => importEvidence(approval.id)} disabled={acting || !evidenceJson.trim()}><Upload className="mr-1 h-3.5 w-3.5" />Verify &amp; import evidence</Button>
               </div>
             )}
           </div>

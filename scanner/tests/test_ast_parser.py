@@ -17,10 +17,14 @@ class TestDetectLanguage:
     def test_javascript(self):
         assert detect_language(Path("app.js")) == Language.JAVASCRIPT
         assert detect_language(Path("app.jsx")) == Language.JAVASCRIPT
+        assert detect_language(Path("app.mjs")) == Language.JAVASCRIPT
+        assert detect_language(Path("app.cjs")) == Language.JAVASCRIPT
 
     def test_typescript(self):
         assert detect_language(Path("app.ts")) == Language.TYPESCRIPT
         assert detect_language(Path("app.tsx")) == Language.TYPESCRIPT
+        assert detect_language(Path("app.mts")) == Language.TYPESCRIPT
+        assert detect_language(Path("app.cts")) == Language.TYPESCRIPT
 
     def test_java(self):
         assert detect_language(Path("App.java")) == Language.JAVA
@@ -81,6 +85,39 @@ class TestASTParser:
     def test_parse_unsupported_file(self, parser):
         result = parser.parse_file(Path("style.css"))
         assert result is None
+
+    def test_tsx_uses_jsx_grammar_and_keeps_calls(self, parser, tmp_path):
+        path = tmp_path / "view.tsx"
+        path.write_text('export function View() { return <main>{renderTitle("hello")}</main>; }')
+        ast = parser.parse_file(path)
+        assert ast.parser_grammar == "tsx"
+        assert ast.parse_error_count == 0
+        assert any(call.callee == "renderTitle" for call in ast.calls)
+
+    def test_typescript_angle_assertions_remain_typescript(self, parser, tmp_path):
+        path = tmp_path / "value.ts"
+        path.write_text("export function value(input: unknown) { return <string>input; }")
+        ast = parser.parse_file(path)
+        assert ast.parser_grammar == "typescript"
+        assert ast.parse_error_count == 0
+
+    def test_recovered_ast_records_error_location_and_source_digest(self, parser, tmp_path):
+        import hashlib
+
+        path = tmp_path / "broken.py"
+        path.write_text("value = 1\ndef broken(:\n    return value\n")
+        ast = parser.parse_file(path)
+        assert ast.parse_error_count > 0
+        assert ast.parse_diagnostics[0].file_path == str(path)
+        assert ast.parse_diagnostics[0].line_start == 2
+        assert ast.source_digest == hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def test_invalid_encoding_is_an_explicit_diagnostic(self, parser, tmp_path):
+        path = tmp_path / "encoding.py"
+        path.write_bytes(b"# invalid byte: \xff\nvalue = 1\n")
+        ast = parser.parse_file(path)
+        assert ast.parse_error_count > 0
+        assert any(item.kind == "invalid_encoding" for item in ast.parse_diagnostics)
 
     def test_collect_files_excludes_nested_dependency_environments(self, parser, tmp_path):
         source = tmp_path / "src" / "app.py"

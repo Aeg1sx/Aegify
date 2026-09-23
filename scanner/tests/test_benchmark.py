@@ -1,3 +1,4 @@
+from itertools import permutations
 from pathlib import Path
 
 import pytest
@@ -104,3 +105,39 @@ def test_source_tree_digest_binds_paths_and_content(tmp_path: Path) -> None:
 
     assert original.startswith("sha256:")
     assert digest_source_tree(tmp_path) != original
+
+
+def test_matching_is_maximal_and_independent_of_finding_and_label_order() -> None:
+    actual = [_finding("AEG-ONE", "src/a.py", line) for line in (11, 8, 30)]
+    expected = [
+        ExpectedFinding(rule_id="AEG-ONE", file_path="src/a.py", line_start=line)
+        for line in (10, 13, 40)
+    ]
+    reports = [
+        evaluate_findings(list(findings), list(labels)).model_dump()
+        for findings in permutations(actual)
+        for labels in permutations(expected)
+    ]
+    assert all(report == reports[0] for report in reports)
+    assert reports[0]["metrics"]["true_positives"] == 2
+    assert reports[0]["metrics"]["false_positives"] == 1
+    assert reports[0]["metrics"]["false_negatives"] == 1
+
+
+def test_matching_counts_duplicates_once_and_keeps_rule_and_file_boundaries() -> None:
+    expected = [ExpectedFinding(rule_id="AEG-ONE", file_path="src/a.py", line_start=10)]
+    actual = [
+        _finding("AEG-ONE", "src/a.py", 10),
+        _finding("AEG-ONE", "src/a.py", 10),
+        _finding("AEG-TWO", "src/a.py", 10),
+        _finding("AEG-ONE", "src/b.py", 10),
+    ]
+    report = evaluate_findings(actual, expected, line_tolerance=0)
+    assert report.metrics.true_positives == 1
+    assert report.metrics.false_positives == 3
+    assert report.metrics.false_negatives == 0
+
+
+def test_negative_tolerance_is_rejected() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        evaluate_findings([], [], line_tolerance=-1)

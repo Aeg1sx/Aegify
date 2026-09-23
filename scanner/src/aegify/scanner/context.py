@@ -31,13 +31,24 @@ class ContextAnalyzer:
 
     def load(self, file_asts: list[FileAST]) -> None:
         """Index all file ASTs for context lookup."""
+        self._function_index.clear()
+        self._file_asts.clear()
+        names: dict[str, list[FunctionDef]] = {}
         for ast in file_asts:
             self._file_asts[ast.file_path] = ast
             for func in ast.functions:
-                self._function_index[func.qualified_name] = func
+                names.setdefault(func.qualified_name, []).append(func)
+                if func.symbol_id:
+                    self._function_index[func.symbol_id] = func
             for cls in ast.classes:
                 for method in cls.methods:
-                    self._function_index[method.qualified_name] = method
+                    names.setdefault(method.qualified_name, []).append(method)
+                    if method.symbol_id:
+                        self._function_index[method.symbol_id] = method
+        for name, functions in names.items():
+            identities = {(item.file_path, item.line_start, item.symbol_id) for item in functions}
+            if len(identities) == 1:
+                self._function_index.setdefault(name, functions[0])
 
     def analyze_defense(
         self,
@@ -86,7 +97,7 @@ class ContextAnalyzer:
         except nx.NodeNotFound, nx.NetworkXNoPath:
             return chain
 
-        for node_name in path:
+        for index, node_name in enumerate(path):
             func = self._function_index.get(node_name)
             if func:
                 # Read code snippet
@@ -97,6 +108,10 @@ class ContextAnalyzer:
                         function=func.qualified_name,
                         line=func.line_start,
                         code_snippet=snippet,
+                        symbol_id=node_name,
+                        repository_id=func.repository_id,
+                        line_end=func.line_end,
+                        next_symbol_id=path[index + 1] if index + 1 < len(path) else "",
                     )
                 )
         return chain
