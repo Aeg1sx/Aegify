@@ -10,6 +10,8 @@ export interface RepoFetchConfig {
   ownerSlug: string;       // "owner/repo" (GitHub) / "group/project" (GitLab)
   providerRepoId: string;  // GitLab needs numeric project ID
   ref: string;             // branch or commit SHA
+  signal?: AbortSignal;
+  onResolved?: (commit: string) => Promise<void>;
   maxFiles?: number;       // default 1000
   maxFileSizeBytes?: number;  // default 102400 (100KB)
   maxTotalBytes?: number;     // default 10485760 (10MB)
@@ -28,6 +30,8 @@ export interface CodeBundle {
   truncated: boolean;
   ref: string;
   fetchedAt: string;
+  omittedFiles: number;
+  selection: "source-and-config";
 }
 
 // ---------------------------------------------------------------------------
@@ -35,11 +39,11 @@ export interface CodeBundle {
 // ---------------------------------------------------------------------------
 
 const PATH_TRAVERSAL_RE = /\.\./;
-const NULL_BYTE_RE = /\0/;
+const NULL_BYTE_RE = /[\x00-\x1f\x7f]/;
 const GIT_DIR_RE = /(?:^|\/)\.git(?:$|\/|modules|ignore|attributes|keep)/;
 
 export function isPathSafe(path: string): boolean {
-  if (!path || typeof path !== "string") return false;
+  if (!path || typeof path !== "string" || new TextEncoder().encode(path).length > 1024 || path.split("/").some((part) => !part || part === ".")) return false;
   // Block absolute paths (unix and windows)
   if (path.startsWith("/") || /^[a-zA-Z]:/.test(path)) return false;
   // Block path traversal
@@ -59,7 +63,7 @@ export function isPathSafe(path: string): boolean {
 
 const SCANNABLE_EXTENSIONS = new Set([
   // JavaScript / TypeScript
-  ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+  ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts",
   // Python
   ".py", ".pyw",
   // Java / Kotlin / Scala
@@ -152,312 +156,139 @@ export function isScannableFile(path: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Tree entry types from APIs
+// Bounded immutable provider snapshots
 // ---------------------------------------------------------------------------
 
-interface GitHubTreeEntry {
-  path: string;
-  mode: string;   // "120000" = symlink
-  type: string;   // "blob" | "tree"
-  sha: string;
-  size?: number;
-}
+type TreeEntry = { path: string; mode: string; type: string; size?: number };
+const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
+const TREE_BYTES = 12 * 1024 * 1024;
+const TREE_ENTRIES = 100_000;
 
-interface GitLabTreeEntry {
-  id: string;
-  name: string;
-  type: string;   // "blob" | "tree"
-  path: string;
-  mode: string;   // "120000" = symlink
-}
-
-// ---------------------------------------------------------------------------
-// GitHub: fetch tree + file content
-// ---------------------------------------------------------------------------
-
-async function fetchGitHubTree(
-  accessToken: string,
-  ownerSlug: string,
-  ref: string,
-): Promise<{ entries: GitHubTreeEntry[]; resolvedRef: string; truncated: boolean }> {
-  // First resolve the ref to a commit SHA, then get the tree
-  const commitRes = await fetch(
-    `https://api.github.com/repos/${ownerSlug}/commits/${encodeURIComponent(ref)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/vnd.github.v3+json",
-      },
-    },
-  );
-
-  if (!commitRes.ok) {
-    throw new Error(`GitHub commit lookup failed (${commitRes.status}): ${await commitRes.text()}`);
+/** Check the stream before decoding: a Content-Length header is not a bound. */
+export async function readBoundedProviderBody(response: Response, maxBytes: number, signal: AbortSignal): Promise<string> {
+  if (Number(response.headers.get("content-length")) > maxBytes) {
+    void response.body?.cancel().catch(() => {});
+    throw new Error("Provider response exceeds its byte limit.");
   }
-
-  const commit = await commitRes.json();
-  const commitSha = commit.sha;
-  const treeSha = commit.commit?.tree?.sha;
-  if (!commitSha || !treeSha) throw new Error("Could not resolve immutable commit and tree SHA");
-
-  const treeRes = await fetch(
-    `https://api.github.com/repos/${ownerSlug}/git/trees/${treeSha}?recursive=true`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/vnd.github.v3+json",
-      },
-    },
-  );
-
-  if (!treeRes.ok) {
-    throw new Error(`GitHub tree fetch failed (${treeRes.status}): ${await treeRes.text()}`);
-  }
-
-  const treeData = await treeRes.json();
-  return {
-    entries: treeData.tree || [],
-    resolvedRef: commitSha,
-    truncated: treeData.truncated === true,
-  };
-}
-
-async function fetchGitHubFileRaw(
-  accessToken: string,
-  ownerSlug: string,
-  path: string,
-  ref: string,
-): Promise<string | null> {
-  const url = `https://api.github.com/repos/${ownerSlug}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(ref)}`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/vnd.github.v3.raw",
-    },
-  });
-  if (!res.ok) return null;
-  return res.text();
-}
-
-// ---------------------------------------------------------------------------
-// GitLab: fetch tree + file content
-// ---------------------------------------------------------------------------
-
-async function fetchGitLabTree(
-  accessToken: string,
-  providerRepoId: string,
-  ref: string,
-): Promise<{ entries: GitLabTreeEntry[]; truncated: boolean }> {
-  const entries: GitLabTreeEntry[] = [];
-  let page = 1;
-
-  while (page <= 50) { // Safety cap at 50 pages (5000 entries)
-    const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(providerRepoId)}/repository/tree?recursive=true&per_page=100&page=${page}&ref=${encodeURIComponent(ref)}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!res.ok) {
-      if (page === 1) {
-        throw new Error(`GitLab tree fetch failed (${res.status}): ${await res.text()}`);
-      }
-      return { entries, truncated: true };
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const abort = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) { abort(); throw new Error("Provider response exceeds its byte limit."); }
+      chunks.push(value);
     }
-
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) break;
-    entries.push(...data);
-    const nextPage = res.headers.get("x-next-page");
-    if (!nextPage) return { entries, truncated: false };
-    page++;
-  }
-
-  return { entries, truncated: true };
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } finally { signal.removeEventListener("abort", abort); reader.releaseLock(); }
 }
 
-async function resolveGitLabRef(
-  accessToken: string,
-  providerRepoId: string,
-  ref: string,
-): Promise<string> {
-  const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(providerRepoId)}/repository/commits/${encodeURIComponent(ref)}`;
+async function providerRequest(config: RepoFetchConfig, url: string, maxBytes: number, raw = false): Promise<{ text: string; nextPage: string }> {
+  const signal = AbortSignal.any([AbortSignal.timeout(20_000), ...(config.signal ? [config.signal] : [])]);
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${config.accessToken}`, Accept: raw ? "application/vnd.github.v3.raw" : "application/json" },
+    redirect: "manual", signal,
   });
   if (!response.ok) {
-    throw new Error(`GitLab commit lookup failed (${response.status}): ${await response.text()}`);
+    void response.body?.cancel().catch(() => {});
+    // Provider bodies may contain source or credentials; never copy them into diagnostics.
+    throw new Error(`Repository provider returned HTTP ${response.status}.`);
   }
-  const commit = await response.json();
-  if (!commit.id || typeof commit.id !== "string") {
-    throw new Error("Could not resolve immutable GitLab commit SHA");
-  }
-  return commit.id;
+  return { text: await readBoundedProviderBody(response, maxBytes, signal), nextPage: response.headers.get("x-next-page") || "" };
 }
 
-async function fetchGitLabFileRaw(
-  accessToken: string,
-  providerRepoId: string,
-  filePath: string,
-  ref: string,
-): Promise<string | null> {
-  const encodedPath = encodeURIComponent(filePath);
-  const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(providerRepoId)}/repository/files/${encodedPath}/raw?ref=${encodeURIComponent(ref)}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) return null;
-  return res.text();
+function boundedLimit(value: number | undefined, fallback: number, maximum: number): number {
+  const resolved = value ?? fallback;
+  if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > maximum) throw new Error("Invalid source snapshot resource limit.");
+  return resolved;
 }
-
-// ---------------------------------------------------------------------------
-// Main: fetchRepoCode
-// ---------------------------------------------------------------------------
 
 export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle> {
-  const maxFiles = config.maxFiles ?? 1000;
-  const maxFileSize = config.maxFileSizeBytes ?? 102400;   // 100KB
-  const maxTotal = config.maxTotalBytes ?? 10485760;       // 10MB
-
-  // Step 1: Get tree listing
-  type TreeEntry = { path: string; mode: string; type: string; size?: number };
-  let treeEntries: TreeEntry[];
-  let resolvedRef: string;
-  let truncated: boolean;
-
+  const maxFiles = boundedLimit(config.maxFiles, 1000, 10_000);
+  const maxFileSize = boundedLimit(config.maxFileSizeBytes, 102400, 1024 * 1024);
+  const maxTotal = boundedLimit(config.maxTotalBytes, 10 * 1024 * 1024, 50 * 1024 * 1024);
+  if (!/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(config.ownerSlug) || config.ownerSlug.split("/").some((part) => part === "." || part === "..") || !/^[A-Za-z0-9._/-]{1,255}$/.test(config.ref) || config.ref.includes("..")) throw new Error("Invalid repository identity or ref.");
+  if (config.provider === "github" && config.ownerSlug.split("/").length !== 2) throw new Error("Invalid GitHub repository identity.");
+  if (config.provider === "gitlab" && !/^[0-9]{1,20}$/.test(config.providerRepoId)) throw new Error("Invalid GitLab project identity.");
+  if (!["github", "gitlab"].includes(config.provider)) throw new Error("Unsupported repository provider.");
+  config.signal?.throwIfAborted();
+  const base = config.provider === "github"
+    ? `https://api.github.com/repos/${config.ownerSlug}`
+    : `https://gitlab.com/api/v4/projects/${config.providerRepoId}/repository`;
+  const commit = JSON.parse((await providerRequest(config, `${base}/commits/${encodeURIComponent(config.ref)}`, 1024 * 1024)).text);
+  const resolvedRef = config.provider === "github" ? commit.sha : commit.id;
+  if (typeof resolvedRef !== "string" || !COMMIT_ID.test(resolvedRef)) throw new Error("Provider did not resolve an immutable commit.");
+  if (COMMIT_ID.test(config.ref) && config.ref.toLowerCase() !== resolvedRef.toLowerCase()) throw new Error("Provider changed the pinned commit.");
+  await config.onResolved?.(resolvedRef);
+  let treeEntries: TreeEntry[] = [];
+  let truncated = false;
   if (config.provider === "github") {
-    const resolved = await fetchGitHubTree(config.accessToken, config.ownerSlug, config.ref);
-    treeEntries = resolved.entries;
-    resolvedRef = resolved.resolvedRef;
-    truncated = resolved.truncated;
+    const treeSha = commit.commit?.tree?.sha;
+    if (typeof treeSha !== "string" || !COMMIT_ID.test(treeSha)) throw new Error("Provider did not resolve an immutable tree.");
+    const data = JSON.parse((await providerRequest(config, `${base}/git/trees/${treeSha}?recursive=true`, TREE_BYTES)).text);
+    if (!Array.isArray(data.tree) || data.tree.length > TREE_ENTRIES) throw new Error("Provider tree exceeds the entry limit.");
+    treeEntries = data.tree;
+    truncated = data.truncated === true;
   } else {
-    resolvedRef = await resolveGitLabRef(
-      config.accessToken,
-      config.providerRepoId,
-      config.ref,
-    );
-    const gitLabTree = await fetchGitLabTree(
-      config.accessToken,
-      config.providerRepoId,
-      resolvedRef,
-    );
-    truncated = gitLabTree.truncated;
-    treeEntries = gitLabTree.entries.map((e) => ({
-      path: e.path,
-      mode: e.mode,
-      type: e.type,
-      size: undefined, // GitLab tree doesn't return size
-    }));
+    for (let page = 1; page <= 50; page++) {
+      try {
+        const response = await providerRequest(config, `${base}/tree?recursive=true&per_page=100&page=${page}&ref=${resolvedRef}`, TREE_BYTES);
+        const data = JSON.parse(response.text);
+        if (!Array.isArray(data) || data.length > 100) throw new Error("Invalid provider tree page.");
+        treeEntries.push(...data);
+        if (!response.nextPage || !data.length) break;
+        if (page === 50) truncated = true;
+      } catch (error) {
+        config.signal?.throwIfAborted();
+        if (page === 1) throw error;
+        truncated = true; break;
+      }
+    }
   }
-
-  // Step 2: Filter entries
   let skippedFiles = 0;
-  const candidates: string[] = [];
-
+  let omittedFiles = 0;
+  const candidates = new Set<string>();
   for (const entry of treeEntries) {
-    // Only process blobs (files), not trees (directories)
+    if (!entry || typeof entry.path !== "string" || typeof entry.type !== "string") { truncated = true; omittedFiles++; continue; }
     if (entry.type !== "blob") continue;
-
-    // Reject symlinks (mode "120000")
-    if (entry.mode === "120000") {
-      skippedFiles++;
-      continue;
-    }
-
-    // Path safety check
-    if (!isPathSafe(entry.path)) {
-      skippedFiles++;
-      continue;
-    }
-
-    // File type check
-    if (!isScannableFile(entry.path)) {
-      skippedFiles++;
-      continue;
-    }
-
-    // Pre-filter by size if available (GitHub provides size in tree)
-    if (entry.size !== undefined && entry.size > maxFileSize) {
-      skippedFiles++;
-      truncated = true;
-      continue;
-    }
-
-    candidates.push(entry.path);
+    if (!isScannableFile(entry.path)) { skippedFiles++; continue; }
+    if (entry.mode !== "100644" && entry.mode !== "100755") { omittedFiles++; skippedFiles++; truncated = true; continue; }
+    if (!isPathSafe(entry.path) || (entry.size !== undefined && (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > maxFileSize))) { omittedFiles++; skippedFiles++; truncated = true; continue; }
+    if (candidates.has(entry.path)) throw new Error("Provider tree contains duplicate paths.");
+    candidates.add(entry.path);
   }
-
-  // Enforce max file count
-  truncated ||= candidates.length > maxFiles;
-  const filesToFetch = candidates.slice(0, maxFiles);
-
-  // Step 3: Fetch file contents with concurrency control
+  const allPaths = [...candidates].sort();
+  if (allPaths.length > maxFiles) { truncated = true; omittedFiles += allPaths.length - maxFiles; }
+  const filesToFetch = allPaths.slice(0, maxFiles);
   const files: FetchedFile[] = [];
   let totalBytes = 0;
-  const concurrency = 10;
-
-  for (let i = 0; i < filesToFetch.length; i += concurrency) {
-    if (totalBytes >= maxTotal) {
-      truncated = true;
-      break;
-    }
-
-    const batch = filesToFetch.slice(i, i + concurrency);
-    const results = await Promise.allSettled(
-      batch.map(async (filePath) => {
-        let content: string | null;
-        if (config.provider === "github") {
-          content = await fetchGitHubFileRaw(
-            config.accessToken,
-            config.ownerSlug,
-            filePath,
-            resolvedRef,
-          );
-        } else {
-          content = await fetchGitLabFileRaw(
-            config.accessToken,
-            config.providerRepoId,
-            filePath,
-            resolvedRef,
-          );
-        }
-        return { filePath, content };
-      }),
-    );
-
+  for (let index = 0; index < filesToFetch.length; index += 10) {
+    config.signal?.throwIfAborted();
+    if (totalBytes >= maxTotal) { truncated = true; omittedFiles += filesToFetch.length - index; break; }
+    const results = await Promise.allSettled(filesToFetch.slice(index, index + 10).map(async (path) => {
+      const url = config.provider === "github"
+        ? `${base}/contents/${encodeURIComponent(path)}?ref=${resolvedRef}`
+        : `${base}/files/${encodeURIComponent(path)}/raw?ref=${resolvedRef}`;
+      return { path, content: (await providerRequest(config, url, maxFileSize, true)).text };
+    }));
+    config.signal?.throwIfAborted();
     for (const result of results) {
-      if (result.status !== "fulfilled" || result.value.content === null) {
-        skippedFiles++;
-        truncated = true;
-        continue;
-      }
-
-      const { filePath, content } = result.value;
+      if (result.status !== "fulfilled") { truncated = true; skippedFiles++; omittedFiles++; continue; }
+      const { path, content } = result.value;
       const sizeBytes = new TextEncoder().encode(content).length;
-
-      // Enforce per-file size limit
-      if (sizeBytes > maxFileSize) {
-        skippedFiles++;
-        truncated = true;
-        continue;
-      }
-
-      // Enforce total size limit
-      if (totalBytes + sizeBytes > maxTotal) {
-        skippedFiles++;
-        truncated = true;
-        continue;
-      }
-
-      files.push({ path: filePath, content, sizeBytes });
-      totalBytes += sizeBytes;
+      if (totalBytes + sizeBytes > maxTotal) { truncated = true; skippedFiles++; omittedFiles++; continue; }
+      files.push({ path, content, sizeBytes }); totalBytes += sizeBytes;
     }
   }
-
-  return {
-    files,
-    totalBytes,
-    skippedFiles,
-    truncated,
-    ref: resolvedRef,
-    fetchedAt: new Date().toISOString(),
-  };
+  return { files, totalBytes, skippedFiles, omittedFiles, truncated, ref: resolvedRef, fetchedAt: new Date().toISOString(), selection: "source-and-config" };
 }

@@ -255,6 +255,16 @@ jobs:
           test "$(docker image inspect --format '{{.Config.User}}' aegify-dashboard:ci)" = "nextjs"
           docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges aegify-dashboard:ci node --version
 
+      - name: Build durable source worker image
+        run: docker build --pull --file dashboard/Dockerfile.worker --tag aegify-worker:ci .
+
+      - name: Verify worker contracts without network access
+        run: |
+          docker run --rm --read-only --network none --cap-drop=ALL --security-opt=no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,size=536870912 \
+            --env DATABASE_URL=file:/tmp/unused.db --env AEGIFY_TEST_SCANNER_CLI=1 \
+            aegify-worker:ci node --test src/lib/scan-jobs.test.ts src/lib/sarif-import.test.ts src/lib/repo-fetcher.test.ts
+
       - name: Verify dashboard migration and fail-closed startup
         shell: bash
         run: |
@@ -309,3 +319,18 @@ jobs:
             const count = await db.project.count({ where: { name: "persistent-ci-fixture" } });
             await db.$disconnect();
             if (count !== 1) process.exit(1);'
+          run_worker_fixture() {
+            docker run --rm --init --read-only --network none \
+              --cap-drop=ALL --security-opt=no-new-privileges --memory=2g --cpus=2 --pids-limit=128 \
+              --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,size=536870912 \
+              --mount type=volume,source="$dashboard_test_volume",target=/data \
+              --env DATABASE_URL=file:/data/ci.db \
+              --env AUTH_SECRET=ci-only-auth-secret-32-characters \
+              --env ENCRYPTION_SECRET=ci-only-encryption-secret-32-chars \
+              --env AUTH_ALLOWED_EMAILS=ci-only@example.test \
+              --env AUTH_ADMIN_EMAILS=ci-only@example.test \
+              aegify-worker:ci "$@"
+          }
+          run_worker_fixture node scripts/test-worker-container.mjs setup
+          run_worker_fixture node scripts/scan-worker.mjs --once
+          run_worker_fixture node scripts/test-worker-container.mjs verify

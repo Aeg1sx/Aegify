@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { canReconcileScanAbsence, type ScanHealth } from "./sarif-evidence.ts";
 
 interface ImportedScan {
@@ -8,6 +8,7 @@ interface ImportedScan {
   defaultBranch: string;
   health: ScanHealth;
   audit?: { actorId: string; findings: number };
+  publishBaseline?: boolean;
 }
 
 function chunks<T>(items: T[], size: number): T[][] {
@@ -18,9 +19,13 @@ function chunks<T>(items: T[], size: number): T[][] {
 
 /** Publish absence and terminal status together, after every artifact was stored. */
 export async function finalizeScanImport(prisma: PrismaClient, imported: ImportedScan): Promise<void> {
+  await prisma.$transaction((tx) => publishScanImport(tx, imported), { timeout: 30_000 });
+}
+
+/** Compose with the complete artifact publication transaction. */
+export async function publishScanImport(tx: Prisma.TransactionClient, imported: ImportedScan): Promise<void> {
   const { scanId, projectId, branch, defaultBranch, health } = imported;
-  await prisma.$transaction(async (tx) => {
-    if (projectId) {
+    if (projectId && imported.publishBaseline !== false) {
       const previous = { scanId: { not: scanId }, scan: { projectId, branch }, isCurrent: true };
       if (canReconcileScanAbsence(health, branch, defaultBranch)) {
         // Bound SQL parameter counts. Findings in excluded files or disabled
@@ -58,5 +63,4 @@ export async function finalizeScanImport(prisma: PrismaClient, imported: Importe
       projectId, actorId: imported.audit.actorId, action: "scan.import.finished", targetId: scanId,
       details: JSON.stringify({ status: health.status, findings: imported.audit.findings }),
     } });
-  }, { timeout: 30_000 });
 }

@@ -1,5 +1,5 @@
-import { getSlackConfig } from "@/lib/settings";
-import { validateSlackWebhookUrl } from "@/lib/url-validator";
+import { getSlackConfig } from "./settings.ts";
+import { validateSlackWebhookUrl } from "./url-validator.ts";
 
 interface FindingSummary {
   ruleId: string;
@@ -33,9 +33,10 @@ const SEVERITY_EMOJI: Record<string, string> = {
 };
 
 export async function sendSlackNotification(
-  payload: SlackNotificationPayload
+  payload: SlackNotificationPayload,
+  configured?: Awaited<ReturnType<typeof getSlackConfig>>,
 ): Promise<boolean> {
-  const config = await getSlackConfig();
+  const config = configured ?? await getSlackConfig();
 
   if (!config.enabled || !config.webhookUrl) {
     return false;

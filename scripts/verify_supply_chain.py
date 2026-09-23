@@ -53,7 +53,9 @@ def verify_uv_versions(errors: list[str]) -> None:
         errors.append("scanner/pyproject.toml must pin uv required-version exactly")
         return
     expected = required.group(1)
-    for path in (ROOT / "scanner").glob("Dockerfile*"):
+    for path in ROOT.rglob("Dockerfile*"):
+        if any(part in {".git", ".venv", "node_modules"} for part in path.parts):
+            continue
         dockerfile = path.read_text(encoding="utf-8")
         for configured in re.findall(r"ghcr.io/astral-sh/uv:([^@\s]+)@", dockerfile):
             if configured != expected:

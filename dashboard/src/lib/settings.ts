@@ -1,8 +1,8 @@
-import { prisma } from "@/lib/prisma";
-import { decrypt } from "@/lib/crypto";
+import { prisma } from "./prisma.ts";
+import { decrypt } from "./crypto.ts";
 
-export async function getSetting(key: string): Promise<string> {
-  const setting = await prisma.setting.findUnique({ where: { key } });
+export async function getSetting(key: string, db = prisma): Promise<string> {
+  const setting = await db.setting.findUnique({ where: { key } });
   if (!setting) return "";
   if (setting.encrypted) {
     try {
@@ -63,12 +63,12 @@ export async function getLLMConfig() {
   };
 }
 
-export async function getSlackConfig() {
+export async function getSlackConfig(db = prisma) {
   const [webhookUrl, enabled, channel, severity] = await Promise.all([
-    getSetting("slack.webhook_url"),
-    getSetting("slack.enabled"),
-    getSetting("slack.channel"),
-    getSetting("slack.notify_severity"),
+    getSetting("slack.webhook_url", db),
+    getSetting("slack.enabled", db),
+    getSetting("slack.channel", db),
+    getSetting("slack.notify_severity", db),
   ]);
 
   return {

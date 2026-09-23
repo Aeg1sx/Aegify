@@ -49,6 +49,15 @@ class CoordinatedVersions(unittest.TestCase):
         policy.verify_actions(errors)
         self.assertEqual(errors, [])
 
+    def test_worker_uv_version_is_coordinated_with_scanner(self):
+        worker = self.root / "dashboard/Dockerfile.worker"
+        worker.parent.mkdir()
+        worker.write_text(f'FROM ghcr.io/astral-sh/uv:0.12.9@sha256:{"a" * 64}\n')
+        errors = []
+        policy.verify_uv_versions(errors)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("dashboard/Dockerfile.worker", errors[0])
+
 
 if __name__ == "__main__":
     unittest.main()

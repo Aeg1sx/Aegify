@@ -14,6 +14,7 @@ import { createClient } from "@libsql/client";
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { encode } from "next-auth/jwt";
+import { configureDatabase } from "../src/lib/database-runtime.ts";
 
 export async function runAccessIntegration({ verifyBrowser } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "aegify-access-http-"));
@@ -27,6 +28,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
   let serverOutput = "";
   let checks = 0;
   try {
+    await configureDatabase(db);
     const listener = createServer();
     await new Promise((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
     const port = listener.address().port;
@@ -127,7 +129,24 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     const audit = await call(`/api/projects/${a.id}/audit`);
     assert.ok(audit.events.some((event) => event.action === "scan.import.finished"));
     assert.ok(!JSON.stringify(audit).includes(issued.token));
-    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath });
+    await db.project.update({ where: { id: a.id }, data: { provider: "github", ownerSlug: "fixture/repository" } });
+    await db.account.create({ data: { userId: "alice", provider: "github", providerAccountId: "alice-fixture", type: "oauth", access_token: "synthetic-unused-token" } });
+    for (const body of [null, [], { branch: 123 }, { branch: "x".repeat(5000) }]) await call(`/api/projects/${a.id}/scan`, { method: "POST", body, status: 400 });
+    const queued = await call(`/api/projects/${a.id}/scan`, { method: "POST", body: {}, status: 202 });
+    assert.equal((await call(`/api/projects/${a.id}/scan`, { method: "POST", body: {}, status: 202 })).scanId, queued.scanId);
+    const job = await call(`/api/scans/${queued.scanId}/job`);
+    assert.equal(job.job.status, "queued"); assert.equal(job.workerAvailable, false);
+    assert.ok(!JSON.stringify(job).includes("leaseToken")); assert.ok(!JSON.stringify(job).includes("sourceCiphertext"));
+    for (const body of [null, [], { action: "x".repeat(5000) }]) await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body, status: 400 });
+    await call(`/api/scans/${queued.scanId}/job`, { user: "bob", status: 404 });
+    await call(`/api/scans/${queued.scanId}/job`, { user: "bob", method: "POST", body: { action: "cancel" }, status: 404 });
+    await call(`/api/scans/${queued.scanId}/progress`, { method: "PATCH", body: { status: "completed" }, status: 409 });
+    await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "cancel" }, requestOrigin: "https://unrelated.example.test", status: 403 });
+    await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "cancel" } });
+    assert.equal((await call(`/api/scans/${queued.scanId}/job`)).job.status, "cancelled");
+    const retry = await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "retry" }, status: 202 });
+    assert.notEqual(retry.scanId, queued.scanId);
+    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId });
     await db.user.update({ where: { id: "bob" }, data: { disabled: true } });
     await call("/api/projects", { user: "bob", status: 401 });
     log(`Project access: ${checks} production HTTP/CLI checks passed; project isolation, roles, CSRF, scoped CI delivery and revocation verified.`);

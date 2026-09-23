@@ -82,6 +82,7 @@
                 "pages": [
                   "operations/secrets-management",
                   "operations/authentication",
+                  "operations/self-hosted-workers",
                   "operations/ai-providers",
                   "operations/api-specifications",
                   "security/reporting",

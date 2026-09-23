@@ -231,3 +231,4 @@ def test_configured_taint_bound_propagates_to_scan_health(tmp_path: Path) -> Non
     assert result.status == ScanStatus.PARTIAL
     assert any(gap.code == "taint_limit" for gap in result.analysis_gaps)
     assert "global taint hit the 1-context bound" in result.taint_analysis.warnings
+    assert result.taint_analysis.contexts_analyzed <= 1

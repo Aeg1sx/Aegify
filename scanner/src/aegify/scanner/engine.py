@@ -1472,7 +1472,7 @@ class ScanEngine:
                         continue
                 module_path = module_path or file_path.name
             try:
-                content_digest = compute_file_hash(file_path)
+                content_digest = ast.source_digest or compute_file_hash(file_path)
             except OSError:
                 content_digest = "unreadable"
             entries.append((ast.repository_id, module_path, content_digest))
