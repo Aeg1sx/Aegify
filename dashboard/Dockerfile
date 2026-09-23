@@ -46,9 +46,11 @@ COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/prisma-schema-engine ./prisma-schema-engine
 COPY --from=runtime-deps /app/node_modules ./node_modules
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/scripts/prepare-database.mjs ./scripts/prepare-database.mjs
+COPY --from=builder /app/src/lib/prisma.ts /app/src/lib/database-runtime.ts ./src/lib/
 
 USER nextjs
 EXPOSE 3000
 ENV HOSTNAME="0.0.0.0"
 ENV PRISMA_SCHEMA_ENGINE_BINARY="/app/prisma-schema-engine"
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && exec node server.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node scripts/prepare-database.mjs && exec node server.js"]

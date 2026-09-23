@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test src/lib/*.test.ts",
-    "test:access": "node scripts/test-project-access.mjs"
+    "test:access": "node scripts/test-project-access.mjs",
+    "worker": "node scripts/scan-worker.mjs",
+    "db:prepare": "prisma migrate deploy && node scripts/prepare-database.mjs"
   },
   "dependencies": {
     "geist": "1.7.2",

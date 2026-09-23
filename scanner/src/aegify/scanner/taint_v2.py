@@ -193,9 +193,9 @@ class StructuredTaintAnalyzer:
         heap_taints: dict[str, _TraceMap] = defaultdict(dict)
         heap_points: dict[str, set[str]] = defaultdict(set)
         self._seed_sources_and_sinks(parameter_taints)
-        active_contexts: set[tuple[str, _CallString]] = {
-            (function_id, ()) for function_id in self._contexts
-        }
+        active_contexts: set[tuple[str, _CallString]] = set()
+        for function_id in sorted(self._contexts):
+            self._activate_context(active_contexts, function_id, ())
 
         flows: dict[tuple[str, str, int, str, _CallString], TaintFlow] = {}
         limit = min(

@@ -130,11 +130,11 @@ export default function ProjectDetailPage() {
       });
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || "Repository AI scan failed");
+        throw new Error(result.error || "Could not queue the repository scan");
       }
-      await fetchProject();
+      router.push(`/scans/${result.scanId}`);
     } catch (error) {
-      setScanError(error instanceof Error ? error.message : "Repository AI scan failed");
+      setScanError(error instanceof Error ? error.message : "Could not queue the repository scan");
     } finally {
       setScanning(false);
     }
@@ -217,12 +217,12 @@ export default function ProjectDetailPage() {
                   {scanning ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                      Scanning...
+                      Queuing...
                     </>
                   ) : (
                     <>
                       <ScanSearch className="h-4 w-4 mr-1" />
-                      Scan from Repo
+                      Start source scan
                     </>
                   )}
                 </Button>

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/severity-badge";
 import { StatusBadge } from "@/components/status-badge";
 import { SeverityChart } from "@/components/severity-chart";
+import { ScanJobPanel } from "@/components/scan-job-panel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +59,9 @@ export default function ScanDetailPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterSeverity, setFilterSeverity] = useState<string>("");
+  const refreshScan = useCallback(() => {
+    fetch(`/api/scans/${params.id}`, { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => { if (data) setScan(data); });
+  }, [params.id]);
 
   useEffect(() => {
     fetch(`/api/scans/${params.id}`)
@@ -129,12 +133,14 @@ export default function ScanDetailPage() {
       {scan.status !== "completed" && (
         <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
           <p className="font-semibold">
-            {scan.status === "partial" ? "Partial analysis" : scan.status === "failed" ? "Analysis failed" : "Analysis in progress"}
+            {scan.status === "partial" ? "Partial analysis" : scan.status === "failed" ? "Analysis failed" : scan.status === "cancelled" ? "Analysis cancelled" : "Analysis in progress"}
           </p>
           <p className="mt-1">Coverage is incomplete. An empty result does not mean this code is free of vulnerabilities.</p>
           {scan.progressMessage && <p className="mt-2 text-muted-foreground break-words">{scan.progressMessage}</p>}
         </div>
       )}
+
+      <ScanJobPanel key={String(params.id)} scanId={String(params.id)} onFinished={refreshScan} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card>

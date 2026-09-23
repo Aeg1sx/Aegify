@@ -12,7 +12,7 @@ export function isProjectRole(value: unknown): value is ProjectRole { return PRO
 export function workspaceAdminEmails(env: AuthEnvironment): string[] {
   return (env.AUTH_ADMIN_EMAILS || "").split(",").map(normalizeEmail).filter((value): value is string => value !== null);
 }
-export async function resolvePrincipal(db: PrismaClient, userId: string | undefined, env: AuthEnvironment): Promise<AccessPrincipal> {
+export async function resolvePrincipal(db: PrismaClient | Prisma.TransactionClient, userId: string | undefined, env: AuthEnvironment): Promise<AccessPrincipal> {
   if (env.NODE_ENV !== "production" && !env.AUTH_SECRET) return { userId: null, email: null, workspaceAdmin: true, development: true };
   if (!userId) throw new AccessDenied(401, "Authentication required.");
   const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, email: true, disabled: true } });

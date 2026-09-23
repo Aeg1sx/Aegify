@@ -49,8 +49,7 @@ def _load_bundled_yaml_rules() -> int:
     Resolution order:
     1. Bundled rules inside installed package (aegify/bundled_rules/)
     2. Development mode: rules/ relative to package source tree
-    3. Development mode: rules/ relative to working directory
-    4. Development mode: rules/ one level up from working directory
+    3. Development mode: rules/ in the trusted monorepo containing this package
     """
     from aegify.rules.yaml_rule import load_and_register_yaml_rules
 
@@ -65,8 +64,7 @@ def _load_bundled_yaml_rules() -> int:
     # Priority 2+: Development mode fallbacks
     candidates = [
         Path(__file__).resolve().parent.parent.parent.parent / "rules",
-        Path.cwd() / "rules",
-        Path.cwd().parent / "rules",
+        Path(__file__).resolve().parents[4] / "rules",
     ]
     for rules_dir in candidates:
         if rules_dir.exists():

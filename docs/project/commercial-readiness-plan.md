@@ -19,11 +19,11 @@ permissions and immutable source snapshots.
 | Scan health | Failed, partial, unsupported and successful analysis are distinguishable in CLI, SARIF, dashboard and CI | Failure injection, truncation controls, upload integration | In progress |
 | Evaluation | Order-independent matching, explicit scope, positive/negative cases, per-rule/language/CWE results, uncertainty and held-out evaluation | Versioned source/label digests, independently reviewed labels, regression CI | In progress |
 | Analysis fidelity | Accurate parser diagnostics, typed sources/sinks/sanitizers, validated paths, framework and alias models | Supported-stack matrix and positive/negative semantic regression cases | In progress |
-| Shared scan service | UI, CLI and CI invoke the same engine and preserve the same evidence | End-to-end scan/upload/review tests and failure recovery | Pending |
+| Shared scan service | UI, CLI and CI invoke the same engine and preserve the same evidence | End-to-end scan/upload/review tests and failure recovery | In progress |
 | Repository context | Collision-safe multi-repository and monorepo identity, dependencies, snapshots and incremental invalidation | Cross-repository fixtures; incremental/full result equivalence | Pending |
 | Rule authoring | Guided templates, schema diagnostics, source/sink/propagation explanations, preview and regression cases | Author a rule, preview matches, export and run it in CI | Pending |
 | AI review | Bounded source browsing and evidence tools for threat modeling and supplied-finding review, abstention, triage and remediation advice | Tool-contract tests, source-bound citations, model comparison and repeated-run evaluations | Pending |
-| Agent operations | Durable jobs, logs, tool spans, evidence events, cancellation, retry, budgets and cost accounting | Worker interruption/recovery tests and dashboard observation | Pending |
+| Agent operations | Durable jobs, logs, tool spans, evidence events, cancellation, retry, budgets and cost accounting | Worker interruption/recovery tests and dashboard observation | In progress |
 | Provider support | Claude Code and Codex adapters with explicit models, bounded read-only tools and reproducible traces | Local contract tests plus separately recorded live-provider checks | Pending |
 | Product experience | Clear analysis scope, uncertainty, repository navigation, data flow/graph views and triage workflow | Browser checks of the complete user flow and accessibility | Pending |
 | Open-source evaluation | Pinned Juice Shop, DVWA and other relevant source corpora, with support gaps reported honestly | Static-only runs, scope inventory, reviewed labels and documented results | Pending |
@@ -154,8 +154,9 @@ models now distinguish HTTP/UI methods, with eight positive/negative/bounded
 regressions; the optional CLI test uses the repository's fixed virtualenv path.
 The updated local self-scan completed without blocking findings or analysis gaps;
 all 468 scanner tests passed (one skipped), 65 production HTTP/CLI checks passed,
-and type/lint checks passed. Updated remote CI and the PR merge remain separate
-gates.
+and type/lint checks passed. All required remote CI, CodeQL and self-scan checks
+passed on head `f27de260b2597e95dda05e51abb65247dd39f29a`. PR #42 merged at
+`95f52fc79fbeef9fbb7e956d73540cc19e653c78` with a verified GitHub signature.
 This checkpoint does not establish live SSO, production deployment, durable scan
 workers, backups/restore drills, retention, immutable external audit storage, or
 commercial detection accuracy. Those acceptance rows remain open.
@@ -163,3 +164,43 @@ commercial detection accuracy. Those acceptance rows remain open.
 Post-foundation code-scanning snapshot: 601 Aegify candidates and five Scorecard
 alerts remain open. Removing result caps intentionally retained additional
 candidates; the counts are not a precision or security verdict.
+
+## Durable source worker checkpoint: 2026-09-24
+
+Connected project scans now queue the same Python SAST engine used by the CLI.
+Saved jobs use renewable leases, fenced writes, commit pinning, encrypted source
+snapshots, bounded retry, cancellation and project-permission rechecks. Artifact
+publication is one transaction shared with CI/browser uploads. Late failures roll
+back findings, identities, graphs, endpoints, absence updates and final job state.
+Older scan requests cannot replace a newer published baseline.
+
+The worker uses bundled rules and explicit configuration, passes no repository
+credentials to the Python child, and does not execute source, install dependencies
+or load repository rules. Provider retrieval, source bytes, taint contexts, child
+output and elapsed time are bounded. Resource limits and unsupported languages
+remain partial results. The UI exposes queue state, activity, commit and digests,
+with maintainer-only cancellation and retry. Docker Compose adds a non-root,
+read-only worker using the dashboard's local SQLite volume.
+
+Local checkpoint: 480 scanner tests passed (one skipped), 94 dashboard tests passed
+including real Python analysis and cancellation, and type/lint/production-build
+checks passed. Publication tests inject late artifact errors, stale worker leases,
+revoked access and out-of-order completion. Native process recovery and encrypted
+source reuse are also covered. The production server passed 82 HTTP/CLI checks;
+isolated Chrome verified queue, cancellation, retry and viewer restrictions.
+The first worker self-scan analyzed 284 files in 193.54 seconds, with 694 advisory
+candidates, no blocking findings and no analysis gaps.
+
+A two-client contention check exposed SQLite deferred-transaction conflicts.
+Startup now enables WAL, and write transactions retry only the pinned adapter's
+busy errors, with four bounded attempts and jitter. The concurrent-claim regression
+requires both calls to settle successfully and exactly one lease to be issued.
+The final local self-scan analyzed 286 files in 201.75 seconds with 694 advisory
+candidates, zero blocking findings and no analysis gaps. The final production
+HTTP/browser rerun passed all 82 checks. Remote container checks remain pending
+for this branch.
+
+This worker phase covers static source scans. Durable AI review jobs, independently
+reviewed accuracy labels, private forge connectors, live SSO, operator deployment,
+backup/restore and full retention acceptance remain open. GitHub.com/GitLab.com
+connectors select source/config files; other forges can use project-bound CI uploads.

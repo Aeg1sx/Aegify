@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AuthEnvironment } from "./auth-policy.ts";
 import { AccessDenied, authorizeProject, type AccessPrincipal } from "./project-access.ts";
 
@@ -27,7 +27,7 @@ export async function revokeProjectToken(db: PrismaClient, principal: AccessPrin
     await tx.auditEvent.create({ data: { projectId, actorId: principal.userId || "development", action: "service_token.revoke", targetId: tokenId } });
   });
 }
-export async function authenticateUploadToken(db: PrismaClient, token: string, env: AuthEnvironment, now = new Date()): Promise<{ projectId: string; actorId: string } | null> {
+export async function authenticateUploadToken(db: PrismaClient | Prisma.TransactionClient, token: string, env: AuthEnvironment, now = new Date()): Promise<{ projectId: string; actorId: string } | null> {
   if (!token || token.length > 512) return null;
   const digest = hash(token);
   if (env.AEGIFY_UPLOAD_TOKEN && env.AEGIFY_UPLOAD_PROJECT_ID && timingSafeEqual(Buffer.from(digest, "hex"), Buffer.from(hash(env.AEGIFY_UPLOAD_TOKEN), "hex"))) {

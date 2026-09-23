@@ -48,6 +48,41 @@ services:
     tmpfs:
       - /tmp
       - /app/.next/cache
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/auth/config').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile.worker
+    init: true
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 15s
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    mem_limit: 2g
+    cpus: "2.0"
+    pids_limit: 128
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-file:/data/dev.db}
+      AUTH_SECRET: ${AUTH_SECRET:?Set the shared dashboard authentication secret}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?Set the shared dashboard encryption secret}
+      AUTH_ADMIN_EMAILS: ${AUTH_ADMIN_EMAILS:?Set exact workspace administrator emails}
+      AUTH_ALLOWED_EMAILS: ${AUTH_ALLOWED_EMAILS:-}
+      AUTH_ALLOWED_DOMAINS: ${AUTH_ALLOWED_DOMAINS:-}
+    volumes:
+      - dashboard-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,size=536870912
 
 volumes:
   dashboard-data:

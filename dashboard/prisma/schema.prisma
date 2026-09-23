@@ -28,6 +28,7 @@ model Project {
   findingIdentities FindingIdentity[]
   members ProjectMember[]
   serviceTokens ProjectServiceToken[]
+  scanJobs ScanJob[]
 
   @@index([name])
   @@index([userId])
@@ -64,10 +65,69 @@ model Scan {
   llmJobs    LlmJob[]
   agentRuns  AgentRun[]
   apiSpecifications ApiSpecification[]
+  scanJob ScanJob?
 
   @@index([createdAt])
   @@index([repository])
   @@index([projectId])
+}
+
+model ScanJob {
+  id                String   @id @default(cuid())
+  scanId            String   @unique
+  projectId         String
+  requestedBy       String
+  provider          String
+  ownerSlug         String
+  providerRepoId    String   @default("")
+  requestedRef      String
+  commitSha         String   @default("")
+  sourceDigest      String   @default("")
+  sourceManifest    String   @default("{}")
+  sourceCiphertext  String?
+  resultDigest      String   @default("")
+  resultManifest    String   @default("{}")
+  status            String   @default("queued")
+  activeKey         String?  @unique
+  attempts          Int      @default(0)
+  maxAttempts       Int      @default(3)
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  heartbeatAt       DateTime?
+  workerId          String   @default("")
+  nextAttemptAt     DateTime @default(now())
+  cancelRequestedAt DateTime?
+  errorCode         String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  completedAt       DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  events ScanJobEvent[]
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([leaseExpiresAt])
+  @@index([projectId, createdAt])
+}
+
+model ScanJobEvent {
+  id        Int      @id @default(autoincrement())
+  jobId     String
+  code      String
+  message   String
+  details   String   @default("{}")
+  createdAt DateTime @default(now())
+  job ScanJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@index([jobId, id])
+}
+
+model ScanWorker {
+  id          String   @id
+  version     String
+  lastSeenAt  DateTime @default(now())
+  startedAt   DateTime @default(now())
+  @@index([lastSeenAt])
 }
 
 model Finding {

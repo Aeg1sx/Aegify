@@ -48,6 +48,9 @@ export async function PATCH(
   const access = await requireResource(request, "scan", id, "maintainer");
   if (access instanceof Response) return access;
   const body = await request.json();
+  if (await prisma.scanJob.findUnique({ where: { scanId: id }, select: { id: true } })) {
+    return NextResponse.json({ error: "Worker-owned scans publish progress through their active lease." }, { status: 409 });
+  }
 
   const scan = await prisma.scan.update({
     where: { id },

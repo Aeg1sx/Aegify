@@ -328,11 +328,11 @@ jobs:
 ## Docker
 
 ```bash
-# Start dashboard
+# Start dashboard and its durable source scanner
 # First configure AUTH_SECRET, ENCRYPTION_SECRET, an authentication method,
 # AUTH_ALLOWED_EMAILS (or AUTH_ALLOWED_DOMAINS), AUTH_ADMIN_EMAILS and AUTH_URL
 # in a local ignored .env or via Vault. Issue CI tokens inside each project.
-docker compose up dashboard
+docker compose up -d --build dashboard worker
 
 # Run a scan
 docker compose run scanner scan /scan/target --output sarif --output-file /scan/target/results.sarif --no-llm
@@ -343,6 +343,10 @@ Password accounts require email-first verification (`AUTH_LOCAL_ENABLED=true`,
 There is no default account or public signup: explicitly allow workspace identities.
 Back up the database and apply migrations before deployment. See
 [authentication setup](docs/operations/authentication.mdx) and
+[worker operations](docs/operations/self-hosted-workers.mdx). The project's
+**Start source scan** action queues the same Python engine used by the CLI;
+the scan page shows progress, recovery attempts, source/report digests, cancel,
+and retry controls. AI review remains a separate optional step; see
 [AI provider configuration](docs/operations/ai-providers.mdx).
 
 ## Project Structure

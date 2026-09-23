@@ -1,0 +1,116 @@
+---
+title: Self-hosted scan workers
+description: Install, observe and recover source scans in one internal Aegify workspace.
+---
+
+## Start the team installation
+
+Configure the [authentication allowlist and workspace administrators](/operations/authentication)
+and keep the database and encryption secret backed up together. From the repository root:
+
+```bash
+docker compose up -d --build dashboard worker
+docker compose ps
+docker compose logs --tail=100 worker
+```
+
+The dashboard applies migrations and enables SQLite WAL before it becomes healthy. The worker then starts
+with the same local SQLite volume, admission configuration and encryption key.
+Both containers use UID 1001 for the data volume. This deployment is a single-host
+team installation; do not place SQLite on an NFS share or treat it as a multi-host
+database service.
+
+Readers and the worker share WAL snapshots; lock contention retries the entire
+rolled-back write transaction up to four times with jitter. A failed retry remains
+an error. See [SQLite's isolation contract](https://www.sqlite.org/isolation.html).
+Use SQLite's online backup API, or stop both services before copying database
+files. Copying only the live `.db` file can omit committed WAL data.
+
+The worker image pins its Python, Node and uv base images. Its build context is an
+explicit allowlist excluding local credentials, databases and reports. It runs as
+a non-root user with a read-only root filesystem, a temporary workspace, no added
+capabilities, a two-CPU/two-GiB limit and a 128-process limit.
+
+## Scan a connected project
+
+1. A project administrator connects the project repository and grants project roles.
+2. Each scanning maintainer connects their own GitHub.com or GitLab.com account.
+3. Select **Start source scan**. The request immediately returns a saved job and
+   opens its scan page.
+4. Follow the progress stages and activity log. Maintainers can cancel an active
+   job or retry an incomplete scan at the same pinned commit.
+
+The worker reads only the requesting account's repository credential. It rechecks
+project permission, account admission, archival and repository identity when claiming,
+renewing and publishing a job. Removing project access or account admission stops
+further publication. Browser/CI
+uploads use the same artifact publication transaction as worker results.
+
+The built-in repository connector currently supports GitHub.com and GitLab.com.
+For private forge installations, run the scanner in that forge's CI and upload
+SARIF using a project-bound CI credential.
+
+## Recovery and publication
+
+Each worker runs one job at a time; a project has at most one active queued source
+scan. A job has a two-minute lease, renewed every ten seconds. A restarted worker
+can claim an expired lease. Lease tokens fence progress, source and final result
+writes, so an older process cannot publish after recovery or cancellation.
+
+The first resolved commit is saved before its tree is fetched. After fetching,
+the exact file bytes are hashed and encrypted in the database. Retries reuse this
+snapshot; an interruption before snapshot storage refetches the pinned commit.
+There are at most three attempts, each with a fifteen-minute deadline. Failure
+and exhausted attempts remain visible; they cannot become an empty successful scan.
+
+Findings, identities, graphs, endpoints, absence updates, final audit and job
+completion commit together. A late import error rolls all of them back. A scan
+requested before a newer completed scan does not replace that newer baseline.
+
+## Analysis scope and limits
+
+The service runs the trusted Python `ScanEngine` with bundled rules, AI disabled,
+an in-memory analysis store, low-severity inclusion, a 50,000-context taint bound,
+and finding limits of 500 per rule and 200 per file. Reaching a bound is reported
+as partial analysis. Repository configuration, custom rules, builds and application
+code are never executed or auto-loaded. Use the CLI and project CI upload workflow
+for operator-reviewed custom configurations and larger source scopes.
+
+The fetcher admits source/config extensions and excludes dependencies, build
+outputs and lockfiles. It fetches at most 1,000 files, 500 KiB per file and 10 MiB
+in total. Provider requests reject redirects and have bounded body sizes and
+twenty-second deadlines. Unsupported source languages, failed file fetches,
+truncated trees and input limits remain visible as coverage gaps.
+
+This provider-selected snapshot declares `analysisScope: files`. It can update
+observed findings, but it cannot prove that unseen historical findings are absent.
+Existing CLI/CI reports can declare their broader completed scope separately.
+PHP remains unsupported; a DVWA backend scan is not a complete supported scan.
+
+## Evidence and retention
+
+The scan page exposes commit, source snapshot and report digests. Its job API also
+records the worker's engine/rule/parser fingerprints and analysis configuration.
+These identify the analysis inputs; they do not establish detection accuracy or
+runtime impact. Source code and credentials are omitted from activity messages.
+
+Encrypted source snapshots expire seven days after completion, failure or
+cancellation. The worker clears expired source payloads during hourly housekeeping.
+Source manifests, result manifests, audit records and scan results remain until
+the project is explicitly removed; full configurable retention and backup/restore
+drills remain separate operational acceptance work. Protect the encryption secret
+alongside backups. Losing it prevents snapshot recovery and decryption of saved
+integration settings.
+
+## Local development
+
+Install the locked scanner virtualenv at `scanner/.venv` and the dashboard's locked
+Node dependencies. Export the same database and auth environment as the dashboard,
+run `npm run db:prepare`, then run `npm run worker` from `dashboard/`.
+The worker uses the fixed repository virtualenv path and passes no OAuth or
+integration credentials to its Python child. Windows hosts should use the container.
+
+The worker's native TypeScript entry uses explicit relative `.ts` imports, following
+[Node's type-stripping contract](https://nodejs.org/api/typescript.html).
+Docker-specific context exclusion follows the
+[Docker build-context contract](https://docs.docker.com/build/concepts/context/).
