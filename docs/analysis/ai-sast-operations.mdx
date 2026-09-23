@@ -71,6 +71,12 @@ paths, attack-surface evidence, multi-repository workspace summaries, and
 non-executing harness plans. Unknown tools, write-capable specifications,
 oversized arguments, and oversized results are rejected. Common credential
 shapes are redacted before model use and before generated output is persisted.
+The call-path tool and agent trace share one structural completeness check:
+the entry handler, repository and source range must match; every symbol and
+directed link must be present; and the entire finding range must fit the sink.
+Legacy or disconnected paths remain incomplete. Paths beyond 100 steps carry an
+explicit truncation flag and evidence gap. This describes the supplied static
+artifact; runtime observations and demonstrated impact have separate evidence states.
 Direct provider credentials are never forwarded to custom gateway endpoints;
 those endpoints receive only their explicitly configured headers. Destructive
 proof templates are replaced with a blocked marker instead of being displayed
