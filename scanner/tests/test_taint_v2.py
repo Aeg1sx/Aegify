@@ -344,6 +344,25 @@ def test_typescript_property_source_uses_javascript_model(tmp_path: Path):
     assert flows[0].sink.sink_type == "os_command"
 
 
+def test_unresolved_import_keeps_conservative_return_taint(tmp_path: Path):
+    (tmp_path / "handler.ts").write_text(
+        'import { transform } from "external-package";\n'
+        "function handler(req) {\n"
+        "  const query = transform(req.query.statement);\n"
+        "  db.query(query);\n"
+        "}\n"
+    )
+    (tmp_path / "unrelated.ts").write_text(
+        'export function transform(value) { return "SELECT 1"; }\n'
+    )
+    flows, summary = _analyze(tmp_path)
+    assert not summary.truncated
+    assert len(flows) == 1
+    assert flows[0].sink.sink_type == "sql_query"
+    assert not flows[0].sanitized
+    assert all(not step.file_path.endswith("unrelated.ts") for step in flows[0].path)
+
+
 def test_external_response_object_property_reaches_sensitive_sink(tmp_path: Path):
     (tmp_path / "remote.py").write_text(
         "def execute_remote_job():\n"

@@ -45,6 +45,11 @@ next-env.d.ts
 *.sqlite3
 *.sqlite*-wal
 *.sqlite*-shm
+*.aegify
+/private-backups/
+.aegify-backup-*/
+.aegify-restore-*/
+aegify-backup-check-*/
 
 # Generated analysis, compiler, and package artifacts
 target/

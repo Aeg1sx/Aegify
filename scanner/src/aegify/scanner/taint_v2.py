@@ -28,6 +28,7 @@ from aegify.models import (
     TaintSink,
     TaintSource,
 )
+from aegify.scanner.import_bindings import declared_import_names
 from aegify.text import scrub_quoted_strings
 
 _TraceMap = dict[str, "_Trace"]
@@ -160,6 +161,7 @@ class StructuredTaintAnalyzer:
         self._call_graph: Any = None
         self._contexts: dict[str, _FunctionContext] = {}
         self._functions_by_name: dict[str, list[str]] = defaultdict(list)
+        self._declared_imports: set[tuple[str, str]] = set()
         self._context_for_call: dict[int, str] = {}
         self._edge_targets: dict[tuple[str, str, int, int], set[str]] = defaultdict(set)
         self._source_traces: dict[tuple[str, int], _TraceMap] = defaultdict(dict)
@@ -183,6 +185,9 @@ class StructuredTaintAnalyzer:
     ) -> tuple[list[TaintFlow], TaintAnalysisSummary]:
         self._program_graph = program_graph
         self._call_graph = call_graph
+        self._declared_imports = {
+            (ast.file_path, name) for ast in file_asts for name in declared_import_names(ast)
+        }
         self._build_contexts(file_asts)
         self._index_call_targets()
 
@@ -1178,6 +1183,12 @@ class StructuredTaintAnalyzer:
         if semantic_targets:
             return sorted(semantic_targets)
 
+        binding = (call.receiver or call.callee).split(".", 1)[0]
+        if (call.file_path, binding) in self._declared_imports:
+            # A declared import without an exact source or compiler target is
+            # unknown. Do not undo the call graph's import decision by choosing
+            # a global same-name function in another file/repository.
+            return []
         candidates = self._functions_by_name.get(call.callee, [])
         return candidates if len(candidates) == 1 else []
 

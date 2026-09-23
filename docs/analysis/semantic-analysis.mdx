@@ -154,6 +154,11 @@ resolution is repository-scoped and recognizes language-native dotted, slash,
 and `::` module forms, JS/TS extensionless relative imports, directory index
 modules, Go package directories, Rust `crate` paths, and aliased Python/JS/TS
 imports. Ambiguous same-name targets remain unresolved instead of being guessed.
+Unresolved declared imports cannot fall back to unrelated same-name functions.
+Node's `node:` namespace never resolves
+to a repository file. Unknown calls retain conservative argument-to-return taint
+propagation, so omitting an invented graph edge does not imply that a library
+sanitizes its input.
 
 This is a source-level heuristic graph. `Yes` in the support matrix means the
 parser-backed contract test succeeds for that language; it does not mean

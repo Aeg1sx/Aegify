@@ -349,6 +349,10 @@ the scan page shows progress, recovery attempts, source/report digests, cancel,
 and retry controls. AI review remains a separate optional step; see
 [AI provider configuration](docs/operations/ai-providers.mdx).
 
+The [backup and recovery CLI](docs/operations/backup-recovery.mdx) creates encrypted
+WAL-consistent snapshots and restores to a new database with accounts, old sessions,
+CI credentials and interrupted work disabled pending operator review.
+
 ## Project Structure
 
 ```

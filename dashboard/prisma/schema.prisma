@@ -489,6 +489,7 @@ model User {
   username      String?   @unique
   passwordHash  String?
   sessionVersion Int      @default(0)
+  sessionEpoch   String   @default("") // Rotated after recovery; counters alone can repeat after rollback.
   disabled      Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

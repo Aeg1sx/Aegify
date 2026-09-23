@@ -6,7 +6,8 @@ description: Install, observe and recover source scans in one internal Aegify wo
 ## Start the team installation
 
 Configure the [authentication allowlist and workspace administrators](/operations/authentication)
-and keep the database and encryption secret backed up together. From the repository root:
+and configure [encrypted backups and separate key custody](/operations/backup-recovery).
+From the repository root:
 
 ```bash
 docker compose up -d --build dashboard worker
@@ -23,8 +24,9 @@ database service.
 Readers and the worker share WAL snapshots; lock contention retries the entire
 rolled-back write transaction up to four times with jitter. A failed retry remains
 an error. See [SQLite's isolation contract](https://www.sqlite.org/isolation.html).
-Use SQLite's online backup API, or stop both services before copying database
-files. Copying only the live `.db` file can omit committed WAL data.
+Use the [operator backup CLI](/operations/backup-recovery), which captures a
+consistent live snapshot, or stop both services before copying database files.
+Copying only the live `.db` file can omit committed WAL data.
 
 The worker image pins its Python, Node and uv base images. Its build context is an
 explicit allowlist excluding local credentials, databases and reports. It runs as
@@ -97,10 +99,11 @@ runtime impact. Source code and credentials are omitted from activity messages.
 Encrypted source snapshots expire seven days after completion, failure or
 cancellation. The worker clears expired source payloads during hourly housekeeping.
 Source manifests, result manifests, audit records and scan results remain until
-the project is explicitly removed; full configurable retention and backup/restore
-drills remain separate operational acceptance work. Protect the encryption secret
-alongside backups. Losing it prevents snapshot recovery and decryption of saved
-integration settings.
+the project is explicitly removed. The [backup and recovery procedure](/operations/backup-recovery)
+includes access invalidation and an isolated restore drill. Full configurable
+retention and deployment-specific recovery objectives remain separate acceptance
+work. Protect the original encryption secret separately from archives. Losing it
+prevents snapshot recovery and decryption of saved integration settings.
 
 ## Local development
 
