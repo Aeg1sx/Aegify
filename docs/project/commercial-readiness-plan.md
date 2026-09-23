@@ -317,8 +317,12 @@ failure. Three final focused recovery tests passed after the last assertion
 change. The production build, TypeScript, ESLint and 87 production HTTP/CLI checks
 passed; the HTTP checks reject an old cookie after epoch rotation and admit a new
 cookie. Documentation validation, links and accessibility checks passed with the
-existing color recommendations. Remote exact-head checks and container acceptance
-remain pending until the recovery PR completes.
+existing color recommendations. All required remote checks, CodeQL and self-scan
+passed on `fe44b5796fe8d80a5612402798b5833a83815ce4`. The read-only non-root Linux
+worker passed 15 offline contract tests, including all three recovery tests;
+container startup applied all 18 migrations and retained data across restart.
+PR #47 merged at `1e7c53120028b3b1aafbe552e31b418e0282392a` with a verified
+GitHub signature.
 
 The first recovery self-scan reported four blocking SQL candidates at two bound
 operator queries. Their source paths depended on `node:path.resolve` incorrectly
@@ -339,3 +343,35 @@ database promotion, integration review, new project CI credentials and measured
 recovery time. No live production installation was backed up or switched. Scheduled
 backups, off-host transport, configurable retention, external credential rotation
 and installation-specific RPO/RTO acceptance remain open.
+
+## OAuth scope rule precision: 2026-09-24
+
+The alert snapshot captured before PR #47 merged contains 714 open alerts
+(709 Aegify and five Scorecard), including 68 `AEG-OAUTH-004` alerts. Counts are a
+dated inventory, not individual vulnerability verdicts. Inspecting matched source
+identified file-wide joins between generic `scope` names and unrelated privilege
+keywords, plus `get_token` substring matches on `get_token_usage()`.
+
+The rule now binds selected OAuth authorization/provider calls to their own scope
+arguments, matches explicit OAuth configuration names and bounded literal values,
+and requires exact token-exchange methods with OAuth context. Existing callback
+checks remain function-scoped. Findings retain advisory/candidate status and ask
+for application-policy and library/provider review. Scope differences alone are
+not described as a confirmed vulnerability; a provider may grant fewer privileges.
+
+Thirty bundled-rule precision checks pass, including five explicit string/list
+scope positives, six nearby negative cases, validated callbacks and a 1,000-item
+metadata bound. A paired evaluation over the same 296-file self-scan cohort changed
+69 raw OAuth matches to zero: 67 file-wide assignment matches and two callee
+substring matches. `scanner/benchmarks/rule-regressions/oauth-scope-v1.json`
+records the baseline commit, old/new rule hashes, affected file hashes and lines.
+These regression fixtures and candidate counts do not establish product precision,
+recall, runtime exploitability, or independently reviewed real-world labels.
+The full scanner suite passes 537 tests with one skip. Ruff and formatting pass;
+the changed rule file passes strict audit with four executable rules, 15 executable
+patterns and no errors or warnings. The full self-scan completes 296 files in
+150.5 seconds with 677 advisory candidates, zero blocking findings and no reported
+analysis gaps. The dashboard's YAML validation accepts the four definitions with
+no diagnostics; documentation validation, links and accessibility checks pass
+with the existing color recommendations. Remote exact-head checks and post-merge
+GitHub alert state remain separate gates.

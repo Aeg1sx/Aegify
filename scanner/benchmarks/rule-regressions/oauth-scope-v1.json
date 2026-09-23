@@ -1,0 +1,573 @@
+{
+  "baseCommit": "1e7c53120028b3b1aafbe552e31b418e0282392a",
+  "rule": "AEG-OAUTH-004",
+  "files": 296,
+  "mode": "static-pattern-comparison",
+  "baselineRuleDigest": "sha256:b61b9876eb4d3e32a33149016851b678549df00a95ae7e42cea164c76be0e020",
+  "changedRuleDigest": "sha256:c24fedf8662c02542d4bd3477ec97a47c01697d08cefc81a1d952b37336f5ab3",
+  "baselineCandidates": 69,
+  "changedCandidates": 0,
+  "removed": [
+    {
+      "path": "dashboard/scripts/test-project-access.mjs",
+      "line": 106,
+      "sourceDigest": "sha256:e3894ed5524044bc2f41fefad10e93df37b689553e1828396aab9151da4c5c5d",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/scripts/test-project-access.mjs",
+      "line": 173,
+      "sourceDigest": "sha256:e3894ed5524044bc2f41fefad10e93df37b689553e1828396aab9151da4c5c5d",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api-specs/page.tsx",
+      "line": 118,
+      "sourceDigest": "sha256:0b9abe3ec7ed902e28d7e924d2d7d9f3c7e17a838bc18554e34c9a1205cebb40",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/agent-runs/[id]/approvals/[approvalId]/route.ts",
+      "line": 26,
+      "sourceDigest": "sha256:0eed76ee0b8687fe228ce4a75666514f73d85162d55aaa20ef22fa6dcf993150",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/endpoints/route.ts",
+      "line": 1,
+      "sourceDigest": "sha256:d970c40ddfac8739bfe8886e42a0ed394f1b5cbc6827d05fd37ef5868f3c9e60",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/endpoints/route.ts",
+      "line": 106,
+      "sourceDigest": "sha256:d970c40ddfac8739bfe8886e42a0ed394f1b5cbc6827d05fd37ef5868f3c9e60",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/findings/route.ts",
+      "line": 1,
+      "sourceDigest": "sha256:432f5ac9616df9cae83e4a3e8d240f5ab418aa82ebf92740b4399ab95160b6b0",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/findings/route.ts",
+      "line": 78,
+      "sourceDigest": "sha256:432f5ac9616df9cae83e4a3e8d240f5ab418aa82ebf92740b4399ab95160b6b0",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/findings/rules/route.ts",
+      "line": 3,
+      "sourceDigest": "sha256:a1d6a6e7aeb7fb67202802e524bab26413849e46daa8de80c8316d507b718cf2",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/findings/rules/route.ts",
+      "line": 9,
+      "sourceDigest": "sha256:a1d6a6e7aeb7fb67202802e524bab26413849e46daa8de80c8316d507b718cf2",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/projects/route.ts",
+      "line": 1,
+      "sourceDigest": "sha256:55943d57e8cfb49237e63da01196b506ffaa55f2f5980aac561b35fba99bea8e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/projects/route.ts",
+      "line": 12,
+      "sourceDigest": "sha256:55943d57e8cfb49237e63da01196b506ffaa55f2f5980aac561b35fba99bea8e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/scans/route.ts",
+      "line": 1,
+      "sourceDigest": "sha256:89f70cd6e2d5e41669c1dce444ffdaa6d342d3753f35458cd028a24781e1783d",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/app/api/scans/route.ts",
+      "line": 29,
+      "sourceDigest": "sha256:89f70cd6e2d5e41669c1dce444ffdaa6d342d3753f35458cd028a24781e1783d",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/access.ts",
+      "line": 6,
+      "sourceDigest": "sha256:bf138262a7662cf0f009e51e30bf1cb6d93bfd12088cdf719ae07349085b0825",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/agent-operations.ts",
+      "line": 94,
+      "sourceDigest": "sha256:eed0de6a5c821c48a73ced42cd17e63ca5493ae9e7acc37b2488674ea9ad9b3b",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/agent-operations.ts",
+      "line": 185,
+      "sourceDigest": "sha256:eed0de6a5c821c48a73ced42cd17e63ca5493ae9e7acc37b2488674ea9ad9b3b",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/auth.ts",
+      "line": 19,
+      "sourceDigest": "sha256:de05169f8c2d056dfd94c861bae5b49cdf779cb8e61fd9a75d45d2cd96f9815e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/auth.ts",
+      "line": 23,
+      "sourceDigest": "sha256:de05169f8c2d056dfd94c861bae5b49cdf779cb8e61fd9a75d45d2cd96f9815e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/backup.test.ts",
+      "line": 48,
+      "sourceDigest": "sha256:35c61cc8cd805164b4e3825f29e673206271594b53af3f89d1b09960276f1981",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/local-auth.ts",
+      "line": 69,
+      "sourceDigest": "sha256:7d12189c833936909d1e7d6242645360c57746f418f812ff9bad1dd19a036471",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/local-auth.ts",
+      "line": 72,
+      "sourceDigest": "sha256:7d12189c833936909d1e7d6242645360c57746f418f812ff9bad1dd19a036471",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/openapi-contract.ts",
+      "line": 94,
+      "sourceDigest": "sha256:7efa0054dda5a3545d7e94aca3b523a3166d39a69bbf756606631b0d2b886114",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/project-access.test.ts",
+      "line": 10,
+      "sourceDigest": "sha256:9da9e5c35aeccdf97f3e8d2ce6de98fed5be90a6663b15fa3ed4228273b4767a",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/project-access.ts",
+      "line": 23,
+      "sourceDigest": "sha256:5bf45466debf4b559d08ecd886d868733f92af1518a21d2dca0f38ef0b2ff5ce",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/project-access.ts",
+      "line": 28,
+      "sourceDigest": "sha256:5bf45466debf4b559d08ecd886d868733f92af1518a21d2dca0f38ef0b2ff5ce",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/project-tokens.ts",
+      "line": 7,
+      "sourceDigest": "sha256:b187efd06dc878f4d02f236dbaa92283ac88393a521dcf9aaac9b614fef2774a",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/project-tokens.ts",
+      "line": 17,
+      "sourceDigest": "sha256:b187efd06dc878f4d02f236dbaa92283ac88393a521dcf9aaac9b614fef2774a",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/sarif-evidence.test.ts",
+      "line": 22,
+      "sourceDigest": "sha256:a5e6c5687fcb45c9693f4e5f98ff39c60f4e12a444d0bb82508a219cce7e0ba7",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/sarif-evidence.test.ts",
+      "line": 29,
+      "sourceDigest": "sha256:a5e6c5687fcb45c9693f4e5f98ff39c60f4e12a444d0bb82508a219cce7e0ba7",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/sarif-import.ts",
+      "line": 184,
+      "sourceDigest": "sha256:017fe890eb9e347bf2867523380899da0c5cbcbc377994cf16831f533ec4448b",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/sarif-import.ts",
+      "line": 250,
+      "sourceDigest": "sha256:017fe890eb9e347bf2867523380899da0c5cbcbc377994cf16831f533ec4448b",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/scan-reconciliation.ts",
+      "line": 35,
+      "sourceDigest": "sha256:42196cb2e8be5825ce9b5cd5259f368807c06c577cf7636514335732716206ab",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/scan-reconciliation.ts",
+      "line": 37,
+      "sourceDigest": "sha256:42196cb2e8be5825ce9b5cd5259f368807c06c577cf7636514335732716206ab",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "dashboard/src/lib/settings-contract.test.ts",
+      "line": 25,
+      "sourceDigest": "sha256:5b4713d3602a806d9ec12d61e5a069f1b68abd55fdbed13cd849222225cd192c",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/agents/models.py",
+      "line": 147,
+      "sourceDigest": "sha256:8756ff6d4c4fe13435ccebab3f91bedce29121adc5e4d8b25cb32886fe6bd389",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/agents/models.py",
+      "line": 160,
+      "sourceDigest": "sha256:8756ff6d4c4fe13435ccebab3f91bedce29121adc5e4d8b25cb32886fe6bd389",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/agents/tools.py",
+      "line": 1,
+      "sourceDigest": "sha256:9effb959cba34f88b76988b984d27d6ed12602e1873d895bb59a7927dc233baa",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/cli.py",
+      "line": 178,
+      "sourceDigest": "sha256:d8d749a9835c1777eb6b46aa02de83bbc8dc89f961672d25b7fcffdf32449540",
+      "baselinePatterns": [
+        3
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/cli.py",
+      "line": 1462,
+      "sourceDigest": "sha256:d8d749a9835c1777eb6b46aa02de83bbc8dc89f961672d25b7fcffdf32449540",
+      "baselinePatterns": [
+        3
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/framework/spring.py",
+      "line": 92,
+      "sourceDigest": "sha256:874b3c252f0beccd635442199ad0c8bf5a9928141edb19ebd25e6206d48b316c",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/framework/spring.py",
+      "line": 102,
+      "sourceDigest": "sha256:874b3c252f0beccd635442199ad0c8bf5a9928141edb19ebd25e6206d48b316c",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/llm/sources.py",
+      "line": 151,
+      "sourceDigest": "sha256:45022afd5097bb1463df2e6ca9dc392528f606a1244c1e928474eecf2f012361",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/llm/sources.py",
+      "line": 279,
+      "sourceDigest": "sha256:45022afd5097bb1463df2e6ca9dc392528f606a1244c1e928474eecf2f012361",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/models.py",
+      "line": 715,
+      "sourceDigest": "sha256:6d744debe0af47e244c25243cc1c5a22cd0389c0c26610e1ab29a26034610b53",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/quality/benchmark.py",
+      "line": 32,
+      "sourceDigest": "sha256:0b791cd54d8a82b127c460c87d00dc2abe3b69e7d73ed1c6009dcd5141c4d009",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/quality/benchmark.py",
+      "line": 39,
+      "sourceDigest": "sha256:0b791cd54d8a82b127c460c87d00dc2abe3b69e7d73ed1c6009dcd5141c4d009",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/reporter/dashboard.py",
+      "line": 1,
+      "sourceDigest": "sha256:bf89747992c1c6411e05631ef2bb746cf33727d243a09d22208f25932f9502ef",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/reporter/sarif.py",
+      "line": 79,
+      "sourceDigest": "sha256:fdc8ec867f4a122cfc99733599848b464b3753c8539c88adae7edf38229ec4f2",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/rules/audit.py",
+      "line": 82,
+      "sourceDigest": "sha256:b557772de23adbf97ec0efbe7f88cf74b3be16e59b8159a702cf4435fe0260b9",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/rules/yaml_rule.py",
+      "line": 339,
+      "sourceDigest": "sha256:51a575be6f19074f00bda2aea1718bd0b2de57bd4c63c1a2094a9c11fa99bb1e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/rules/yaml_rule.py",
+      "line": 372,
+      "sourceDigest": "sha256:51a575be6f19074f00bda2aea1718bd0b2de57bd4c63c1a2094a9c11fa99bb1e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/runtime/evidence.py",
+      "line": 297,
+      "sourceDigest": "sha256:a5253df825b630f6da6723ab9ed58304b272b2d0ecbf7e3dcbc061490b86fadd",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/scanner/ast_parser.py",
+      "line": 373,
+      "sourceDigest": "sha256:cd87276a8b4f8f164a4df058f0fde65b566a1053511fc7c8e76e25489ce7122e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/scanner/ast_parser.py",
+      "line": 382,
+      "sourceDigest": "sha256:cd87276a8b4f8f164a4df058f0fde65b566a1053511fc7c8e76e25489ce7122e",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/scanner/dataflow.py",
+      "line": 499,
+      "sourceDigest": "sha256:508cb41f4001643fdea20b18bdf539581631653d96784a4a900b2394274c7118",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/scanner/dataflow.py",
+      "line": 525,
+      "sourceDigest": "sha256:508cb41f4001643fdea20b18bdf539581631653d96784a4a900b2394274c7118",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/scanner/engine.py",
+      "line": 167,
+      "sourceDigest": "sha256:96df7b732e9766596037a03653d99af0ee1fc52b30c09bdcdf4adec4dcbcb0f8",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/scanner/engine.py",
+      "line": 223,
+      "sourceDigest": "sha256:96df7b732e9766596037a03653d99af0ee1fc52b30c09bdcdf4adec4dcbcb0f8",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/analyzer.py",
+      "line": 95,
+      "sourceDigest": "sha256:b690c7ab982da55a9b3baf400c948735de65c9c1a20188537d4a8023f26aafc3",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/analyzer.py",
+      "line": 375,
+      "sourceDigest": "sha256:b690c7ab982da55a9b3baf400c948735de65c9c1a20188537d4a8023f26aafc3",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/jvm_bytecode.py",
+      "line": 54,
+      "sourceDigest": "sha256:4f65b8b17bd03f6a2759371b0ff7a58618b05ce257a2c95a48bdc3dba384f81c",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/jvm_bytecode.py",
+      "line": 562,
+      "sourceDigest": "sha256:4f65b8b17bd03f6a2759371b0ff7a58618b05ce257a2c95a48bdc3dba384f81c",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/jvm_classpath_exporter.py",
+      "line": 96,
+      "sourceDigest": "sha256:ca6c466826f95ddc5bb3047c05d04f83274e493b380b58469a4509ddded1ce62",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/jvm_classpath_exporter.py",
+      "line": 254,
+      "sourceDigest": "sha256:ca6c466826f95ddc5bb3047c05d04f83274e493b380b58469a4509ddded1ce62",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/jvm_dependencies.py",
+      "line": 87,
+      "sourceDigest": "sha256:24f24b8749fc94be5de1f259d0afcc41dc9020ac77f7120aa903c4abfca071b4",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/jvm_dependencies.py",
+      "line": 92,
+      "sourceDigest": "sha256:24f24b8749fc94be5de1f259d0afcc41dc9020ac77f7120aa903c4abfca071b4",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/semantic/scip.py",
+      "line": 34,
+      "sourceDigest": "sha256:10ac5c7dbda83abc69a15c69c4d7453074fbe66ee848fff4f47474a0c134fbf8",
+      "baselinePatterns": [
+        4
+      ]
+    },
+    {
+      "path": "scanner/src/aegify/worker.py",
+      "line": 172,
+      "sourceDigest": "sha256:8180c7782121b16d12a4e9a7092c9aba4e1df4bcbc2e36e8f1f3e1850d570d3c",
+      "baselinePatterns": [
+        4
+      ]
+    }
+  ],
+  "added": [],
+  "remaining": [],
+  "schemaVersion": 1,
+  "interpretation": "Paired rule-pattern regression on the prior local self-scan file cohort. Counts are raw review candidates, not calibrated precision/recall or proof of system security. No GitHub alert was dismissed by this comparison.",
+  "candidateReasons": {
+    "4": "The old assignment_match and value_match were independently matched across the entire file. The changed model binds explicit OAuth configuration names and literal values, or a selected OAuth API and its own scope argument.",
+    "3": "Substring get_token matched get_token_usage in the CLI. The changed model requires an exact token-exchange method and OAuth context."
+  },
+  "cohortSource": "296 analyzedFiles recorded by the source-only self-scan on the PR 47 production source; one local generated next-env.d.ts was also present and produced no AEG-OAUTH-004 match. Affected file content digests are included per candidate."
+}
