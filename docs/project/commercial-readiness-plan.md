@@ -330,6 +330,9 @@ through an unknown library call, cross-repository propagation and a 1,000-call
 resolution bound. No query or rule was suppressed to pass the scan.
 The final full scanner suite passed 525 tests with one skip; strict mypy passed
 across 90 source files, and Ruff/format checks passed across 146 files.
+The final local self-scan completed 296 files in 161.7 seconds with no reported
+analysis gaps, 746 advisory candidates and zero blocking findings. The four
+incorrect blocking paths are absent; individual advisory triage remains open.
 
 The documented drill includes candidate review, administrator activation, explicit
 database promotion, integration review, new project CI credentials and measured
