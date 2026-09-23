@@ -251,4 +251,38 @@ Local verification: 28 focused AI/tool tests and 488 full scanner tests passed
 (one skipped), with Ruff, strict mypy across 88 source files and documentation
 checks passing. The regressions cover missing/mismatched identities, broken and
 unfinished edges, entry and sink ranges, and bounded output for a 100,000-step
-input. Remote CI and merge remain pending for this follow-up.
+input. All required CI, container checks, CodeQL and self-scan passed on head
+`bfd6f36902f32b2449cb43032476c325d82c1d3b`. PR #45 merged at
+`3d024aaf0db464978d0cf685ecfe890873460ef0` with a verified GitHub signature.
+The post-merge Dependabot snapshot has zero open vulnerability alerts.
+
+## Bounded AI source review: 2026-09-24
+
+The workspace reviewer now has an iterative read-only source loop. It captures
+only scanner-admitted files whose bytes match their parser digest, with explicit
+file/byte bounds, repository namespaces and descriptor-based link rejection.
+In-memory list/read/literal-search/declaration tools return bounded evidence and
+executor-issued source references. Model-selected references must exist in tool
+results and cover the finding's repository and range before a non-abstaining
+suggestion is accepted. Budget exhaustion and unsupported citations retain
+`needs_review`; no workflow or runtime evidence state is promoted.
+
+SARIF carries tool rounds, timings, cache reuse, arguments/result hashes, source
+references and prompt/source-manifest digests. The dashboard exposes retained
+code and tool activity. Workspace token usage is now included in reporting, and
+AI remediation suggestions no longer overwrite scanner-authored remediation.
+Legacy report fields remain optional.
+
+Local checkpoint: 517 scanner tests passed (one skipped); the final focused
+source/tool/agent pass contains 57 passing checks. Strict mypy across 89 source
+files, Ruff and formatting passed. The dashboard passed 97 tests including the
+real Python child, TypeScript, ESLint and a production build with isolated test
+configuration. Its 85 production HTTP/CLI checks include exact AI evidence
+preservation, project isolation and unchanged triage/remediation state. An
+isolated Chrome run uploaded a real scanner-generated SARIF with scripted model
+responses and verified source excerpts and tool activity at desktop/mobile widths.
+The local self-scan checkpoint analyzed 291 files in 181.6 seconds with no analysis
+gaps, 708 advisory candidates and zero blocking findings. Documentation checks
+passed, retaining the existing color recommendations. Remote CI and merge remain
+pending. Live providers, durable dashboard AI jobs, six-role source tools,
+calibrated accuracy and independent evaluation remain separate acceptance work.

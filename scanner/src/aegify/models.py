@@ -286,6 +286,35 @@ class AIToolEvidence(BaseModel):
     summary: str = ""
     evidence: dict[str, Any] = Field(default_factory=dict)
     truncated: bool = False
+    ok: bool = True
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    input_digest: str = ""
+    output_digest: str = ""
+    duration_ms: float = Field(default=0.0, ge=0.0)
+    round: int = Field(default=0, ge=0)
+    cached: bool = False
+
+
+class AISourceCitation(BaseModel):
+    """Executor-issued source reference; the model selects an ID, never a location."""
+
+    citation_id: str
+    request_id: str
+    repository_id: str
+    path: str
+    source_digest: str
+    excerpt_digest: str
+    line_start: int = Field(ge=1)
+    line_end: int = Field(ge=1)
+
+
+class AIReviewTrace(BaseModel):
+    model_calls: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    cached_calls: int = Field(default=0, ge=0)
+    prompt_bytes: int = Field(default=0, ge=0)
+    stop_reason: str = ""
+    source_manifest: str = ""
 
 
 class ProofGuidance(BaseModel):
@@ -316,6 +345,8 @@ class AIReview(BaseModel):
     remediation_steps: list[str] = Field(default_factory=list)
     proof: ProofGuidance = Field(default_factory=ProofGuidance)
     tools_used: list[AIToolEvidence] = Field(default_factory=list)
+    citations: list[AISourceCitation] = Field(default_factory=list)
+    trace: AIReviewTrace = Field(default_factory=AIReviewTrace)
     model: str = ""
     prompt_digest: str = ""
     reviewed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

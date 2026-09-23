@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from aegify.evidence import MAX_CALL_PATH_STEPS, inspect_call_path
+from aegify.llm.sources import SourceCatalog
 from aegify.models import EndpointInfo, Finding
 
 _TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
@@ -43,6 +44,7 @@ class ToolResult(BaseModel):
 class AnalysisToolContext:
     findings: Mapping[str, Finding] = field(default_factory=dict)
     workspace: Mapping[str, Any] = field(default_factory=dict)
+    sources: SourceCatalog | None = None
 
 
 ToolHandler = Callable[[dict[str, Any], AnalysisToolContext], dict[str, Any]]
@@ -86,8 +88,16 @@ class ToolRegistry:
                 error="tool input exceeds limit",
             )
 
-        _spec, handler = registered
+        spec, handler = registered
         try:
+            schema = spec.input_schema
+            required = schema.get("required", [])
+            if any(name not in request.arguments for name in required):
+                raise ValueError("required tool arguments are missing")
+            if schema.get("additionalProperties") is False:
+                unknown = set(request.arguments) - set(schema.get("properties", {}))
+                if unknown:
+                    raise ValueError("tool arguments contain unsupported fields")
             output = redact_sensitive(handler(dict(request.arguments), context))
             encoded_output = json.dumps(output, sort_keys=True, default=str).encode()
             if len(encoded_output) > self.max_output_bytes:
@@ -226,7 +236,16 @@ def _workspace_summary(_arguments: dict[str, Any], context: AnalysisToolContext)
         "semantic_summary",
         "runtime_evidence_summary",
     }
-    return {key: context.workspace[key] for key in allowed if key in context.workspace}
+    summary = {key: context.workspace[key] for key in allowed if key in context.workspace}
+    if context.sources is not None:
+        summary["source_catalog"] = context.sources.summary()
+    return summary
+
+
+def _sources(context: AnalysisToolContext) -> SourceCatalog:
+    if context.sources is None:
+        raise ValueError("no scanner-admitted source snapshot is available in this review")
+    return context.sources
 
 
 def _harness_plan(arguments: dict[str, Any], context: AnalysisToolContext) -> dict[str, Any]:
@@ -297,4 +316,62 @@ def default_tool_registry() -> ToolRegistry:
     ]
     for spec, handler in definitions:
         registry.register(spec, handler)
+    repository = {"type": "string", "description": "Exact repository ID from source_catalog"}
+    source_tools: list[tuple[str, str, dict[str, Any], list[str], ToolHandler]] = [
+        (
+            "source_list_files",
+            "List admitted source files in one repository; continue with next_offset.",
+            {"path_prefix": {"type": "string"}, "offset": {"type": "integer", "minimum": 0}},
+            ["repository_id"],
+            lambda arguments, context: _sources(context).list_files(arguments),
+        ),
+        (
+            "source_read",
+            "Read up to 200 lines of an admitted immutable source file with a citation ID.",
+            {
+                "path": {"type": "string"},
+                "line_start": {"type": "integer", "minimum": 1},
+                "line_end": {"type": "integer", "minimum": 1},
+            },
+            ["repository_id", "path"],
+            lambda arguments, context: _sources(context).read(arguments),
+        ),
+        (
+            "source_search",
+            "Search literal case-sensitive text in redacted source; continue with next_cursor.",
+            {
+                "query": {"type": "string", "maxLength": 128},
+                "path_prefix": {"type": "string"},
+                "file_offset": {"type": "integer", "minimum": 0},
+                "line_start": {"type": "integer", "minimum": 1},
+            },
+            ["repository_id", "query"],
+            lambda arguments, context: _sources(context).search(arguments),
+        ),
+        (
+            "source_symbols",
+            "Find parsed function declarations by literal name; read their source before citing.",
+            {
+                "query": {"type": "string", "maxLength": 128},
+                "path_prefix": {"type": "string"},
+                "offset": {"type": "integer", "minimum": 0},
+            },
+            ["repository_id", "query"],
+            lambda arguments, context: _sources(context).symbols(arguments),
+        ),
+    ]
+    for name, description, properties, required, handler in source_tools:
+        registry.register(
+            ToolSpec(
+                name=name,
+                description=description,
+                input_schema={
+                    "type": "object",
+                    "properties": {"repository_id": repository, **properties},
+                    "required": required,
+                    "additionalProperties": False,
+                },
+            ),
+            handler,
+        )
     return registry

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from aegify.graph_types import CodeGraph
+    from aegify.llm.sources import SourceCatalog
 
 from collections.abc import Callable
 
@@ -80,6 +81,7 @@ class ScanEngine:
         config: AegifyConfig | None = None,
         storage: StorageBackend | None = None,
         on_progress: Callable[[ScanProgress], None] | None = None,
+        capture_ai_source: bool = False,
     ) -> None:
         self.config = config or AegifyConfig()
         self.ast_parser = ASTParser()
@@ -103,6 +105,8 @@ class ScanEngine:
         # default JSON payload so million-node indexes need not be duplicated.
         self._last_semantic_graph: Any | None = None
         self._last_program_graph: Any | None = None
+        self.source_catalog: SourceCatalog | None = None
+        self._capture_ai_source = capture_ai_source
         # Current scan progress (accessible externally for polling)
         self.current_progress: ScanProgress | None = None
 
@@ -157,6 +161,7 @@ class ScanEngine:
 
     def scan(self, target: Path) -> ScanResult:
         """Run a full security scan on the target directory or file."""
+        self.source_catalog = None
         start_time = time.time()
         result = ScanResult(status=ScanStatus.RUNNING)
         result.analysis_scope = "files" if target.is_file() else "repository"
@@ -212,6 +217,7 @@ class ScanEngine:
 
         Parses only the given files, then runs the full analysis pipeline.
         """
+        self.source_catalog = None
         start_time = time.time()
         result = ScanResult(status=ScanStatus.RUNNING)
         result.analysis_scope = "files"
@@ -266,6 +272,7 @@ class ScanEngine:
         """Scan multiple repositories as one collision-safe analysis workspace."""
         from aegify.scanner.workspace import WorkspaceManifest
 
+        self.source_catalog = None
         start_time = time.time()
         result = ScanResult(status=ScanStatus.RUNNING)
         result.analysis_scope = "workspace"
@@ -508,6 +515,16 @@ class ScanEngine:
         result.workspace_snapshot = self._compute_workspace_snapshot(
             file_asts, roots, repository_ids_by_root
         )
+        if self._capture_ai_source:
+            from aegify.llm.sources import SourceCatalog
+
+            self.source_catalog = SourceCatalog.capture(
+                file_asts,
+                {
+                    (repository_ids_by_root or {}).get(root.resolve(), "local"): root
+                    for root in roots
+                },
+            )
         # Phase 2: Call Graph
         logger.info("Phase 2: Building call graph...")
         self._emit_progress(2, "Building call graph", start_time)
