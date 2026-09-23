@@ -57,8 +57,11 @@ class SARIFReporter:
             "results": results,
             "invocations": [
                 {
-                    "executionSuccessful": scan_result.status == "completed",
+                    "executionSuccessful": scan_result.status == "completed"
+                    and not scan_result.analysis_gaps,
                     "properties": {
+                        "analysisStatus": scan_result.status.value,
+                        "analysisGaps": [gap.model_dump() for gap in scan_result.analysis_gaps],
                         "filesScanned": scan_result.files_scanned,
                         "durationSeconds": scan_result.duration_seconds,
                         "tokenUsage": scan_result.token_usage.model_dump(),
@@ -71,6 +74,13 @@ class SARIFReporter:
         # Serialize call graph and endpoints if provided
         run_props: dict[str, Any] = {
             "evidenceContractVersion": 1,
+            "analysisStatus": scan_result.status.value,
+            "analysisGaps": [gap.model_dump() for gap in scan_result.analysis_gaps],
+            "analysisScope": scan_result.analysis_scope,
+            "evaluatedRules": scan_result.evaluated_rules,
+            "analyzedFiles": scan_result.analyzed_files,
+            "unsupportedLanguages": scan_result.unsupported_languages,
+            "parseDiagnostics": [item.model_dump() for item in scan_result.parse_diagnostics],
             "workspaceSnapshot": scan_result.workspace_snapshot,
             "semanticAnalysis": scan_result.semantic_analysis.model_dump(mode="json"),
             "programGraph": scan_result.program_graph.model_dump(mode="json"),
@@ -512,6 +522,10 @@ class SARIFReporter:
             result["properties"]["callChain"] = [
                 {
                     "function": step.function,
+                    "symbolId": step.symbol_id,
+                    "repositoryId": step.repository_id,
+                    "lineEnd": step.line_end,
+                    "nextSymbolId": step.next_symbol_id,
                     "filePath": step.file_path,
                     "line": step.line,
                     "snippet": step.code_snippet,

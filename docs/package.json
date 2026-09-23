@@ -10,7 +10,7 @@
     "dev": "mint dev"
   },
   "devDependencies": {
-    "mint": "4.2.875"
+    "mint": "4.2.876"
   },
   "overrides": {
     "@puppeteer/browsers": "3.2.1",
@@ -18,7 +18,9 @@
     "puppeteer": "25.8.0",
     "puppeteer-core": "25.8.0",
     "qs": "6.16.0",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4",
+    "js-yaml@>=4.0.0 <4.3.2": "4.3.2",
+    "adm-zip@<=0.6.0": "0.6.1"
   },
   "engines": {
     "node": ">=26.7.0 <27",

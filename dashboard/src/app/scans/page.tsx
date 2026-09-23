@@ -136,6 +136,11 @@ export default function ScansPage() {
                         <p className="font-medium">
                           {scan.repository || "unnamed scan"}
                         </p>
+                        {scan.status !== "completed" && scan.status !== "running" && (
+                          <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1">
+                            {scan.status === "partial" ? "Partial analysis · coverage incomplete" : scan.status === "failed" ? "Analysis failed" : scan.status}
+                          </p>
+                        )}
                         <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />

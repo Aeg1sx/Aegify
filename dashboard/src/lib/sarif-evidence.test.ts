@@ -7,13 +7,36 @@ import test from "node:test";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@libsql/client";
+import { finalizeScanImport } from "./scan-reconciliation.ts";
 
 import {
+  canReconcileScanAbsence,
   normalizeFindingClassification,
   normalizeFindingEvidence,
   normalizeSourceSnippet,
+  scanHealthForRun,
   workspaceSnapshotForRun,
 } from "./sarif-evidence.ts";
+
+test("failed, partial, malformed and legacy reports cannot resolve absent findings", () => {
+  const properties = { analysisStatus: "completed", analysisScope: "repository", evaluatedRules: ["AEG-ONE"], analyzedFiles: ["app.py"], analysisGaps: [] };
+  const complete = scanHealthForRun(properties, { executionSuccessful: true });
+  assert.equal(canReconcileScanAbsence(complete, "main", "main"), true);
+  for (const health of [
+    scanHealthForRun(properties, { executionSuccessful: false }),
+    scanHealthForRun({ ...properties, analysisStatus: "partial" }, { executionSuccessful: false }),
+    scanHealthForRun({ ...properties, analysisStatus: "invented" }, { executionSuccessful: true }),
+    scanHealthForRun({ ...properties, analysisScope: "files" }, { executionSuccessful: true }),
+    scanHealthForRun({ ...properties, analyzedFiles: [] }, { executionSuccessful: true }),
+    scanHealthForRun({ ...properties, analyzedFiles: [42] }, { executionSuccessful: true }),
+    scanHealthForRun({ ...properties, analysisGaps: [{ code: "limit", stage: "rules", message: "truncated", affected_count: 2 }] }, { executionSuccessful: true }),
+    scanHealthForRun({ ...properties, analysisGaps: "malformed" }, { executionSuccessful: true }),
+    scanHealthForRun(undefined, { executionSuccessful: true }),
+  ]) assert.equal(canReconcileScanAbsence(health, "main", "main"), false);
+  assert.equal(canReconcileScanAbsence(complete, "feature", "main"), false);
+  assert.equal(canReconcileScanAbsence(complete, "", "main"), false);
+  assert.equal(scanHealthForRun({ analysisStatus: "partial" }, { executionSuccessful: false }).status, "partial");
+});
 
 test("imports a SARIF context region without moving the reported finding", () => {
   assert.deepEqual(normalizeSourceSnippet({ region: { startLine: 12, endLine: 12, snippet: { text: "reported" } }, contextRegion: { startLine: 11, endLine: 13, snippet: { text: "before\nreported\nafter" } } }), { codeSnippet: "before\nreported\nafter", snippetStartLine: 11 });
@@ -277,6 +300,42 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     assert.equal(runtimeEvidence.approvalId, approval.id);
     assert.equal(managedFinding.owner, "appsec");
     assert.equal(managedFinding.ticketKey, "SEC-123");
+
+    // Real database regression: an incomplete or differently scoped upload
+    // cannot turn a previously recorded observation into a resolved absence.
+    await prisma.scan.update({ where: { id: scan.id }, data: { branch: "main" } });
+    const excluded = await prisma.findingIdentity.create({ data: {
+      projectId: project.id, fingerprint: "excluded", ruleId: rule.id, filePath: "excluded.kt",
+    } });
+    const disabled = await prisma.findingIdentity.create({ data: {
+      projectId: project.id, fingerprint: "disabled", ruleId: "AEG-DISABLED", filePath: finding.filePath,
+    } });
+    const health = scanHealthForRun({
+      analysisStatus: "completed", analysisScope: "repository",
+      evaluatedRules: [rule.id], analyzedFiles: [finding.filePath],
+    }, { executionSuccessful: true });
+    for (const branch of ["feature", "main"]) {
+      const imported = await prisma.scan.create({ data: { projectId: project.id, branch, status: "running" } });
+      const scanHealth = branch === "main" ? { ...health, status: "partial" as const } : health;
+      await finalizeScanImport(prisma, { scanId: imported.id, projectId: project.id, branch, defaultBranch: "main", health: scanHealth });
+      assert.equal((await prisma.findingIdentity.findUniqueOrThrow({ where: { id: identity.id } })).absentAt, null);
+      assert.equal((await prisma.finding.findUniqueOrThrow({ where: { id: finding.id } })).isCurrent, true);
+      assert.equal((await prisma.scan.findUniqueOrThrow({ where: { id: imported.id } })).status, scanHealth.status);
+    }
+    // Terminal-status failure rolls back every absence mutation.
+    await assert.rejects(finalizeScanImport(prisma, {
+      scanId: "missing-scan", projectId: project.id, branch: "main", defaultBranch: "main", health,
+    }));
+    assert.equal((await prisma.findingIdentity.findUniqueOrThrow({ where: { id: identity.id } })).absentAt, null);
+    assert.equal((await prisma.finding.findUniqueOrThrow({ where: { id: finding.id } })).isCurrent, true);
+
+    const completed = await prisma.scan.create({ data: { projectId: project.id, branch: "main", status: "running" } });
+    await finalizeScanImport(prisma, { scanId: completed.id, projectId: project.id, branch: "main", defaultBranch: "main", health });
+    assert.ok((await prisma.findingIdentity.findUniqueOrThrow({ where: { id: identity.id } })).absentAt);
+    assert.equal((await prisma.finding.findUniqueOrThrow({ where: { id: finding.id } })).isCurrent, false);
+    for (const id of [excluded.id, disabled.id]) {
+      assert.equal((await prisma.findingIdentity.findUniqueOrThrow({ where: { id } })).absentAt, null);
+    }
   } finally {
     await prisma.$disconnect();
   }

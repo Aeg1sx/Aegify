@@ -6,6 +6,7 @@ import {
   normalizeFindingClassification,
   normalizeFindingEvidence,
   normalizeSourceSnippet,
+  scanHealthForRun,
   workspaceSnapshotForRun,
 } from "@/lib/sarif-evidence";
 import {
@@ -16,6 +17,7 @@ import {
 import { anonymousUploadAllowed } from "@/lib/security-config";
 import { sendSlackNotification } from "@/lib/slack";
 import { uploadValidationError } from "@/lib/upload-validation";
+import { finalizeScanImport } from "@/lib/scan-reconciliation";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
@@ -214,6 +216,11 @@ interface SARIFReport {
       };
     }>;
     properties?: {
+      analysisStatus?: unknown;
+      analysisGaps?: unknown;
+      analysisScope?: unknown;
+      evaluatedRules?: unknown;
+      analyzedFiles?: unknown;
       callGraph?: CallGraphData;
       endpoints?: Array<{
         path: string;
@@ -252,6 +259,7 @@ const LEVEL_TO_SEVERITY: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
+  let importedScanId: string | undefined;
   try {
     if (!(await isAuthorizedUpload(request))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -301,6 +309,7 @@ export async function POST(request: NextRequest) {
 
     const run = sarif.runs[0];
     const invocation = run.invocations?.[0];
+    const scanHealth = scanHealthForRun(run.properties, invocation);
     const workspaceSnapshot = workspaceSnapshotForRun(
       run.properties,
       invocation?.properties,
@@ -343,19 +352,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const branch = reqUrl.searchParams.get("branch") || "";
+    const project = projectId ? await prisma.project.findUnique({ where: { id: projectId } }) : null;
+    const isDefaultBranch = Boolean(branch && branch === project?.defaultBranch);
+
     // Create scan
     const scan = await prisma.scan.create({
       data: {
         repository,
-        branch: reqUrl.searchParams.get("branch") || "",
+        branch,
         commitSha: reqUrl.searchParams.get("commit") || "",
-        status: invocation?.executionSuccessful ? "completed" : "failed",
+        status: "running",
+        progressPhaseName: "Importing evidence",
         filesScanned: invocation?.properties?.filesScanned || 0,
         duration: invocation?.properties?.durationSeconds || 0,
         workspaceSnapshot,
         projectId,
       },
     });
+
+    importedScanId = scan.id;
 
     // Insert findings
     const parsedFindings = run.results.map((result) => {
@@ -446,13 +462,7 @@ export async function POST(request: NextRequest) {
     });
 
     let findings = parsedFindings;
-    if (projectId && parsedFindings.length === 0) {
-      await prisma.findingIdentity.updateMany({
-        where: { projectId, absentAt: null },
-        data: { absentAt: new Date() },
-      });
-    }
-    if (projectId && parsedFindings.length > 0) {
+    if (projectId && isDefaultBranch && parsedFindings.length > 0) {
       const uniqueFindings = new Map(
         parsedFindings.map((finding) => [finding.fingerprint, finding]),
       );
@@ -469,15 +479,6 @@ export async function POST(request: NextRequest) {
           classifyFindingBaseline(existingByFingerprint.get(fingerprint), finding),
         ]),
       );
-
-      await prisma.findingIdentity.updateMany({
-        where: {
-          projectId,
-          absentAt: null,
-          fingerprint: { notIn: fingerprints },
-        },
-        data: { absentAt: new Date() },
-      });
 
       const identityWrites = [...uniqueFindings].map(([fingerprint, finding]) => {
         const existing = existingByFingerprint.get(fingerprint);
@@ -570,17 +571,6 @@ export async function POST(request: NextRequest) {
     if (findings.length > 0) {
       await prisma.finding.createMany({ data: findings });
     }
-    if (projectId) {
-      await prisma.finding.updateMany({
-        where: {
-          scanId: { not: scan.id },
-          scan: { projectId },
-          isCurrent: true,
-        },
-        data: { isCurrent: false },
-      });
-    }
-
     // Store call graph if present
     const callGraphData = run.properties?.callGraph;
     if (callGraphData && callGraphData.nodes && callGraphData.nodes.length > 0) {
@@ -767,6 +757,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    await finalizeScanImport(prisma, {
+      scanId: scan.id, projectId, branch,
+      defaultBranch: project?.defaultBranch || "", health: scanHealth,
+    });
+
     // Send Slack notification for new findings (non-blocking)
     const actionableFindings = findings.filter((finding) =>
       finding.baselineState === "new" || finding.baselineState === "regressed"
@@ -798,6 +793,12 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Upload error:", error);
+    if (importedScanId) {
+      await prisma.scan.update({
+        where: { id: importedScanId },
+        data: { status: "failed", progressPhaseName: "Import failed", progressMessage: "Evidence import did not finish; existing absences were not reconciled." },
+      }).catch((updateError) => console.error("Import status update failed:", updateError));
+    }
     return NextResponse.json(
       { error: "Upload failed" },
       { status: 500 }

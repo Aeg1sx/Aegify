@@ -723,7 +723,7 @@ export default function FindingDetailPage() {
         <CardContent className="space-y-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold">Vulnerability ownership & delivery</p>
+              <p className="text-sm font-semibold">Vulnerability ownership &amp; delivery</p>
               <p className="text-xs text-muted-foreground">Assign remediation, SLA priority, tags, and an auditable Jira ticket.</p>
             </div>
             {finding.ticketUrl ? (

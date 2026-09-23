@@ -50,12 +50,19 @@ def _finding(*, state: EvidenceState = EvidenceState.REACHABLE) -> Finding:
                 file_path="src/handler.py",
                 function="api.run",
                 line=10,
+                line_end=18,
+                symbol_id="api::handler::run",
+                repository_id="api",
+                next_symbol_id="api::handler::execute",
                 code_snippet="def run(request):",
             ),
             CallChainStep(
                 file_path="src/handler.py",
                 function="service.execute",
                 line=19,
+                line_end=22,
+                symbol_id="api::handler::execute",
+                repository_id="api",
                 code_snippet="subprocess.run(user_value)",
             ),
         ],
@@ -165,6 +172,32 @@ def test_reachability_contract_rejects_impact_without_runtime_evidence() -> None
             impact_proven=True,
             hops=[ReachabilityHop(kind="call", label="entry")],
         )
+
+
+@pytest.mark.parametrize(
+    "case", ["other_handler", "other_repository", "broken_edge", "wrong_sink", "legacy"]
+)
+def test_reachability_requires_handler_identity_connected_edges_and_source_bounds(
+    case: str,
+) -> None:
+    scan = _scan()
+    finding = scan.findings[0]
+    if case == "other_handler":
+        scan.endpoints[0].handler_function = "api.health"
+    elif case == "other_repository":
+        scan.endpoints[0].repository_id = "another-repo"
+    elif case == "broken_edge":
+        finding.call_chain[0].next_symbol_id = "api::unrelated"
+    elif case == "wrong_sink":
+        finding.line_start = 100
+    else:
+        for step in finding.call_chain:
+            step.symbol_id = ""
+            step.next_symbol_id = ""
+            step.line_end = None
+    trace = SecurityAgentPipeline._trace(finding, scan.endpoints, scan)
+    assert not trace.static_complete
+    assert trace.unresolved_links
 
 
 def test_dynamic_plan_rejects_remote_or_destructive_templates() -> None:

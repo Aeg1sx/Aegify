@@ -65,6 +65,8 @@ export async function GET(
     branch: scan.branch,
     commitSha: scan.commitSha,
     status: scan.status,
+    progressMessage: scan.progressMessage,
+    progressPhaseName: scan.progressPhaseName,
     filesScanned: scan.filesScanned,
     duration: scan.duration,
     createdAt: scan.createdAt,

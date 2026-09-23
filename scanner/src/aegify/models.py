@@ -7,7 +7,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -57,6 +57,7 @@ class ScanStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
+    PARTIAL = "partial"
     FAILED = "failed"
 
 
@@ -74,6 +75,15 @@ class Language(StrEnum):
 # --- AST / Call Graph Models ---
 
 
+class ParseDiagnostic(BaseModel):
+    """Source locations where the parser recovered incomplete structure."""
+
+    file_path: str
+    kind: Literal["error", "missing", "invalid_encoding"]
+    line_start: int = Field(ge=1)
+    line_end: int = Field(ge=1)
+
+
 class FileAST(BaseModel):
     """Parsed AST for a single file."""
 
@@ -85,6 +95,10 @@ class FileAST(BaseModel):
     calls: list[CallSite] = Field(default_factory=list)
     repository_id: str = ""
     module_path: str = ""
+    source_digest: str = ""
+    parser_grammar: str = ""
+    parse_error_count: int = 0
+    parse_diagnostics: list[ParseDiagnostic] = Field(default_factory=list)
 
 
 class FunctionDef(BaseModel):
@@ -243,6 +257,10 @@ class CallChainStep(BaseModel):
     function: str
     line: int
     code_snippet: str = ""
+    symbol_id: str = ""
+    repository_id: str = ""
+    line_end: int | None = Field(default=None, ge=1)
+    next_symbol_id: str = ""
 
 
 class EvidenceProvenance(BaseModel):
@@ -644,6 +662,15 @@ class RuntimeEvidenceSummary(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class AnalysisGap(BaseModel):
+    """A bounded, machine-readable explanation of incomplete analysis."""
+
+    code: str
+    stage: str
+    message: str
+    affected_count: int = Field(default=1, ge=0)
+
+
 class ScanResult(BaseModel):
     """Complete result of a security scan."""
 
@@ -653,6 +680,12 @@ class ScanResult(BaseModel):
     commit_sha: str = ""
     workspace_snapshot: str = ""
     status: ScanStatus = ScanStatus.COMPLETED
+    analysis_gaps: list[AnalysisGap] = Field(default_factory=list)
+    analysis_scope: Literal["repository", "workspace", "files", "unknown"] = "unknown"
+    evaluated_rules: list[str] = Field(default_factory=list)
+    analyzed_files: list[str] = Field(default_factory=list)
+    unsupported_languages: dict[str, int] = Field(default_factory=dict)
+    parse_diagnostics: list[ParseDiagnostic] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     endpoints: list[EndpointInfo] = Field(default_factory=list)
     frontend_calls: list[FrontendCall] = Field(default_factory=list)
@@ -670,6 +703,19 @@ class ScanResult(BaseModel):
     duration_seconds: float = 0.0
     token_usage: TokenUsage = Field(default_factory=lambda: TokenUsage())
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def add_gap(self, code: str, stage: str, message: str, affected_count: int = 1) -> None:
+        """Aggregate known gap categories without retaining unbounded source paths."""
+        for gap in self.analysis_gaps:
+            if gap.code == code and gap.stage == stage:
+                gap.affected_count += affected_count
+                break
+        else:
+            self.analysis_gaps.append(
+                AnalysisGap(code=code, stage=stage, message=message, affected_count=affected_count)
+            )
+        if self.status != ScanStatus.FAILED:
+            self.status = ScanStatus.PARTIAL
 
     @property
     def findings_count(self) -> dict[str, int]:

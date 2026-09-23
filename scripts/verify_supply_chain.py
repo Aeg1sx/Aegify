@@ -24,6 +24,7 @@ def workflow_files() -> list[Path]:
 
 def verify_actions(errors: list[str]) -> int:
     checked = 0
+    codeql_revisions: set[str] = set()
     for path in workflow_files():
         for reference in USES.findall(path.read_text(encoding="utf-8")):
             if reference.startswith("./") or reference.startswith("docker://"):
@@ -33,11 +34,38 @@ def verify_actions(errors: list[str]) -> int:
                 errors.append(f"{path.relative_to(ROOT)}: action is not pinned: {reference}")
                 continue
             revision = reference.rsplit("@", 1)[1]
+            if reference.startswith("github/codeql-action/"):
+                codeql_revisions.add(revision)
             if not FULL_SHA.fullmatch(revision):
                 errors.append(
                     f"{path.relative_to(ROOT)}: action must use a full commit SHA: {reference}"
                 )
+    if len(codeql_revisions) != 1:
+        errors.append("CodeQL init/analyze/upload-sarif must use the same action revision")
     return checked
+
+
+def verify_uv_versions(errors: list[str]) -> None:
+    """A Docker tag update must not diverge from uv's required version or CI."""
+    project = (ROOT / "scanner" / "pyproject.toml").read_text(encoding="utf-8")
+    required = re.search(r'required-version\s*=\s*"==([0-9.]+)"', project)
+    if required is None:
+        errors.append("scanner/pyproject.toml must pin uv required-version exactly")
+        return
+    expected = required.group(1)
+    for path in (ROOT / "scanner").glob("Dockerfile*"):
+        dockerfile = path.read_text(encoding="utf-8")
+        for configured in re.findall(r"ghcr.io/astral-sh/uv:([^@\s]+)@", dockerfile):
+            if configured != expected:
+                errors.append(f"{path.relative_to(ROOT)}: uv tag must match required-version {expected}")
+    for path in workflow_files():
+        content = path.read_text(encoding="utf-8")
+        # The setup step ends before the next step or job. No YAML dependency
+        # is needed for this intentionally constrained workflow convention.
+        for setup in re.finditer(r"uses: astral-sh/setup-uv@[^\n]+\n((?:[ \t]+[^\n]*\n)*)", content):
+            configured = re.search(r'version:\s*[\'"]?([0-9.]+)', setup.group(1))
+            if configured is None or configured.group(1) != expected:
+                errors.append(f"{path.relative_to(ROOT)}: setup-uv must use {expected}")
 
 
 def verify_dockerfiles(errors: list[str]) -> int:
@@ -110,6 +138,7 @@ def verify_uv_lock(errors: list[str]) -> int:
 def main() -> int:
     errors: list[str] = []
     actions = verify_actions(errors)
+    verify_uv_versions(errors)
     images = verify_dockerfiles(errors)
     npm_packages = verify_npm_locks(errors)
     python_packages = verify_uv_lock(errors)

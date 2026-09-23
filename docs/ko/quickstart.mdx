@@ -4,7 +4,7 @@ description: "Aegify scanner를 설치하고 외부 LLM 전송 없이 첫 점검
 icon: "rocket"
 ---
 
-Python 3.14와 uv 0.12.9가 필요합니다. 다음 과정은 소스 코드를 외부 모델로 보내지
+Python 3.14와 uv 0.12.17이 필요합니다. 다음 과정은 소스 코드를 외부 모델로 보내지
 않습니다.
 
 <Steps>
@@ -48,3 +48,8 @@ aegify scan /path/to/owned/repository \
 결과의 severity만 보지 말고 `evidence_state`와 `disposition`을 함께
 확인하십시오. 자세한 기준은 [증거와 CI 차단 정책](/ko/evidence-gates)에
 설명되어 있습니다.
+
+CLI 종료 코드 `0`은 분석 완료·차단 대상 없음, `1`은 high/critical 차단 대상 발견,
+`2`는 실행 실패, `3`은 부분 분석을 뜻합니다. 부분 분석에서는 파싱 오류·읽기 실패·
+분석 한도 등의 누락 사유를 먼저 확인해야 합니다. 결과가 0건이어도 분석이 끝나지
+않았다면 정상 판정으로 취급하지 않습니다.

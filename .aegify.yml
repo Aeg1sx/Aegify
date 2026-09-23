@@ -1,5 +1,8 @@
 scan:
   languages: [python, javascript, typescript, java, kotlin, go, rust, swift]
+  # Preserve the full self-scan result set. Individual rules still have bounded inputs.
+  max_findings_per_rule: 0
+  max_findings_per_file: 0
   exclude:
     - "tests/**"
     - "**/test/**"
@@ -29,6 +32,13 @@ scan:
     - "**/__generated__/**"
     # Owned vulnerable controls are exercised only by the digest-bound benchmark gate.
     - "scanner/benchmarks/**"
+
+taint:
+  # This repository exceeded the library default of 10,000 call-string contexts.
+  # Reaching this explicit bound still makes the scan partial and fails CI.
+  max_contexts: 50000
+  context_depth: 2
+  max_iterations: 64
 
 rules:
   severity_threshold: medium

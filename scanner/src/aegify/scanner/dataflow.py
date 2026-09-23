@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 import networkx as nx
 
+from aegify.config import TaintAnalysisConfig
 from aegify.graph_types import CodeGraph
 from aegify.models import (
     FileAST,
@@ -354,8 +355,11 @@ class SinkPattern:
 class DataflowAnalyzer:
     """Performs taint analysis tracking data from sources to sinks."""
 
-    def __init__(self, config: TaintConfig | None = None) -> None:
+    def __init__(
+        self, config: TaintConfig | None = None, *, limits: TaintAnalysisConfig | None = None
+    ) -> None:
         self.config = config or TaintConfig.default()
+        self.limits = limits or TaintAnalysisConfig()
         self.summary = TaintAnalysisSummary()
 
     def analyze(
@@ -372,7 +376,12 @@ class DataflowAnalyzer:
 
         from aegify.scanner.taint_v2 import StructuredTaintAnalyzer
 
-        analyzer = StructuredTaintAnalyzer(self.config)
+        analyzer = StructuredTaintAnalyzer(
+            self.config,
+            max_iterations=self.limits.max_iterations,
+            context_depth=self.limits.context_depth,
+            max_contexts=self.limits.max_contexts,
+        )
         flows, self.summary = analyzer.analyze(
             file_asts,
             call_graph,

@@ -57,7 +57,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.9"
+          version: "0.12.17"
           enable-cache: false
 
       - name: Verify lockfile and build wheel
@@ -68,7 +68,7 @@ jobs:
           uv build --wheel
 
       - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: scanner/dist
           format: cyclonedx-json

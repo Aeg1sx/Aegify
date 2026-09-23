@@ -17,7 +17,7 @@ from rich.text import Text
 
 from aegify import __version__
 from aegify.config import AegifyConfig
-from aegify.models import ScanProgress, ScanResult, Severity
+from aegify.models import ScanProgress, ScanResult, ScanStatus, Severity
 
 app = typer.Typer(
     name="aegify",
@@ -40,6 +40,17 @@ def _has_blocking_high_findings(result: ScanResult) -> bool:
         finding.blocks_ci and finding.severity in (Severity.CRITICAL, Severity.HIGH)
         for finding in result.findings
     )
+
+
+def _scan_exit_code(result: ScanResult) -> int:
+    """0=complete, 1=security gate, 2=failed, 3=partial analysis."""
+    if result.status == ScanStatus.PARTIAL or (
+        result.status == ScanStatus.COMPLETED and result.analysis_gaps
+    ):
+        return 3
+    if result.status != ScanStatus.COMPLETED:
+        return 2
+    return 1 if _has_blocking_high_findings(result) else 0
 
 
 @app.command()
@@ -148,10 +159,10 @@ def scan(
 
     with progress:
         result = engine.scan(target)
-        progress.update(task_id, completed=100, description="Scan complete", eta="")
+        progress.update(task_id, completed=100, description=f"Scan {result.status.value}", eta="")
 
     # LLM verification (if enabled)
-    if llm and cfg.anthropic_api_key and result.findings:
+    if llm and cfg.anthropic_api_key and result.findings and result.status != ScanStatus.FAILED:
         console.print("\n[bold]Running LLM verification...[/bold]")
         from aegify.llm.verifier import LLMVerifier
 
@@ -228,8 +239,8 @@ def scan(
             console.print(f"[red]Dashboard upload failed: {e}[/red]")
 
     # Exit code
-    if _has_blocking_high_findings(result):
-        raise typer.Exit(code=1)
+    if exit_code := _scan_exit_code(result):
+        raise typer.Exit(code=exit_code)
 
 
 @app.command()
@@ -329,11 +340,15 @@ def benchmark(
         source_digest=source_digest,
         ground_truth_digest=digest_bytes(ground_truth_bytes),
     )
+    report.analysis_status = result.status
+    report.analysis_gaps = result.analysis_gaps
     rendered = report.model_dump_json(indent=2)
     if output_file:
         output_file.write_text(rendered + "\n", encoding="utf-8")
     else:
         console.print(rendered)
+    if result.status != ScanStatus.COMPLETED or result.analysis_gaps:
+        raise typer.Exit(code=_scan_exit_code(result))
     if report.metrics.precision < min_precision or report.metrics.recall < min_recall:
         raise typer.Exit(code=1)
 
@@ -461,8 +476,8 @@ def scan_workspace(
         console.print(f"[red]Unsupported output format: {output}[/red]")
         raise typer.Exit(code=2)
 
-    if result.status != "completed":
-        raise typer.Exit(code=2)
+    if exit_code := _scan_exit_code(result):
+        raise typer.Exit(code=exit_code)
 
 
 @app.command("index-scip-java")
@@ -1376,12 +1391,12 @@ def scan_pr(
     # Step 3: Run scan on all files
     with progress:
         result = engine.scan_files(target, all_files)
-        progress.update(task_id, completed=100, description="Scan complete", eta="")
+        progress.update(task_id, completed=100, description=f"Scan {result.status.value}", eta="")
 
     console.print(f"  Found {len(result.findings)} findings before LLM verification")
 
     # Step 4: LLM verification (all findings)
-    if llm and result.findings:
+    if llm and result.findings and result.status != ScanStatus.FAILED:
         console.print("\n[bold]Running LLM verification on all findings...[/bold]")
         from aegify.llm.pr_verifier import PRVerifier
 
@@ -1432,19 +1447,26 @@ def scan_pr(
     _output_console(result)
 
     # Exit code
-    if _has_blocking_high_findings(result):
-        raise typer.Exit(code=1)
+    if exit_code := _scan_exit_code(result):
+        raise typer.Exit(code=exit_code)
 
 
 def _output_console(result: ScanResult) -> None:
     """Pretty-print scan results to console."""
     console.print()
 
-    if not result.findings:
+    if result.status != ScanStatus.COMPLETED or result.analysis_gaps:
+        lines = [f"Analysis {result.status.value}. Coverage is incomplete; review the diagnostics."]
+        lines.extend(
+            f"{gap.code}: {gap.message} ({gap.affected_count})" for gap in result.analysis_gaps
+        )
+        console.print(Panel(Text("\n".join(lines), style="yellow"), title="Analysis health"))
+
+    if not result.findings and result.status == ScanStatus.COMPLETED and not result.analysis_gaps:
         console.print(
             Panel("[bold green]No security findings detected.[/bold green]", title="Results")
         )
-    else:
+    elif result.findings:
         table = Table(title=f"Security Findings ({len(result.findings)})")
         table.add_column("Severity", width=10)
         table.add_column("Gate", width=9)

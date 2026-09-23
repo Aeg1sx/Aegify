@@ -37,7 +37,9 @@ jobs:
           python-version: "3.14"
 
       - name: Enforce immutable dependency references
-        run: python scripts/verify_supply_chain.py
+        run: |
+          python -m unittest discover -s scripts -p 'test_*.py'
+          python scripts/verify_supply_chain.py
 
   scanner:
     name: Scanner / Python 3.14
@@ -65,7 +67,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.9"
+          version: "0.12.17"
           enable-cache: true
           cache-dependency-glob: scanner/uv.lock
 
@@ -147,8 +149,12 @@ jobs:
       - name: Generate ephemeral test secrets
         shell: bash
         run: |
-          echo "AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-          echo "ENCRYPTION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          auth_test_secret=$(openssl rand -hex 32)
+          encryption_test_secret=$(openssl rand -hex 32)
+          echo "::add-mask::$auth_test_secret"
+          echo "::add-mask::$encryption_test_secret"
+          echo "AUTH_SECRET=$auth_test_secret" >> "$GITHUB_ENV"
+          echo "ENCRYPTION_SECRET=$encryption_test_secret" >> "$GITHUB_ENV"
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

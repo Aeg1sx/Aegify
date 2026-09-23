@@ -44,6 +44,7 @@ export async function createSecurityAgentRun(
           exposedViaGateway: true,
           runtimeObserved: true,
           runtimeEvidence: true,
+          repositoryId: true,
         },
       },
     },

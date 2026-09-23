@@ -13,6 +13,67 @@ export interface EvidenceProvenancePayload {
 
 interface RunProperties {
   workspaceSnapshot?: unknown;
+  analysisStatus?: unknown;
+  analysisGaps?: unknown;
+  analysisScope?: unknown;
+  evaluatedRules?: unknown;
+  analyzedFiles?: unknown;
+}
+
+export interface ScanHealth {
+  status: "completed" | "partial" | "failed";
+  scope: "repository" | "workspace" | "files" | "unknown";
+  gaps: Array<{ code: string; stage: string; message: string; affected_count: number }>;
+  evaluatedRules: string[];
+  analyzedFiles: string[];
+}
+
+export function scanHealthForRun(
+  runProperties?: RunProperties,
+  invocation?: { executionSuccessful?: unknown; properties?: RunProperties },
+): ScanHealth {
+  const declared = runProperties?.analysisStatus ?? invocation?.properties?.analysisStatus;
+  const rawGaps = runProperties?.analysisGaps ?? invocation?.properties?.analysisGaps;
+  const scope = runProperties?.analysisScope;
+  const gaps: ScanHealth["gaps"] = [];
+  if (Array.isArray(rawGaps)) {
+    for (const raw of rawGaps.slice(0, 100)) {
+      const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+      gaps.push({
+        code: typeof item.code === "string" ? item.code.slice(0, 100) : "invalid_diagnostic",
+        stage: typeof item.stage === "string" ? item.stage.slice(0, 100) : "import",
+        message: typeof item.message === "string" ? item.message.slice(0, 1000) : "Malformed scan diagnostic",
+        affected_count: typeof item.affected_count === "number" && Number.isSafeInteger(item.affected_count) && item.affected_count >= 0 ? item.affected_count : 1,
+      });
+    }
+  } else if (rawGaps !== undefined) {
+    gaps.push({ code: "invalid_diagnostics", stage: "import", message: "Malformed scan diagnostics", affected_count: 1 });
+  }
+  const rules = runProperties?.evaluatedRules;
+  const evaluatedRules = Array.isArray(rules) && rules.length <= 10_000 && rules.every((rule) => typeof rule === "string" && /^[A-Z][A-Z0-9-]{1,127}$/.test(rule))
+    ? [...new Set(rules as string[])].sort() : [];
+  const files = runProperties?.analyzedFiles;
+  const analyzedFiles = Array.isArray(files) && files.length <= 100_000 && files.every((file) => typeof file === "string" && file.length > 0 && file.length <= 4096 && !/[\x00-\x1f]/.test(file))
+    ? [...new Set(files as string[])].sort() : [];
+  // A contradictory successful declaration cannot override a failed invocation.
+  // Legacy successful reports remain viewable, but lack a reconciliable scope.
+  const status = declared === "failed" ? "failed"
+    : declared === "partial" ? "partial"
+    : invocation?.executionSuccessful !== true ? "failed"
+    : declared !== undefined && declared !== "completed" ? "failed"
+    : gaps.length > 0 ? "partial" : "completed";
+  return {
+    status,
+    scope: scope === "repository" || scope === "workspace" || scope === "files" ? scope : "unknown",
+    gaps, evaluatedRules, analyzedFiles,
+  };
+}
+
+export function canReconcileScanAbsence(health: ScanHealth, branch: string, defaultBranch: string): boolean {
+  return health.status === "completed" && health.gaps.length === 0
+    && (health.scope === "repository" || health.scope === "workspace")
+    && health.evaluatedRules.length > 0 && health.analyzedFiles.length > 0
+    && branch.length > 0 && branch === defaultBranch;
 }
 
 interface FindingProperties {

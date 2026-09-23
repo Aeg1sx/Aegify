@@ -34,7 +34,12 @@ from aegify.models import (
 )
 from aegify.rules.base import get_registry
 from aegify.rules.registry import load_builtin_rules, load_custom_rules
-from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.ast_parser import (
+    UNSUPPORTED_SOURCE_EXTENSIONS,
+    ASTParser,
+    detect_language,
+    parser_fingerprint,
+)
 from aegify.scanner.attack_surface import AttackSurfaceAnalyzer
 from aegify.scanner.call_graph import CallGraphBuilder
 from aegify.scanner.context import ContextAnalyzer
@@ -79,7 +84,7 @@ class ScanEngine:
         self.config = config or AegifyConfig()
         self.ast_parser = ASTParser()
         self.call_graph_builder = CallGraphBuilder()
-        self.dataflow_analyzer = DataflowAnalyzer()
+        self.dataflow_analyzer = DataflowAnalyzer(limits=self.config.taint)
         self.endpoint_detector = EndpointDetector()
         self.attack_surface_analyzer = AttackSurfaceAnalyzer()
         self.context_analyzer = ContextAnalyzer(self.config.context)
@@ -154,16 +159,19 @@ class ScanEngine:
         """Run a full security scan on the target directory or file."""
         start_time = time.time()
         result = ScanResult(status=ScanStatus.RUNNING)
+        result.analysis_scope = "files" if target.is_file() else "repository"
 
         try:
             # Phase 1: AST Parsing (with parallelization)
             logger.info("Phase 1: Parsing ASTs...")
             self._emit_progress(1, "Parsing ASTs", start_time)
             if target.is_file():
-                ast = self.ast_parser.parse_file(target)
-                file_asts = [ast] if ast else []
+                files = self._select_parse_files([target], result)
+                ast = self.ast_parser.parse_file(target) if files else None
+                file_asts = [ast] if ast is not None else []
+                self._record_parse_results(file_asts, files, result)
             else:
-                file_asts = self._parse_directory_parallel(target)
+                file_asts = self._parse_directory_parallel(target, result)
 
             result.files_scanned = len(file_asts)
             self._emit_progress(
@@ -177,7 +185,8 @@ class ScanEngine:
             )
             if not file_asts:
                 logger.warning("No files to scan")
-                result.status = ScanStatus.COMPLETED
+                result.add_gap("no_source_files", "parsing", "No supported source files analyzed")
+                result.duration_seconds = time.time() - start_time
                 return result
 
             self._run_pipeline(file_asts, target, result, start_time)
@@ -185,6 +194,9 @@ class ScanEngine:
         except Exception:
             logger.exception("Scan failed")
             result.status = ScanStatus.FAILED
+            result.add_gap(
+                "analysis_failed", "scan", "Scanner execution failed; review worker logs"
+            )
 
         result.duration_seconds = time.time() - start_time
         logger.info(
@@ -202,16 +214,19 @@ class ScanEngine:
         """
         start_time = time.time()
         result = ScanResult(status=ScanStatus.RUNNING)
+        result.analysis_scope = "files"
 
         try:
             logger.info("Phase 1: Parsing %d specific files...", len(files))
             self._emit_progress(1, "Parsing ASTs", start_time)
 
             file_asts: list[FileAST] = []
-            for f in files:
+            selected = self._select_parse_files(files, result)
+            for f in selected:
                 ast = self.ast_parser.parse_file(f, repository_root=repo_root)
                 if ast is not None:
                     file_asts.append(ast)
+            self._record_parse_results(file_asts, selected, result)
 
             result.files_scanned = len(file_asts)
             self._emit_progress(
@@ -225,7 +240,8 @@ class ScanEngine:
             )
             if not file_asts:
                 logger.warning("No files to scan")
-                result.status = ScanStatus.COMPLETED
+                result.add_gap("no_source_files", "parsing", "No supported source files analyzed")
+                result.duration_seconds = time.time() - start_time
                 return result
 
             self._run_pipeline(file_asts, repo_root, result, start_time)
@@ -233,6 +249,9 @@ class ScanEngine:
         except Exception:
             logger.exception("Scan failed")
             result.status = ScanStatus.FAILED
+            result.add_gap(
+                "analysis_failed", "scan", "Scanner execution failed; review worker logs"
+            )
 
         result.duration_seconds = time.time() - start_time
         logger.info(
@@ -249,6 +268,7 @@ class ScanEngine:
 
         start_time = time.time()
         result = ScanResult(status=ScanStatus.RUNNING)
+        result.analysis_scope = "workspace"
         try:
             manifest = WorkspaceManifest.load(manifest_path)
             result.repository = manifest.name
@@ -256,11 +276,14 @@ class ScanEngine:
             workspace_files: list[tuple[Path, str, Path]] = []
             for repository in manifest.repositories:
                 excludes = set(self.config.scan.exclude + repository.exclude)
-                files = self.ast_parser._collect_files(repository.path, excludes)
-                for file_path in files:
+                files = self.ast_parser._collect_files(
+                    repository.path, excludes, include_unsupported=True
+                )
+                for file_path in self._select_parse_files(files, result):
                     workspace_files.append((file_path, repository.id, repository.path))
 
             file_asts = self._parse_workspace_files(workspace_files)
+            self._record_parse_results(file_asts, [item[0] for item in workspace_files], result)
 
             from aegify.semantic import SemanticAnalyzer
 
@@ -342,6 +365,7 @@ class ScanEngine:
                 result.findings = self._filter_findings(
                     result.findings + external.findings,
                     self._parse_severity_threshold(),
+                    scan_result=result,
                 )
                 result.findings.sort(
                     key=lambda finding: (
@@ -353,11 +377,15 @@ class ScanEngine:
                 result.findings = self._filter_findings(
                     external.findings,
                     self._parse_severity_threshold(),
+                    scan_result=result,
                 )
-                result.status = ScanStatus.COMPLETED
+                result.add_gap("no_source_files", "parsing", "No supported source files analyzed")
         except Exception:
             logger.exception("Workspace scan failed")
             result.status = ScanStatus.FAILED
+            result.add_gap(
+                "analysis_failed", "scan", "Scanner execution failed; review worker logs"
+            )
 
         result.duration_seconds = time.time() - start_time
         return result
@@ -420,6 +448,7 @@ class ScanEngine:
         batch_size = 5000
         for batch_start in range(0, len(workspace_files), batch_size):
             batch = workspace_files[batch_start : batch_start + batch_size]
+            batch_results: list[FileAST] = []
             try:
                 with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
                     parsed = executor.map(
@@ -434,13 +463,14 @@ class ScanEngine:
                             repository_id=repository_id,
                             repository_root=repository_root,
                         )
-                        results.append(ast)
+                        batch_results.append(ast)
             except (OSError, PermissionError) as error:
                 logger.warning(
                     "Process-based workspace parsing unavailable (%s); using sequential parsing",
                     error,
                 )
-                results.extend(self._parse_workspace_files_sequential(batch))
+                batch_results = self._parse_workspace_files_sequential(batch)
+            results.extend(batch_results)
             if len(workspace_files) > batch_size:
                 gc.collect()
         return results
@@ -786,6 +816,7 @@ class ScanEngine:
                 findings = rule.evaluate(filtered_asts, call_graph, taint_flows)
             else:
                 findings = rule.evaluate(file_asts, call_graph, taint_flows)
+            result.evaluated_rules.append(rule.definition.id)
             rule_elapsed = time.monotonic() - rule_started
             if rule_elapsed >= 2.0:
                 logger.warning(
@@ -795,8 +826,14 @@ class ScanEngine:
                     len(filtered_asts) if rule.definition.languages else len(file_asts),
                 )
             # Cap findings per rule to prevent memory explosion
-            if len(findings) > max_per_rule:
-                findings = sorted(findings, key=lambda f: -f.confidence)[:max_per_rule]
+            if max_per_rule > 0 and len(findings) > max_per_rule:
+                result.add_gap(
+                    "rule_finding_limit",
+                    "rules",
+                    "Findings omitted by the per-rule output limit",
+                    len(findings) - max_per_rule,
+                )
+                findings = sorted(findings, key=self._finding_priority)[:max_per_rule]
             all_findings.extend(findings)
         logger.info(
             "Phase 6: Completed %d rules, %d skipped, %d raw findings",
@@ -821,7 +858,7 @@ class ScanEngine:
         # Phase 7: Filter + Enrich
         logger.info("Phase 7: Filtering and enriching findings...")
         self._emit_progress(7, "Filtering and enriching", start_time)
-        findings = self._filter_findings(all_findings, severity_threshold)
+        findings = self._filter_findings(all_findings, severity_threshold, scan_result=result)
         logger.info(
             "Phase 7: Filtered %d raw findings down to %d",
             len(all_findings),
@@ -878,15 +915,23 @@ class ScanEngine:
         self._attach_finding_provenance(findings, file_asts, result.workspace_snapshot, roots)
 
         result.findings = findings
-        result.status = ScanStatus.COMPLETED
+        if result.taint_analysis.truncated:
+            result.add_gap("taint_limit", "taint", "Taint analysis reached its configured bound")
+        if result.semantic_analysis.jvm_points_to_truncated:
+            result.add_gap("points_to_limit", "semantics", "Points-to analysis reached its bound")
+        if result.external_analysis.truncated:
+            result.add_gap("external_evidence_limit", "import", "External analysis was truncated")
+        if result.runtime_evidence.truncated:
+            result.add_gap("runtime_evidence_limit", "import", "Runtime evidence was truncated")
+        result.status = ScanStatus.PARTIAL if result.analysis_gaps else ScanStatus.COMPLETED
         self._emit_progress(
             7,
-            "Complete",
+            "Partial" if result.analysis_gaps else "Complete",
             start_time,
             1.0,
             len(findings),
             len(findings),
-            f"Scan complete: {len(findings)} findings",
+            f"Scan {result.status.value}: {len(findings)} findings",
         )
 
     @staticmethod
@@ -1624,95 +1669,147 @@ class ScanEngine:
             return S3Backend(self.config.storage.s3_bucket, self.config.storage.s3_prefix)
         return InMemoryBackend()
 
-    def _parse_directory_parallel(self, target: Path) -> list[FileAST]:
-        """Parse a directory using parallel workers when beneficial."""
-        files = list(self.ast_parser._collect_files(target, set(self.config.scan.exclude)))
+    def _select_parse_files(self, files: list[Path], result: ScanResult) -> list[Path]:
+        selected: list[Path] = []
+        for file_path in sorted(set(files)):
+            language = detect_language(file_path)
+            if language is None:
+                unsupported = UNSUPPORTED_SOURCE_EXTENSIONS.get(file_path.suffix.lower())
+                if unsupported:
+                    result.unsupported_languages[unsupported] = (
+                        result.unsupported_languages.get(unsupported, 0) + 1
+                    )
+                    result.add_gap(
+                        f"unsupported_language_{unsupported}",
+                        "parsing",
+                        f"{unsupported} source files are not supported by installed parsers",
+                    )
+                continue
+            if language.value not in self.config.scan.languages:
+                continue
+            try:
+                if file_path.is_symlink():
+                    result.add_gap(
+                        "symlink_source", "parsing", "Symbolic-link sources were not analyzed"
+                    )
+                    continue
+                size = file_path.stat().st_size
+            except OSError:
+                result.add_gap("unreadable_source", "parsing", "Source files could not be read")
+                continue
+            limit = self.config.scan.max_file_size_kb * 1024
+            if limit and size > limit:
+                result.add_gap(
+                    "source_size_limit", "parsing", "Source files exceeded max_file_size_kb"
+                )
+                continue
+            selected.append(file_path)
+        return selected
 
-        if not files:
-            return []
+    @staticmethod
+    def _record_parse_results(asts: list[FileAST], files: list[Path], result: ScanResult) -> None:
+        parsed = {ast.file_path for ast in asts}
+        result.analyzed_files = sorted(parsed)
+        missing = sum(str(path) not in parsed for path in files)
+        if missing:
+            result.add_gap(
+                "unreadable_source", "parsing", "Source files could not be parsed", missing
+            )
+        recovered = sum(ast.parse_error_count > 0 for ast in asts)
+        if recovered:
+            result.add_gap(
+                "syntax_recovery",
+                "parsing",
+                "Parser recovered incomplete source structure; inspect parse diagnostics",
+                recovered,
+            )
+        for ast in asts:
+            remaining = 1000 - len(result.parse_diagnostics)
+            result.parse_diagnostics.extend(ast.parse_diagnostics[:remaining])
 
-        # For small file sets or single worker, use sequential parsing
-        if len(files) <= 3 or self.max_workers <= 1:
-            return self.ast_parser.parse_directory(target, self.config.scan.exclude)
-
-        # Incremental AST cache: unchanged files are reconstructed from the
-        # versioned storage index and are not sent to parser workers.
+    def _parse_directory_parallel(
+        self, target: Path, result: ScanResult | None = None
+    ) -> list[FileAST]:
+        """Reuse ASTs only when source bytes and the parser contract both match."""
+        health = result if result is not None else ScanResult()
+        files = self._select_parse_files(
+            self.ast_parser._collect_files(
+                target, set(self.config.scan.exclude), include_unsupported=True
+            ),
+            health,
+        )
         project_id = str(target)
-        stored_hashes = self.storage.load_file_hashes(project_id)
+        fingerprint = parser_fingerprint()
         stored_index = self.storage.load_index(project_id) or {}
         cached_payloads = stored_index.get("asts", {})
-        if stored_index.get("version") != 1 or not isinstance(cached_payloads, dict):
+        if (
+            stored_index.get("version") != 2
+            or stored_index.get("parser_fingerprint") != fingerprint
+            or not isinstance(cached_payloads, dict)
+        ):
             cached_payloads = {}
         files_to_parse: list[Path] = []
         cached_results: list[FileAST] = []
-
-        for f in files:
-            current_hash = compute_file_hash(f)
-            self._file_hashes[str(f)] = current_hash
-
-            cached_payload = cached_payloads.get(str(f))
-            if stored_hashes.get(str(f)) == current_hash and cached_payload is not None:
+        for file_path in files:
+            try:
+                current_hash = compute_file_hash(file_path)
+            except OSError:
+                continue  # Accounted for by _record_parse_results below.
+            cached_payload = cached_payloads.get(str(file_path))
+            if cached_payload is not None:
                 try:
-                    cached_results.append(FileAST.model_validate(cached_payload))
-                    continue
+                    cached = FileAST.model_validate(cached_payload)
+                    if cached.file_path == str(file_path) and cached.source_digest == current_hash:
+                        cached_results.append(cached)
+                        continue
                 except ValueError:
-                    logger.debug("Invalid cached AST for %s; reparsing", f)
-            files_to_parse.append(f)
-            self.storage.store_file_hash(project_id, str(f), current_hash)
+                    logger.debug("Invalid cached AST for %s; reparsing", file_path)
+            files_to_parse.append(file_path)
 
-        # Parallel AST parsing in batches to limit peak memory
-        logger.info(
-            "Parsing %d changed files with %d workers (%d cache hits)",
-            len(files_to_parse),
-            self.max_workers,
-            len(cached_results),
-        )
-        results: list[FileAST] = list(cached_results)
-        batch_size = 5000  # Process files in batches to limit memory
-
+        results = list(cached_results)
+        batch_size = 5000
         for batch_start in range(0, len(files_to_parse), batch_size):
             batch = files_to_parse[batch_start : batch_start + batch_size]
+            batch_results: list[FileAST] = []
             try:
-                with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-                    parsed = executor.map(_parse_file_worker, [str(f) for f in batch])
-                    for ast in parsed:
-                        if ast is not None:
-                            results.append(ast)
+                if self.max_workers <= 1 or len(batch) <= 3:
+                    batch_results = [
+                        ast
+                        for path in batch
+                        if (ast := self.ast_parser.parse_file(path)) is not None
+                    ]
+                else:
+                    with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+                        batch_results = [
+                            ast
+                            for ast in executor.map(_parse_file_worker, map(str, batch))
+                            if ast is not None
+                        ]
             except (OSError, PermissionError) as error:
-                # Sandboxed CI runners may deny POSIX semaphore discovery. A
-                # deterministic sequential fallback is preferable to failing a scan.
                 logger.warning(
-                    "Process-based parsing unavailable (%s); using sequential parsing",
-                    error,
+                    "Process-based parsing unavailable (%s); using sequential parsing", error
                 )
-                for file_path in batch:
-                    ast = self.ast_parser.parse_file(file_path)
-                    if ast is not None:
-                        results.append(ast)
-            # Allow GC between batches for large codebases
+                batch_results = [
+                    ast for path in batch if (ast := self.ast_parser.parse_file(path)) is not None
+                ]
+            results.extend(batch_results)
             if len(files_to_parse) > batch_size:
                 gc.collect()
 
-        # Single-repository scans still need module-qualified callable IDs.
-        # Without this, common route names such as GET/POST collapse across
-        # files in both the call graph and normalized program graph.
+        # Identity and ordering must be identical for cached and fresh scans.
+        results.sort(key=lambda ast: ast.file_path)
         for ast in results:
-            self.ast_parser.apply_repository_context(
-                ast,
-                repository_id="",
-                repository_root=target,
-            )
-
-        current_paths = {str(path) for path in files}
+            self.ast_parser.apply_repository_context(ast, repository_id="", repository_root=target)
+        self._record_parse_results(results, files, health)
+        # The digest belongs to the bytes used to build each AST. Separate hash
+        # writes before parsing could associate an old AST with new source after
+        # an interrupted scan. Publish the validated AST and its digest together.
         self.storage.store_index(
             project_id,
             {
-                "version": 1,
-                "asts": {
-                    ast.file_path: ast.model_dump(mode="json")
-                    for ast in results
-                    if ast.file_path in current_paths
-                },
+                "version": 2,
+                "parser_fingerprint": fingerprint,
+                "asts": {ast.file_path: ast.model_dump(mode="json") for ast in results},
             },
         )
         logger.info(
@@ -1747,8 +1844,23 @@ class ScanEngine:
         "/node_modules/",
     )
 
+    @staticmethod
+    def _finding_priority(finding: Finding) -> tuple[int, int, float, str, int, str]:
+        return (
+            0 if finding.blocks_ci else 1,
+            SEVERITY_ORDER.get(finding.severity, 99),
+            -finding.confidence,
+            finding.file_path,
+            finding.line_start,
+            finding.rule_id,
+        )
+
     def _filter_findings(
-        self, findings: list[Finding], severity_threshold: Severity
+        self,
+        findings: list[Finding],
+        severity_threshold: Severity,
+        *,
+        scan_result: ScanResult | None = None,
     ) -> list[Finding]:
         """Filter findings by severity threshold, confidence, generated files, and deduplicate."""
         threshold_order = SEVERITY_ORDER.get(severity_threshold, 2)
@@ -1799,12 +1911,18 @@ class ScanEngine:
 
             file_counts: Counter[str] = Counter()
             capped: list[Finding] = []
-            # Sort by confidence descending so we keep the best findings per file
-            deduped.sort(key=lambda f: -f.confidence)
+            deduped.sort(key=self._finding_priority)
             for f in deduped:
                 if file_counts[f.file_path] < max_per_file:
                     capped.append(f)
                     file_counts[f.file_path] += 1
+            if scan_result is not None and len(capped) < len(deduped):
+                scan_result.add_gap(
+                    "file_finding_limit",
+                    "reporting",
+                    "Findings omitted by the per-file output limit",
+                    len(deduped) - len(capped),
+                )
             return capped
 
         return deduped
@@ -1838,12 +1956,20 @@ class ScanEngine:
         if not sink_func:
             return
 
-        # Resolve short name to qualified name if needed
+        # Resolve by the exact sink file/range; same-named functions in another
+        # module or repository must never supply a path for this finding.
         if sink_func not in call_graph:
-            for node in call_graph.nodes():
-                if node.endswith(f".{sink_func}") or node == sink_func:
-                    sink_func = node
-                    break
+            candidates = []
+            for node, data in call_graph.nodes(data=True):
+                definition = data.get("data")
+                if definition is not None and (
+                    definition.file_path == finding.file_path
+                    and definition.line_start <= finding.line_start <= definition.line_end
+                ):
+                    candidates.append((definition.line_end - definition.line_start, node))
+            candidates.sort()
+            if candidates and (len(candidates) == 1 or candidates[0][0] < candidates[1][0]):
+                sink_func = candidates[0][1]
 
         if sink_func not in call_graph:
             return
@@ -1874,7 +2000,7 @@ class ScanEngine:
             except nx.NetworkXError:
                 pass
 
-        if not best_chain or len(best_chain) < 2:
+        if not best_chain:
             return
 
         # Convert to CallChainStep

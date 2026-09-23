@@ -171,8 +171,13 @@ class SecurityAgentPipeline:
             (
                 item
                 for item in endpoints
-                if item.file_path == finding.file_path
-                or any(step.file_path == item.file_path for step in finding.call_chain)
+                if finding.call_chain
+                and item.file_path == finding.call_chain[0].file_path
+                and item.handler_function == finding.call_chain[0].function
+                and (
+                    not item.repository_id
+                    or item.repository_id == finding.call_chain[0].repository_id
+                )
             ),
             None,
         )
@@ -190,12 +195,29 @@ class SecurityAgentPipeline:
         ]
         runtime_observed = bool(endpoint and endpoint.runtime_observed)
         impact_proven = finding.evidence_state == EvidenceState.IMPACT_PROVEN and runtime_observed
-        static_complete = bool(endpoint and hops)
+        chain = finding.call_chain
+        linked = (
+            bool(chain)
+            and all(step.symbol_id for step in chain)
+            and all(
+                step.next_symbol_id == following.symbol_id
+                for step, following in zip(chain, chain[1:], strict=False)
+            )
+        )
+        sink_bound = bool(
+            chain
+            and chain[-1].file_path == finding.file_path
+            and chain[-1].line_end is not None
+            and chain[-1].line <= finding.line_start <= chain[-1].line_end
+        )
+        static_complete = bool(endpoint and linked and sink_bound)
         unresolved: list[str] = []
         if endpoint is None:
             unresolved.append("No endpoint-to-finding correlation was produced")
         if not hops:
             unresolved.append("No entry-to-sink call chain was produced")
+        elif not linked or not sink_bound:
+            unresolved.append("Call-chain edges or sink source bounds are not validated")
         if not runtime_observed:
             unresolved.append("No runtime observation is linked to this path")
         ids = [evidence_id]

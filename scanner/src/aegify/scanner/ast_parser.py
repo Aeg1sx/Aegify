@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
+from functools import lru_cache
+from importlib.metadata import version
 from pathlib import Path
 
 import tree_sitter_go as tsgo
@@ -22,6 +26,7 @@ from aegify.models import (
     FileAST,
     FunctionDef,
     ImportInfo,
+    ParseDiagnostic,
 )
 from aegify.models import (
     Language as Lang,
@@ -32,6 +37,42 @@ logger = logging.getLogger(__name__)
 # Language registry
 _LANGUAGES: dict[Lang, Language] = {}
 _PARSERS: dict[Lang, Parser] = {}
+_TSX_PARSER: Parser | None = None
+_TSX_LANGUAGE: Language | None = None
+
+# These are source languages without an installed extraction contract. Count
+# them separately so a mixed-language repository cannot appear fully analyzed.
+UNSUPPORTED_SOURCE_EXTENSIONS = {
+    ".php": "php",
+    ".phtml": "php",
+    ".rb": "ruby",
+    ".cs": "csharp",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".ps1": "powershell",
+    ".scala": "scala",
+    ".ex": "elixir",
+    ".exs": "elixir",
+    ".dart": "dart",
+}
+
+
+@lru_cache(maxsize=1)
+def parser_fingerprint() -> str:
+    """Invalidate serialized ASTs when extraction code or grammar packages change."""
+    packages = ["tree-sitter", *[f"tree-sitter-{lang.value}" for lang in Lang]]
+    material = {
+        "schema": 2,
+        "extractor": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "packages": {package: version(package) for package in packages},
+    }
+    return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 
 def _get_language(lang: Lang) -> Language:
@@ -65,13 +106,27 @@ def _get_parser(lang: Lang) -> Parser:
     return _PARSERS[lang]
 
 
+def _get_file_parser(lang: Lang, file_path: Path) -> Parser:
+    global _TSX_PARSER, _TSX_LANGUAGE
+    if lang == Lang.TYPESCRIPT and file_path.suffix.lower() == ".tsx":
+        if _TSX_PARSER is None:
+            _TSX_LANGUAGE = Language(tsts.language_tsx())
+            _TSX_PARSER = Parser(_TSX_LANGUAGE)
+        return _TSX_PARSER
+    return _get_parser(lang)
+
+
 def detect_language(file_path: Path) -> Lang | None:
     """Detect programming language from file extension."""
     ext_map: dict[str, Lang] = {
         ".py": Lang.PYTHON,
         ".js": Lang.JAVASCRIPT,
+        ".mjs": Lang.JAVASCRIPT,
+        ".cjs": Lang.JAVASCRIPT,
         ".jsx": Lang.JAVASCRIPT,
         ".ts": Lang.TYPESCRIPT,
+        ".mts": Lang.TYPESCRIPT,
+        ".cts": Lang.TYPESCRIPT,
         ".tsx": Lang.TYPESCRIPT,
         ".java": Lang.JAVA,
         ".go": Lang.GO,
@@ -104,11 +159,43 @@ class ASTParser:
             logger.warning("Failed to read %s: %s", file_path, e)
             return None
 
-        parser = _get_parser(lang)
+        parser = _get_file_parser(lang, file_path)
         tree = parser.parse(source)
 
         extractor = _get_extractor(lang)
         ast = extractor.extract(tree.root_node, source, str(file_path), lang)
+        ast.source_digest = hashlib.sha256(source).hexdigest()
+        ast.parser_grammar = "tsx" if file_path.suffix.lower() == ".tsx" else lang.value
+        pending = [tree.root_node] if tree.root_node.has_error else []
+        while pending:
+            node = pending.pop()
+            if node.is_error or node.is_missing:
+                ast.parse_error_count += 1
+                if len(ast.parse_diagnostics) < 100:
+                    ast.parse_diagnostics.append(
+                        ParseDiagnostic(
+                            file_path=str(file_path),
+                            kind="error" if node.is_error else "missing",
+                            # tuple access avoids the Point attribute refcount
+                            # regression in py-tree-sitter 0.26.0 (upstream #500).
+                            line_start=node.start_point[0] + 1,
+                            line_end=node.end_point[0] + 1,
+                        )
+                    )
+            pending.extend(reversed([child for child in node.children if child.has_error]))
+        try:
+            source.decode("utf-8")
+        except UnicodeDecodeError as error:
+            ast.parse_error_count += 1
+            line = source[: error.start].count(b"\n") + 1
+            ast.parse_diagnostics.append(
+                ParseDiagnostic(
+                    file_path=str(file_path),
+                    kind="invalid_encoding",
+                    line_start=line,
+                    line_end=line,
+                )
+            )
         self._apply_callable_identities(ast)
         if repository_id or repository_root is not None:
             self.apply_repository_context(
@@ -208,13 +295,17 @@ class ASTParser:
         logger.info("Parsed %d files from %s", len(results), directory)
         return results
 
-    def _collect_files(self, directory: Path, exclude: set[str]) -> list[Path]:
+    def _collect_files(
+        self, directory: Path, exclude: set[str], *, include_unsupported: bool = False
+    ) -> list[Path]:
         """Collect all parseable files, respecting exclusions."""
         files: list[Path] = []
         for path in directory.rglob("*"):
             if not path.is_file():
                 continue
-            if detect_language(path) is None:
+            if detect_language(path) is None and not (
+                include_unsupported and path.suffix.lower() in UNSUPPORTED_SOURCE_EXTENSIONS
+            ):
                 continue
             rel = str(path.relative_to(directory))
             if any(self._matches_pattern(rel, pat) for pat in exclude):

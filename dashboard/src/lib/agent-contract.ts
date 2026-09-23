@@ -28,6 +28,7 @@ export interface AgentEndpointInput {
   exposedViaGateway: boolean;
   runtimeObserved: boolean;
   runtimeEvidence?: string;
+  repositoryId?: string;
 }
 
 export interface AgentScanInput {
@@ -55,7 +56,10 @@ export interface ReachabilityView {
   method: string;
   entryPoint: string;
   sink: string;
-  hops: Array<{ function: string; filePath: string; line: number; snippet: string }>;
+  hops: Array<{
+    function: string; filePath: string; line: number; snippet: string;
+    symbolId: string; repositoryId: string; lineEnd: number; nextSymbolId: string;
+  }>;
   evidenceIds: string[];
   staticComplete: boolean;
   runtimeObserved: boolean;
@@ -264,11 +268,19 @@ function buildReachability(
 ): ReachabilityView {
   const hops = parseCallChain(finding.callChain);
   const endpoint = endpoints.find((item) =>
-    item.filePath === finding.filePath || hops.some((hop) => hop.filePath === item.filePath));
-  const staticComplete = !!endpoint && hops.length > 0;
+    hops.length > 0 && item.filePath === hops[0].filePath
+    && item.handlerFunction === hops[0].function
+    && (!item.repositoryId || item.repositoryId === hops[0].repositoryId));
+  const linked = hops.length > 0 && hops.every((hop) => hop.symbolId.length > 0)
+    && hops.slice(0, -1).every((hop, index) => hop.nextSymbolId === hops[index + 1].symbolId);
+  const sink = hops.at(-1);
+  const sinkBound = !!sink && sink.filePath === finding.filePath
+    && sink.line > 0 && sink.line <= finding.lineStart && finding.lineStart <= sink.lineEnd;
+  const staticComplete = !!endpoint && linked && sinkBound;
   const unresolvedLinks: string[] = [];
   if (!endpoint) unresolvedLinks.push("No endpoint-to-finding correlation was produced");
   if (hops.length === 0) unresolvedLinks.push("No entry-to-sink call chain was produced");
+  else if (!linked || !sinkBound) unresolvedLinks.push("Call-chain edges or sink source bounds are not validated");
   if (!endpoint?.runtimeObserved) unresolvedLinks.push("No runtime observation is linked to this path");
   const evidenceIds = [finding.evidenceId || `finding:${finding.id}`];
   if (endpoint) evidenceIds.push(endpointEvidenceId(endpoint));
@@ -294,7 +306,7 @@ function parseCallChain(value: string | null): ReachabilityView["hops"] {
     if (!Array.isArray(parsed)) return [];
     return parsed.slice(0, 200).map((raw) => {
       if (typeof raw === "string") {
-        return { function: raw.slice(0, 500), filePath: "", line: 0, snippet: "" };
+        return { function: raw.slice(0, 500), filePath: "", line: 0, snippet: "", symbolId: "", repositoryId: "", lineEnd: 0, nextSymbolId: "" };
       }
       const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
       return {
@@ -302,6 +314,10 @@ function parseCallChain(value: string | null): ReachabilityView["hops"] {
         filePath: String(item.filePath || item.file_path || "").slice(0, 2_000),
         line: Math.max(0, Number(item.line || 0) || 0),
         snippet: String(item.snippet || item.codeSnippet || item.code_snippet || "").slice(0, 4_000),
+        symbolId: String(item.symbolId || item.symbol_id || "").slice(0, 2_000),
+        repositoryId: String(item.repositoryId || item.repository_id || "").slice(0, 500),
+        lineEnd: Number.isSafeInteger(item.lineEnd ?? item.line_end) ? Number(item.lineEnd ?? item.line_end) : 0,
+        nextSymbolId: String(item.nextSymbolId || item.next_symbol_id || "").slice(0, 2_000),
       };
     });
   } catch {

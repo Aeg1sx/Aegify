@@ -5,7 +5,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aegify.models import Finding, ScanResult, Severity, TokenUsage
+from aegify.models import Finding, ScanResult, ScanStatus, Severity, TokenUsage
+
+
+def _analysis_health(result: ScanResult) -> str:
+    if result.status == ScanStatus.COMPLETED and not result.analysis_gaps:
+        return ""
+    lines = [
+        f"**Analysis {result.status.value}: coverage is incomplete.**",
+        "Missing findings cannot be treated as resolved.",
+    ]
+    lines.extend(
+        f"- `{gap.code}`: {gap.message} ({gap.affected_count})" for gap in result.analysis_gaps
+    )
+    return "\n\n".join(lines) + "\n"
+
 
 SEVERITY_EMOJI: dict[Severity, str] = {
     Severity.CRITICAL: "🔴",
@@ -22,10 +36,14 @@ class GitHubReporter:
         """Generate a PR comment summary."""
         findings = scan_result.findings
         if not findings:
+            if health := _analysis_health(scan_result):
+                return "## Aegify analysis health\n\n" + health
             return self._no_findings_comment(scan_result)
 
         lines: list[str] = []
         lines.append("## 🔒 Aegify Results\n")
+        if health := _analysis_health(scan_result):
+            lines.append(health)
         lines.append(self._summary_table(scan_result))
         lines.append("")
 
@@ -140,6 +158,11 @@ def generate_pr_comment(
     lines: list[str] = [PR_COMMENT_MARKER]
 
     findings = result.findings
+    if health := _analysis_health(result):
+        lines.append("## Aegify analysis health\n")
+        lines.append(health)
+        if not findings:
+            return "\n".join(lines)
     if not findings:
         lines.append("## :white_check_mark: Aegify — No Issues Found\n")
         lines.append(f"Scanned **{len(changed_files)}** changed files")

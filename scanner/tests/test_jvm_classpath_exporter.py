@@ -406,6 +406,7 @@ def test_classpath_cli_execute_materializes_retained_bundle(
     config = AegifyConfig()
     config.scan.max_workers = 1
     scan = ScanEngine(config=config).scan_workspace(manifest)
-    assert scan.status == "completed"
+    assert scan.status == "partial"
+    assert any(gap.code == "no_source_files" for gap in scan.analysis_gaps)
     assert scan.semantic_analysis.jvm_classpath_snapshots == 1
     assert scan.semantic_analysis.jvm_classpath_entries_verified == 1

@@ -82,10 +82,18 @@ class ScanConfig(BaseModel):
             "**/public/**",
         ]
     )
-    max_file_size_kb: int = 500
+    max_file_size_kb: int = Field(default=500, ge=0)  # 0 disables the input size limit
     max_workers: int = 0  # 0 = auto (min(cpu_count, 8)), 1 = sequential
-    max_findings_per_rule: int = 50  # Cap findings per rule to prevent explosion
-    max_findings_per_file: int = 50  # Global cap across all rules for a single file
+    max_findings_per_rule: int = Field(default=50, ge=0)  # 0 disables the output cap
+    max_findings_per_file: int = Field(default=50, ge=0)  # 0 disables the output cap
+
+
+class TaintAnalysisConfig(BaseModel):
+    """Explicit resource and precision bounds for the global taint solver."""
+
+    max_iterations: int = Field(default=64, ge=1, le=1024)
+    context_depth: int = Field(default=2, ge=1, le=4)
+    max_contexts: int = Field(default=10_000, ge=1, le=1_000_000)
 
 
 class StorageConfig(BaseModel):
@@ -169,6 +177,7 @@ class AegifyConfig(BaseSettings):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     reporting: ReportingConfig = Field(default_factory=ReportingConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
+    taint: TaintAnalysisConfig = Field(default_factory=TaintAnalysisConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
 
     # API keys (from env)
