@@ -83,6 +83,7 @@
                   "operations/secrets-management",
                   "operations/authentication",
                   "operations/self-hosted-workers",
+                  "operations/backup-recovery",
                   "operations/ai-providers",
                   "operations/api-specifications",
                   "security/reporting",

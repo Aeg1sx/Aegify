@@ -12,6 +12,7 @@ import networkx as nx
 
 from aegify.graph_types import CodeGraph
 from aegify.models import CallSite, FileAST, FunctionDef, Language
+from aegify.scanner.import_bindings import declared_import_names
 from aegify.semantic.signatures import (
     jvm_overload_score,
     normalize_jvm_type,
@@ -108,6 +109,9 @@ class CallGraphBuilder:
         self._call_sites: list[CallSite] = []
         # Import resolution: maps (file_path, imported_name) -> qualified_name
         self._import_map: dict[tuple[str, str], list[str]] = {}
+        # Declared imports remain authoritative even when their implementation
+        # is outside the analyzed repository. Unknown is not a same-name edge.
+        self._declared_imports: set[tuple[str, str]] = set()
         # Suffix index: maps short_name -> [qualified_name, ...]
         self._suffix_index: dict[str, list[str]] = {}
         # Reachability cache: maps node -> set of reachable descendants
@@ -125,6 +129,7 @@ class CallGraphBuilder:
         self._name_index = {}
         self._call_sites = []
         self._import_map = {}
+        self._declared_imports = set()
         self._suffix_index = {}
         self._reachability = {}
         self.descriptor_callables = 0
@@ -265,17 +270,20 @@ class CallGraphBuilder:
 
         # Resolve imports
         for ast in file_asts:
+            self._declared_imports.update(
+                (ast.file_path, name) for name in declared_import_names(ast)
+            )
             for imp in ast.imports:
+                imported_names = {
+                    name: name for name in imp.names if name not in imp.bindings.values()
+                }
+                imported_names.update(imp.bindings)
                 target_files = self._resolve_import_files(ast, imp.module, module_to_files)
                 if not target_files:
                     continue
                 # "from db import query_user, query_products"
                 if imp.names:
                     for target_file in target_files:
-                        imported_names = {
-                            name: name for name in imp.names if name not in imp.bindings.values()
-                        }
-                        imported_names.update(imp.bindings)
                         for local_name, exported_name in imported_names.items():
                             if exported_name in file_functions[target_file]:
                                 self._add_import_binding(
@@ -360,6 +368,10 @@ class CallGraphBuilder:
         module_to_files: dict[tuple[str, str], list[str]],
     ) -> list[str]:
         normalized = module.strip().strip("'\"").replace("\\", "/")
+        if normalized.startswith("node:"):
+            # Node built-ins cannot resolve to a repository file sharing a leaf
+            # name, even when both export (for example) a function named resolve.
+            return []
         candidates = {
             normalized,
             normalized.removeprefix("./"),
@@ -502,10 +514,12 @@ class CallGraphBuilder:
         """Resolve one overload using locality, arity, and source type evidence."""
         callee_full = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
         candidate_tiers: list[list[str]] = []
-        for import_name in (callee_full, call.callee):
-            imported = self._import_map.get((call.file_path, import_name), [])
-            if imported:
-                candidate_tiers.append(imported)
+        imported = self._import_map.get((call.file_path, callee_full), [])
+        if imported:
+            candidate_tiers.append(imported)
+        binding = (call.receiver or call.callee).split(".", 1)[0]
+        if (call.file_path, binding) in self._declared_imports and not imported:
+            return None
         if call.receiver:
             qualified = f"{call.receiver}.{call.callee}"
             local_qualified = self._file_function_index.get((call.file_path, qualified), [])

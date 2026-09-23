@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AuthEnvironment } from "./auth-policy.ts";
 import { AccessDenied, authorizeProject, type AccessPrincipal } from "./project-access.ts";
+import { RECOVERY_RECEIPT_KEY } from "./recovery-policy.ts";
 
 export const tokenMetadata = { id: true, projectId: true, name: true, prefix: true, scope: true, createdBy: true, createdAt: true, expiresAt: true, revokedAt: true, lastUsedAt: true } as const;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -31,6 +32,9 @@ export async function authenticateUploadToken(db: PrismaClient | Prisma.Transact
   if (!token || token.length > 512) return null;
   const digest = hash(token);
   if (env.AEGIFY_UPLOAD_TOKEN && env.AEGIFY_UPLOAD_PROJECT_ID && timingSafeEqual(Buffer.from(digest, "hex"), Buffer.from(hash(env.AEGIFY_UPLOAD_TOKEN), "hex"))) {
+    // Environment credentials cannot be individually revoked from a restored
+    // snapshot. Require newly issued project credentials after recovery.
+    if (await db.setting.findUnique({ where: { key: RECOVERY_RECEIPT_KEY }, select: { key: true } })) return null;
     const project = await db.project.findFirst({ where: { id: env.AEGIFY_UPLOAD_PROJECT_ID, archived: false }, select: { id: true } });
     return project ? { projectId: project.id, actorId: "legacy-upload-token" } : null;
   }

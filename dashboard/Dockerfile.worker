@@ -20,7 +20,7 @@ COPY dashboard/prisma ./prisma
 COPY dashboard/prisma.config.ts ./prisma.config.ts
 RUN node node_modules/prisma/build/index.js generate
 COPY dashboard/src/lib ./src/lib
-COPY dashboard/scripts/scan-worker.mjs dashboard/scripts/test-worker-container.mjs ./scripts/
+COPY dashboard/scripts/scan-worker.mjs dashboard/scripts/test-worker-container.mjs dashboard/scripts/recovery.mjs ./scripts/
 
 FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
 RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 libatomic1 && \

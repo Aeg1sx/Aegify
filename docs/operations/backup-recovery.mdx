@@ -1,0 +1,192 @@
+---
+title: Back up and recover a team installation
+description: Create encrypted SQLite snapshots, verify them, and rehearse recovery with reviewed access.
+---
+
+## Recovery contract
+
+The operator CLI in the worker image creates a consistent SQLite snapshot while
+the dashboard is running. It encrypts that snapshot with a separate backup key.
+Verification authenticates the archive, checks its digest, schema, row counts,
+SQLite integrity and foreign keys. Restore creates a **new database file**;
+existing files are never overwritten and the running installation is not switched.
+
+The archive contains the database, including findings, triage, project memberships,
+saved integration settings and retained source snapshots. It does not contain
+environment secrets, container images, external repository state, identity-provider
+configuration or files outside SQLite. Keep the matching Aegify release and a
+separate protected copy of the installation configuration available for recovery.
+
+| Item | Current behavior |
+| --- | --- |
+| Storage | Local SQLite on a single host; maximum snapshot size 8 GiB |
+| Encryption | AES-256-GCM, per-archive HKDF-SHA256 key, random salt and nonce |
+| Metadata | Header includes timestamps, database/schema hashes and counts; it is authenticated but readable |
+| Publication | Private staging, mode `0600` files, atomic creation without replacing an existing destination |
+| Access after restore | Every account disabled; old sessions and CI credentials invalidated |
+| Interrupted work | Queued/running scans and AI jobs cancelled or failed; saved approvals expired |
+| Activation | Operator reviews and enables existing admitted accounts individually |
+
+The snapshot uses [SQLite `VACUUM INTO`](https://www.sqlite.org/lang_vacuum.html),
+including committed WAL data. Copying only a live `.db` file is not this procedure.
+The JSON receipt records `snapshotStartedAt`, `snapshotCompletedAt`, `createdAt`
+and command `durationMs`. Use the start of the snapshot interval conservatively
+when measuring recovery-point age. A completion timestamp is not proof that later
+writes were included.
+
+## Prepare keys and storage
+
+Apply the current migrations first. The recovery tooling requires the session-epoch
+migration and does not accept arbitrary older SQLite copies as encrypted archives.
+
+Inject these values into the one-off operator process from your secret manager:
+
+- `AEGIFY_BACKUP_KEY`: an independent, random 32-byte key encoded as 64 hex characters.
+- `ENCRYPTION_SECRET`: the original installation key used by saved settings and source snapshots.
+- `DATABASE_URL`: the source database for backup; the candidate database for account review.
+
+The Compose worker already receives `ENCRYPTION_SECRET` and `DATABASE_URL`. Pass
+the backup key only to the recovery command; the long-running worker does not
+need it. Keep the key outside the archive storage location, avoid shell tracing,
+and retain old keys for archives that still use them. Losing either required key
+prevents this recovery procedure.
+
+When encrypted records exist, backup authenticates one stored ciphertext with
+the supplied installation key. The manifest reports `stored_ciphertext`; it does
+not claim to validate every integration credential. An empty installation reports
+`no_encrypted_records`, so key custody must be checked separately.
+
+Use a private destination directory on a local filesystem supporting hard links.
+Allow space for the database snapshot plus encrypted archive during backup, and
+another database during verification or restore. The default worker `/tmp` is
+limited to 512 MiB; the commands below put verification scratch space on `/data`.
+Staging contains plaintext database bytes inside a mode-`0700` directory. Normal
+success and failure remove it. After a killed process or host crash, inspect and
+remove only abandoned `.aegify-backup-*`, `.aegify-restore-*` or
+`aegify-backup-check-*` directories after confirming that no recovery command is active.
+
+## Create and verify an archive
+
+Run from the repository root with the installation's normal Compose configuration.
+Export `AEGIFY_BACKUP_KEY` through your secret manager before running these commands.
+Use a new archive name each time:
+
+```bash
+docker compose run --rm --no-deps --env AEGIFY_BACKUP_KEY worker \
+  node scripts/recovery.mjs backup --output /data/team-2026-09-24.aegify
+
+docker compose run --rm --no-deps --env AEGIFY_BACKUP_KEY --env TMPDIR=/data worker \
+  node scripts/recovery.mjs verify --archive /data/team-2026-09-24.aegify
+```
+
+Save both JSON receipts in protected operator records. A command returns exit
+code 1 on failure. Verification authenticates and decrypts a temporary copy; it
+does not enable accounts, run jobs or change the source database.
+
+Copy the verified archive to your protected backup store. For a running Compose
+installation, the shared data volume is available through the dashboard service:
+
+```bash
+umask 077
+mkdir -p ./private-backups
+docker compose cp dashboard:/data/team-2026-09-24.aegify ./private-backups/
+```
+
+`private-backups` must remain outside source control and application build contexts.
+Use your organization's separate backup storage and retention process; keeping
+an archive only on the same data volume does not protect against losing that host.
+These commands follow Docker's [one-off service command](https://docs.docker.com/reference/cli/docker/compose/run/)
+and [service copy](https://docs.docker.com/reference/cli/docker/compose/cp/) interfaces.
+
+## Rehearse restoration
+
+First rehearse in an isolated installation with the matching release and keys.
+For production promotion, stop **both** services before changing their database:
+
+```bash
+docker compose stop worker dashboard
+
+docker compose run --rm --no-deps --env AEGIFY_BACKUP_KEY worker \
+  node scripts/recovery.mjs restore \
+  --archive /data/team-2026-09-24.aegify --output /data/recovered-2026-09-24.db
+
+docker compose run --rm --no-deps --env DATABASE_URL=file:/data/recovered-2026-09-24.db worker \
+  node scripts/recovery.mjs accounts
+```
+
+The restore receipt has status `restored_candidate`, an original backup digest,
+the changed candidate digest and a restore ID. The digests differ because restore
+records an audit event and invalidates old access and interrupted work. Historical
+findings and completed scans are retained. Inspect the account list and compare
+the preserved project roles with current access approvals before enabling anyone.
+The account list is limited to 1,000 entries and reports truncation.
+
+Select an existing administrator whose exact email is in `AUTH_ADMIN_EMAILS` and
+also meets the current `AUTH_ALLOWED_EMAILS` or `AUTH_ALLOWED_DOMAINS` policy.
+For an SSO-only account:
+
+```bash
+docker compose run --rm --no-deps --env DATABASE_URL=file:/data/recovered-2026-09-24.db worker \
+  node scripts/recovery.mjs enable-user --email reviewed-admin@example.test
+```
+
+For a local password account, inject a new `AEGIFY_RECOVERY_PASSWORD` into the
+operator shell and pass it by name:
+
+```bash
+docker compose run --rm --no-deps --env DATABASE_URL=file:/data/recovered-2026-09-24.db \
+  --env AEGIFY_RECOVERY_PASSWORD worker \
+  node scripts/recovery.mjs enable-user --email reviewed-admin@example.test
+```
+
+The new password must satisfy the password policy and differ from the backed-up
+password. Existing email-verification requirements still apply. SSO-only accounts
+cannot gain a local password through this command. Every activation is audited;
+other accounts remain disabled until reviewed.
+
+## Promote and check the candidate
+
+1. Keep the original database and its WAL files intact for rollback. Do not copy
+   the candidate over an active database or mix old and new WAL files.
+2. In the private deployment configuration, set
+   `DATABASE_URL=file:/data/recovered-2026-09-24.db` for both services. Keep the
+   original `ENCRYPTION_SECRET`; review all other authentication and admission settings.
+3. Start only the dashboard with `docker compose up -d dashboard`. Its entrypoint
+   applies migrations and enables WAL. Confirm migration status and sign in as the
+   reviewed administrator.
+4. Check a known project, completed scan, triage decision, source manifest and audit
+   history against the saved receipt. Review historical project memberships and
+   reconnect or rotate repository, AI and notification credentials as appropriate.
+   The archive preserves their prior values; it does not revoke credentials at
+   their external providers.
+5. Confirm old browser sessions and old project CI tokens fail. The legacy
+   environment upload token is disabled on restored databases. Issue new scoped,
+   expiring CI credentials and validate a small owned SARIF upload.
+6. Start the worker with `docker compose up -d worker`. Interrupted jobs stay
+   terminal; start an explicit new job or retry after reviewing its scope.
+7. Record the restore ID, software revision, checks, missing data since the snapshot,
+   and elapsed time until the team's workflow works again. Remove the backup key
+   and recovery password from the operator environment.
+
+Rolling back is a separate operator decision: stop both services, restore the
+previous `DATABASE_URL` configuration and reconcile writes made after promotion.
+Do not run two installations against divergent copies and expect automatic merging.
+
+## Native CLI and acceptance limits
+
+With the locked dashboard dependencies and matching Prisma client installed,
+the same CLI is available from `dashboard/`:
+
+```bash
+npm run recovery -- --help
+npm run recovery -- backup --output /private/backup/team.aegify
+npm run recovery -- verify --archive /private/backup/team.aegify
+npm run recovery -- restore --archive /private/backup/team.aegify --output /private/backup/recovered.db
+```
+
+Use an absolute local `DATABASE_URL` to avoid working-directory ambiguity.
+Encrypted archives are verified before any recovered database is published.
+Automated scheduling, remote backup transport, configurable retention and a
+deployment-specific RPO/RTO are not supplied by these commands. A successful unit
+test or archive verification does not establish your recovery-time objective;
+measure the full isolated drill, including identity and CI reconnection.

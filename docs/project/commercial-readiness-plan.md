@@ -283,6 +283,56 @@ isolated Chrome run uploaded a real scanner-generated SARIF with scripted model
 responses and verified source excerpts and tool activity at desktop/mobile widths.
 The local self-scan checkpoint analyzed 291 files in 181.6 seconds with no analysis
 gaps, 708 advisory candidates and zero blocking findings. Documentation checks
-passed, retaining the existing color recommendations. Remote CI and merge remain
-pending. Live providers, durable dashboard AI jobs, six-role source tools,
+passed, retaining the existing color recommendations. All required remote CI,
+container checks, CodeQL and self-scan passed on head
+`03ec95df4b1f8bd1a4ab31295b38be413ddfec4f`. PR #46 merged at
+`4efce337d17e8c54bdc6fa9c5c1531fd13f2dad1` with a verified GitHub signature.
+Live providers, durable dashboard AI jobs, six-role source tools,
 calibrated accuracy and independent evaluation remain separate acceptance work.
+
+## Team backup and recovery checkpoint: 2026-09-24
+
+Added an operator-only encrypted SQLite backup, verification and restore CLI to
+the worker image. Live backups use a consistent `VACUUM INTO` snapshot, retain
+the snapshot interval, and authenticate the metadata and database with a separate
+archive key. A stored ciphertext, when present, checks the original installation
+key. Header size, database size, schema, counts, integrity and foreign keys are
+validated before publication. Outputs are private, created atomically without
+overwriting existing files, and interrupted restore transactions remain unpublished.
+
+Restore creates a candidate database, disables all existing accounts, rotates a
+new session epoch, revokes project CI tokens, blocks legacy environment upload
+credentials, clears authentication tokens and cancels unfinished scans/AI jobs.
+Old approvals and worker registrations are invalidated. Historical findings,
+completed scans, triage and audit records remain. Operators reactivate admitted
+accounts individually; local accounts require a different password. The session
+epoch migration keeps existing sessions valid during a normal software upgrade
+but prevents pre-recovery cookies from becoming valid when counters roll back.
+
+Local checks: 100 dashboard tests passed, including real Python worker execution,
+fresh and existing-user migrations, WAL snapshot isolation, encrypted archive
+contents, wrong keys, damaged/truncated archives, unchanged source state, access
+revocation, local-password login, concurrent publication and a late transaction
+failure. Three final focused recovery tests passed after the last assertion
+change. The production build, TypeScript, ESLint and 87 production HTTP/CLI checks
+passed; the HTTP checks reject an old cookie after epoch rotation and admit a new
+cookie. Documentation validation, links and accessibility checks passed with the
+existing color recommendations. Remote exact-head checks and container acceptance
+remain pending until the recovery PR completes.
+
+The first recovery self-scan reported four blocking SQL candidates at two bound
+operator queries. Their source paths depended on `node:path.resolve` incorrectly
+binding to an unrelated project function, including a second same-name fallback
+inside the taint solver. Both resolvers now respect declared imports and the Node
+namespace. Forty-two focused graph/taint checks pass, covering named/aliased/
+namespace imports, missing modules, unchanged local edges, conservative taint
+through an unknown library call, cross-repository propagation and a 1,000-call
+resolution bound. No query or rule was suppressed to pass the scan.
+The final full scanner suite passed 525 tests with one skip; strict mypy passed
+across 90 source files, and Ruff/format checks passed across 146 files.
+
+The documented drill includes candidate review, administrator activation, explicit
+database promotion, integration review, new project CI credentials and measured
+recovery time. No live production installation was backed up or switched. Scheduled
+backups, off-host transport, configurable retention, external credential rotation
+and installation-specific RPO/RTO acceptance remain open.

@@ -78,12 +78,13 @@ const result = NextAuth({
         const stored = await prisma.user.findUnique({ where: { id: user.id } });
         if (!stored || stored.disabled) return null;
         token.sub = stored.id; token.sessionVersion = stored.sessionVersion;
+        token.sessionEpoch = stored.sessionEpoch;
         token.authStartedAt = Date.now(); token.provider = account?.provider;
       }
       if (!token.sub || typeof token.authStartedAt !== "number" || Date.now() - token.authStartedAt > 8 * 3_600_000 || !enabledProviders.has(String(token.provider))) return null;
-      const stored = await prisma.user.findUnique({ where: { id: token.sub }, select: { sessionVersion: true, disabled: true, email: true } });
+      const stored = await prisma.user.findUnique({ where: { id: token.sub }, select: { sessionVersion: true, sessionEpoch: true, disabled: true, email: true } });
       // Check durable state on every session read, including proxy authorization.
-      if (!stored || stored.disabled || stored.sessionVersion !== token.sessionVersion || !emailAllowed(stored.email, process.env)) return null;
+      if (!stored || stored.disabled || stored.sessionVersion !== token.sessionVersion || (token.sessionEpoch ?? "") !== stored.sessionEpoch || !emailAllowed(stored.email, process.env)) return null;
       return token;
     },
     session({ session, token }) {

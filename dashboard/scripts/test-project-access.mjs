@@ -162,6 +162,12 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     const retry = await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "retry" }, status: 202 });
     assert.notEqual(retry.scanId, queued.scanId);
     if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id });
+    // Recovery rotates an epoch even if a restored session counter repeats.
+    const recoveredEpoch = randomBytes(16).toString("hex");
+    await db.user.update({ where: { id: "alice" }, data: { sessionEpoch: recoveredEpoch } });
+    await call("/api/projects", { user: "alice", status: 401 });
+    cookies.alice = await encode({ secret, salt: "authjs.session-token", maxAge: 3600, token: { sub: "alice", sessionVersion: 0, sessionEpoch: recoveredEpoch, authStartedAt: Date.now(), provider: "github" } });
+    await call("/api/projects", { user: "alice" });
     await db.user.update({ where: { id: "bob" }, data: { disabled: true } });
     await call("/api/projects", { user: "bob", status: 401 });
     log(`Project access: ${checks} production HTTP/CLI checks passed; project isolation, roles, CSRF, scoped CI delivery and revocation verified.`);

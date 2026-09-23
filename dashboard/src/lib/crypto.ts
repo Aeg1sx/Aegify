@@ -5,8 +5,7 @@ const IV_LENGTH = 12;
 const SALT_LENGTH = 16;
 const KEY_LENGTH = 32;
 
-function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_SECRET;
+function getEncryptionKey(secret = process.env.ENCRYPTION_SECRET): Buffer {
   if (!secret) {
     throw new Error(
       "ENCRYPTION_SECRET environment variable is required for API key encryption. " +
@@ -18,8 +17,8 @@ function getEncryptionKey(): Buffer {
   return scryptSync(secret, salt, KEY_LENGTH) as Buffer;
 }
 
-export function encrypt(plaintext: string): string {
-  const key = getEncryptionKey();
+export function encrypt(plaintext: string, secret?: string): string {
+  const key = getEncryptionKey(secret);
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
 
@@ -32,8 +31,8 @@ export function encrypt(plaintext: string): string {
   return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted}`;
 }
 
-export function decrypt(encryptedData: string): string {
-  const key = getEncryptionKey();
+export function decrypt(encryptedData: string, secret?: string): string {
+  const key = getEncryptionKey(secret);
   const parts = encryptedData.split(":");
 
   if (parts.length !== 3) {
