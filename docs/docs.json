@@ -64,6 +64,7 @@
                 "pages": [
                   "analysis/semantic-analysis",
                   "analysis/ai-sast-operations",
+                  "analysis/benchmark-evaluation",
                   "analysis/rule-authoring",
                   "architecture/technical-architecture"
                 ]

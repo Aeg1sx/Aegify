@@ -1,0 +1,135 @@
+---
+title: "Detection evaluation"
+description: "Measure case-level precision, recall, coverage and reproducibility with pinned external labels."
+icon: "chart-no-axes-combined"
+---
+
+Use several evaluation layers: owned regression fixtures for changed behavior,
+public labeled corpora for broader diagnostics, and independently reviewed
+application cases for release decisions. A high score on one layer does not
+establish commercial detection accuracy.
+
+## OWASP Python case evaluation
+
+`aegify benchmark-owasp` reads a local
+[OWASP Benchmark Python](https://github.com/OWASP-Benchmark/BenchmarkPython)
+source tree and its expected-results CSV. It uses the common static scanner,
+bundled rules, low severity threshold, serial parsing and 50,000 taint contexts.
+The output caps are disabled. All Python files are selected, including
+helpers; the scanner also reads auxiliary source-analysis inputs such as OpenAPI.
+
+The runner ignores corpus `.aegify.yml` and `AEGIFY_*` configuration overrides.
+It uses memory storage, makes no LLM calls, installs no corpus dependencies and
+does not execute the benchmark application or scripts. The corpus is hashed
+before and after the scan, including auxiliary files, and changes invalidate the
+evaluation. Symbolic links, oversized inputs and malformed labels are rejected.
+
+```bash
+cd scanner
+uv run aegify benchmark-owasp /path/to/BenchmarkPython \
+  --expected-results /path/to/BenchmarkPython/expectedresults-0.1.csv \
+  --output-file /path/to/reports/owasp-python.json \
+  --min-precision 0.90 --min-recall 0.90
+```
+
+Keep the output outside the corpus tree. Use an exact upstream commit and verify
+the archive digest before extracting it. The checked-in baseline and replay
+instructions are in
+[`scanner/benchmarks/owasp-python-v01`](https://github.com/Aeg1sx/Aegify/tree/main/scanner/benchmarks/owasp-python-v01).
+The adapter currently supports the Python `testcode/BenchmarkTestNNNNN.py`
+layout. Java and other benchmark formats need their own adapters.
+
+## What gets counted
+
+Each label identifies one case, intended CWE and positive/negative outcome.
+An Aegify finding counts only when its relative case path and CWE both match,
+and its rule's declared CWE agrees with the finding and appears in the scan's
+executed-rule inventory. No parent/child CWE aliases are applied implicitly.
+
+| Label | Matching finding | Case outcome |
+|---|---|---|
+| Positive | Present | True positive |
+| Positive | Absent | False negative |
+| Negative | Present | False positive |
+| Negative | Absent | True negative |
+
+Duplicate findings in one case count once. Results are reported separately for
+all candidates, advisory findings and blocking findings. `--blocking-only`
+applies the CLI quality thresholds to the blocking channel; it does not remove
+the other channels from the report. A blocking disposition is a scanner gate
+decision, not a runtime impact claim.
+
+These are **case-level metrics for the intended CWE**, not finding-level
+precision across all emitted alerts. A finding for a different CWE, or in a
+helper outside the labeled cases, remains an unscored observation. The upstream
+labels do not exhaustively label every possible issue in each file. Unscored
+observations need separate review; they cannot all be called false positives.
+The report retains their counts and provides each case's matched rules and
+number of observations for diagnosis.
+
+## Coverage and abstention
+
+A case is unscored if its file was not analyzed or no executed rule declares its
+CWE. An analysis failure, syntax recovery, truncation or another global gap makes
+all cases unscored: current scan diagnostics cannot reliably attribute every gap
+to individual cases. Observed matches are retained for investigation.
+
+Unscored cases never become true negatives. Reports include the scored fraction,
+reasons for abstention and recall with **all positive labels** in the denominator.
+The ordinary precision and recall fields describe only the scored subset.
+The presence of an executed CWE rule does not imply support for every API,
+framework or data-flow construct represented in that category.
+
+| Exit | Meaning |
+|---:|---|
+| `0` | Every case scored, defined precision/recall, requested thresholds passed |
+| `1` | Complete evaluation with undefined precision/recall or a failed quality threshold |
+| `2` | Invalid/changed input, report write failure or scanner failure |
+| `3` | Incomplete analysis or any unscored case; a diagnostic report is retained |
+
+Fix the coverage or model gap before treating exit `3` as a passing quality gate.
+Do not lower quality thresholds to describe the current diagnostic baseline as
+release acceptance.
+
+## Metrics and replay evidence
+
+Reports include TP/FP/FN/TN, precision, recall, F1, accuracy, balanced accuracy,
+false-positive rate and Matthews correlation coefficient. An undefined ratio is
+`null`, never an invented perfect score. Per-CWE tables retain every category;
+per-rule tables evaluate all cases for the rule's exact CWE.
+
+Wilson 95% intervals are included for precision and recall as descriptive
+binomial intervals. They assume independent cases and do not account for shared
+templates, training contamination, model selection or differences between this
+corpus and production applications. Public benchmark cases are not a held-out
+AI test set. This adapter is not the official BenchmarkUtils scorecard generator.
+
+The report records corpus and label hashes, scanner code/modelpack and rule
+hashes, parser fingerprint, installed package versions, effective configuration,
+executed rule IDs and a canonical case-outcome digest. Compare the outcome digest
+across separate processes; scan UUIDs, timing and process memory are not part of
+that digest. A changed corpus, implementation or configuration requires a new
+baseline.
+
+Timing includes scan time and complete evaluation time. Process and child RSS
+high-water marks are separate and must not be summed as simultaneous memory
+usage. Individual developer-machine runs are not p50/p95 latency guarantees.
+
+## Release evaluation
+
+Before setting a production gate:
+
+1. Declare supported language/framework/CWE combinations and unsupported scope.
+2. Keep application-family and commit splits separate between calibration and
+   evaluation; review labels without using the scanner's prediction as truth.
+3. Review false positives and misses with source-bound evidence and a second
+   adjudication. Preserve disagreements and uncertain labels.
+4. Measure findings per review hour, duplication, time to triage, escaped defects,
+   CI false-block rate and operating cost alongside detection metrics.
+5. Repeat on fixed hardware and frozen inputs; compare incremental and full scans.
+6. Evaluate AI review on a separate labeled set with repeated model runs, explicit
+   abstention, source-citation validity, provider/model versions and token costs.
+
+Juice Shop and DVWA coverage checks remain separate from this labeled evaluation.
+In particular, a scan of DVWA JavaScript utilities does not measure detection in
+its unsupported PHP backend.

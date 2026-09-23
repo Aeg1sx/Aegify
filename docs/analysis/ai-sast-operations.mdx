@@ -209,6 +209,12 @@ CI currently requires `TP 9 / FP 0 / FN 0`, so precision, recall, and F1 must
 all equal `1.0` inside this declared scope. This is a reproducible regression
 contract, not a universal accuracy claim for every rule, framework, or program.
 
+For pinned external case labels, use the
+[OWASP Python evaluation workflow](/analysis/benchmark-evaluation). It reports
+negative cases, separate candidate/blocking metrics, exact-CWE scope, unscored
+cases and reproducibility manifests. Public benchmark results and independent
+application validation are separate release evidence.
+
 ## Proof boundary
 
 AI-generated requests and payloads are templates, not execution results. They

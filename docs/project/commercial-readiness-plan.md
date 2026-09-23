@@ -26,9 +26,9 @@ permissions and immutable source snapshots.
 | Agent operations | Durable jobs, logs, tool spans, evidence events, cancellation, retry, budgets and cost accounting | Worker interruption/recovery tests and dashboard observation | In progress |
 | Provider support | Claude Code and Codex adapters with explicit models, bounded read-only tools and reproducible traces | Local contract tests plus separately recorded live-provider checks | Pending |
 | Product experience | Clear analysis scope, uncertainty, repository navigation, data flow/graph views and triage workflow | Browser checks of the complete user flow and accessibility | Pending |
-| Open-source evaluation | Pinned Juice Shop, DVWA and other relevant source corpora, with support gaps reported honestly | Static-only runs, scope inventory, reviewed labels and documented results | Pending |
-| Efficiency | Fixed-hardware latency/memory/cost baselines, dependency-aware incremental work and cache invalidation | p50/p95 and peak-memory reports; unchanged-result comparison | Pending |
-| Reproducibility | Engine/parser/rules/modelpack/config/source/provider manifests and replayable evidence | Clean-environment replay and artifact-digest checks | Pending |
+| Open-source evaluation | Pinned Juice Shop, DVWA and other relevant source corpora, with support gaps reported honestly | Static-only runs, scope inventory, reviewed labels and documented results | In progress |
+| Efficiency | Fixed-hardware latency/memory/cost baselines, dependency-aware incremental work and cache invalidation | p50/p95 and peak-memory reports; unchanged-result comparison | In progress |
+| Reproducibility | Engine/parser/rules/modelpack/config/source/provider manifests and replayable evidence | Clean-environment replay and artifact-digest checks | In progress |
 | Enterprise operations | Project roles, service identities, isolation, audit, retention, backups and migration recovery | Authorization integration and operational recovery tests | In progress |
 | Dependencies and PRs | Review and resolve the nine original dependency PRs and the recorded follow-up updates without bypassing unexplained failed checks | Current PR heads, coordinated lockfiles, CI, merge/closure state | Complete for the listed PRs |
 | Code scanning | Fix real defects; retain or explicitly explain uncertain and governance findings | Fresh analysis on the merged commit and per-alert disposition evidence | In progress |
@@ -375,3 +375,69 @@ analysis gaps. The dashboard's YAML validation accepts the four definitions with
 no diagnostics; documentation validation, links and accessibility checks pass
 with the existing color recommendations. Remote exact-head checks and post-merge
 GitHub alert state remain separate gates.
+
+All required CI, CodeQL, Linux container checks and self-scan passed on
+`116a761d589975d3da6191ff8a4a65888ee5932c`. PR #48 merged at
+`8caa07e9160455663be84e135aea18615ee4a022` with a verified GitHub signature.
+Main analysis `1828761753` on that merge completed at 2026-09-23T22:02:33Z
+with 677 Aegify candidates, down from 746 on the preceding merge. The refreshed
+GitHub snapshot contains 682 open alerts (677 Aegify, five Scorecard) and zero
+`AEG-OAUTH-004` alerts. No alert-dismissal API was called. Remaining alerts still
+require disposition; an empty OAuth result does not establish OAuth security.
+
+## External case evaluation checkpoint: 2026-09-24
+
+Added `aegify benchmark-owasp` for the official Python case-label CSV. It runs the
+common static engine with an explicit Python inventory, serial parsing, bundled
+rules, low severity, uncapped outputs and 50,000 taint contexts. It ignores corpus
+and environment scanner configuration, uses memory storage and does not install
+or execute corpus code or call a model. Corpus/label/implementation changes during
+analysis invalidate the result. All corpus files, including OpenAPI and other
+auxiliary inputs, contribute to the source digest.
+
+The evaluator matches an exact case path and declared CWE at most once per
+case/channel. It separates all-candidate, advisory and blocking metrics, preserves
+undefined ratios as null, and reports per-CWE/per-rule counts, balanced accuracy,
+MCC and descriptive Wilson intervals. Missing files and absent CWE rules remain
+unscored; a global scan gap makes all cases unscored. Findings for other CWEs or
+outside labeled cases remain separate observations. This case-level contract
+does not measure the precision of every emitted alert or prove runtime impact.
+
+Pinned OWASP Benchmark Python commit
+`f1291485808b66e20ddb6b01b10dc71b3df8c8ba` supplies 1,230 public synthetic cases
+(452 positive, 778 negative). All 1,236 Python files were analyzed without scan
+gaps. Thirty-seven CWE-501 cases remain unscored because no executed rule declares
+that CWE. Within the 1,193 scored cases, all-candidate results are TP=209, FP=114,
+FN=225, TN=645: precision 64.71%, recall 48.16%, F1 55.22%, accuracy 71.58%.
+Recall over all 452 positive labels is 46.24%. Blocking results have TP=21, FP=28,
+FN=413, TN=731: precision 42.86%, recall 4.84%. Exact CWE matching applies no
+implicit parent/child aliases. These results do not meet a 90% quality gate.
+
+The scan emitted 10,851 findings. Of these, 10,332 concern a different CWE from
+the case's intended label and 14 are outside labeled case files. They require
+separate review and are not automatically counted as false positives. The 505
+matching observations collapse to 323 detected cases. Source-model gaps, typed
+sanitizers, branch handling and option-sensitive cookie/XML rules need work.
+
+`scanner/benchmarks/owasp-python-v01` retains aggregate metrics, every case outcome,
+upstream/archive/label hashes, scanner code/modelpack/rule/parser/package/config
+provenance and two fresh-process runs. Both have identical provenance, metrics
+and outcome digest `174f01620ccb79b7fe4c9ea613168552bf186caccfff8630724a8372c0442229`.
+Observed scan times are 225.21 and 224.40 seconds, with process RSS peaks of
+369,082,368 and 367,722,496 bytes. Concurrent developer-machine work is recorded;
+these are not fixed-hardware p50/p95 guarantees. Both evaluations correctly exit
+3 because 37 cases remain unscored. Public labels are not independently adjudicated
+application evidence or a held-out AI benchmark.
+
+The preflight full scanner suite passed 559 tests with one skip. After clarifying
+the serial runner interface and adding retained-artifact integrity checks, all
+23 final focused evaluation tests pass. Ruff/format checks pass across 149 files,
+strict mypy passes across 92 source files, and documentation validation, links
+and accessibility pass with existing color recommendations. The final self-scan
+analyzed 298 files in 153.7 seconds with no reported gaps, 678 advisory candidates
+and zero blocking findings. Exact-head remote CI and merge remain separate gates.
+
+A separate owned identity check found that the same repository ID, module path
+and evidence text receive different finding fingerprints when only the checkout
+root changes. Correcting this CI/worker triage continuity issue, including legacy
+identity compatibility and multi-repository separation, is follow-up work.

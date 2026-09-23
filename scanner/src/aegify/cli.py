@@ -317,6 +317,59 @@ def rules() -> None:
     console.print(table)
 
 
+@app.command("benchmark-owasp")
+def benchmark_owasp(
+    target: Annotated[Path, typer.Argument(help="Local OWASP Benchmark Python tree", exists=True)],
+    expected_results: Annotated[
+        Path, typer.Option("--expected-results", help="Official case-label CSV", exists=True)
+    ],
+    output_file: Annotated[
+        Path, typer.Option("--output-file", "-o", help="JSON report outside the corpus tree")
+    ],
+    min_precision: Annotated[float, typer.Option("--min-precision", min=0.0, max=1.0)] = 0.9,
+    min_recall: Annotated[float, typer.Option("--min-recall", min=0.0, max=1.0)] = 0.9,
+    blocking_only: Annotated[
+        bool, typer.Option("--blocking-only", help="Apply quality thresholds to blocking findings")
+    ] = False,
+) -> None:
+    """Statically evaluate exact case/CWE labels; never run benchmark applications."""
+    import csv
+
+    from aegify.quality.owasp_runner import run_owasp_python
+
+    try:
+        if output_file.resolve().is_relative_to(target.resolve()):
+            raise ValueError("output report must be outside the benchmark corpus")
+        report = run_owasp_python(target, expected_results)
+        output_file.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    except (OSError, UnicodeError, ValueError, csv.Error) as error:
+        console.print(f"[red]Invalid or changed benchmark input: {error}[/red]")
+        raise typer.Exit(code=2) from error
+
+    channel = "blocking" if blocking_only else "all_candidates"
+    metrics = report["metrics"][channel]
+    console.print_json(
+        data={
+            "channel": channel,
+            "metrics": metrics,
+            "scored_case_fraction": report["scored_case_fraction"],
+            "unscored_reasons": report["unscored_reasons"],
+            "report": str(output_file),
+        }
+    )
+    if report["analysis_status"] == ScanStatus.FAILED:
+        raise typer.Exit(code=2)
+    if not report["evaluation_complete"]:
+        raise typer.Exit(code=3)
+    if (
+        metrics["precision"] is None
+        or metrics["recall"] is None
+        or metrics["precision"] < min_precision
+        or metrics["recall"] < min_recall
+    ):
+        raise typer.Exit(code=1)
+
+
 @app.command("benchmark")
 def benchmark(
     target: Annotated[Path, typer.Argument(help="Owned benchmark source tree", exists=True)],
