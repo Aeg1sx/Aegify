@@ -197,13 +197,39 @@ busy errors, with four bounded attempts and jitter. The concurrent-claim regress
 requires both calls to settle successfully and exactly one lease to be issued.
 The final local self-scan analyzed 286 files in 201.75 seconds with 694 advisory
 candidates, zero blocking findings and no analysis gaps. The final production
-HTTP/browser rerun passed all 82 checks. Remote container checks remain pending
-for this branch.
+HTTP/browser rerun passed all 82 checks.
 The first Linux worker check exposed Node's missing `libatomic.so.1` runtime
 dependency in the Python base image. The runner now installs `libatomic1` and
 checks both runtime entry points as UID 1001 during the image build.
+All required CI, CodeQL and self-scan checks passed on final head
+`dc0dbdb7e55614a189a75c967db6da9f73c51a9d`. The Linux image passed 12 offline
+worker/import/provider checks, fresh migrations, database persistence across a
+dashboard restart, and recovery/publication by a separate worker process without
+network access. PR #43 merged at `b317be9536214e9508b3e587aa17fadea7510f9f`
+with a verified GitHub signature.
 
 This worker phase covers static source scans. Durable AI review jobs, independently
 reviewed accuracy labels, private forge connectors, live SSO, operator deployment,
 backup/restore and full retention acceptance remain open. GitHub.com/GitLab.com
 connectors select source/config files; other forges can use project-bound CI uploads.
+
+## Coordinated dependency follow-up: 2026-09-24
+
+Follow-up PRs #36–#41 propose uv 0.12.18, CodeQL action 4.38.0, zizmor action
+0.6.4, harden-runner 2.21.1, setup-uv 10.1.0, lucide-react 1.46.0 and
+@types/node 26.6.1. The prepared combined change retains exact hashes and updates
+all coupled uv image, CI and project requirements. PR #36's observed policy and
+container failures both came from updating its image without the exact required
+uv version; neither gate is relaxed.
+
+Official action tags were resolved to the proposed commits. An isolated uv
+0.12.18 lock check passed; the host installation was unchanged. A fresh locked
+npm install, audit (zero reported vulnerabilities), 94 dashboard tests, 82
+production HTTP/CLI checks, TypeScript, ESLint, production build, supply-chain
+policy and four policy regression tests passed locally. Remote checks and merge
+remain pending; the original follow-up PRs remain open until superseded by a
+verified merge.
+
+The latest main-branch code-scanning snapshot before this dependency follow-up has
+679 Aegify candidates and five Scorecard alerts. Their individual disposition
+remains separate from passing CI; no bulk dismissal was performed.
