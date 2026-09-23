@@ -69,6 +69,31 @@ Pattern results default to `candidate` evidence with an `advisory` disposition.
 This preserves broad coverage in console, SARIF, GitHub review annotations, and
 the dashboard without failing CI. Do not mark a lexical fallback `blocking`.
 
+Source aliases such as `assignment_match` are regular expressions over the
+selected source segment. A separate `value_match` is evaluated over that same
+segment, so two unrelated statements can satisfy the pair. For a literal
+configuration value, bind the identifier, assignment separator and value in one
+bounded expression. For API arguments, prefer a parsed call, an exact callee
+pattern and constraints on that call's arguments. Test an unrelated identifier,
+the same keyword on another line, and a matching keyword in a different argument.
+
+### OAuth scope review boundary
+
+`AEG-OAUTH-004` recognizes selected OAuth authorization/provider calls with
+administrative-looking or wildcard literal scopes, explicitly named OAuth scope
+configuration, and OAuth token-exchange handlers without a recognized local
+scope check. Fixtures cover Python and JS/TS syntax, string/list values,
+validated callbacks and nearby non-OAuth code. Computed scope values and
+provider-specific policy need separate review; these patterns do not establish
+SDK-version compatibility or end-to-end authorization behavior.
+
+The finding remains a review candidate. A provider may grant fewer scopes than
+requested, as described in [RFC 6749 section 3.3](https://www.rfc-editor.org/rfc/rfc6749#section-3.3).
+Assess the actual application privileges and provider/library enforcement using
+the [OAuth privilege restriction guidance](https://www.rfc-editor.org/rfc/rfc9700#section-2.3).
+Scope-name matches and absence of a locally named validator alone do not prove
+a vulnerability.
+
 ## Evidence and CI disposition
 
 Findings carry two independent fields:

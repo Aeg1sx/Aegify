@@ -98,34 +98,43 @@ rules:
     message: "OAuth token is exposed in URL. Use the authorization code flow with PKCE instead of the implicit grant. Transmit tokens in HTTP headers or secure cookies, never in URLs."
 
   - id: "AEG-OAUTH-004"
-    name: "Insufficient OAuth scope validation"
+    name: "OAuth scope policy review"
     description: >
-      The application requests overly broad OAuth scopes or does not validate
-      the granted scopes match the requested scopes in the callback. Excessive
-      scope grants the application more permissions than needed, and failure to
-      validate granted scopes allows scope escalation if the authorization server
-      grants different scopes than requested.
+      An OAuth-specific call or configuration contains an administrative or
+      wildcard scope, or an OAuth token-exchange handler has no recognized local
+      scope check. Review the application's required privileges and provider or
+      library enforcement. This heuristic does not prove excessive privileges;
+      an authorization server may legitimately grant fewer scopes than requested.
     severity: medium
     confidence: 0.75
     languages: [python, javascript, typescript, java, ruby, php, go]
     cwe_id: 269
     owasp_category: "A07:2021-Identification and Authentication Failures"
     patterns:
-      - callee_match: "authorize_url|authorization_url|getAuthorizationUrl"
-        args_match: "scope.*admin|scope.*write|scope.*all|scope.*\\*"
+      - callee_match: "(?:[\\w$.]+\\.)?(?:authorize_url|authorization_url|getAuthorizationUrl|authorizeURL|OAuth2Session|OAuth2Client|OAuth2|GitHub|GitLab|Google|Okta)"
+        callee_match_mode: full
+        args_match: >-
+          (?x)(?<![\w$])["']?scope["']?\s*[:=]\s*
+          (?:["'][^"'\r\n]{0,1024}(?:\b(?:admin|root|full_access|write:all)\b|\*)[^"'\r\n]{0,1024}["']
+          |\[[^\]]{0,1024}["'](?:admin|root|full_access|write:all|\*)["'][^\]]{0,1024}\])
       - multi_match:
-          - "scope"
-          - "(def|function|fun).*oauth.*(callback|authorize|token)|exchange_code|token_exchange|getAuthorizationUrl|authorization_url"
+          - "\\bscope\\b"
+          - "\\b(def|function|fun)\\s+\\w*oauth\\w*(callback|token)\\w*\\s*\\("
+          - "\\b(get_token|exchange_code|token_exchange)\\s*\\("
         missing_match:
           - "validate_scope|check_scope|verify_scope|scope.*===|scope.*includes"
-      - callee_match: "get_token|exchange_code|token_exchange"
+      - callee_match: "(?:[\\w$.]+\\.)?(?:get_token|exchange_code|token_exchange)"
+        callee_match_mode: full
+        context_match: "oauth|authorization_code"
         missing_context: "(validate|verify|check).*scope|scope.*(validate|verify|check)"
-      - assignment_match: "scope|OAUTH_SCOPE"
-        value_match: "admin|write:all|\\*|root|full_access"
+      - regex_match: >-
+          (?x)\b(?:OAUTH_SCOPES?|oauthScopes?)\b["']?\s*[:=]\s*
+          (?:["'][^"'\r\n]{0,1024}(?:\b(?:admin|root|full_access|write:all)\b|\*)[^"'\r\n]{0,1024}["']
+          |\[[^\]]{0,1024}["'](?:admin|root|full_access|write:all|\*)["'][^\]]{0,1024}\])
     defense_patterns:
       - "validate_scope|verify_scope|check_scope"
       - "scope.*===|scope.*includes|scope.*contains"
       - "minimum_scope|required_scope"
       - "scope.*read|scope.*profile|scope.*email"
       - "principle_of_least_privilege"
-    message: "OAuth scope is overly broad or not validated. Request the minimum scopes needed and validate that the granted scopes match the requested scopes in the callback handler."
+    message: "Review this OAuth scope request or token exchange against the application's permission policy. An administrative/wildcard scope or missing recognized local check is a review signal; provider or library enforcement and required privileges must be checked before treating it as a vulnerability."

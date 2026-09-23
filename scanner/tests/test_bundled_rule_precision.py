@@ -1,6 +1,9 @@
 """Positive and negative regression fixtures for high-impact bundled rules."""
 
+import time
 from pathlib import Path
+
+import pytest
 
 from aegify.config import AegifyConfig
 from aegify.models import EvidenceState, Finding, FindingDisposition
@@ -258,6 +261,88 @@ def test_oauth_scope_rule_recognizes_scope_validation(tmp_path: Path):
     )
 
     assert "AEG-OAUTH-004" not in safe_ids
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    [
+        (
+            "oauth_request.py",
+            'def begin(oauth):\n    return oauth.authorization_url("/authorize", scope="admin")\n',
+        ),
+        ("oauth_config.py", 'OAUTH_SCOPE = "full_access"\n'),
+        (
+            "oauth_provider.ts",
+            'function begin() { return GitHub({authorization: {params: {scope: "*"}}}); }\n',
+        ),
+        (
+            "oauth_array.ts",
+            'function begin() { return OAuth2Client({scope: ["profile", "admin"]}); }\n',
+        ),
+        ("oauth_config_array.py", 'OAUTH_SCOPES = ["profile",\n    "admin"]\n'),
+    ],
+)
+def test_oauth_scope_review_preserves_explicit_high_privilege_signals(
+    tmp_path: Path, name: str, source: str
+):
+    findings = _scan_findings(
+        tmp_path, RULES_DIR / "a07-auth-failures/oauth_security.yml", source, name
+    )
+    oauth = [finding for finding in findings if finding.rule_id == "AEG-OAUTH-004"]
+    assert oauth
+    assert all(finding.disposition == FindingDisposition.ADVISORY for finding in oauth)
+    assert all(finding.evidence_state == EvidenceState.CANDIDATE for finding in oauth)
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    [
+        (
+            "metadata.py",
+            'def summarize_scope(scope):\n    return {"scope": scope, "role": "admin"}\n',
+        ),
+        (
+            "project.ts",
+            "function projectScope(principal) {\n"
+            '  return principal.workspaceAdmin ? {} : {scope: "project"};\n}\n',
+        ),
+        (
+            "readonly_oauth.py",
+            "def begin(oauth):\n"
+            '    return oauth.authorization_url("/authorize", scope="profile", '
+            'redirect_uri="/admin")\n',
+        ),
+        ("readonly_config.py", 'OAUTH_SCOPE = "profile"\nother_role = "admin"\n'),
+        ("unrelated_token.py", "def local_cache():\n    return get_token()\n"),
+        (
+            "named_decoy.py",
+            'def callback():\n    return unrelated_authorization_url(scope="admin")\n',
+        ),
+    ],
+)
+def test_oauth_scope_review_rejects_non_oauth_and_separate_value_decoys(
+    tmp_path: Path, name: str, source: str
+):
+    ids = _scan_rule(tmp_path, RULES_DIR / "a07-auth-failures/oauth_security.yml", source, name)
+    assert "AEG-OAUTH-004" not in ids
+
+
+def test_oauth_scope_review_stays_bounded_for_repeated_scope_metadata(tmp_path: Path):
+    from aegify.rules.yaml_rule import load_yaml_rules
+    from aegify.scanner.ast_parser import ASTParser
+    from aegify.scanner.call_graph import CallGraphBuilder
+
+    target = tmp_path / "metadata.py"
+    target.write_text('scope = "project"\nother_role = "admin"\n' * 1000)
+    ast = ASTParser().parse_file(target)
+    rule = next(
+        rule
+        for rule in load_yaml_rules(RULES_DIR / "a07-auth-failures/oauth_security.yml")
+        if rule.definition.id == "AEG-OAUTH-004"
+    )
+    started = time.monotonic()
+    assert rule.evaluate([ast], CallGraphBuilder().build([ast]), []) == []
+    assert time.monotonic() - started < 2
 
 
 def test_unsafe_api_consumption_requires_response_to_sensitive_sink_flow(tmp_path: Path):
