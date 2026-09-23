@@ -1,4 +1,4 @@
-import { accessPolicyConfigured, authOrigin, localAuthEnabled, mailConfigured, validOktaIssuer } from "./auth-policy.ts";
+import { accessPolicyConfigured, authOrigin, emailAllowed, localAuthEnabled, mailConfigured, normalizeEmail, validOktaIssuer } from "./auth-policy.ts";
 
 type Environment = Record<string, string | undefined>;
 
@@ -52,6 +52,10 @@ export function productionSecurityErrors(environment: Environment): string[] {
   }
   if (environment.AUTH_URL && validAuthOrigin(environment.AUTH_URL) && !authOrigin(environment)) errors.push("AUTH_URL requires HTTPS except on loopback hosts");
   if (!accessPolicyConfigured(environment)) errors.push("AUTH_ALLOWED_EMAILS or AUTH_ALLOWED_DOMAINS is required");
+  const admins = (environment.AUTH_ADMIN_EMAILS || "").split(",").map((value) => value.trim()).filter(Boolean);
+  if (!admins.length || admins.some((email) => !normalizeEmail(email))) errors.push("AUTH_ADMIN_EMAILS must name at least one exact administrator email");
+  else if (admins.some((email) => !emailAllowed(email, environment))) errors.push("Every AUTH_ADMIN_EMAILS account must also satisfy the sign-in allowlist");
+  if (Boolean(environment.AEGIFY_UPLOAD_TOKEN) !== Boolean(environment.AEGIFY_UPLOAD_PROJECT_ID)) errors.push("Legacy upload credentials require both AEGIFY_UPLOAD_TOKEN and AEGIFY_UPLOAD_PROJECT_ID");
   if (localAuthEnabled(environment) && !mailConfigured(environment)) errors.push("local authentication requires RESEND_API_KEY and AUTH_EMAIL_FROM for verification and recovery");
   return errors;
 }

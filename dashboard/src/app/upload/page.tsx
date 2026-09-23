@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,9 @@ import { uploadValidationError } from "@/lib/upload-validation";
 export default function UploadPage() {
   const router = useRouter();
   const [dragging, setDragging] = useState(false);
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; accessRole: string }>>([]);
+  const [projectId, setProjectId] = useState("");
+  useEffect(() => { fetch("/api/projects").then((response) => response.json()).then((data) => setProjects((data.projects || []).filter((project: { accessRole: string }) => ["admin", "maintainer"].includes(project.accessRole)))).catch(() => {}); }, []);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<{
     success: boolean;
@@ -20,6 +23,7 @@ export default function UploadPage() {
 
   const handleUpload = useCallback(
     async (file: File) => {
+      if (!projectId) { setResult({ success: false, error: "Select a project where you have upload access." }); return; }
       setUploading(true);
       setResult(null);
 
@@ -32,7 +36,7 @@ export default function UploadPage() {
         const text = await file.text();
         const sarif = JSON.parse(text);
 
-        const res = await fetch("/api/upload", {
+        const res = await fetch(`/api/upload?projectId=${encodeURIComponent(projectId)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(sarif),
@@ -58,7 +62,7 @@ export default function UploadPage() {
         setUploading(false);
       }
     },
-    []
+    [projectId]
   );
 
   const onDrop = useCallback(
@@ -88,6 +92,13 @@ export default function UploadPage() {
         </p>
       </div>
 
+      <label className="block space-y-2 text-sm">Project
+        <select className="block h-10 w-full rounded-md border bg-background px-3" value={projectId} onChange={(event) => setProjectId(event.target.value)} required>
+          <option value="">Select a project</option>
+          {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select>
+        {!projects.length && <span className="block text-muted-foreground">Ask a project administrator for maintainer access, or create a project as a workspace administrator.</span>}
+      </label>
       <Card>
         <CardContent className="pt-6">
           <div
@@ -117,7 +128,7 @@ export default function UploadPage() {
                 onChange={onFileSelect}
                 className="hidden"
               />
-              <Button variant="outline" asChild disabled={uploading}>
+              <Button variant="outline" asChild disabled={uploading || !projectId}>
                 <span>
                   <FileUp className="h-4 w-4 mr-2" />
                   {uploading ? "Uploading..." : "Select File"}

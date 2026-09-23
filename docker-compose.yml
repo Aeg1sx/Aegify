@@ -26,6 +26,7 @@ services:
       ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?Set ENCRYPTION_SECRET in a local .env or inject it from Vault}
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
       AUTH_ALLOWED_EMAILS: ${AUTH_ALLOWED_EMAILS:-}
+      AUTH_ADMIN_EMAILS: ${AUTH_ADMIN_EMAILS:?Set exact workspace administrator emails}
       AUTH_ALLOWED_DOMAINS: ${AUTH_ALLOWED_DOMAINS:-}
       AUTH_LOCAL_ENABLED: ${AUTH_LOCAL_ENABLED:-false}
       AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-}
@@ -40,7 +41,8 @@ services:
       AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
       AUTH_GITLAB_ID: ${AUTH_GITLAB_ID:-}
       AUTH_GITLAB_SECRET: ${AUTH_GITLAB_SECRET:-}
-      AEGIFY_UPLOAD_TOKEN: ${AEGIFY_UPLOAD_TOKEN:?Set a dedicated upload token}
+      AEGIFY_UPLOAD_TOKEN: ${AEGIFY_UPLOAD_TOKEN:-}
+      AEGIFY_UPLOAD_PROJECT_ID: ${AEGIFY_UPLOAD_PROJECT_ID:-}
     volumes:
       - dashboard-data:/data
     tmpfs:

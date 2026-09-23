@@ -7,6 +7,7 @@ interface ImportedScan {
   branch: string;
   defaultBranch: string;
   health: ScanHealth;
+  audit?: { actorId: string; findings: number };
 }
 
 function chunks<T>(items: T[], size: number): T[][] {
@@ -53,5 +54,9 @@ export async function finalizeScanImport(prisma: PrismaClient, imported: Importe
         progressMessage: health.gaps.map((gap) => `${gap.code}: ${gap.message} (${gap.affected_count})`).join("; ").slice(0, 4000),
       },
     });
+    if (imported.audit) await tx.auditEvent.create({ data: {
+      projectId, actorId: imported.audit.actorId, action: "scan.import.finished", targetId: scanId,
+      details: JSON.stringify({ status: health.status, findings: imported.audit.findings }),
+    } });
   }, { timeout: 30_000 });
 }

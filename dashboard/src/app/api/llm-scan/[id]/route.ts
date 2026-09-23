@@ -1,11 +1,14 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "scan", id, "viewer");
+  if (access instanceof Response) return access;
 
   const scan = await prisma.scan.findUnique({
     where: { id },

@@ -330,6 +330,12 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     assert.equal((await prisma.finding.findUniqueOrThrow({ where: { id: finding.id } })).isCurrent, true);
 
     const completed = await prisma.scan.create({ data: { projectId: project.id, branch: "main", status: "running" } });
+    // Audit persistence and absence must also commit together.
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_import_audit BEFORE INSERT ON AuditEvent WHEN NEW.action = 'scan.import.finished' BEGIN SELECT RAISE(ABORT, 'synthetic audit outage'); END`);
+    await assert.rejects(finalizeScanImport(prisma, { scanId: completed.id, projectId: project.id, branch: "main", defaultBranch: "main", health, audit: { actorId: "fixture", findings: 0 } }));
+    assert.equal((await prisma.scan.findUniqueOrThrow({ where: { id: completed.id } })).status, "running");
+    assert.equal((await prisma.findingIdentity.findUniqueOrThrow({ where: { id: identity.id } })).absentAt, null);
+    await prisma.$executeRawUnsafe("DROP TRIGGER reject_import_audit");
     await finalizeScanImport(prisma, { scanId: completed.id, projectId: project.id, branch: "main", defaultBranch: "main", health });
     assert.ok((await prisma.findingIdentity.findUniqueOrThrow({ where: { id: identity.id } })).absentAt);
     assert.equal((await prisma.finding.findUniqueOrThrow({ where: { id: finding.id } })).isCurrent, false);

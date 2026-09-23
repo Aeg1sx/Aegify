@@ -16,6 +16,7 @@ const secureProduction = {
   AUTH_GITHUB_ID: "client-id",
   AUTH_GITHUB_SECRET: "client-secret",
   AUTH_ALLOWED_EMAILS: "owner@example.test",
+  AUTH_ADMIN_EMAILS: "owner@example.test",
 };
 
 test("production configuration requires auth, encryption, and an explicit access policy", () => {
@@ -25,6 +26,7 @@ test("production configuration requires auth, encryption, and an explicit access
     "at least one complete authentication method is required",
     "AUTH_URL is required",
     "AUTH_ALLOWED_EMAILS or AUTH_ALLOWED_DOMAINS is required",
+    "AUTH_ADMIN_EMAILS must name at least one exact administrator email",
   ]);
   assert.doesNotThrow(() => assertProductionSecurity(secureProduction));
   assert.deepEqual(
@@ -50,6 +52,13 @@ test("partial OAuth credentials do not enable authentication", () => {
     }),
     false,
   );
+});
+
+test("administrator bootstrap and legacy CI bindings fail closed", () => {
+  assert.ok(productionSecurityErrors({ ...secureProduction, AUTH_ADMIN_EMAILS: "outsider@example.test" }).some((error) => error.includes("sign-in allowlist")));
+  assert.ok(productionSecurityErrors({ ...secureProduction, AUTH_ADMIN_EMAILS: "@example.test" }).some((error) => error.includes("exact administrator")));
+  assert.ok(productionSecurityErrors({ ...secureProduction, AEGIFY_UPLOAD_TOKEN: "synthetic" }).some((error) => error.includes("AEGIFY_UPLOAD_PROJECT_ID")));
+  assert.ok(productionSecurityErrors({ ...secureProduction, AEGIFY_UPLOAD_PROJECT_ID: "project" }).some((error) => error.includes("AEGIFY_UPLOAD_TOKEN")));
 });
 
 test("anonymous uploads are limited to zero-configuration development", () => {

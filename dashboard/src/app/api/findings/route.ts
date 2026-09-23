@@ -1,8 +1,11 @@
+import { requireAccess, findingScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { boundedInteger } from "@/lib/finding-view";
 
 export async function GET(request: NextRequest) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const url = new URL(request.url);
   const page = boundedInteger(url.searchParams.get("page"), 1, 100_000);
   const limit = boundedInteger(url.searchParams.get("limit"), 50, 100);
@@ -72,14 +75,14 @@ export async function GET(request: NextRequest) {
 
   const [findings, total] = await Promise.all([
     prisma.finding.findMany({
-      where,
+      where: { AND: [where, findingScope(access)] },
       orderBy: url.searchParams.get("sort") === "file" ? [{ filePath: "asc" }, { lineStart: "asc" }, { id: "asc" }]
         : url.searchParams.get("sort") === "rule" ? [{ ruleName: "asc" }, { id: "asc" }]
         : [{ createdAt: url.searchParams.get("sort") === "oldest" ? "asc" : "desc" }, { id: "asc" }],
       skip,
       take: limit,
     }),
-    prisma.finding.count({ where }),
+    prisma.finding.count({ where: { AND: [where, findingScope(access)] } }),
   ]);
 
   return NextResponse.json({ findings, total, page, limit });

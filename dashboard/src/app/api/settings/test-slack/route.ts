@@ -1,8 +1,11 @@
+import { requireAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { getSlackConfig } from "@/lib/settings";
 import { validateSlackWebhookUrl } from "@/lib/url-validator";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   const config = await getSlackConfig();
 
   if (!config.webhookUrl) {

@@ -63,7 +63,7 @@ export default function FindingsPage() {
       if (!response.ok) throw new Error("Filter options unavailable");
       return response.json();
     }
-    Promise.allSettled([options("/api/projects"), options("/api/rules"), options("/api/findings/languages")]).then(([p, r, l]) => {
+    Promise.allSettled([options("/api/projects"), options("/api/findings/rules"), options("/api/findings/languages")]).then(([p, r, l]) => {
       if (controller.signal.aborted) return;
       if (p.status === "fulfilled") setProjects(p.value.projects || []);
       if (r.status === "fulfilled") setRules(r.value.rules || []);

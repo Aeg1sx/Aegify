@@ -1,3 +1,5 @@
+import { requireResource } from "@/lib/access";
+import { requireAccess, scanScope } from "@/lib/access";
 import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { reviewScanFindings } from "@/lib/llm-scanner";
@@ -9,6 +11,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { scanId, mode } = body;
+    const access = await requireResource(request, "scan", scanId, "maintainer");
+    if (access instanceof Response) return access;
     if (body.includeApiContracts !== undefined && typeof body.includeApiContracts !== "boolean") return NextResponse.json({ error: "includeApiContracts must be a boolean" }, { status: 400 });
 
     if (typeof scanId !== "string" || !/^[a-z0-9]{20,40}$/.test(scanId)) {
@@ -33,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Scan has no findings to review" }, { status: 400 });
     }
 
-    await failStaleLlmJobs();
+    await failStaleLlmJobs(scanId);
     const existing = await prisma.llmJob.findFirst({
       where: { scanId, status: { in: ["pending", "running"] } },
     });
@@ -85,8 +89,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   try {
-    await failStaleLlmJobs();
     const { searchParams } = new URL(request.url);
     const active = searchParams.get("active");
     const scanId = searchParams.get("scanId");
@@ -103,7 +108,7 @@ export async function GET(request: NextRequest) {
     }
 
     const jobs = await prisma.llmJob.findMany({
-      where,
+      where: { AND: [where, { scan: scanScope(access) }] },
       orderBy: { createdAt: "desc" },
       take: Math.min(limit, 100),
       include: {

@@ -18,6 +18,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 
 interface ProjectSummary {
+  accessRole: string;
   id: string;
   name: string;
   repositoryUrl: string;
@@ -37,6 +38,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRepo, setNewRepo] = useState("");
@@ -47,7 +49,7 @@ export default function ProjectsPage() {
     const query = showArchived ? "?archived=true" : "";
     fetch(`/api/projects${query}`)
       .then((r) => r.json())
-      .then((data) => setProjects(data.projects || []))
+      .then((data) => { setProjects(data.projects || []); setCanCreate(data.canCreate === true); })
       .finally(() => setLoading(false));
   }, [showArchived]);
 
@@ -108,7 +110,7 @@ export default function ProjectsPage() {
             <Archive className="h-4 w-4" />
             {showArchived ? "Active" : "Archived"}
           </Button>
-          {!showArchived && (
+          {!showArchived && canCreate && (
             <Button
               onClick={() => setShowCreate(!showCreate)}
               className="flex items-center gap-2"
@@ -207,6 +209,7 @@ export default function ProjectsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={project.accessRole !== "admin"}
                         onClick={(e) => restoreProject(project.id, e)}
                         title="Restore project"
                       >
@@ -216,6 +219,7 @@ export default function ProjectsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={project.accessRole !== "admin"}
                         onClick={(e) => archiveProject(project.id, e)}
                         title="Archive project"
                         className="opacity-0 group-hover:opacity-100 transition-opacity"

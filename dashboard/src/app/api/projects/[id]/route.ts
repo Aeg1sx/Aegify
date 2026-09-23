@@ -1,11 +1,14 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "project", id, "viewer");
+  if (access instanceof Response) return access;
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
@@ -44,6 +47,7 @@ export async function GET(
 
   return NextResponse.json({
     ...project,
+    accessRole: access.workspaceAdmin ? "admin" : (await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId: id, userId: access.userId! } }, select: { role: true } }))?.role || "viewer",
     severities: severityMap,
     totalFindings: Object.values(severityMap).reduce((a, b) => a + b, 0),
   });
@@ -54,9 +58,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "project", id, "admin");
+  if (access instanceof Response) return access;
   const body = await request.json();
 
-  const project = await prisma.project.update({
+  const project = await prisma.$transaction(async (tx) => {
+    const updated = await tx.project.update({
     where: { id },
     data: {
       ...(body.name !== undefined && { name: body.name }),
@@ -68,6 +75,9 @@ export async function PATCH(
       ...(body.providerRepoId !== undefined && { providerRepoId: body.providerRepoId }),
       ...(body.ownerSlug !== undefined && { ownerSlug: body.ownerSlug }),
     },
+    });
+    await tx.auditEvent.create({ data: { projectId: id, actorId: access.userId || "development", action: "project.update", targetId: id, details: JSON.stringify({ fields: Object.keys(body).filter((key) => ["name", "repositoryUrl", "defaultBranch", "description", "color", "provider", "providerRepoId", "ownerSlug"].includes(key)) }) } });
+    return updated;
   });
 
   return NextResponse.json(project);
@@ -78,19 +88,24 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const access = await requireResource(request, "project", id, "admin");
+  if (access instanceof Response) return access;
   const url = new URL(request.url);
   const permanent = url.searchParams.get("permanent") === "true";
 
   if (permanent) {
     // Permanent delete (hard delete) - must be explicitly requested
-    await prisma.project.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.project.delete({ where: { id } });
+      await tx.auditEvent.create({ data: { projectId: id, actorId: access.userId || "development", action: "project.delete", targetId: id } });
+    });
     return NextResponse.json({ success: true, action: "deleted" });
   }
 
   // Soft delete: archive the project
-  await prisma.project.update({
-    where: { id },
-    data: { archived: true, archivedAt: new Date() },
+  await prisma.$transaction(async (tx) => {
+    await tx.project.update({ where: { id }, data: { archived: true, archivedAt: new Date() } });
+    await tx.auditEvent.create({ data: { projectId: id, actorId: access.userId || "development", action: "project.archive", targetId: id } });
   });
 
   return NextResponse.json({ success: true, action: "archived" });

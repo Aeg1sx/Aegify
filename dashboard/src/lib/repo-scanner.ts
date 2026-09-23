@@ -92,10 +92,13 @@ export async function scanRepoCode(
   userId: string,
   branch?: string,
 ): Promise<{ scanId: string }> {
+  const { authorizeProject, resolvePrincipal } = await import("@/lib/project-access");
+  const access = await resolvePrincipal(prisma, userId, process.env);
+  const allowed = await authorizeProject(prisma, access, projectId, "maintainer");
+  if (allowed.archived) throw new Error("Restore the project before scanning.");
   // 1. Load project
   const project = await prisma.project.findUnique({ where: { id: projectId } });
   if (!project) throw new Error("Project not found");
-  if (project.userId && project.userId !== userId) throw new Error("Project not found");
   if (!project.provider || !project.ownerSlug) {
     throw new Error("No repository connected to this project");
   }

@@ -149,6 +149,13 @@ function ThemeToggle() {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [workspaceAdmin, setWorkspaceAdmin] = useState(false);
+  useEffect(() => {
+    if (pathname.startsWith("/auth/")) return;
+    let active = true;
+    fetch("/api/account/access").then((response) => response.json()).then((access) => { if (active) setWorkspaceAdmin(access.workspaceAdmin === true); }).catch(() => {});
+    return () => { active = false; };
+  }, [pathname]);
 
   if (pathname.startsWith("/auth/")) return null;
 
@@ -162,13 +169,13 @@ export function Sidebar() {
         <p className="hidden text-[11px] text-muted-foreground mt-1 md:block">Security workspace</p>
       </div>
       <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
-        {navSections.map((section) => (
+        {navSections.filter((section) => workspaceAdmin || section.items.some((item) => !["/settings", "/rules"].includes(item.href))).map((section) => (
           <div key={section.label}>
             <p className="hidden px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:block">
               {section.label}
             </p>
             <div className="space-y-0.5">
-              {section.items.map((item) => {
+              {section.items.filter((item) => workspaceAdmin || !["/settings", "/rules"].includes(item.href)).map((item) => {
                 const isActive =
                   pathname === item.href ||
                   (item.href !== "/" && pathname.startsWith(item.href));

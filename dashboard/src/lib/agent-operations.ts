@@ -224,8 +224,9 @@ export async function getAgentRun(id: string) {
   return prisma.agentRun.findUnique({ where: { id }, include: runInclude });
 }
 
-export async function listAgentRuns(limit = 50) {
+export async function listAgentRuns(limit: number, scanWhere: Prisma.ScanWhereInput) {
   return prisma.agentRun.findMany({
+    where: { scan: scanWhere },
     orderBy: { createdAt: "desc" },
     take: Math.max(1, Math.min(limit, 100)),
     include: {

@@ -1,3 +1,4 @@
+import { requireAccess } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
@@ -7,7 +8,9 @@ import { dashboardAuthConfigured } from "@/lib/security-config";
 import { providerProtocol, providerUrl } from "@/lib/provider-catalog";
 import { accessPolicyConfigured, authOrigin, localAuthEnabled, mailConfigured } from "@/lib/auth-policy";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   const settings = await prisma.setting.findMany();
   const result: Record<string, ReturnType<typeof publicSetting>> = {};
   for (const item of settings) {
@@ -57,6 +60,8 @@ function validateValue(key: string, value: unknown): string | null {
 }
 
 async function updateSettings(request: NextRequest, single: boolean) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Expected a JSON object." }, { status: 400 });
@@ -86,6 +91,7 @@ async function updateSettings(request: NextRequest, single: boolean) {
       try { providerUrl(effective["llm.provider"], effective["llm.custom_endpoint"], effective["llm.model"]); } catch (error) { return error instanceof Error ? error.message : "Invalid provider configuration."; }
     }
     for (const item of prepared) await tx.setting.upsert({ where: { key: item.key }, create: item, update: { value: item.value, encrypted: item.encrypted } });
+    await tx.auditEvent.create({ data: { actorId: access.userId || "development", action: "workspace.settings.update", targetId: "settings", details: JSON.stringify({ keys: entries.map(([key]) => key) }) } });
     return null;
   });
   if (error) return NextResponse.json({ error }, { status: 422 });

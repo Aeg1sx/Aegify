@@ -1,3 +1,4 @@
+import { requireAccess, scanScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -83,6 +84,8 @@ function isTestFile(filePath: string): boolean {
 }
 
 export async function GET(request: NextRequest) {
+  const access = await requireAccess(request);
+  if (access instanceof Response) return access;
   const url = new URL(request.url);
   const scanId = url.searchParams.get("scanId");
   const projectId = url.searchParams.get("projectId");
@@ -100,7 +103,7 @@ export async function GET(request: NextRequest) {
   if (projectId) where.scan = { projectId };
 
   const allEndpoints = await prisma.endpoint.findMany({
-    where,
+    where: { AND: [where, { scan: scanScope(access) }] },
     orderBy: { path: "asc" },
     include: {
       scan: {
@@ -151,7 +154,7 @@ export async function GET(request: NextRequest) {
   // Get unique frameworks for filter
   const frameworks = await prisma.endpoint.groupBy({
     by: ["framework"],
-    where: { framework: { not: "" } },
+    where: { framework: { not: "" }, scan: scanScope(access) },
   });
 
   return NextResponse.json({

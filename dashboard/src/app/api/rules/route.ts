@@ -1,8 +1,11 @@
+import { requireAccess } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateRuleYaml } from "@/lib/rule-validation";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   const rules = await prisma.rule.findMany({
     orderBy: [{ findingCount: "desc" }, { id: "asc" }],
   });
@@ -11,6 +14,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   try {
     const body = await request.json();
 

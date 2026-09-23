@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
@@ -9,6 +10,8 @@ export async function POST(
 ) {
   try {
     const { id, approvalId } = await params;
+  const access = await requireResource(request, "agentRun", id, "admin");
+  if (access instanceof Response) return access;
     if (!/^[a-z0-9-]{8,64}$/.test(id) || !/^[a-z0-9-]{8,64}$/.test(approvalId)) {
       return NextResponse.json({ error: "Invalid run or approval ID" }, { status: 400 });
     }

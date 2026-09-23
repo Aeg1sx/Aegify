@@ -1,7 +1,10 @@
+import { requireAccess } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { syncYamlToDb, syncDbToYaml } from "@/lib/rule-sync";
 
 export async function POST(request: NextRequest) {
+  const access = await requireAccess(request, true);
+  if (access instanceof Response) return access;
   try {
     const body = await request.json();
     const { direction, ruleId } = body;

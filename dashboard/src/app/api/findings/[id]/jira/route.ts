@@ -1,14 +1,17 @@
+import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createJiraFindingIssue } from "@/lib/jira";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
+  const access = await requireResource(request, "finding", id, "triager");
+  if (access instanceof Response) return access;
     if (!/^[a-z0-9-]{8,64}$/.test(id)) {
       return NextResponse.json({ error: "Invalid finding ID" }, { status: 400 });
     }

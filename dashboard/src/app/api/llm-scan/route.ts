@@ -1,3 +1,4 @@
+import { requireResource } from "@/lib/access";
 import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { reviewScanFindings } from "@/lib/llm-scanner";
@@ -9,6 +10,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { scanId, mode } = body;
+    const access = await requireResource(request, "scan", scanId, "maintainer");
+    if (access instanceof Response) return access;
     if (body.includeApiContracts !== undefined && typeof body.includeApiContracts !== "boolean") return NextResponse.json({ error: "includeApiContracts must be a boolean" }, { status: 400 });
 
     if (typeof scanId !== "string" || !/^[a-z0-9]{20,40}$/.test(scanId)) {
@@ -33,7 +36,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Scan has no findings to review" }, { status: 400 });
     }
 
-    await failStaleLlmJobs();
+    await failStaleLlmJobs(scanId);
     const existing = await prisma.llmJob.findFirst({
       where: { scanId, status: { in: ["pending", "running"] } },
     });
