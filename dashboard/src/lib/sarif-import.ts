@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeFindingClassification, normalizeFindingEvidence, normalizeSourceSnippet, scanHealthForRun, workspaceSnapshotForRun } from "./sarif-evidence.ts";
-import { classifyFindingBaseline, findingMessageDigest, stableFindingFingerprint } from "./finding-lifecycle.ts";
+import { classifyFindingBaseline, findingIdentityScope, findingMessageDigest, legacyFindingFingerprint, relativeIdentityPath, stableFindingFingerprint } from "./finding-lifecycle.ts";
+import { migrateFindingIdentities, readFindingIdentities } from "./finding-identity-import.ts";
 import { publishScanImport } from "./scan-reconciliation.ts";
 import { writeTransaction } from "./database-runtime.ts";
 
@@ -184,6 +185,8 @@ interface SARIFReport {
       analysisScope?: unknown;
       evaluatedRules?: unknown;
       analyzedFiles?: unknown;
+      sourceIdentityVersion?: unknown;
+      analyzedSources?: unknown;
       callGraph?: CallGraphData;
       endpoints?: Array<{
         path: string;
@@ -249,9 +252,17 @@ export function validateSarifReport(value: unknown): SARIFReport {
   const run = report.runs[0];
   if (run.results.length > 50_000) throw new SarifValidationError("Report exceeds 50,000 results; split the scan scope.");
   for (const result of run.results) {
-    if (!result || typeof result.ruleId !== "string" || !result.ruleId || result.ruleId.length > 128 || typeof result.message?.text !== "string" || result.message.text.length > 100_000) throw new SarifValidationError("Every result needs a bounded rule ID and message.");
+    if (!result || typeof result.ruleId !== "string" || !result.ruleId || result.ruleId.length > 128 || result.ruleId.trim() !== result.ruleId || /[\x00-\x1f]/.test(result.ruleId) || typeof result.message?.text !== "string" || result.message.text.length > 100_000) throw new SarifValidationError("Every result needs a canonical bounded rule ID and message.");
     const region = result.locations?.[0]?.physicalLocation?.region;
     if (region && (!Number.isSafeInteger(region.startLine) || region.startLine < 1 || (region.endLine !== undefined && (!Number.isSafeInteger(region.endLine) || region.endLine < region.startLine)))) throw new SarifValidationError("Invalid source range.");
+    const uri = result.locations?.[0]?.physicalLocation?.artifactLocation?.uri;
+    if (uri !== undefined && (typeof uri !== "string" || uri.length > 4096 || /[\x00-\x1f]/.test(uri))) throw new SarifValidationError("Invalid source path.");
+    const fingerprints = result.partialFingerprints;
+    if (fingerprints !== undefined && (!fingerprints || typeof fingerprints !== "object" || Array.isArray(fingerprints)
+      || Object.keys(fingerprints).length > 16 || Object.entries(fingerprints).some(([key, value]) => key.length > 128 || typeof value !== "string" || value.length > 4096))) throw new SarifValidationError("Invalid producer fingerprints.");
+    const provenance = result.properties?.provenance;
+    if (provenance?.repository_id !== undefined && (typeof provenance.repository_id !== "string" || provenance.repository_id.length > 128 || provenance.repository_id.trim() !== provenance.repository_id || /[\x00-\x1f]/.test(provenance.repository_id))) throw new SarifValidationError("Invalid repository identity.");
+    if (provenance?.module_path !== undefined && (typeof provenance.module_path !== "string" || provenance.module_path.length > 4096 || (provenance.module_path && !relativeIdentityPath(provenance.module_path)))) throw new SarifValidationError("Invalid logical source path.");
   }
   const bounded = (value: unknown, limit: number) => value === undefined || (Array.isArray(value) && value.length <= limit);
   if (!bounded(run.tool.driver.rules, 10_000) || !bounded(run.properties?.callGraph?.nodes, 50_000) || !bounded(run.properties?.callGraph?.edges, 200_000) || !bounded(run.properties?.endpoints, 10_000)) throw new SarifValidationError("Report graph, rule or endpoint limits exceeded.");
@@ -302,6 +313,8 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
     const publishBaseline = !newer && scanHealth.status !== "failed";
     await tx.auditEvent.create({ data: { projectId, actorId, action: "scan.import.started", targetId: scan.id } });
     // Insert findings
+    const legacyHints = new Map<string, Set<string>>();
+    const analyzedSourceByPath = new Map(scanHealth.analyzedSources?.map((source) => [source.filePath, source]) || []);
     const parsedFindings = run.results.map((result) => {
       const rule = ruleMap.get(result.ruleId);
       const loc = result.locations?.[0]?.physicalLocation;
@@ -312,6 +325,22 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
       const evidence = normalizeFindingEvidence(result.properties);
       const sourceSnippet = normalizeSourceSnippet(loc);
       const classification = normalizeFindingClassification(result.properties);
+      const admittedSource = analyzedSourceByPath.get(loc?.artifactLocation?.uri || "");
+      if (admittedSource && ((evidence.repositoryId && evidence.repositoryId !== admittedSource.repositoryId)
+        || (evidence.modulePath && relativeIdentityPath(evidence.modulePath) !== admittedSource.modulePath))) {
+        throw new SarifValidationError("Finding provenance contradicts its analyzed source identity.");
+      }
+      const identityInput = {
+        ruleId: result.ruleId, filePath: loc?.artifactLocation?.uri || "", message: result.message.text,
+        codeSnippet: sourceSnippet.codeSnippet, partialFingerprints: result.partialFingerprints,
+        repositoryId: evidence.repositoryId || admittedSource?.repositoryId || "",
+        modulePath: evidence.modulePath || admittedSource?.modulePath || "",
+      };
+      const identityScope = findingIdentityScope(identityInput);
+      const fingerprint = stableFindingFingerprint(identityInput);
+      const regionSnippet = loc?.region?.snippet?.text;
+      const legacy = legacyFindingFingerprint({ ...identityInput, codeSnippet: typeof regionSnippet === "string" ? regionSnippet : "" });
+      legacyHints.set(fingerprint, new Set([...(legacyHints.get(fingerprint) || []), legacy]));
 
       // Extract CWE from rule
       let cweId: number | null = null;
@@ -369,16 +398,10 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         defenseContext: result.properties?.defenseContext
           ? JSON.stringify(result.properties.defenseContext) : null,
         evidenceId: evidence.evidenceId,
-        repositoryId: evidence.repositoryId,
-        modulePath: evidence.modulePath,
+        repositoryId: identityScope.repositoryId,
+        modulePath: identityScope.modulePath,
         provenance: JSON.stringify({ ...JSON.parse(evidence.provenance), snippet_start_line: sourceSnippet.snippetStartLine }),
-        fingerprint: stableFindingFingerprint({
-          ruleId: result.ruleId,
-          filePath: loc?.artifactLocation?.uri || "",
-          message: result.message.text,
-          codeSnippet: loc?.region?.snippet?.text || "",
-          partialFingerprints: result.partialFingerprints,
-        }),
+        fingerprint,
         baselineState: "new",
         identityId: "",
         aiVerdict: result.properties?.aiReview?.verdict || "",
@@ -396,9 +419,16 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         parsedFindings.map((finding) => [finding.fingerprint, finding]),
       );
       const fingerprints = [...uniqueFindings.keys()];
-      const existingIdentities = await tx.findingIdentity.findMany({
-        where: { projectId, fingerprint: { in: fingerprints } },
-      });
+      let existingIdentities = await readFindingIdentities(tx, projectId, fingerprints);
+      const migration = await migrateFindingIdentities(tx, { projectId, scanId: scan.id, actorId },
+        [...uniqueFindings.values()], existingIdentities, legacyHints);
+      if (migration.migrated) existingIdentities = await readFindingIdentities(tx, projectId, fingerprints);
+      if (migration.reviewRequired) {
+        scanHealth.status = "partial";
+        scanHealth.gaps.push({ code: "finding_identity_review_required", stage: "import",
+          message: "Legacy triage could not be uniquely attributed; historical decisions are retained and new identities need review",
+          affected_count: migration.reviewRequired });
+      }
       const existingByFingerprint = new Map(
         existingIdentities.map((identity) => [identity.fingerprint, identity]),
       );
@@ -428,6 +458,8 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
             fingerprint,
             ruleId: finding.ruleId,
             filePath: finding.filePath,
+            repositoryId: finding.repositoryId,
+            modulePath: finding.modulePath,
             status,
             lastSeenScanId: scan.id,
             lastSeverity: finding.severity,
@@ -437,6 +469,8 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
           update: {
             ruleId: finding.ruleId,
             filePath: finding.filePath,
+            repositoryId: finding.repositoryId,
+            modulePath: finding.modulePath,
             status,
             lastSeenAt: new Date(),
             lastSeenScanId: scan.id,
@@ -478,10 +512,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
       for (let i = 0; i < systemTriageEvents.length; i += IDENTITY_WRITE_CHUNK) {
         for (const write of systemTriageEvents.slice(i, i + IDENTITY_WRITE_CHUNK)) await write;
       }
-      const persistedIdentities = await tx.findingIdentity.findMany({
-        where: { projectId, fingerprint: { in: fingerprints } },
-        select: { id: true, fingerprint: true, status: true },
-      });
+      const persistedIdentities = await readFindingIdentities(tx, projectId, fingerprints);
       const identityByFingerprint = new Map(
         persistedIdentities.map((identity) => [identity.fingerprint, identity]),
       );

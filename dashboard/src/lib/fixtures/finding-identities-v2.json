@@ -1,0 +1,62 @@
+[
+  {
+    "input": {
+      "ruleId": "AEG-ONE",
+      "repositoryId": "service",
+      "modulePath": "src/app.py",
+      "filePath": "/checkout/a/src/app.py",
+      "codeSnippet": "review(value, 1)",
+      "message": "review"
+    },
+    "sha256": "eebbcbde0aabbc2e0f681d999654ee00bca3f5f89dd338a696d6a65fbe22d91c"
+  },
+  {
+    "input": {
+      "ruleId": "AEG-ONE",
+      "repositoryId": "service",
+      "modulePath": "./src\\app.py",
+      "filePath": "/checkout/b/src/app.py",
+      "codeSnippet": "  review(value,\t1)\n",
+      "message": "other"
+    },
+    "sha256": "45d8149654cdd8d12d833b84df4c3a2463181501324a10414247a0c2b9e6ffa2"
+  },
+  {
+    "input": {
+      "ruleId": "AEG-\uc720\ub2c8\ucf54\ub4dc",
+      "repositoryId": "\uc11c\ube44\uc2a4\ud83d\ude00",
+      "modulePath": "src/\ubd84\uc11d\ud83d\ude00.py",
+      "filePath": "/build/src/\ubd84\uc11d\ud83d\ude00.py",
+      "codeSnippet": "review(\"\ubd84\uc11d\ud83d\ude00\\path\",\t1)\u00a0\u0085\u007f",
+      "message": "review"
+    },
+    "sha256": "e0cc41985f1bf85cffca525aa778ad1da916df49eb60bb426f107ea42dc8f328"
+  },
+  {
+    "input": {
+      "ruleId": "AEG-ONE",
+      "filePath": "file:///host/app.py",
+      "message": "review"
+    },
+    "sha256": "1bc11fb35f48a20b0807e2c35084b2c1e6f3332a8b049436a16c4625cc007d0c"
+  },
+  {
+    "input": {
+      "ruleId": "AEG-ONE",
+      "filePath": "file://host/app.py",
+      "message": "review"
+    },
+    "sha256": "9b68bb1d6b701c2b1a8e00415162fdd5806e2561b6494c6fe8f955953e3f74ad"
+  },
+  {
+    "input": {
+      "ruleId": "AEG-ONE",
+      "repositoryId": "other",
+      "modulePath": "src/app.py",
+      "filePath": "C:\\checkout\\src\\app.py",
+      "codeSnippet": "review(value, 1)",
+      "message": "review"
+    },
+    "sha256": "c5f932c24759225b5c210835f39a21da808cf5d1ec3c0fd10ede45b5beed378b"
+  }
+]

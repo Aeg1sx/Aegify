@@ -127,6 +127,42 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal(aiDetail.aiReviewStatus, "suggested"); assert.equal(aiDetail.status, "open");
     assert.equal(aiDetail.evidenceState, "candidate"); assert.equal(aiDetail.remediation, "Scanner-authored remediation");
     await call(`/api/findings/${aiFinding.id}`, { user: "outside", status: 404 });
+    // Project-bound CI imports retain a human decision across checkout roots.
+    const identityReport = (root, empty = false) => {
+      const filePath = `${root}/src/review.py`;
+      const source = { repositoryId: "review-service", modulePath: "src/review.py", filePath };
+      return { version: "2.1.0", runs: [{
+        tool: { driver: { name: "Aegify", version: "fixture", rules: [{ id: "IDENTITY-DEMO" }] } },
+        invocations: [{ executionSuccessful: true }],
+        properties: { analysisStatus: "completed", analysisScope: "repository", analyzedFiles: [filePath],
+          evaluatedRules: ["IDENTITY-DEMO"], sourceIdentityVersion: 1, analyzedSources: [source] },
+        results: empty ? [] : [{ ruleId: "IDENTITY-DEMO", level: "note", message: { text: "Review fixture" },
+          partialFingerprints: { "aegifyFingerprint/v2": "recomputed", "aegifyFingerprint/v1": root },
+          locations: [{ physicalLocation: { artifactLocation: { uri: filePath }, region: { startLine: 1, snippet: { text: "review(value)" } } } }],
+          properties: { provenance: { repository_id: source.repositoryId, module_path: source.modulePath } },
+        }],
+      }] };
+    };
+    const beforeMove = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/a") });
+    const originalIdentityFinding = await db.finding.findFirstOrThrow({ where: { scanId: beforeMove.scanId } });
+    await call(`/api/findings/${originalIdentityFinding.id}`, { user: "bob", method: "PATCH", body: { status: "false_positive", reason: "Owned evidence reviewed" } });
+    const afterMove = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/b") });
+    const movedFinding = await db.finding.findFirstOrThrow({ where: { scanId: afterMove.scanId } });
+    const movedDetail = await call(`/api/findings/${movedFinding.id}`);
+    assert.equal(movedDetail.identityId, originalIdentityFinding.identityId);
+    assert.equal(movedDetail.status, "false_positive");
+    assert.equal(movedDetail.identity.triageEvents[0].reason, "Owned evidence reviewed");
+    assert.equal(movedDetail.baselineState, "unchanged");
+    assert.equal((await db.finding.findUniqueOrThrow({ where: { id: originalIdentityFinding.id } })).isCurrent, false);
+    await call(`/api/findings/${movedFinding.id}`, { user: "outside", status: 404 });
+    await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/c", true) });
+    assert.ok((await db.findingIdentity.findUniqueOrThrow({ where: { id: movedFinding.identityId } })).absentAt);
+    const reappeared = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/d") });
+    const regression = await db.finding.findFirstOrThrow({ where: { scanId: reappeared.scanId } });
+    const regressionDetail = await call(`/api/findings/${regression.id}`);
+    assert.equal(regressionDetail.status, "open");
+    assert.equal(regressionDetail.baselineState, "regressed");
+    assert.equal(regressionDetail.identity.triageEvents.length, 2);
     const reportPath = join(directory, "synthetic.sarif");
     await writeFile(reportPath, JSON.stringify(sarif));
     // The optional local CLI check uses the same endpoint and synthetic credential.

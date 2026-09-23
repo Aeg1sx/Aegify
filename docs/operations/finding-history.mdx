@@ -1,0 +1,103 @@
+---
+title: "Finding identity and history"
+description: "Keep CI and worker triage attached to repository-qualified evidence across checkouts."
+---
+
+## What remains stable
+
+A scan stores observations. On a project's default branch, observations also
+refer to a persistent finding identity, which holds triage status, reason,
+expiry and decision history. A new CI runner or worker directory should not
+create a new decision for unchanged source evidence.
+
+The scanner emits `aegifyFingerprint/v2` alongside the historical
+`aegifyFingerprint/v1` SARIF key. The dashboard recomputes the v2 identity from
+retained evidence. Its inputs are:
+
+| Input | Identity behavior |
+|---|---|
+| Project | Database identities never cross project boundaries. |
+| Exact rule ID | Different rules remain separate, including case differences. |
+| Repository ID | Use stable workspace manifest IDs for multiple repositories. |
+| Repository-relative module path | Moving the checkout root preserves identity. Renaming the module creates a new identity. |
+| Full retained source snippet, or message when no snippet exists | Content changes can create a new identity. Line numbers are not inputs. |
+
+Evidence normalization preserves case, numbers and internal whitespace, including
+string literal contents. Only line endings and outer ASCII whitespace normalize.
+This is a content identity, not a semantic equivalence proof: formatting changes
+can produce new identities, while repeated identical snippets in the same module
+and rule can share one identity. Their individual observations and locations
+remain available in the scan.
+
+For an ordinary single-repository project, the repository ID can be empty.
+For multiple repositories within one project, assign distinct stable IDs in the
+[workspace manifest](/concepts/multi-repository). An importer cannot infer two
+different repositories from identical unqualified relative paths.
+
+If a report has no usable logical path, its physical path remains part of the
+identity. Unknown absolute paths are not shortened to a guessed basename. Other
+supported SARIF producer hints are hashed together with rule, repository and
+path, so one shared line hash cannot silently join those namespaces.
+
+## Upgrading existing installations
+
+Run the normal database migration process before starting the updated dashboard
+and workers. Back up the existing database first using the
+[backup and recovery procedure](/operations/backup-recovery).
+
+The scope migration keeps identity IDs, fingerprints and all triage history. It
+backfills a repository/module scope only where every retained historical
+observation agrees on the same rule and valid logical scope.
+
+On a subsequent default-branch import, a legacy identity upgrades when retained
+source evidence and scope establish a one-to-one match. The identity ID, triage
+reason, actor, expiry and event history remain attached. The audit event
+`finding.identity.migrated` records the old and new fingerprints. Findings,
+identity upgrades, graphs, scan completion and audit events publish in the same
+transaction; a late failure rolls them all back.
+
+If more than one old identity could match, historical namespaces conflict, or
+required retained evidence is unavailable, the importer preserves historical
+decisions and leaves the new identity open. The scan becomes `partial`, with
+`finding_identity_review_required`, and writes
+`scan.identity_migration.review_required` to the audit log. Review the old and
+new evidence before assigning a new triage decision. No conflicting decisions
+are automatically merged.
+
+Automatic legacy matching is bounded to 5,000 candidate identities and 5,000
+retained observations per import, with 16 KiB per retained snippet/message.
+Exceeding the candidate/observation budget preserves all old decisions and marks
+the incoming missing identities for review. These are migration limits, not
+detection limits. A missing source namespace cannot always be recovered when
+both the old checkout path and producer fingerprint have changed.
+
+## Absence and incomplete analysis
+
+New scanner reports include a versioned `analyzedSources` inventory pairing
+physical paths with repository IDs and relative modules. The importer checks
+that each analyzed file has exactly one logical identity. Contradictory finding
+provenance is rejected; malformed inventories make coverage partial.
+
+An observed identity supersedes its previous occurrence even when the new scan
+is partial. Marking an unobserved identity absent requires a complete analysis
+on the project's default branch, with no coverage gaps and an explicit list of
+evaluated rules. Only the analyzed repository/module/rule scope is reconciled.
+An unchanged relative module in another repository, an excluded file, a disabled
+rule or a feature branch does not establish absence.
+
+Legacy reports without the logical inventory retain physical-path reconciliation
+only for observations and identities without a repository ID. They cannot mark
+repository-qualified evidence absent or establish that an unknown new checkout
+is the same old scope.
+
+## Current scope
+
+This contract preserves identity-level triage. Assignment, due dates, tags and
+ticket metadata are still stored on individual observations; their authoritative
+identity-level workflow and continuity across scans remain follow-up work.
+Migration diagnostics appear in scan health and audit events. A dedicated
+conflict-resolution interface is not yet implemented.
+
+These checks establish data continuity and isolation. Detection precision,
+recall and AI review quality require the separate
+[evaluation contract](/analysis/benchmark-evaluation).

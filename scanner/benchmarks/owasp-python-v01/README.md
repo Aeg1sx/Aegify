@@ -55,8 +55,8 @@ related synthetic templates violate a simple independent-sample interpretation.
 
 ## Replay
 
-1. Use the Aegify revision containing this baseline and synchronize the scanner
-   lockfile using its required uv version. Compare implementation, parser, rule,
+1. Use Aegify revision `4fffd1c1fa5401577b1a01e8964cb88d4decbe08` (PR #49)
+   and synchronize the scanner lockfile using its required uv version. Compare implementation, parser, rule,
    package and configuration digests with `results.json`.
 2. Download the pinned archive above and verify its SHA-256. Extract into a new
    local directory with Python 3.14's `tarfile` data filter after rejecting links,
