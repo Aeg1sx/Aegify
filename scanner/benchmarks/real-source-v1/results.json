@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "evaluation_kind": "static-coverage-smoke",
+  "evaluation_date": "2026-09-24",
+  "engine_commit": "e897192473bf9b745f632f0db43c92149ee4a9e9",
+  "environment": {
+    "python": "3.14.7",
+    "system": "Darwin",
+    "architecture": "arm64",
+    "timing_protocol": "single local runs; concurrent host work; not a release performance baseline"
+  },
+  "configuration": {
+    "scan": {
+      "languages": [
+        "python",
+        "javascript",
+        "typescript",
+        "java",
+        "kotlin",
+        "go",
+        "rust",
+        "swift"
+      ],
+      "exclude": [
+        "tests/**",
+        "**/test/**",
+        "**/tests/**",
+        "**/__tests__/**",
+        "**/src/test/**",
+        "**/src/testFixtures/**",
+        "**/*Test.java",
+        "**/*Test.kt",
+        "**/*Tests.java",
+        "**/*Tests.kt",
+        "**/*Spec.java",
+        "**/*Spec.kt",
+        "**/*Spec.ts",
+        "**/test_*.py",
+        "**/*_test.py",
+        "**/*_test.go",
+        "**/*.test.ts",
+        "**/*.test.js",
+        "**/*.spec.ts",
+        "**/*.spec.js",
+        "vendor/**",
+        "**/vendor/**",
+        "node_modules/**",
+        "**/node_modules/**",
+        "venv/**",
+        "**/venv/**",
+        ".venv/**",
+        "**/.venv/**",
+        ".git/**",
+        "**/.git/**",
+        "__pycache__/**",
+        "**/__pycache__/**",
+        ".gradle/**",
+        "**/.gradle/**",
+        "*_pb.js",
+        "*_pb.d.ts",
+        "*_grpc_web_pb*",
+        "*.pb.go",
+        "**/generated/**",
+        "**/dist/**",
+        "**/build/**",
+        "**/target/**",
+        "**/.next/**",
+        "**/proto/**",
+        "**/__generated__/**",
+        "**/static/**",
+        "**/assets/**",
+        "**/public/**"
+      ],
+      "max_file_size_kb": 500,
+      "max_workers": 2,
+      "max_findings_per_rule": 50,
+      "max_findings_per_file": 50
+    },
+    "rules": {
+      "severity_threshold": "low",
+      "custom_rules": null,
+      "disabled_rules": []
+    },
+    "taint": {
+      "max_iterations": 64,
+      "context_depth": 2,
+      "max_contexts": 10000
+    }
+  },
+  "llm_enabled": false,
+  "application_execution": false,
+  "corpora": [
+    {
+      "id": "juice-shop",
+      "repository": "https://github.com/juice-shop/juice-shop",
+      "commit": "1618a611b173b4bf114028e6e02549950606e29d",
+      "archive_sha256": "5b4df23bc53c42200da9b37ce720f74657b37a0548eff9516ffb70d9bfc8d79d",
+      "source_digest": "sha256:4b66e26b5adcca6b93e780c3cae57475b154947809b93ff0dd23328101938baf",
+      "sarif_sha256": "2af2fe72b395695fa860a78f26cee5f42f6c289b7c0ac9635ffb9da231230e2a",
+      "source_files_total": 1300,
+      "source_extensions": {
+        ".asc": 3,
+        ".avif": 5,
+        ".bak": 3,
+        ".conf": 1,
+        ".css": 3,
+        ".csv": 1,
+        ".docx": 1,
+        ".exe": 1,
+        ".gg": 1,
+        ".gif": 1,
+        ".hbs": 2,
+        ".html": 82,
+        ".ico": 2,
+        ".jpeg": 4,
+        ".jpg": 56,
+        ".js": 9,
+        ".json": 108,
+        ".kdbx": 1,
+        ".key": 2,
+        ".md": 50,
+        ".mjs": 7,
+        ".mp4": 1,
+        ".mts": 2,
+        ".pdf": 3,
+        ".png": 54,
+        ".pub": 1,
+        ".pug": 2,
+        ".py": 3,
+        ".pyc": 1,
+        ".scss": 83,
+        ".sh": 2,
+        ".sha512": 3,
+        ".sol": 17,
+        ".stl": 2,
+        ".svg": 3,
+        ".tf": 11,
+        ".ts": 633,
+        ".tsv": 1,
+        ".txt": 2,
+        ".url": 4,
+        ".vtt": 1,
+        ".xml": 7,
+        ".yaml": 2,
+        ".yml": 97,
+        ".zip": 3,
+        "[no extension]": 19
+      },
+      "analysis_status": "partial",
+      "files_analyzed": 309,
+      "duration_seconds": 27.238,
+      "analysis_gaps": [
+        {
+          "code": "unsupported_language_shell",
+          "stage": "parsing",
+          "message": "shell source files are not supported by installed parsers",
+          "affected_count": 2
+        },
+        {
+          "code": "rule_finding_limit",
+          "stage": "rules",
+          "message": "Findings omitted by the per-rule output limit",
+          "affected_count": 52
+        }
+      ],
+      "unsupported_languages": {
+        "shell": 2
+      },
+      "finding_disposition": {
+        "advisory": 788,
+        "blocking": 10
+      },
+      "evaluated_rules": 268,
+      "labels": {
+        "status": "not_independently_reviewed",
+        "precision": null,
+        "recall": null,
+        "accuracy": null,
+        "true_positives": null,
+        "false_positives": null,
+        "false_negatives": null
+      }
+    },
+    {
+      "id": "dvwa",
+      "repository": "https://github.com/digininja/DVWA",
+      "commit": "b496a5d3de6b967410155e1b7d3e51e9d035eb22",
+      "archive_sha256": "29bd4968df352446bcb52ee22c9f9e7365478d76762792c994388698222400c4",
+      "source_digest": "sha256:4e26a060f710c772ce9e097c6e7c6500df0aa6ff09e4272303f3c5d71d43c29e",
+      "sarif_sha256": "4e467514f4460f37b59e0e63e259554d87fbdce7da04f470132932fdec963977",
+      "source_files_total": 250,
+      "source_extensions": {
+        ".css": 5,
+        ".db": 1,
+        ".dist": 2,
+        ".html": 1,
+        ".ico": 1,
+        ".ini": 1,
+        ".jpg": 5,
+        ".js": 9,
+        ".json": 1,
+        ".lock": 1,
+        ".md": 23,
+        ".pdf": 1,
+        ".php": 169,
+        ".png": 10,
+        ".py": 1,
+        ".sql": 5,
+        ".txt": 3,
+        ".yml": 8,
+        "[no extension]": 3
+      },
+      "analysis_status": "partial",
+      "files_analyzed": 9,
+      "duration_seconds": 1.383,
+      "analysis_gaps": [
+        {
+          "code": "unsupported_language_php",
+          "stage": "parsing",
+          "message": "php source files are not supported by installed parsers",
+          "affected_count": 168
+        }
+      ],
+      "unsupported_languages": {
+        "php": 168
+      },
+      "finding_disposition": {
+        "advisory": 19,
+        "blocking": 0
+      },
+      "evaluated_rules": 237,
+      "labels": {
+        "status": "not_independently_reviewed",
+        "precision": null,
+        "recall": null,
+        "accuracy": null,
+        "true_positives": null,
+        "false_positives": null,
+        "false_negatives": null
+      }
+    }
+  ]
+}

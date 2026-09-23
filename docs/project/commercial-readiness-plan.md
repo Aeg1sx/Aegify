@@ -78,7 +78,8 @@ Local evidence (remote CI and merge remain separate gates):
 - Documentation validation, links and accessibility checks passed. Color checks
   retain existing recommendations beyond WCAG AA.
 - Real local API uploads preserve completed/partial/failed status with zero
-  findings. Browser verification is recorded separately.
+  findings. Isolated headless Chrome verified all three detail screens, scan
+  history and the concrete partial-analysis diagnostic.
 - Self-scan: 260 files, 157.2 seconds, 13,626 taint contexts, no reported gaps,
   601 advisory candidates and zero blocking findings. These are candidates,
   not a finding-by-finding security audit or a universal clean bill of health.
@@ -87,6 +88,12 @@ The upstream py-tree-sitter 0.26.0 Point attribute regression is tracked at
 [upstream issue 500](https://github.com/tree-sitter/py-tree-sitter/issues/500).
 Parser diagnostics use tuple access, matching the existing extractor convention.
 
-Pinned source-only Juice Shop and DVWA evaluations are in progress. PHP is not
-supported by the current parser contract; DVWA must not receive a whole-project
-success claim merely because its JavaScript utilities can be parsed.
+Pinned source-only Juice Shop and DVWA smoke evaluations are recorded in
+`scanner/benchmarks/real-source-v1/results.json`: Juice Shop analyzed 309 files
+with 52 omitted findings and two unsupported shell files; DVWA analyzed nine
+utility files and reported 168 in-scope unsupported PHP files. Both returned
+partial/exit 3. Labels remain unreviewed and all accuracy metrics are null.
+
+Replacement PR: https://github.com/Aeg1sx/Aegify/pull/35. CI, merge, superseded-PR
+closure and post-merge alert state must be verified before marking those rows
+complete.
