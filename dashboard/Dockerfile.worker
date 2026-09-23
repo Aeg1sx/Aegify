@@ -23,7 +23,7 @@ COPY dashboard/src/lib ./src/lib
 COPY dashboard/scripts/scan-worker.mjs dashboard/scripts/test-worker-container.mjs ./scripts/
 
 FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
-RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 && \
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 libatomic1 && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 1001 aegify && \
     useradd --system --uid 1001 --gid 1001 --home-dir /tmp --shell /usr/sbin/nologin aegify && \
@@ -34,5 +34,6 @@ WORKDIR /opt/aegify/dashboard
 ENV NODE_ENV=production
 ENV PYTHONDONTWRITEBYTECODE=1
 USER 1001:1001
+RUN node --version && /opt/aegify/scanner/.venv/bin/python -I -m aegify.worker --help
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD ["node", "-e", "const fs=require('node:fs');process.exit(Date.now()-fs.statSync('/tmp/aegify-worker-health').mtimeMs<45000?0:1)"]
 CMD ["node", "scripts/scan-worker.mjs"]

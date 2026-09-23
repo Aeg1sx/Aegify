@@ -199,6 +199,9 @@ The final local self-scan analyzed 286 files in 201.75 seconds with 694 advisory
 candidates, zero blocking findings and no analysis gaps. The final production
 HTTP/browser rerun passed all 82 checks. Remote container checks remain pending
 for this branch.
+The first Linux worker check exposed Node's missing `libatomic.so.1` runtime
+dependency in the Python base image. The runner now installs `libatomic1` and
+checks both runtime entry points as UID 1001 during the image build.
 
 This worker phase covers static source scans. Durable AI review jobs, independently
 reviewed accuracy labels, private forge connectors, live SSO, operator deployment,
