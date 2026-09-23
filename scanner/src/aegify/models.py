@@ -382,7 +382,20 @@ class Finding(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        """Stable hash for deduplication across scans."""
+        """V2 identity survives checkout movement and separates repository namespaces."""
+        from aegify.identity import finding_fingerprint_v2
+
+        return finding_fingerprint_v2(
+            self.rule_id,
+            self.provenance.repository_id,
+            self.provenance.module_path,
+            self.file_path,
+            self.code_snippet or self.message,
+        )
+
+    @property
+    def legacy_fingerprint(self) -> str:
+        """Retain the v1 value for older importers and guarded migration."""
         evidence = re.sub(r"\s+", " ", self.code_snippet or self.message).strip()
         path = self.file_path.replace("\\", "/").removeprefix("./")
         key = f"aegify-finding/v1\n{self.rule_id.lower()}\n{path}\n{evidence}"
@@ -702,6 +715,14 @@ class AnalysisGap(BaseModel):
     affected_count: int = Field(default=1, ge=0)
 
 
+class AnalyzedSource(BaseModel):
+    """A parsed source's logical identity, independent of its physical checkout."""
+
+    repository_id: str = ""
+    module_path: str
+    file_path: str
+
+
 class ScanResult(BaseModel):
     """Complete result of a security scan."""
 
@@ -715,6 +736,7 @@ class ScanResult(BaseModel):
     analysis_scope: Literal["repository", "workspace", "files", "unknown"] = "unknown"
     evaluated_rules: list[str] = Field(default_factory=list)
     analyzed_files: list[str] = Field(default_factory=list)
+    analyzed_sources: list[AnalyzedSource] = Field(default_factory=list)
     unsupported_languages: dict[str, int] = Field(default_factory=dict)
     parse_diagnostics: list[ParseDiagnostic] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)

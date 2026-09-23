@@ -20,6 +20,7 @@ from collections.abc import Callable
 
 from aegify.config import AegifyConfig
 from aegify.models import (
+    AnalyzedSource,
     EvidenceProvenance,
     EvidenceState,
     FileAST,
@@ -512,6 +513,15 @@ class ScanEngine:
     ) -> None:
         """Run phases 2-7 of the scan pipeline on pre-parsed file ASTs."""
         roots = repository_roots or [target if target.is_dir() else target.parent]
+        result.analyzed_sources = [
+            AnalyzedSource(
+                repository_id=ast.repository_id,
+                module_path=ast.module_path
+                or self._relative_module_path(Path(ast.file_path), roots),
+                file_path=ast.file_path,
+            )
+            for ast in sorted(file_asts, key=lambda item: (item.repository_id, item.file_path))
+        ]
         result.workspace_snapshot = self._compute_workspace_snapshot(
             file_asts, roots, repository_ids_by_root
         )

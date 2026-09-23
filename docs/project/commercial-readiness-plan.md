@@ -20,7 +20,7 @@ permissions and immutable source snapshots.
 | Evaluation | Order-independent matching, explicit scope, positive/negative cases, per-rule/language/CWE results, uncertainty and held-out evaluation | Versioned source/label digests, independently reviewed labels, regression CI | In progress |
 | Analysis fidelity | Accurate parser diagnostics, typed sources/sinks/sanitizers, validated paths, framework and alias models | Supported-stack matrix and positive/negative semantic regression cases | In progress |
 | Shared scan service | UI, CLI and CI invoke the same engine and preserve the same evidence | End-to-end scan/upload/review tests and failure recovery | In progress |
-| Repository context | Collision-safe multi-repository and monorepo identity, dependencies, snapshots and incremental invalidation | Cross-repository fixtures; incremental/full result equivalence | Pending |
+| Repository context | Collision-safe multi-repository and monorepo identity, dependencies, snapshots and incremental invalidation | Cross-repository fixtures; incremental/full result equivalence | In progress |
 | Rule authoring | Guided templates, schema diagnostics, source/sink/propagation explanations, preview and regression cases | Author a rule, preview matches, export and run it in CI | Pending |
 | AI review | Bounded source browsing and evidence tools for threat modeling and supplied-finding review, abstention, triage and remediation advice | Tool-contract tests, source-bound citations, model comparison and repeated-run evaluations | In progress |
 | Agent operations | Durable jobs, logs, tool spans, evidence events, cancellation, retry, budgets and cost accounting | Worker interruption/recovery tests and dashboard observation | In progress |
@@ -435,9 +435,61 @@ the serial runner interface and adding retained-artifact integrity checks, all
 strict mypy passes across 92 source files, and documentation validation, links
 and accessibility pass with existing color recommendations. The final self-scan
 analyzed 298 files in 153.7 seconds with no reported gaps, 678 advisory candidates
-and zero blocking findings. Exact-head remote CI and merge remain separate gates.
+and zero blocking findings. Exact-head remote CI subsequently passed, including
+561 scanner tests with 81.81% coverage, dashboard, CodeQL, self-scan, supply-chain,
+documentation and container checks. PR #49 merged through the recorded maintainer
+procedure on 2026-09-23 at 22:36:19 UTC as verified signed commit
+`4fffd1c1fa5401577b1a01e8964cb88d4decbe08`.
 
 A separate owned identity check found that the same repository ID, module path
 and evidence text receive different finding fingerprints when only the checkout
 root changes. Correcting this CI/worker triage continuity issue, including legacy
 identity compatibility and multi-repository separation, is follow-up work.
+
+## Finding identity continuity: 2026-09-24, in progress
+
+The owned check found two separate defects: Aegify's fingerprint included the
+physical checkout path, and the dashboard accepted opaque producer hashes without
+qualifying them by rule or repository. Absence reconciliation also depended on
+physical paths. These could lose existing triage or join unrelated observations.
+
+The v2 contract uses the exact rule, repository ID, relative module and full
+retained snippet/message, with shared Python/TypeScript golden vectors. Source
+case, numbers and internal whitespace are preserved; line numbers and known
+checkout roots are excluded. The old producer fingerprint remains in SARIF for
+compatibility. The importer recomputes Aegify source identities and qualifies
+other supported producer hints by namespace.
+
+A new additive migration retains identity IDs and triage history while backfilling
+only unambiguous logical scopes. Bounded, one-to-one legacy upgrades occur inside
+the artifact publication transaction and are audited. Conflicting or unavailable
+legacy evidence remains retained; incoming identities start open, with partial
+scan health and a review diagnostic. Versioned, validated analyzed-source pairs
+allow default-branch absence reconciliation across checkout changes without
+affecting sibling repositories, excluded files or disabled rules.
+
+The focused local suite passes 28 tests, including a real Python engine scan in
+two fresh checkout roots, imported SARIF fingerprint agreement, an actual
+pre-migration SQLite database, conflicting legacy decisions, cross-project and
+repository/rule separation, injected late rollback, malformed source coverage,
+20,000 inventory entries and a 5,001-identity migration budget. The whole scanner suite passes 563 tests with one local platform skip; all 115
+dashboard tests pass, including the real Python subprocess checks. Ruff and
+format checks pass across 151 files, strict mypy across 93 source files, and
+TypeScript and ESLint pass. A production build with ephemeral test configuration
+and 95 local production HTTP/CLI checks pass, including human triage across
+checkout changes and reopening after a complete absence. Documentation syntax,
+links and accessibility pass with the existing color recommendations. The initial
+local self-scan analyzed 300 files in 160.6 seconds, with no coverage gaps, 686
+advisory candidates and zero blocking findings. Exact-head remote CI remains a
+separate gate.
+
+Remaining workflow scope includes assignment/due-date/tag/ticket continuity
+(currently stored per observation), an operator conflict-review interface,
+incremental/full equivalence, and broader application-level accuracy evaluation.
+This phase does not establish commercial detection quality.
+
+The merged #49 baseline has completed main-branch Aegify analysis
+`1828934261` (2026-09-23 22:39:26 UTC). Its refreshed snapshot contains 683 open
+code-scanning alerts: 678 Aegify candidates and five Scorecard alerts. No alert
+was dismissed as part of the evaluation or identity work. Alert counts are not
+a substitute for per-finding security review.

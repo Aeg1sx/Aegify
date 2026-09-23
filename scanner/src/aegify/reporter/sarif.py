@@ -90,6 +90,16 @@ class SARIFReporter:
             "runtimeEvidence": scan_result.runtime_evidence.model_dump(mode="json"),
             "findingDisposition": scan_result.disposition_count,
         }
+        if scan_result.analyzed_sources:
+            run_props["sourceIdentityVersion"] = 1
+            run_props["analyzedSources"] = [
+                {
+                    "repositoryId": source.repository_id,
+                    "modulePath": source.module_path,
+                    "filePath": source.file_path,
+                }
+                for source in scan_result.analyzed_sources
+            ]
         if call_graph is not None:
             run_props["callGraph"] = self._serialize_call_graph(call_graph)
         if scan_result.endpoints:
@@ -467,7 +477,8 @@ class SARIFReporter:
             "kind": "fail" if finding.blocks_ci else "review",
             "message": {"text": finding.message},
             "partialFingerprints": {
-                "aegifyFingerprint/v1": finding.fingerprint,
+                "aegifyFingerprint/v2": finding.fingerprint,
+                "aegifyFingerprint/v1": finding.legacy_fingerprint,
             },
             "locations": [
                 {

@@ -1,3 +1,5 @@
+import { relativeIdentityPath } from "./finding-lifecycle.ts";
+
 export interface EvidenceProvenancePayload {
   contract_version?: number;
   producer?: string;
@@ -18,6 +20,8 @@ interface RunProperties {
   analysisScope?: unknown;
   evaluatedRules?: unknown;
   analyzedFiles?: unknown;
+  sourceIdentityVersion?: unknown;
+  analyzedSources?: unknown;
 }
 
 export interface ScanHealth {
@@ -26,6 +30,8 @@ export interface ScanHealth {
   gaps: Array<{ code: string; stage: string; message: string; affected_count: number }>;
   evaluatedRules: string[];
   analyzedFiles: string[];
+  sourceIdentityVersion?: 1;
+  analyzedSources?: Array<{ repositoryId: string; modulePath: string; filePath: string }>;
 }
 
 export function scanHealthForRun(
@@ -55,6 +61,27 @@ export function scanHealthForRun(
   const files = runProperties?.analyzedFiles;
   const analyzedFiles = Array.isArray(files) && files.length <= 100_000 && files.every((file) => typeof file === "string" && file.length > 0 && file.length <= 4096 && !/[\x00-\x1f]/.test(file))
     ? [...new Set(files as string[])].sort() : [];
+  const rawSources = runProperties?.analyzedSources;
+  const analyzedPaths = new Set(analyzedFiles);
+  const identityVersion = runProperties?.sourceIdentityVersion;
+  let analyzedSources: ScanHealth["analyzedSources"];
+  if (identityVersion !== undefined || rawSources !== undefined) {
+    const valid = identityVersion === 1 && Array.isArray(rawSources) && rawSources.length <= 100_000
+      && rawSources.every((source) => source && typeof source === "object"
+        && typeof source.repositoryId === "string" && source.repositoryId.length <= 128 && source.repositoryId.trim() === source.repositoryId && !/[\x00-\x1f]/.test(source.repositoryId)
+        && typeof source.modulePath === "string" && source.modulePath.length <= 4096
+        && relativeIdentityPath(source.modulePath) === source.modulePath
+        && source.modulePath.length > 0
+        && typeof source.filePath === "string" && analyzedPaths.has(source.filePath));
+    if (valid) {
+      analyzedSources = rawSources as NonNullable<ScanHealth["analyzedSources"]>;
+      const physical = new Set(analyzedSources.map((source) => source.filePath));
+      const logical = new Set(analyzedSources.map((source) => JSON.stringify([source.repositoryId, source.modulePath])));
+      if (physical.size !== analyzedFiles.length || physical.size !== analyzedSources.length || logical.size !== analyzedSources.length) analyzedSources = undefined;
+    }
+    if (!analyzedSources) gaps.push({ code: "invalid_source_identity_scope", stage: "import",
+      message: "Logical source identities do not match the analyzed file inventory", affected_count: 1 });
+  }
   // A contradictory successful declaration cannot override a failed invocation.
   // Legacy successful reports remain viewable, but lack a reconciliable scope.
   const status = declared === "failed" ? "failed"
@@ -66,6 +93,7 @@ export function scanHealthForRun(
     status,
     scope: scope === "repository" || scope === "workspace" || scope === "files" ? scope : "unknown",
     gaps, evaluatedRules, analyzedFiles,
+    ...(analyzedSources ? { sourceIdentityVersion: 1 as const, analyzedSources } : {}),
   };
 }
 

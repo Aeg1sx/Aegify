@@ -201,6 +201,8 @@ model FindingIdentity {
   fingerprint        String
   ruleId             String
   filePath           String
+  repositoryId       String    @default("")
+  modulePath         String    @default("")
   status             String    @default("open")
   firstSeenAt        DateTime  @default(now())
   lastSeenAt         DateTime  @default(now())
@@ -222,6 +224,7 @@ model FindingIdentity {
   @@unique([projectId, fingerprint])
   @@index([projectId, status])
   @@index([lastSeenScanId])
+  @@index([projectId, repositoryId, modulePath, ruleId])
 }
 
 model FindingTriageEvent {

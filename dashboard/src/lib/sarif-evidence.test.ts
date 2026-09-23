@@ -44,6 +44,41 @@ test("imports a SARIF context region without moving the reported finding", () =>
   assert.deepEqual(normalizeSourceSnippet({ region: { startLine: 12, snippet: { text: "reported" } }, contextRegion: { startLine: 15, snippet: { text: "wrong context" } } }), { codeSnippet: "reported", snippetStartLine: 12 });
 });
 
+test("logical coverage requires a canonical one-to-one source inventory", () => {
+  const source = { repositoryId: "api", modulePath: "src/app.py", filePath: "/runner/checkout/src/app.py" };
+  const properties = { analysisStatus: "completed", analysisScope: "repository", evaluatedRules: ["AEG-ONE"], analyzedFiles: [source.filePath],
+    sourceIdentityVersion: 1, analyzedSources: [source] };
+  const complete = scanHealthForRun(properties, { executionSuccessful: true });
+  assert.equal(complete.status, "completed");
+  assert.deepEqual(complete.analyzedSources, [source]);
+  for (const patch of [
+    { sourceIdentityVersion: 2 }, { analyzedSources: [] },
+    { analyzedSources: [source, source] },
+    { analyzedSources: [source, { ...source, repositoryId: "other" }] },
+    { analyzedSources: [{ ...source, modulePath: "../app.py" }] },
+    { analyzedSources: [{ ...source, modulePath: "src//app.py" }] },
+    { analyzedSources: [{ ...source, repositoryId: " api " }] },
+    { analyzedSources: [{ ...source, filePath: "/runner/unscanned.py" }] },
+    { analyzedFiles: [source.filePath, "/runner/missing.py"] },
+  ]) {
+    const health = scanHealthForRun({ ...properties, ...patch }, { executionSuccessful: true });
+    assert.equal(health.status, "partial");
+    assert.equal(health.analyzedSources, undefined);
+    assert.equal(canReconcileScanAbsence(health, "main", "main"), false);
+    assert.ok(health.gaps.some((gap) => gap.code === "invalid_source_identity_scope"));
+  }
+});
+
+test("large logical inventories are bounded without a quadratic membership lookup", () => {
+  const sources = Array.from({ length: 20_000 }, (_, index) => ({ repositoryId: "api", modulePath: `src/${index}.py`, filePath: `/checkout/src/${index}.py` }));
+  const started = performance.now();
+  const health = scanHealthForRun({ analysisStatus: "completed", analysisScope: "repository", evaluatedRules: ["AEG-ONE"],
+    analyzedFiles: sources.map((source) => source.filePath), sourceIdentityVersion: 1, analyzedSources: sources }, { executionSuccessful: true });
+  assert.equal(health.status, "completed");
+  assert.equal(health.analyzedSources?.length, 20_000);
+  assert.ok(performance.now() - started < 5000, "20,000 sources must stay within a broad regression budget");
+});
+
 test("prefers the run-level snapshot and accepts invocation fallback", () => {
   assert.equal(
     workspaceSnapshotForRun(
@@ -198,6 +233,8 @@ test("fresh migration history persists normalized evidence with Prisma", async (
         fingerprint: "sha256:integration",
         ruleId: "AEG-INTEGRATION-001",
         filePath: "api/OrderController.kt",
+        repositoryId: evidence.repositoryId,
+        modulePath: evidence.modulePath,
         lastSeenScanId: scan.id,
         lastSeverity: "high",
         lastEvidenceState: "reachable",
@@ -313,6 +350,8 @@ test("fresh migration history persists normalized evidence with Prisma", async (
     const health = scanHealthForRun({
       analysisStatus: "completed", analysisScope: "repository",
       evaluatedRules: [rule.id], analyzedFiles: [finding.filePath],
+      sourceIdentityVersion: 1,
+      analyzedSources: [{ repositoryId: finding.repositoryId, modulePath: finding.modulePath, filePath: finding.filePath }],
     }, { executionSuccessful: true });
     for (const branch of ["feature", "main"]) {
       const imported = await prisma.scan.create({ data: { projectId: project.id, branch, status: "running" } });
