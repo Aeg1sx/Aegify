@@ -17,7 +17,7 @@ from rich.text import Text
 
 from aegify import __version__
 from aegify.config import AegifyConfig
-from aegify.models import ScanProgress, ScanResult, ScanStatus, Severity
+from aegify.models import ScanProgress, ScanResult, ScanStatus, Severity, TokenUsage
 
 app = typer.Typer(
     name="aegify",
@@ -451,7 +451,7 @@ def scan_workspace(
     cfg.rules.severity_threshold = severity
     cfg.llm.enabled = ai_tools
     cfg.llm.model = model
-    engine = ScanEngine(config=cfg)
+    engine = ScanEngine(config=cfg, capture_ai_source=ai_tools)
     result = engine.scan_workspace(manifest)
 
     if ai_tools and result.status == "completed" and result.findings:
@@ -497,10 +497,14 @@ def scan_workspace(
                 model_call,
                 workspace=workspace_context,
                 model=model,
+                sources=engine.source_catalog,
             )
             finding.llm_analysis = finding.ai_review.model_dump_json()
-            if finding.ai_review.remediation_summary:
-                finding.remediation = finding.ai_review.remediation_summary
+        result.token_usage = TokenUsage(
+            input_tokens=budget.input_tokens_used,
+            output_tokens=budget.output_tokens_used,
+            total_cost_usd=budget.estimated_cost_usd,
+        )
 
     if semantic_graph_file is not None and result.status == "completed":
         engine.export_semantic_graph(semantic_graph_file)

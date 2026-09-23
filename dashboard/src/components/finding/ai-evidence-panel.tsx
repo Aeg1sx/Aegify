@@ -6,6 +6,8 @@ import { AlertTriangle, Check, Clipboard, ShieldCheck, Sparkles } from "lucide-r
 import { CodeHighlight } from "@/components/code-highlight";
 import { Markdown } from "@/components/markdown";
 import { Separator } from "@/components/ui/separator";
+import { AIToolEvidence } from "@/components/finding/ai-tool-evidence";
+import type { AIReviewEvidenceView } from "@/lib/ai-review-evidence";
 
 export interface AIReviewView {
   verdict: "likely_true_positive" | "likely_false_positive" | "needs_review";
@@ -19,6 +21,7 @@ export interface AIReviewView {
   attackScenario: string;
   fixedCode: string;
   remediationSteps: string[];
+  sourceEvidence?: AIReviewEvidenceView;
   proof: {
     safety: string;
     requiresApproval: boolean;
@@ -118,6 +121,8 @@ export function AIEvidencePanel({ review, language }: { review: AIReviewView; la
         <EvidenceList title="Evidence against" values={review.evidenceAgainst} tone="negative" />
         <EvidenceList title="Evidence gaps" values={review.evidenceGaps} tone="gap" />
       </div>
+
+      {review.sourceEvidence && <AIToolEvidence evidence={review.sourceEvidence} />}
 
       {review.analysis && <div><h4 className="mb-2 text-sm font-medium">Analysis</h4><Markdown content={review.analysis} /></div>}
       {review.riskAssessment && <p className="text-xs text-muted-foreground">Model risk assessment: <span className="font-medium text-foreground">{review.riskAssessment}</span></p>}

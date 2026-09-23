@@ -1,6 +1,6 @@
 // Real production HTTP checks with synthetic accounts, no external IdP or AI calls.
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,6 +112,21 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await db.scan.findUniqueOrThrow({ where: { id: uploaded.scanId } })).projectId, a.id);
     assert.equal((await db.scan.findUniqueOrThrow({ where: { id: uploaded.scanId } })).status, "partial");
     assert.equal((await db.rule.findUniqueOrThrow({ where: { id: "SHARED" } })).yamlContent, "original-rule");
+    // Import preserves bounded producer evidence without converting an AI suggestion into triage.
+    const digest = (value) => "sha256:" + createHash("sha256").update(value).digest("hex");
+    const excerpt = "    return name";
+    const sourceReference = { repository_id: "service", path: "src/app.py", source_digest: digest("def greet(name):\n" + excerpt + "\n"), excerpt_digest: digest(excerpt), line_start: 2, line_end: 2 };
+    const citation = { citation_id: digest(JSON.stringify(sourceReference)), ...sourceReference };
+    const aiReview = { verdict: "likely_false_positive", confidence: 0.7, reasoning: "Synthetic source-only review.", model: "scripted-fixture", citations: [{ ...citation, request_id: "tool-1" }], tools_used: [{ tool: "source_read", request_id: "tool-1", ok: true, round: 1, duration_ms: 0.1, arguments: { repository_id: "service", path: "src/app.py", line_start: 2, line_end: 2 }, evidence: { citation, content: excerpt } }], trace: { model_calls: 2, tool_calls: 1, stop_reason: "final_review", source_manifest: digest("synthetic-source-catalog") } };
+    const aiSarif = globalThis.structuredClone(sarif);
+    aiSarif.runs[0].results = [{ ruleId: "SHARED", message: { text: "AI evidence import fixture" }, locations: [{ physicalLocation: { artifactLocation: { uri: "src/app.py" }, region: { startLine: 2, endLine: 2 } } }], properties: { severity: "low", evidenceState: "candidate", disposition: "advisory", aiReview, remediation: "Scanner-authored remediation" } }];
+    const aiUpload = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: aiSarif });
+    const aiFinding = await db.finding.findFirstOrThrow({ where: { scanId: aiUpload.scanId } });
+    const aiDetail = await call(`/api/findings/${aiFinding.id}`);
+    assert.deepEqual(JSON.parse(aiDetail.llmAnalysis), aiReview);
+    assert.equal(aiDetail.aiReviewStatus, "suggested"); assert.equal(aiDetail.status, "open");
+    assert.equal(aiDetail.evidenceState, "candidate"); assert.equal(aiDetail.remediation, "Scanner-authored remediation");
+    await call(`/api/findings/${aiFinding.id}`, { user: "outside", status: 404 });
     const reportPath = join(directory, "synthetic.sarif");
     await writeFile(reportPath, JSON.stringify(sarif));
     // The optional local CLI check uses the same endpoint and synthetic credential.
@@ -146,7 +161,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await call(`/api/scans/${queued.scanId}/job`)).job.status, "cancelled");
     const retry = await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "retry" }, status: 202 });
     assert.notEqual(retry.scanId, queued.scanId);
-    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId });
+    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id });
     await db.user.update({ where: { id: "bob" }, data: { disabled: true } });
     await call("/api/projects", { user: "bob", status: 401 });
     log(`Project access: ${checks} production HTTP/CLI checks passed; project isolation, roles, CSRF, scoped CI delivery and revocation verified.`);

@@ -27,6 +27,7 @@ import {
 import { EvidenceWorkbench } from "@/components/finding/evidence-workbench";
 import { ApiContractPanel, type ApiContractContextView } from "@/components/finding/api-contract-panel";
 import { AIEvidencePanel, type AIReviewView } from "@/components/finding/ai-evidence-panel";
+import { normalizeAIReviewEvidence } from "@/lib/ai-review-evidence";
 import {
   FindingLifecyclePanel,
   type FindingIdentityView,
@@ -163,6 +164,7 @@ function normalizeAIReview(value: Record<string, unknown>): AIReviewView {
     attackScenario: typeof value.attackScenario === "string" ? value.attackScenario : String(value.attack_scenario || ""),
     fixedCode: typeof value.fixedCode === "string" ? value.fixedCode : String(value.fixed_code || ""),
     remediationSteps: stringArray(value.remediationSteps ?? value.remediation_steps),
+    sourceEvidence: normalizeAIReviewEvidence(value),
     proof: {
       safety: String(proof.safety || "owned_fixture_only"),
       requiresApproval: true,

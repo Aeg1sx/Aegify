@@ -67,8 +67,8 @@ absence and current-occurrence state.
 
 `aegify.llm.tools.ToolRegistry` accepts only explicitly registered, read-only
 Python handlers. The built-in registry provides bounded finding context, call
-paths, attack-surface evidence, multi-repository workspace summaries, and
-non-executing harness plans. Unknown tools, write-capable specifications,
+paths, attack-surface evidence, multi-repository workspace summaries, source
+navigation, and non-executing harness plans. Unknown tools, write-capable specifications,
 oversized arguments, and oversized results are rejected. Common credential
 shapes are redacted before model use and before generated output is persisted.
 The call-path tool and agent trace share one structural completeness check:
@@ -111,11 +111,68 @@ aegify scan-workspace aegify-workspace.yml \
   --output-file results.sarif
 ```
 
-The orchestrator first asks the model which allowlisted evidence it needs,
-executes at most the configured bounded calls, and then requests the final
-structured review with those tool results. Token budget and finding count both
-bound cost. Source and tool output are treated as untrusted data, not prompt
-instructions.
+The reviewer can inspect each tool result and request further evidence before
+returning its structured suggestion. The default permits eight tool calls over
+four exploration rounds and at most one final review call. Repeated identical
+requests reuse retained evidence and still consume the call budget. Exhausted
+budgets, unavailable models and unsupported citations produce `needs_review`.
+Token budget and finding count also bound work. Source and tool output are
+treated as untrusted data, not prompt instructions.
+
+### Source navigation and references
+
+`scan-workspace --ai-tools` admits source already parsed by the scanner. Capture
+checks each file against the parser's SHA-256 and retains a redacted, immutable
+in-memory snapshot. Tools read only that snapshot. They cannot load arbitrary
+paths, hidden files, unparsed files, filesystem links or special files. Capture
+uses descriptor-relative opens on Linux and macOS; platforms without those
+primitives report unavailable source. Changes before capture fail the digest
+check; changes afterward do not alter the retained evidence.
+
+| Tool | Purpose | Bound and continuation |
+|---|---|---|
+| `source_list_files` | Discover files by repository and path prefix | 25 files per page; `next_offset` |
+| `source_read` | Read a precise source range | 200 lines and 16 KiB; truncation is explicit |
+| `source_search` | Find literal, case-sensitive text in redacted source | 200 files, 4 MiB, 20 matches; `next_cursor` |
+| `source_symbols` | Locate parsed function declarations | 10 declarations per page; `next_offset` |
+
+Capture retains at most 2,000 files, 512 KiB per file and 32 MiB in total. Missing
+or excluded material is reported in the source catalog, separately from SAST
+coverage. A symbol lookup supplies declaration metadata; the reviewer must read
+source before citing it. Search does not interpret regular expressions or execute
+repository code. Known credential shapes are redacted before line selection;
+line numbers remain tied to the original file. Redaction is not a general-purpose
+data-loss-prevention guarantee: configure providers permitted to receive the
+selected project source.
+
+Source reads issue citation IDs bound to repository, relative path, original
+source digest, line range and redacted excerpt digest. The model selects these
+IDs; it cannot supply a new location. The executor checks them against retained
+tool results and the snapshot. A non-abstaining review must include a reference
+covering the supplied finding's repository and entire range. A valid reference
+establishes which code was read; it does not establish that the model's reasoning
+is correct or that runtime impact occurred.
+
+### Review activity in the dashboard
+
+SARIF uploads preserve source references and tool spans with the AI suggestion.
+The finding page shows retained excerpts with line numbers, source and excerpt
+hashes, model-call counts, rounds, tool success/failure, truncation, cache reuse
+and elapsed tool time. Expand **Review provenance** for source-manifest and prompt
+digests. Older reports without these fields remain readable. Imported references
+are producer-supplied evidence, not a new independent verification by the dashboard.
+
+Aggregate tool evidence is capped at 96 KiB, each prompt at 128 KiB and each
+structured model response at 64 KiB. An oversized prompt is not partially sent.
+Tool argument and result digests support comparison; raw provider credentials
+are not part of the source snapshot. Scanner-authored remediation and workflow
+state remain unchanged; proposed fixes stay inside the AI suggestion.
+
+This source loop currently serves the scanner's workspace AI review. Dashboard
+provider reviews and the six-role agent narratives have separate execution paths;
+they do not yet inherit this source loop. Contract tests use scripted model
+responses and owned source fixtures. Live-provider behavior, calibrated model
+confidence and cross-model quality remain separate acceptance work.
 
 ## Finding lifecycle
 
