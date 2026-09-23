@@ -22,7 +22,7 @@ permissions and immutable source snapshots.
 | Shared scan service | UI, CLI and CI invoke the same engine and preserve the same evidence | End-to-end scan/upload/review tests and failure recovery | In progress |
 | Repository context | Collision-safe multi-repository and monorepo identity, dependencies, snapshots and incremental invalidation | Cross-repository fixtures; incremental/full result equivalence | Pending |
 | Rule authoring | Guided templates, schema diagnostics, source/sink/propagation explanations, preview and regression cases | Author a rule, preview matches, export and run it in CI | Pending |
-| AI review | Bounded source browsing and evidence tools for threat modeling and supplied-finding review, abstention, triage and remediation advice | Tool-contract tests, source-bound citations, model comparison and repeated-run evaluations | Pending |
+| AI review | Bounded source browsing and evidence tools for threat modeling and supplied-finding review, abstention, triage and remediation advice | Tool-contract tests, source-bound citations, model comparison and repeated-run evaluations | In progress |
 | Agent operations | Durable jobs, logs, tool spans, evidence events, cancellation, retry, budgets and cost accounting | Worker interruption/recovery tests and dashboard observation | In progress |
 | Provider support | Claude Code and Codex adapters with explicit models, bounded read-only tools and reproducible traces | Local contract tests plus separately recorded live-provider checks | Pending |
 | Product experience | Clear analysis scope, uncertainty, repository navigation, data flow/graph views and triage workflow | Browser checks of the complete user flow and accessibility | Pending |
@@ -30,7 +30,7 @@ permissions and immutable source snapshots.
 | Efficiency | Fixed-hardware latency/memory/cost baselines, dependency-aware incremental work and cache invalidation | p50/p95 and peak-memory reports; unchanged-result comparison | Pending |
 | Reproducibility | Engine/parser/rules/modelpack/config/source/provider manifests and replayable evidence | Clean-environment replay and artifact-digest checks | Pending |
 | Enterprise operations | Project roles, service identities, isolation, audit, retention, backups and migration recovery | Authorization integration and operational recovery tests | In progress |
-| Dependencies and PRs | Review and resolve the nine open dependency PRs without bypassing unexplained failed checks | Current PR heads, coordinated lockfiles, CI, merge/closure state | In progress |
+| Dependencies and PRs | Review and resolve the nine original dependency PRs and the recorded follow-up updates without bypassing unexplained failed checks | Current PR heads, coordinated lockfiles, CI, merge/closure state | Complete for the listed PRs |
 | Code scanning | Fix real defects; retain or explicitly explain uncertain and governance findings | Fresh analysis on the merged commit and per-alert disposition evidence | In progress |
 
 Dynamic observations and confirmed impact remain separate evidence states. This
@@ -226,10 +226,29 @@ Official action tags were resolved to the proposed commits. An isolated uv
 0.12.18 lock check passed; the host installation was unchanged. A fresh locked
 npm install, audit (zero reported vulnerabilities), 94 dashboard tests, 82
 production HTTP/CLI checks, TypeScript, ESLint, production build, supply-chain
-policy and four policy regression tests passed locally. Remote checks and merge
-remain pending; the original follow-up PRs remain open until superseded by a
-verified merge.
+policy and four policy regression tests passed locally. All required remote CI,
+container checks, CodeQL and self-scan passed on head
+`74512e467e4db0115abeecd84bc7d43c0acfda55`. PR #44 merged at
+`59befc40f0171255a6bdfffb1b587d8fff68e9dc` with a valid GitHub signature.
+Follow-up PRs #36–#41 were closed as superseded, with the merge and verification
+record linked. This closes the listed dependency updates, not future updates.
 
 The latest main-branch code-scanning snapshot before this dependency follow-up has
 679 Aegify candidates and five Scorecard alerts. Their individual disposition
 remains separate from passing CI; no bulk dismissal was performed.
+
+## AI path evidence follow-up: 2026-09-24
+
+The call-path tool previously declared a path complete whenever a list of steps
+existed. It now shares a structural evidence check with the agent trace: matching
+entry handler/repository/range, explicit symbols and directed links, and the full
+finding range within the sink's repository. Legacy and disconnected paths remain
+incomplete. The 100-step limit produces an explicit gap and truncation flag in
+both the tool result and agent trace. Static completeness has no runtime-proof
+effect.
+
+Local verification: 28 focused AI/tool tests and 488 full scanner tests passed
+(one skipped), with Ruff, strict mypy across 88 source files and documentation
+checks passing. The regressions cover missing/mismatched identities, broken and
+unfinished edges, entry and sink ranges, and bounded output for a 100,000-step
+input. Remote CI and merge remain pending for this follow-up.

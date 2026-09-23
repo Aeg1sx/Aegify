@@ -19,6 +19,7 @@ from aegify.agents.models import (
 )
 from aegify.agents.pipeline import SecurityAgentPipeline
 from aegify.agents.tools import McpEvidenceBridge, McpToolDescriptor
+from aegify.llm.tools import AnalysisToolContext, ToolRequest, default_tool_registry
 from aegify.models import (
     CallChainStep,
     EndpointInfo,
@@ -175,7 +176,20 @@ def test_reachability_contract_rejects_impact_without_runtime_evidence() -> None
 
 
 @pytest.mark.parametrize(
-    "case", ["other_handler", "other_repository", "broken_edge", "wrong_sink", "legacy"]
+    "case",
+    [
+        "other_handler",
+        "other_repository",
+        "missing_repository",
+        "broken_edge",
+        "wrong_sink",
+        "wrong_sink_end",
+        "wrong_sink_repository",
+        "entry_range",
+        "missing_range",
+        "unfinished_edge",
+        "legacy",
+    ],
 )
 def test_reachability_requires_handler_identity_connected_edges_and_source_bounds(
     case: str,
@@ -186,11 +200,23 @@ def test_reachability_requires_handler_identity_connected_edges_and_source_bound
         scan.endpoints[0].handler_function = "api.health"
     elif case == "other_repository":
         scan.endpoints[0].repository_id = "another-repo"
+    elif case == "missing_repository":
+        scan.endpoints[0].repository_id = ""
     elif case == "broken_edge":
         finding.call_chain[0].next_symbol_id = "api::unrelated"
     elif case == "wrong_sink":
         finding.line_start = 100
-    else:
+    elif case == "wrong_sink_end":
+        finding.line_end = 100
+    elif case == "wrong_sink_repository":
+        finding.provenance.repository_id = "another-repo"
+    elif case == "entry_range":
+        scan.endpoints[0].line_start = 11
+    elif case == "missing_range":
+        finding.call_chain[0].line_end = None
+    elif case == "unfinished_edge":
+        finding.call_chain[-1].next_symbol_id = "api::missing"
+    elif case == "legacy":
         for step in finding.call_chain:
             step.symbol_id = ""
             step.next_symbol_id = ""
@@ -198,6 +224,52 @@ def test_reachability_requires_handler_identity_connected_edges_and_source_bound
     trace = SecurityAgentPipeline._trace(finding, scan.endpoints, scan)
     assert not trace.static_complete
     assert trace.unresolved_links
+    result = default_tool_registry().execute(
+        ToolRequest(name="call_path", arguments={"finding_id": finding.id}),
+        AnalysisToolContext(
+            findings={finding.id: finding},
+            workspace={"attack_surface": [item.model_dump() for item in scan.endpoints]},
+        ),
+    )
+    assert result.ok and not result.output["complete"]
+    assert result.output["gaps"]
+
+
+def test_call_path_tool_agrees_with_static_trace_and_does_not_claim_runtime_proof() -> None:
+    scan = _scan(runtime=True)
+    finding = scan.findings[0]
+    context = AnalysisToolContext(
+        findings={finding.id: finding},
+        workspace={"attack_surface": [item.model_dump() for item in scan.endpoints]},
+    )
+    result = default_tool_registry().execute(
+        ToolRequest(name="call_path", arguments={"finding_id": finding.id}),
+        context,
+    )
+    assert result.ok and result.output["complete"]
+    assert SecurityAgentPipeline._trace(finding, scan.endpoints, scan).static_complete
+    assert result.output["evidence_kind"] == "static_call_path"
+    assert not result.output["runtime_proven"]
+    assert not result.truncated and not result.output["gaps"]
+
+
+def test_call_path_tool_bounds_large_chains_and_marks_truncation() -> None:
+    from time import perf_counter
+
+    scan = _scan()
+    finding = scan.findings[0]
+    finding.call_chain = [finding.call_chain[0]] * 100_000
+    started = perf_counter()
+    result = default_tool_registry().execute(
+        ToolRequest(name="call_path", arguments={"finding_id": finding.id}),
+        AnalysisToolContext(findings={finding.id: finding}),
+    )
+    assert perf_counter() - started < 1.0
+    assert result.ok and result.truncated and not result.output["complete"]
+    assert len(result.output["steps"]) == 100
+    assert result.output["total_steps"] == 100_000
+    trace = SecurityAgentPipeline._trace(finding, scan.endpoints, scan)
+    assert not trace.static_complete and len(trace.hops) == 100
 
 
 def test_dynamic_plan_rejects_remote_or_destructive_templates() -> None:

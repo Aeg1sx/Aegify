@@ -8,9 +8,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from aegify.models import Finding
+from aegify.evidence import MAX_CALL_PATH_STEPS, inspect_call_path
+from aegify.models import EndpointInfo, Finding
 
 _TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 _SENSITIVE_KEYS = re.compile(r"token|secret|password|authorization|api[_-]?key", re.I)
@@ -105,6 +106,7 @@ class ToolRegistry:
                 name=request.name,
                 ok=True,
                 output=output,
+                truncated=output.get("truncated") is True,
             )
         except Exception as exc:
             return ToolResult(
@@ -180,10 +182,25 @@ def _finding_context(arguments: dict[str, Any], context: AnalysisToolContext) ->
 
 def _call_path(arguments: dict[str, Any], context: AnalysisToolContext) -> dict[str, Any]:
     finding = _finding(arguments, context)
+    surfaces = context.workspace.get("attack_surface", [])
+    endpoints: list[EndpointInfo] = []
+    for item in surfaces[:500] if isinstance(surfaces, list) else []:
+        try:
+            endpoints.append(EndpointInfo.model_validate(item))
+        except ValidationError:
+            continue
+    checked = inspect_call_path(finding, endpoints)
     return {
         "finding_id": finding.id,
-        "steps": [step.model_dump(mode="json") for step in finding.call_chain[:100]],
-        "complete": bool(finding.call_chain),
+        "steps": [
+            step.model_dump(mode="json") for step in finding.call_chain[:MAX_CALL_PATH_STEPS]
+        ],
+        "complete": checked.complete,
+        "truncated": checked.truncated,
+        "total_steps": len(finding.call_chain),
+        "evidence_kind": "static_call_path",
+        "runtime_proven": False,
+        "gaps": list(checked.gaps),
     }
 
 
