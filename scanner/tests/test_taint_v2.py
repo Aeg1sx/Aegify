@@ -1,11 +1,15 @@
 """Regression tests for global flow/field/object-sensitive taint analysis."""
 
 import json
+import time
 from pathlib import Path
+
+import pytest
 
 from aegify.config import AegifyConfig
 from aegify.ir import ProgramGraphBuilder
 from aegify.models import Language
+from aegify.rules.path_traversal import PathTraversalRule
 from aegify.scanner.ast_parser import ASTParser
 from aegify.scanner.call_graph import CallGraphBuilder
 from aegify.scanner.dataflow import DataflowAnalyzer, SinkPattern, TaintConfig
@@ -36,6 +40,65 @@ def test_sink_matching_uses_call_boundaries_not_exec_substrings(tmp_path: Path):
     calls = {call.callee: call for call in ast.calls}
     assert StructuredTaintAnalyzer._call_matches_pattern("exec", calls["_execute_cases"]) is False
     assert StructuredTaintAnalyzer._call_matches_pattern("exec", calls["exec"]) is True
+
+
+@pytest.mark.parametrize("callee", ["open", "builtins.open", "io.open"])
+def test_python_file_open_models_preserve_input_to_path_flows(tmp_path: Path, callee: str):
+    (tmp_path / "file_reader.py").write_text(
+        "import builtins\nimport io\nfrom flask import request\n"
+        "def read_document():\n"
+        "    requested_path = request.args.get('path')\n"
+        f"    return {callee}(requested_path)\n"
+    )
+    flows, _ = _analyze(tmp_path)
+    file_flows = [flow for flow in flows if flow.sink.sink_type == "file_access"]
+    assert len(file_flows) == 1
+    assert file_flows[0].source.source_type == "http_param"
+    assert file_flows[0].sink.function == callee
+    asts = ASTParser().parse_directory(tmp_path)
+    findings = PathTraversalRule().evaluate(asts, CallGraphBuilder().build(asts), flows)
+    assert len(findings) == 1 and findings[0].blocks_ci
+
+
+@pytest.mark.parametrize("callee", ["build_opener().open", "transport.open", "widget.open"])
+def test_unrelated_open_methods_are_not_filesystem_sinks(tmp_path: Path, callee: str):
+    (tmp_path / "non_file.py").write_text(
+        "from urllib.request import build_opener\nfrom flask import request\n"
+        "def handler(transport, widget):\n"
+        "    value = request.args.get('value')\n"
+        f"    return {callee}(value)\n"
+    )
+    flows, _ = _analyze(tmp_path)
+    assert not [flow for flow in flows if flow.sink.sink_type == "file_access"]
+    ast = ASTParser().parse_file(tmp_path / "non_file.py")
+    assert not [
+        sink for sink in DataflowAnalyzer()._find_sinks(ast) if sink.sink_type == "file_access"
+    ]
+
+
+def test_fixed_file_path_is_not_tainted_by_an_unrelated_parameter(tmp_path: Path):
+    (tmp_path / "fixed.py").write_text(
+        "from flask import request\n"
+        "def handler():\n"
+        "    value = request.args.get('path')\n"
+        "    return open('public.txt')\n"
+    )
+    flows, _ = _analyze(tmp_path)
+    assert not [flow for flow in flows if flow.sink.sink_type == "file_access"]
+
+
+def test_file_sink_matching_has_bounded_results_for_many_unrelated_methods(tmp_path: Path):
+    source = tmp_path / "many_open_calls.py"
+    source.write_text(
+        "def handler(transport, value):\n"
+        + "    transport.open(value)\n" * 1000
+        + "    open(value)\n"
+    )
+    start = time.monotonic()
+    ast = ASTParser().parse_file(source)
+    sinks = DataflowAnalyzer()._find_sinks(ast)
+    assert [sink.function for sink in sinks if sink.sink_type == "file_access"] == ["open"]
+    assert time.monotonic() - start < 10
 
 
 def test_jvm_sink_model_accepts_receiver_chain_on_identifier_boundary(tmp_path: Path):

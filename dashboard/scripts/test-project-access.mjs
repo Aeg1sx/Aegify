@@ -113,8 +113,9 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     const reportPath = join(directory, "synthetic.sarif");
     await writeFile(reportPath, JSON.stringify(sarif));
     // The optional local CLI check uses the same endpoint and synthetic credential.
-    if (process.env.AEGIFY_SCANNER_PYTHON) {
-      const child = spawn(process.env.AEGIFY_SCANNER_PYTHON, ["-c", "from aegify.cli import app; app()", "upload", reportPath, "--dashboard-url", origin, "--project-id", a.id], { env: { ...environment, AEGIFY_UPLOAD_TOKEN: issued.token }, stdio: ["ignore", "pipe", "pipe"] });
+    if (process.env.AEGIFY_TEST_SCANNER_CLI === "1") {
+      const interpreter = fileURLToPath(new URL("../../scanner/.venv/bin/python", import.meta.url));
+      const child = spawn(interpreter, ["-c", "from aegify.cli import app; app()", "upload", reportPath, "--dashboard-url", origin, "--project-id", a.id], { env: { ...environment, AEGIFY_UPLOAD_TOKEN: issued.token }, stdio: ["ignore", "pipe", "pipe"] });
       let output = ""; for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => { output += chunk.toString(); });
       const exit = await new Promise((resolve) => child.once("close", resolve));
       assert.equal(exit, 0, output); assert.ok(!output.includes(issued.token)); checks++;

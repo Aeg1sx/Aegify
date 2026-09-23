@@ -145,9 +145,17 @@ Verified locally:
 - Documentation, link and accessibility checks passed, retaining the existing
   color recommendations beyond the minimum AA checks.
 
-The default local Docker daemon is unavailable. CI now checks a new named volume
-owned by the non-root dashboard user and verifies a persisted project after
-container restart; that remote result and the PR merge are separate pending gates.
+The default local Docker daemon is unavailable. Remote CI passed the new named
+volume check, including non-root initialization and a persisted project after
+container restart. PR #42's first self-scan identified two blocking candidates:
+an HTTP client's `.open()` misclassified as a filesystem sink, and the test
+harness accepting an environment-selected executable. Exact Python file-open
+models now distinguish HTTP/UI methods, with eight positive/negative/bounded
+regressions; the optional CLI test uses the repository's fixed virtualenv path.
+The updated local self-scan completed without blocking findings or analysis gaps;
+all 468 scanner tests passed (one skipped), 65 production HTTP/CLI checks passed,
+and type/lint checks passed. Updated remote CI and the PR merge remain separate
+gates.
 This checkpoint does not establish live SSO, production deployment, durable scan
 workers, backups/restore drills, retention, immutable external audit storage, or
 commercial detection accuracy. Those acceptance rows remain open.

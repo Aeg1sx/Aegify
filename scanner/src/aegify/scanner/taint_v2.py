@@ -448,7 +448,12 @@ class StructuredTaintAnalyzer:
                             )
                             break
                 for pattern in sink_patterns:
-                    if not self._call_matches_pattern(pattern.pattern, call):
+                    matches = (
+                        call_text == pattern.pattern
+                        if pattern.exact
+                        else self._call_matches_pattern(pattern.pattern, call)
+                    )
+                    if not matches:
                         continue
                     key = (call.file_path, call.line, call.column, pattern.sink_type)
                     if key not in self._sink_ids:
