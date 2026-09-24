@@ -73,51 +73,85 @@ rules:
       or set FEATURE_SECURE_PROCESSING (Java).
 
   - id: AEG-A05-005
-    name: Cookie Without Secure Flag
+    name: Cookie Secure Flag Review
     description: >
-      A cookie is set without the Secure flag, allowing it to be transmitted
-      over unencrypted HTTP connections. Session tokens and sensitive cookies
-      sent over HTTP can be intercepted via network sniffing or MITM attacks.
+      A cookie-related call does not have a statically confirmed Secure=true
+      option. Inspect the reported option state and the resolved API contract.
+      Missing or false Secure flags can expose sensitive cookies on HTTP;
+      unknown values require review and do not prove an insecure cookie.
     severity: medium
     confidence: 0.8
     languages: [python, javascript, typescript, java, go]
     cwe_id: 614
     owasp_category: "A05:2021-Security Misconfiguration"
     patterns:
-      - callee: "(set_cookie|Set-Cookie|setCookie|res\\.cookie|response\\.set_cookie)"
-        args_match: "(?!.*[Ss]ecure\\s*[=:]\\s*[Tt]rue).*"
-      - callee: "(Cookie|NewCookie|http\\.Cookie)"
-        args_match: "(?!.*[Ss]ecure\\s*[=:]\\s*[Tt]true).*"
+      - callee: '(?-i:(?:.*\.)?(?:set_cookie|Cookie|NewCookie))'
+        callee_match_mode: full
+        languages: [python]
+        boolean_option: {name: secure, location: keyword, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:res|response)\.cookie)'
+        callee_match_mode: full
+        languages: [javascript, typescript]
+        boolean_option: {name: secure, location: argument, argument: 2, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:.*\.)?(?:setCookie|Cookie|NewCookie))'
+        callee_match_mode: full
+        languages: [javascript, typescript]
+        boolean_option: {name: secure, location: argument, argument: all, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:.*\.)?SetCookie)'
+        callee_match_mode: full
+        languages: [go]
+        boolean_option: {name: Secure, location: argument, argument: 1, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:.*\.)?(?:addCookie|setCookie|Cookie|NewCookie))'
+        callee_match_mode: full
+        languages: [java]
+        args_match: '.'
       - callee: ".*"
         args_match: 'Set-Cookie:(?!.*;\s*[Ss]ecure).*'
       - callee: "(SESSION_COOKIE_SECURE|session\\.cookie_secure)"
         args_match: "(False|false|0)"
     message: >
-      Cookie set at '{callee}' (line {line}) is missing the Secure flag.
-      Always set Secure=True to prevent cookie transmission over HTTP.
+      Review the Secure flag at '{callee}' (line {line}); option state: {option_state}.
+      Confirm the resolved API sets Secure=true for sensitive cookies. Unknown
+      or unmodeled state is a review candidate, not proof of an insecure cookie.
 
   - id: AEG-A05-006
-    name: Cookie Without HttpOnly Flag
+    name: Cookie HttpOnly Flag Review
     description: >
-      A cookie is set without the HttpOnly flag, making it accessible to
-      client-side JavaScript. If an XSS vulnerability exists, attackers can
-      steal session cookies via document.cookie to hijack user sessions.
+      A cookie-related call does not have a statically confirmed HttpOnly=true
+      option. Determine whether the cookie is sensitive and requires script
+      access. Unknown values and stateful cookie builders need human review.
     severity: medium
     confidence: 0.8
     languages: [python, javascript, typescript, java, go]
     cwe_id: 1004
     owasp_category: "A05:2021-Security Misconfiguration"
     patterns:
-      - callee: "(set_cookie|Set-Cookie|setCookie|res\\.cookie|response\\.set_cookie)"
-        args_match: "(?!.*[Hh]ttp[Oo]nly\\s*[=:]\\s*[Tt]rue).*"
-      - callee: "(Cookie|NewCookie|http\\.Cookie)"
-        args_match: "(?!.*[Hh]ttp[Oo]nly).*"
+      - callee: '(?-i:(?:.*\.)?(?:set_cookie|Cookie|NewCookie))'
+        callee_match_mode: full
+        languages: [python]
+        boolean_option: {name: httponly, location: keyword, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:res|response)\.cookie)'
+        callee_match_mode: full
+        languages: [javascript, typescript]
+        boolean_option: {name: httpOnly, location: argument, argument: 2, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:.*\.)?(?:setCookie|Cookie|NewCookie))'
+        callee_match_mode: full
+        languages: [javascript, typescript]
+        boolean_option: {name: httpOnly, location: argument, argument: all, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:.*\.)?SetCookie)'
+        callee_match_mode: full
+        languages: [go]
+        boolean_option: {name: HttpOnly, location: argument, argument: 1, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:.*\.)?(?:addCookie|setCookie|Cookie|NewCookie))'
+        callee_match_mode: full
+        languages: [java]
+        args_match: '.'
       - callee: "(SESSION_COOKIE_HTTPONLY|session\\.cookie_httponly)"
         args_match: "(False|false|0)"
     message: >
-      Cookie set at '{callee}' (line {line}) is missing the HttpOnly flag.
-      Set HttpOnly=True to prevent JavaScript access and mitigate XSS-based
-      session theft.
+      Review the HttpOnly flag at '{callee}' (line {line}); option state: {option_state}.
+      Confirm the resolved API sets HttpOnly=true when script access is not
+      required. Unknown or unmodeled state does not prove an insecure cookie.
 
   - id: AEG-A05-007
     name: HTTPS Not Enforced in Configuration

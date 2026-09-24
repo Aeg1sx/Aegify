@@ -53,6 +53,7 @@ Common call fields:
 - `receiver` / `receiver_match`
 - `args_match`, `args_exclude`, and `missing_args`
 - `args_match_index` to inspect one zero-based argument rather than every argument together
+- `boolean_option` to select a literal keyword or object option and retain unknown values
 - language restrictions
 
 Common source fields:
@@ -99,6 +100,71 @@ still need symbol/value resolution and human review. A missing literal match
 does not establish safe cryptography. Candidates ask whether the resolved API is
 used for a security purpose; they do not treat every checksum or HMAC use as a
 confirmed vulnerability.
+
+### Boolean options and cookie review
+
+Use a structural option selector when a boolean belongs to one call argument.
+An unrelated string, nested object or different argument cannot satisfy it:
+
+```yaml
+patterns:
+  - callee: '(?-i:(?:res|response)\.cookie)'
+    callee_match_mode: full
+    languages: [javascript, typescript]
+    boolean_option:
+      name: secure
+      location: argument
+      argument: 2
+      states: ["false", "missing", "unknown"]
+message: "Review cookie Secure option; parsed state: {option_state}."
+```
+
+`name` is case sensitive. `location: argument` selects a zero-based index from
+0 to 127. `argument: all` checks each positional object, for APIs that accept
+variadic objects; its combined state prioritizes `false`, then `missing`, then
+`unknown`, and is `true` only when every object has a literal true value.
+`location: keyword` selects a Python keyword and forbids an argument index.
+Quote the state names so YAML does not convert them to booleans.
+
+| State | Meaning |
+|---|---|
+| `true` / `false` | The selected syntax contains that boolean literal |
+| `missing` | A supported argument list or object lacks the selected option |
+| `unknown` | A value, spread, key, syntax form or available parser fact cannot establish it |
+
+Supported facts cover Python keyword arguments and literal dictionary unpacking,
+JS/TS object arguments (including TSX), and Go keyed composite literals. Literal
+object properties preserve source order and overwrites. A later unresolved
+spread or computed key invalidates earlier facts; a later explicit property can
+establish its own value. Python duplicate keyword bindings remain unknown.
+Comments do not shift structural argument indexes. TypeScript `as`, `satisfies`
+and non-null wrappers preserve their operand facts.
+
+Extraction bounds each argument/property list to 128 entries plus an unknown
+sentinel, and nested literal spread expansion to eight levels. Hitting a bound
+does not establish safety. Parser errors, unsupported language facts and legacy
+serialized calls also remain unknown. The parser cache identity includes this
+extractor. Structural `missing` checks work on zero-argument calls; ordinary
+`args_match` constraints still require arguments.
+
+The selector is valid only for call patterns. Strict audit rejects malformed
+selectors and unsupported combinations. Existing callee expressions default to
+case-insensitive matching; `(?-i:...)` makes the API spelling case sensitive.
+Go extraction now also retains raw argument order for existing call/taint users.
+
+`AEG-A05-005` and `AEG-A05-006` use this contract for cookie reviews. Their selected
+argument shapes follow [Flask 3.1](https://flask.palletsprojects.com/en/stable/api/#flask.Response.set_cookie),
+[Express 4](https://expressjs.com/en/4x/api/response/#res.cookie),
+[Puppeteer 25.11](https://pptr.dev/api/puppeteer.browsercontext.setcookie) and
+[Go net/http](https://pkg.go.dev/net/http#SetCookie).
+The owned fixtures validate syntax selection, not installed-framework execution.
+They do not resolve imports, aliases, shadowed API names, variables, Python
+positional flag parameters or later object mutation. Generic `Cookie`,
+`NewCookie` and `setCookie` names require checking the actual API contract.
+Java stateful builders and retained header/configuration heuristics report
+`unmodeled`; they do not infer later setter calls. All these findings remain
+advisory candidates. An unknown value is not a proved missing flag, and a true
+literal alone does not establish that an application handles cookies safely.
 
 ### OAuth scope review boundary
 
@@ -209,7 +275,7 @@ The audit rejects:
 - any individual non-executable pattern.
 
 The release baseline is 311 definitions, 303 enabled/executable rules, 8
-explicitly disabled reference rules, and 980/980 enabled patterns executable.
+explicitly disabled reference rules, and 986/986 enabled patterns executable.
 
 ## Test requirements
 
