@@ -11,6 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from aegify.models import TokenUsage
+
 
 class AgentRole(StrEnum):
     SURFACE = "surface"
@@ -270,6 +272,8 @@ class SecurityAgentRun(BaseModel):
     status: AgentRunStatus = AgentRunStatus.RUNNING
     stages: list[AgentStageResult] = Field(default_factory=list)
     evidence: list[AgentEvidence] = Field(default_factory=list)
+    # None means the backend does not expose accounting, not a free run.
+    token_usage: TokenUsage | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
 

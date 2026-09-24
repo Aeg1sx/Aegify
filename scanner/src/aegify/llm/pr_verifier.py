@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections import defaultdict
 from typing import Any
 
@@ -17,6 +16,7 @@ from aegify.llm.prompts import (
     format_pr_file_context,
     format_pr_finding,
 )
+from aegify.llm.review_result import review_from_result, save_batch, save_remediation
 from aegify.models import AIReview, AIReviewVerdict, FileAST, Finding, Severity, TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,9 @@ class PRVerifier:
         token_budget: int = 100_000,
         batch_size: int = 10,
         base_url: str | None = None,
+        max_calls: int = 100,
     ) -> None:
-        self.budget = TokenBudget(total_budget=token_budget)
+        self.budget = TokenBudget(total_budget=token_budget, max_calls=max_calls)
         self.client = LLMClient(
             api_key=api_key,
             model=model,
@@ -50,7 +51,7 @@ class PRVerifier:
         """Verify ALL findings through LLM — no confidence threshold skip.
 
         Groups findings by file for shared context, then generates
-        remediations for critical/high confirmed findings.
+        remediation suggestions for critical/high findings.
         """
         if not findings:
             return findings
@@ -105,30 +106,11 @@ class PRVerifier:
 
         results = self.client.query_batch(PR_VERIFICATION_SYSTEM, prompt, phase="verification")
 
-        reviewed: list[Finding] = []
-        result_by_idx: dict[int, dict[str, Any]] = {}
-        for r in results:
-            idx = r.get("idx", r.get("finding_index", -1))
-            if 0 <= idx < len(batch):
-                result_by_idx[idx] = r
-
-        for idx, finding in enumerate(batch):
-            result = result_by_idx.get(idx)
-            if result is None:
-                # LLM didn't return a verdict — keep finding as-is
-                reviewed.append(finding)
-                continue
-
-            finding.ai_review = self._review_from_result(result)
-            finding.llm_analysis = finding.ai_review.model_dump_json()
-            if result.get("remediation"):
-                finding.remediation = str(result["remediation"])
-            reviewed.append(finding)
-
-        return reviewed
+        save_batch(batch, results, self.client.model)
+        return batch
 
     def _generate_remediations(self, findings: list[Finding]) -> None:
-        """Generate detailed remediations for confirmed critical/high findings."""
+        """Generate separate remediation suggestions for critical/high findings."""
         for finding in findings:
             if finding.severity not in (Severity.CRITICAL, Severity.HIGH):
                 continue
@@ -137,8 +119,8 @@ class PRVerifier:
                 and finding.ai_review.verdict == AIReviewVerdict.LIKELY_FALSE_POSITIVE
             ):
                 continue
-            if finding.remediation:
-                continue  # Already got inline remediation from verification
+            if finding.ai_review and finding.ai_review.remediation_summary:
+                continue
 
             if not self.budget.can_spend("remediation", 2000):
                 logger.warning("Budget exhausted, skipping remaining remediations")
@@ -161,60 +143,15 @@ class PRVerifier:
             )
 
             if isinstance(result, dict):
-                finding.remediation = self._format_remediation(result)
+                save_remediation(finding, result, self.client.model)
 
     def get_token_usage(self) -> TokenUsage:
         """Get current token usage statistics."""
-        return TokenUsage(
-            input_tokens=self.budget.input_tokens_used,
-            output_tokens=self.budget.output_tokens_used,
-            total_cost_usd=self.budget.estimated_cost_usd,
-        )
-
-    @staticmethod
-    def _format_remediation(result: dict[str, Any]) -> str:
-        """Format LLM remediation result into readable text."""
-        parts: list[str] = []
-
-        if explanation := result.get("explanation"):
-            parts.append(f"**Vulnerability**: {explanation}")
-
-        if fixed_code := result.get("fixed_code"):
-            parts.append(f"\n**Fix**:\n```\n{fixed_code}\n```")
-
-        if recommendations := result.get("recommendations"):
-            parts.append("\n**Recommendations**:")
-            for rec in recommendations:
-                parts.append(f"- {rec}")
-
-        return "\n".join(parts) if parts else ""
+        return self.budget.get_token_usage()
 
     @staticmethod
     def _review_from_result(result: dict[str, Any]) -> AIReview:
-        verdicts = {
-            "TRUE_POSITIVE": AIReviewVerdict.LIKELY_TRUE_POSITIVE,
-            "LIKELY_TRUE_POSITIVE": AIReviewVerdict.LIKELY_TRUE_POSITIVE,
-            "FALSE_POSITIVE": AIReviewVerdict.LIKELY_FALSE_POSITIVE,
-            "LIKELY_FALSE_POSITIVE": AIReviewVerdict.LIKELY_FALSE_POSITIVE,
-        }
-        verdict = verdicts.get(str(result.get("verdict", "")).upper(), AIReviewVerdict.NEEDS_REVIEW)
-        confidence = result.get("confidence", 0.0)
-        if not isinstance(confidence, (int, float)) or not math.isfinite(confidence):
-            confidence = 0.0
-        return AIReview(
-            verdict=verdict,
-            confidence=max(0.0, min(float(confidence), 1.0)),
-            reasoning=str(result.get("reasoning", "")),
-            evidence_for=[
-                str(item) for item in result.get("evidence_for", []) if isinstance(item, str)
-            ],
-            evidence_against=[
-                str(item) for item in result.get("evidence_against", []) if isinstance(item, str)
-            ],
-            evidence_gaps=[
-                str(item) for item in result.get("evidence_gaps", []) if isinstance(item, str)
-            ],
-        )
+        return review_from_result(result)
 
     @staticmethod
     def _detect_language(file_path: str) -> str:

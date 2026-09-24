@@ -88,6 +88,73 @@ and [Gemini generateContent](https://ai.google.dev/api/generate-content).
 `aegify agent-run` has its own scanner-side OpenAI, Anthropic and CLI adapters.
 These are separate from the dashboard's provider settings and transport above.
 
+### Scanner Anthropic calls and accounting
+
+`scan --llm`, `scan-pr --llm`, `scan-workspace --ai-tools` and
+`agent-run --provider anthropic-api` share the scanner's Anthropic client.
+It reserves a call before invoking the SDK, disables SDK retries and redirects,
+and bounds success and error bodies before decoding. A response must contain an
+assistant message, provider response ID/model and `stop_reason: end_turn`.
+Text blocks are joined; thought blocks are ignored. Tools, refusals, truncated
+output, duplicate JSON keys, nonfinite numbers and Markdown-wrapped JSON do not
+produce a review. The agent adapter additionally requires all four narrative fields.
+
+| Limit | Scanner Anthropic behavior |
+| --- | --- |
+| Request size | At most 262,144 encoded JSON bytes per call; oversized requests are rejected |
+| Cumulative request bytes | At most 4,000,000 bytes per client budget |
+| Output request | 1–32,768 tokens per call; at most 655,360 requested across calls |
+| Call count | `llm.max_calls`, default 100, maximum 250 |
+| Response size | 2 MiB, including unsuccessful HTTP responses; compressed replies are rejected |
+| Timeout | 5-second connect and 10-second I/O timeouts; 60-second elapsed bound checked between body reads |
+
+The elapsed bound does not interrupt an OS/DNS stall or replace an external job
+deadline. The SDK's operator-configured endpoint/proxy behavior remains in use;
+this client does not inherit the dashboard's public-DNS validation and connection
+pinning. Operators must restrict the scanner worker's allowed providers and egress.
+
+`token_usage` in scanner JSON, `tokenUsage` in SARIF invocation properties, and
+`token_usage` in Anthropic agent artifacts retain call IDs, phases, requested and
+returned model IDs, request/complete-response digests, stop/error codes, elapsed
+time and native usage. Raw prompts, provider bodies and hidden reasoning are not
+copied into these receipts. SDK body-debug logging is disabled even with scanner
+`--verbose`; Aegify logs bounded call lifecycle events instead.
+
+Input estimation uses encoded request bytes divided by four, rounded up, plus
+the full requested output allowance. This is admission control, not an accurate
+tokenizer or invoice ceiling. Incomplete usage keeps the unaccounted reservation.
+Native `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and
+`cache_read_input_tokens` are counted once; overlapping subdivisions are excluded.
+Missing, negative, boolean or otherwise invalid counters never become trusted zero
+usage. A useful complete narrative may coexist with unknown usage.
+
+Attempted calls have `total_cost_usd: null` and `cost_status: unavailable`, including
+when reported tokens are zero. Only a budget with no call has zero cost. Old numeric
+costs remain readable as `legacy_estimate` and are labeled unverified. CLI and both
+GitHub report formats show this uncertainty even when there are no findings.
+No provider tariff or billing reconciliation is implemented here. Other agent
+providers expose `token_usage: null`; that does not mean they were free.
+
+Configuration example:
+
+```yaml
+llm:
+  token_budget: 100000
+  max_calls: 100
+  batch_size: 5
+  max_retries: 0
+```
+
+The previously unused nonzero `max_retries` setting now fails validation; remove
+it or set it to zero. Consumers of old scanner JSON must accept nullable cost and
+inspect the accompanying status. Receipt metadata is retained when the CLI writes
+its artifact; this is not a durable crash journal for a killed CLI process.
+
+References: [Anthropic Python SDK](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/python)
+and [stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons).
+
+### Narrative and process contracts
+
 The OpenAI Responses adapter requests strict structured output with all four
 narrative fields required: `summary`, `claims`, `evidence_gaps`, and
 `recommendations`. Empty lists must be present. The Codex output schema uses the
@@ -120,11 +187,17 @@ separate provider-status/usage receipt to Aegify.
 | `timeout` | API socket or CLI invocation timeout |
 | `process_error` | CLI launch, I/O or exit failure |
 | `unsupported_platform` | CLI process controls are unavailable on this platform |
+| `incomplete_response` | Scanner Anthropic response did not end normally |
+| `budget_exhausted` | Scanner Anthropic call/request allowance was exhausted |
+| `provider_transport_error` | Scanner Anthropic HTTP or transport error; billing remains unknown |
+| `transport_timeout` / `body_deadline_exceeded` | Scanner Anthropic I/O or observed body deadline |
+| `response_too_large` | Scanner Anthropic response exceeded its byte bound |
 
 The new field defaults to an empty string for historical artifacts and failures
 outside these adapters. Failed model enrichment leaves static evidence intact.
 Empty failure codes are omitted from the artifact digest to preserve historical
-v1 digests; a nonempty failure code is included.
+v1 digests; a nonempty failure code is included. Absent accounting preserves those
+digests too; actual Anthropic call receipts are included in new artifact digests.
 `agent-run` writes the retained artifact before exiting: `0` means completed,
 `3` means partial or awaiting approval/evidence, and `2` means failed input,
 configuration or execution. Previously a partial review could exit `0`; CI

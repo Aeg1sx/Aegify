@@ -2,8 +2,16 @@
 
 import pytest
 
-from aegify.models import Finding, FindingDisposition, ScanResult, ScanStatus, Severity
-from aegify.reporter.github import GitHubReporter
+from aegify.models import (
+    AIReview,
+    Finding,
+    FindingDisposition,
+    ScanResult,
+    ScanStatus,
+    Severity,
+    TokenUsage,
+)
+from aegify.reporter.github import GitHubReporter, generate_pr_comment
 
 
 def _make_finding(**overrides) -> Finding:
@@ -127,3 +135,44 @@ class TestGitHubReporter:
 
         assert "Suggested fix" in annotations[0]["body"]
         assert "prepared statements" in annotations[0]["body"]
+
+
+@pytest.mark.parametrize("status", [ScanStatus.COMPLETED, ScanStatus.PARTIAL, ScanStatus.FAILED])
+@pytest.mark.parametrize("with_findings", [False, True])
+def test_unknown_cost_survives_every_report_path(status: ScanStatus, with_findings: bool) -> None:
+    result = _make_scan_result([_make_finding()] if with_findings else [])
+    result.status = status
+    result.token_usage = TokenUsage(
+        total_cost_usd=None,
+        cost_status="unavailable",
+        usage_status="unknown",
+        calls_started=1,
+        calls_with_unknown_usage=1,
+        reserved_tokens=100,
+    )
+    for comment in (
+        GitHubReporter().generate_comment(result),
+        generate_pr_comment(result, [], []),
+    ):
+        assert "AI calls: 1" in comment and "Cost: unknown" in comment
+        assert "Unresolved token reservation: 100" in comment and "$0.0000" not in comment
+
+
+def test_legacy_estimate_and_separate_model_remediation_are_labeled() -> None:
+    finding = _make_finding(
+        remediation="Deterministic guidance",
+        ai_review=AIReview(
+            reasoning="Model narrative",
+            remediation_summary="Model suggestion",
+            fixed_code="safe(value)",
+        ),
+    )
+    result = _make_scan_result([finding])
+    result.token_usage = TokenUsage(input_tokens=100, total_cost_usd=0.1)
+    for comment in (
+        GitHubReporter().generate_comment(result),
+        generate_pr_comment(result, [], []),
+    ):
+        assert "Legacy estimate: $0.1000 (unverified)" in comment
+        assert "AI remediation suggestion" in comment and "Model suggestion" in comment
+        assert "Deterministic guidance" in comment and "requires human review" in comment
