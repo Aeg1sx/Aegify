@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "suite_id": "taint-demo",
+  "suite_version": "1.0.0",
+  "rule_id": "AEG-TAINT-DEMO",
+  "cases": [
+    {
+      "id": "request-query",
+      "files": [{"path": "main.py", "content": "def handler(request, cursor):\n    query = request.args.get('query')\n    return cursor.execute(query)\n"}],
+      "expected": [{"rule_id": "AEG-TAINT-DEMO", "file_path": "main.py", "line_start": 3}]
+    },
+    {
+      "id": "constant-query",
+      "files": [{"path": "main.py", "content": "def handler(request, cursor):\n    return cursor.execute('SELECT 1')\n"}],
+      "expected": []
+    },
+    {
+      "id": "parameterized-query",
+      "files": [{"path": "main.py", "content": "def handler(request, cursor):\n    value = request.args.get('value')\n    return cursor.execute('SELECT ?', (value,))\n"}],
+      "expected": []
+    },
+    {
+      "id": "cross-file-query",
+      "files": [
+        {"path": "handler.py", "content": "from helper import run_query\ndef handler(request, cursor):\n    query = request.args.get('query')\n    return run_query(cursor, query)\n"},
+        {"path": "helper.py", "content": "def run_query(cursor, value):\n    return cursor.execute(value)\n"}
+      ],
+      "expected": [{"rule_id": "AEG-TAINT-DEMO", "file_path": "helper.py", "line_start": 2}]
+    }
+  ]
+}

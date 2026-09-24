@@ -47,6 +47,8 @@ async function fixture() {
   await db.scan.create({ data: { id: "active", projectId: project.id, repository: "owned", status: "running" } });
   await db.scanJob.create({ data: { id: "job", scanId: "active", projectId: project.id, requestedBy: "root", provider: "github", ownerSlug: "owned/fixture", requestedRef: "main", status: "running", activeKey: project.id, leaseToken: "owned-lease", leaseExpiresAt: new Date(Date.now() + 60_000), workerId: "worker" } });
   await db.scanWorker.create({ data: { id: "worker", version: "fixture" } });
+  await db.ruleFixtureJob.create({ data: { id: "rule-evaluation", projectId: project.id, requestedBy: "root", inputDigest: sha256("owned-rule-input"), status: "running", activeKey: project.id, leaseToken: "owned-rule-lease", leaseExpiresAt: new Date(Date.now() + 60_000), expiresAt: new Date(Date.now() + 86_400_000) } });
+  await db.ruleFixtureJob.create({ data: { id: "saved-rule-evaluation", projectId: project.id, requestedBy: "root", inputDigest: sha256("owned-saved-rule-input"), status: "completed", outcome: "passed", resultDigest: sha256("owned-rule-report"), expiresAt: new Date(Date.now() + 86_400_000) } });
   await db.llmJob.create({ data: { id: "review", scanId: scan.id, mode: "quick", status: "running", activeKey: scan.id, leaseToken: "owned-ai-lease", leaseExpiresAt: new Date(Date.now() + 60_000), inputCiphertext: encrypt("owned-review-snapshot", keys.encryptionSecret), calls: { create: { batchIndex: 0, leaseToken: "owned-ai-lease", promptDigest: "owned-prompt" } } } });
   await db.llmWorker.create({ data: { id: "owned-ai-worker", version: "fixture" } });
   const savedJob = await db.llmJob.create({ data: { id: "saved-review", scanId: scan.id, projectId: project.id, mode: "quick", status: "completed", historyVersion: 1,
@@ -96,6 +98,10 @@ test("encrypted WAL snapshot restores history while invalidating accounts, crede
     assert.equal((await restored.scan.findUniqueOrThrow({ where: { id: "active" } })).status, "cancelled");
     assert.equal((await restored.scanJob.findUniqueOrThrow({ where: { id: "job" } })).leaseToken, null);
     assert.equal(await restored.scanWorker.count(), 0);
+    const restoredFixture = await restored.ruleFixtureJob.findUniqueOrThrow({ where: { id: "rule-evaluation" } });
+    assert.equal(restoredFixture.status, "cancelled"); assert.equal(restoredFixture.leaseToken, null); assert.equal(restoredFixture.activeKey, null);
+    assert.ok(await restored.ruleFixtureJobEvent.count({ where: { code: "recovered_cancelled" } }));
+    assert.deepEqual(await restored.ruleFixtureJob.findUniqueOrThrow({ where: { id: "saved-rule-evaluation" } }), await owned.db.ruleFixtureJob.findUniqueOrThrow({ where: { id: "saved-rule-evaluation" } }));
     assert.equal((await restored.llmJob.findUniqueOrThrow({ where: { id: "review" } })).status, "failed");
     assert.equal((await restored.llmJob.findUniqueOrThrow({ where: { id: "review" } })).leaseToken, null);
     assert.equal((await restored.llmCall.findFirstOrThrow({ where: { jobId: "review" } })).status, "unknown");
@@ -202,6 +208,15 @@ test("concurrent publication has one winner and the operator CLI emits no key ma
     await owned.db.llmJob.delete({ where: { id: "saved-review" } });
     const emptyManifest = await createEncryptedBackup({ ...owned.keys, databasePath: owned.databasePath, outputPath: join(owned.directory, "no-encrypted-records.aegify") });
     assert.equal(emptyManifest.encryptionKeyCheck, "no_encrypted_records");
+    await owned.db.ruleFixtureJob.update({ where: { id: "rule-evaluation" }, data: { inputCiphertext: encrypt("owned-rule-input", owned.keys.encryptionSecret) } });
+    const ruleArchive = join(owned.directory, "rule-key-check.aegify");
+    assert.equal((await createEncryptedBackup({ ...owned.keys, databasePath: owned.databasePath, outputPath: ruleArchive })).encryptionKeyCheck, "stored_ciphertext");
+    await assert.rejects(verifyEncryptedBackup({ ...owned.keys, encryptionSecret: "owned-wrong-rule-key", archivePath: ruleArchive }));
+    await owned.db.ruleFixtureJob.update({ where: { id: "rule-evaluation" }, data: { inputCiphertext: null } });
+    await owned.db.ruleFixtureJob.update({ where: { id: "saved-rule-evaluation" }, data: { resultCiphertext: encrypt("owned-rule-report", owned.keys.encryptionSecret) } });
+    const reportArchive = join(owned.directory, "rule-report-key-check.aegify");
+    assert.equal((await createEncryptedBackup({ ...owned.keys, databasePath: owned.databasePath, outputPath: reportArchive })).encryptionKeyCheck, "stored_ciphertext");
+    await owned.db.ruleFixtureJob.update({ where: { id: "saved-rule-evaluation" }, data: { resultCiphertext: null } });
     await owned.db.scanJob.update({ where: { id: "job" }, data: { sourceCiphertext: encrypt("owned-source-placeholder", owned.keys.encryptionSecret) } });
     const sourceArchive = join(owned.directory, "source-key-check.aegify");
     assert.equal((await createEncryptedBackup({ ...owned.keys, databasePath: owned.databasePath, outputPath: sourceArchive })).encryptionKeyCheck, "stored_ciphertext");

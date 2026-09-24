@@ -29,10 +29,11 @@ rules:
       source_types: [http_param, http_body, http_header, url_fragment, query_string]
       sink_types: [dom_manipulation]
       sink_pattern: "(\\.innerHTML|\\.outerHTML)\\s*="
-      propagation:
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "variable_assignment"
     defense_patterns:
       - "DOMPurify\\.sanitize"
       - "sanitize-html"
@@ -81,11 +82,12 @@ rules:
       source_types: [database_read]
       sink_types: [html_output, dom_manipulation]
       sink_pattern: "(\\.innerHTML|\\.outerHTML|res\\.(send|write)|response\\.(write|send)|render_template_string|document\\.write)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "object_property"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "object_property"
     defense_patterns:
       - "DOMPurify\\.sanitize"
       - "sanitize-html"
@@ -136,11 +138,12 @@ rules:
       source_types: [url_fragment, query_string, local_storage, document_referrer, window_name]
       sink_types: [dom_manipulation, navigation]
       sink_pattern: "(document\\.write(ln)?|document\\.location|window\\.location)(\\s*\\(|\\s*=)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "url_decode"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "url_decode"
     defense_patterns:
       - "DOMPurify\\.sanitize"
       - "encodeURIComponent"
@@ -189,13 +192,14 @@ rules:
       source_types: [http_param, http_body, url_fragment, database_read, local_storage]
       sink_types: [dom_manipulation]
       sink_pattern: "dangerouslySetInnerHTML"
-      propagation:
-        - through: "variable_assignment"
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "object_property"
-        - through: "react_props"
-        - through: "react_state"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "object_property"
+        # - through: "react_props"
+        # - through: "react_state"
     defense_patterns:
       - "DOMPurify\\.sanitize"
       - "sanitize-html"
@@ -255,9 +259,10 @@ rules:
       source_types: [http_param, http_body, database_read]
       sink_types: [html_output, template_render]
       sink_pattern: "(\\|\\s*safe|mark_safe|Markup\\(|\\{\\{\\{|autoescape.*false|\\|\\s*raw|render_template_string)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "template_context"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "template_context"
     defense_patterns:
       - "bleach\\.clean"
       - "html\\.escape"
@@ -312,11 +317,12 @@ rules:
       source_types: [http_param, http_body, url_fragment, local_storage, query_string]
       sink_types: [dom_manipulation]
       sink_pattern: "\\$\\(.*\\)\\.(html|append|prepend|after|before|replaceWith|wrap|wrapInner)\\s*\\("
-      propagation:
-        - through: "variable_assignment"
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "jquery_data"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "jquery_data"
     defense_patterns:
       - "DOMPurify\\.sanitize"
       - "\\.text\\s*\\("
@@ -369,10 +375,11 @@ rules:
       source_types: [http_param, http_body, http_header]
       sink_types: [http_response]
       sink_pattern: "(res\\.(send|write)|response\\.(write|send|getWriter)|w\\.Write|fmt\\.Fprint|HttpResponse)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "template_literal"
-        - through: "string_concatenation"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "template_literal"
+        # - through: "string_concatenation"
     defense_patterns:
       - "Content-Type.*charset=utf-8"
       - "res\\.type\\("
@@ -424,12 +431,13 @@ rules:
       source_types: [http_param, http_body, url_fragment, database_read, local_storage]
       sink_types: [dom_manipulation]
       sink_pattern: "(v-html|\\$el\\.innerHTML|compile\\()"
-      propagation:
-        - through: "variable_assignment"
-        - through: "vue_props"
-        - through: "vue_data"
-        - through: "vuex_state"
-        - through: "object_property"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "vue_props"
+        # - through: "vue_data"
+        # - through: "vuex_state"
+        # - through: "object_property"
     defense_patterns:
       - "DOMPurify\\.sanitize"
       - "sanitize-html"

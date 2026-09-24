@@ -62,3 +62,32 @@ test("rejects aliases and malformed YAML with a navigable syntax diagnostic", ()
   assert.equal(result.valid, false);
   assert.ok(result.diagnostics[0].line);
 });
+
+test("rejects ignored or malformed taint selectors instead of validating a broad fallback", () => {
+  const base = "id: AEG-TEST-001\nname: Test rule\nseverity: high\nlanguages: [python]\n";
+  for (const taint of [
+    "{}", "{sources: [{type: http_param}], sinks: [{type: sql_query}]}",
+    "{source_types: http_param}", "{sink_types: [false]}", "{sink_types: [' ']}",
+    "{source_types: []}", "{sink_pattern: ''}", "{sink_pattern: false}",
+    "{sink_types: [sql_query], propagation: [{through: assignment}]}",
+    "{sink_types: [sql_query], ignore_sanitizers: 'false'}",
+    `{sink_pattern: '${"x".repeat(4097)}'}`,
+  ]) {
+    assert.equal(validateRuleYaml(base + `taint: ${taint}\n`).valid, false, taint.slice(0, 120));
+  }
+});
+
+test("accepts implemented taint selectors without substituting JavaScript regex semantics", () => {
+  const result = validateRuleYaml(`id: AEG-TEST-001
+name: Review modeled SQL flow
+severity: high
+languages: [python]
+taint:
+  source_types: [http_param, http_body]
+  sink_types: [sql_query]
+  sink_pattern: '(?i:execute|query)'
+  ignore_sanitizers: false
+message: Review this static flow
+`);
+  assert.equal(result.valid, true);
+});

@@ -34,7 +34,7 @@ from aegify.models import (
     SemanticRelationship,
     Severity,
 )
-from aegify.rules.base import get_registry
+from aegify.rules.base import RuleRegistry, get_registry
 from aegify.rules.registry import load_builtin_rules, load_custom_rules
 from aegify.scanner.ast_parser import (
     UNSUPPORTED_SOURCE_EXTENSIONS,
@@ -83,6 +83,7 @@ class ScanEngine:
         storage: StorageBackend | None = None,
         on_progress: Callable[[ScanProgress], None] | None = None,
         capture_ai_source: bool = False,
+        rule_registry: RuleRegistry | None = None,
     ) -> None:
         self.config = config or AegifyConfig()
         self.ast_parser = ASTParser()
@@ -112,11 +113,39 @@ class ScanEngine:
         self.current_progress: ScanProgress | None = None
 
         # Load rules
-        load_builtin_rules()
-        if self.config.rules.custom_rules:
-            count = load_custom_rules(self.config.rules.custom_rules)
-            logger.info("Loaded %d custom YAML rules", count)
-        self.registry = get_registry()
+        self._custom_rules_incomplete = False
+        if rule_registry is not None:
+            self.registry = rule_registry
+        else:
+            load_builtin_rules()
+            if self.config.rules.custom_rules:
+                from aegify.rules.audit import audit_rules
+
+                try:
+                    audit = audit_rules(Path(self.config.rules.custom_rules))
+                    if audit.errors or audit.warnings or not audit.rules:
+                        self._custom_rules_incomplete = True
+                    else:
+                        count = load_custom_rules(self.config.rules.custom_rules)
+                        self._custom_rules_incomplete = count != audit.loadable_rules
+                        logger.info("Loaded %d custom YAML rules", count)
+                except Exception:
+                    self._custom_rules_incomplete = True
+                if self._custom_rules_incomplete:
+                    logger.error(
+                        "Custom rules failed validation or loading; run audit-rules --strict"
+                    )
+            self.registry = get_registry()
+
+    def _new_result(self) -> ScanResult:
+        result = ScanResult(status=ScanStatus.RUNNING)
+        if self._custom_rules_incomplete:
+            result.add_gap(
+                "custom_rule_load_failed",
+                "rules",
+                "Configured custom rules failed strict validation or were not fully loaded",
+            )
+        return result
 
     def _emit_progress(
         self,
@@ -164,7 +193,7 @@ class ScanEngine:
         """Run a full security scan on the target directory or file."""
         self.source_catalog = None
         start_time = time.time()
-        result = ScanResult(status=ScanStatus.RUNNING)
+        result = self._new_result()
         result.analysis_scope = "files" if target.is_file() else "repository"
 
         try:
@@ -220,7 +249,7 @@ class ScanEngine:
         """
         self.source_catalog = None
         start_time = time.time()
-        result = ScanResult(status=ScanStatus.RUNNING)
+        result = self._new_result()
         result.analysis_scope = "files"
 
         try:
@@ -275,7 +304,7 @@ class ScanEngine:
 
         self.source_catalog = None
         start_time = time.time()
-        result = ScanResult(status=ScanStatus.RUNNING)
+        result = self._new_result()
         result.analysis_scope = "workspace"
         try:
             manifest = WorkspaceManifest.load(manifest_path)
