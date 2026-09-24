@@ -115,6 +115,7 @@ async function checkInstallationKey(client: Client, secret: string): Promise<Bac
   let sample = (await client.execute('SELECT length(value) AS bytes, CASE WHEN length(value) <= 67108864 THEN value ELSE NULL END AS value FROM "Setting" WHERE encrypted = 1 ORDER BY key LIMIT 1')).rows[0];
   if (!sample) sample = (await client.execute('SELECT length(sourceCiphertext) AS bytes, CASE WHEN length(sourceCiphertext) <= 67108864 THEN sourceCiphertext ELSE NULL END AS value FROM "ScanJob" WHERE sourceCiphertext IS NOT NULL ORDER BY id LIMIT 1')).rows[0];
   if (!sample && (await client.execute('PRAGMA table_info("LlmJob")')).rows.some((row) => row.name === "inputCiphertext")) sample = (await client.execute('SELECT length(inputCiphertext) AS bytes, CASE WHEN length(inputCiphertext) <= 67108864 THEN inputCiphertext ELSE NULL END AS value FROM "LlmJob" WHERE inputCiphertext IS NOT NULL ORDER BY id LIMIT 1')).rows[0];
+  if (!sample && (await client.execute('PRAGMA table_info("LlmReview")')).rows.some((row) => row.name === "payloadCiphertext")) sample = (await client.execute('SELECT length(payloadCiphertext) AS bytes, CASE WHEN length(payloadCiphertext) <= 67108864 THEN payloadCiphertext ELSE NULL END AS value FROM "LlmReview" ORDER BY id LIMIT 1')).rows[0];
   if (!sample) return "no_encrypted_records";
   if (typeof sample.value !== "string") throw new Error("Stored ciphertext exceeds the installation-key check limit.");
   try { decrypt(sample.value, secret); }

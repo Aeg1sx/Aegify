@@ -377,6 +377,7 @@ model LlmJob {
   completedAt    DateTime?
 
   contractVersion Int       @default(0)
+  historyVersion  Int       @default(0)
   projectId       String?
   requestedBy     String?
   provider        String    @default("")
@@ -402,6 +403,7 @@ model LlmJob {
   scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
   events LlmJobEvent[]
   calls LlmCall[]
+  reviews LlmReview[]
 
   @@index([status])
   @@index([scanId])
@@ -434,8 +436,37 @@ model LlmCall {
   startedAt      DateTime @default(now())
   completedAt    DateTime?
   job LlmJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  reviews LlmReview[]
   @@unique([jobId, batchIndex])
   @@index([jobId, status])
+}
+
+model LlmReview {
+  id                String   @id @default(cuid())
+  jobId             String
+  callId            String
+  findingId         String // Historical ID; survives deletion/replacement of a Finding.
+  batchIndex        Int
+  ordinal           Int
+  publication       String // published | human_decision_preserved
+  ruleId            String
+  ruleName          String
+  severity          String
+  filePath          String
+  lineStart         Int
+  metadataTruncated Boolean  @default(false)
+  verdict           String
+  confidence        Float
+  evidenceDigest    String
+  payloadDigest     String
+  payloadCiphertext String
+  createdAt         DateTime @default(now())
+
+  job LlmJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  call LlmCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+  @@unique([jobId, findingId])
+  @@index([jobId, batchIndex, ordinal, id])
+  @@index([callId])
 }
 
 model LlmWorker {

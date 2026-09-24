@@ -14,6 +14,7 @@ import { AiLeaseLost, cancelLlmJob, claimLlmJob, enqueueLlmJob, heartbeatLlmJob,
 import { runClaimedLlmJob, runLlmWorkerOnce } from "./llm-worker.ts";
 import { callProviderDetailed } from "./provider-receipt.ts";
 import { parseReviewResults, REVIEW_LIMITS } from "./ai-review-contract.ts";
+import { listReviewHistory, readReviewHistory } from "./ai-review-history.ts";
 import type { ProviderTransport } from "./public-https.ts";
 
 const previousSecret = process.env.ENCRYPTION_SECRET;
@@ -182,8 +183,122 @@ test("partial output is explicit and accepted AI decisions remain unchanged", as
   try {
     await f.db.finding.update({ where: { id: "finding-0000" }, data: { aiReviewStatus: "accepted", aiVerdict: "likely_false_positive", llmAnalysis: "{\"humanAccepted\":true}" } });
     const job = await f.queue(); await runLlmWorkerOnce(f.db, "worker", env, new AbortController().signal, { transport: async (request) => responseFor(request, 2) });
-    const saved = await f.db.llmJob.findUniqueOrThrow({ where: { id: job.id } }); assert.equal(saved.status, "partial"); assert.equal(saved.reviewedCount, 1); assert.equal(saved.errorCount, 2);
+    const saved = await f.db.llmJob.findUniqueOrThrow({ where: { id: job.id } }); assert.equal(saved.status, "partial"); assert.equal(saved.reviewedCount, 2); assert.equal(saved.errorCount, 1);
     const accepted = await f.db.finding.findUniqueOrThrow({ where: { id: "finding-0000" } }); assert.equal(accepted.aiReviewStatus, "accepted"); assert.equal(accepted.llmAnalysis, "{\"humanAccepted\":true}"); assert.equal(accepted.status, "triaged");
+    const history = await listReviewHistory(f.db, f.alice, job.id);
+    assert.equal(history.saved, 2); assert.equal(history.published, 1); assert.equal(history.preservedHumanDecisions, 1);
+    assert.equal(history.reviews.find((row) => row.findingId === accepted.id)?.publication, "human_decision_preserved");
+  } finally { await f.close(); }
+});
+
+test("independent reviews retain immutable encrypted narratives after replacement, input expiry and finding deletion", async () => {
+  const f = await fixture();
+  try {
+    const first = await f.queue(); await runLlmWorkerOnce(f.db, "first", env, new AbortController().signal, { transport: successful });
+    const history = await listReviewHistory(f.db, f.bob, first.id);
+    assert.equal(history.historyVersion, 1); assert.equal(history.saved, 2); assert.equal(history.missingReviewHistory, 0);
+    const id = history.reviews[0].id;
+    const original = await readReviewHistory(f.db, f.bob, first.id, id);
+    assert.equal(original.current?.state, "current");
+    const stored = await f.db.llmReview.findUniqueOrThrow({ where: { id } });
+    assert.ok(!stored.payloadCiphertext.includes("Static fixture evidence"));
+    assert.ok(!JSON.stringify(history).includes("payloadCiphertext"));
+    assert.ok(!JSON.stringify(history).includes("Static fixture evidence"));
+    const second = await f.queue(); await runLlmWorkerOnce(f.db, "second", env, new AbortController().signal, { transport: async (request) => {
+      const response = responseFor(request); const body = JSON.parse(response.text);
+      const items = JSON.parse(body.content[0].text).map((item: ReturnType<typeof result>) => ({ ...item, reasoning: "A distinct later review." }));
+      body.content[0].text = JSON.stringify(items); return { ...response, text: JSON.stringify(body) };
+    } });
+    assert.equal((await readReviewHistory(f.db, f.bob, first.id, id)).current?.state, "superseded");
+    assert.equal((await readReviewHistory(f.db, f.bob, first.id, id)).record.result.reasoning, "Static fixture evidence only.");
+    await assert.rejects(readReviewHistory(f.db, f.bob, second.id, id), { status: 404 });
+    await assert.rejects(f.db.llmReview.update({ where: { id }, data: { confidence: 1 } }));
+    assert.deepEqual(await f.db.llmReview.findUniqueOrThrow({ where: { id } }), stored);
+    await f.db.llmJob.update({ where: { id: first.id }, data: { inputCiphertext: null } });
+    await f.db.finding.update({ where: { id: stored.findingId }, data: { codeSnippet: "changed source" } });
+    const changed = await readReviewHistory(f.db, f.bob, first.id, id);
+    assert.equal(changed.current?.state, "source_changed"); assert.equal(changed.record.finding.data.codeSnippet, "value = 'owned fixture'");
+    await f.db.finding.delete({ where: { id: stored.findingId } });
+    const removed = await readReviewHistory(f.db, f.bob, first.id, id);
+    assert.equal(removed.current, null); assert.deepEqual(removed.record, original.record);
+    await f.db.scan.delete({ where: { id: f.scan.id } });
+    assert.equal(await f.db.llmReview.count(), 0, "Operator scan retention must also remove history");
+  } finally { await f.close(); }
+});
+
+test("history pages are bounded, stable across batches, and enforce current project access", async () => {
+  const f = await fixture(51);
+  try {
+    const job = await f.queue(); await runLlmWorkerOnce(f.db, "worker", env, new AbortController().signal, { transport: successful });
+    const seen = new Set(); let cursor: string | null = null;
+    do {
+      const page = await listReviewHistory(f.db, f.bob, job.id, new URLSearchParams({ limit: "20", ...(cursor ? { cursor } : {}) }));
+      assert.equal(page.saved, 51); assert.ok(page.reviews.length <= 20);
+      for (const row of page.reviews) { assert.ok(!seen.has(row.id)); seen.add(row.id); }
+      cursor = page.nextCursor;
+    } while (cursor);
+    assert.equal(seen.size, 51);
+    for (const query of ["limit=NaN", "limit=21", "limit=0", "limit=1&limit=2", "cursor=../", "cursor=missing-id", "extra=true"]) await assert.rejects(listReviewHistory(f.db, f.bob, job.id, new URLSearchParams(query)), { status: 400 });
+    await f.db.projectMember.delete({ where: { projectId_userId: { projectId: f.project.id, userId: "bob" } } });
+    await assert.rejects(listReviewHistory(f.db, f.bob, job.id), { status: 404 });
+    const foreign = await f.db.project.create({ data: { name: "Owned other project", members: { create: { userId: "alice", role: "maintainer" } } } });
+    await f.db.scan.update({ where: { id: f.scan.id }, data: { projectId: foreign.id } });
+    await assert.rejects(listReviewHistory(f.db, f.alice, job.id), { status: 404 }, "A transferred scan does not transfer prior project-bound review evidence");
+  } finally { await f.close(); }
+});
+
+test("preserving every human decision is a completed review with zero replacement suggestions", async () => {
+  const f = await fixture();
+  try {
+    await f.db.finding.updateMany({ data: { aiReviewStatus: "accepted", llmAnalysis: "{\"humanAccepted\":true}" } });
+    const job = await f.queue(); await runLlmWorkerOnce(f.db, "worker", env, new AbortController().signal, { transport: successful });
+    const saved = await f.db.llmJob.findUniqueOrThrow({ where: { id: job.id } });
+    assert.equal(saved.status, "completed"); assert.equal(saved.reviewedCount, 2); assert.equal(saved.errorCount, 0);
+    const history = await listReviewHistory(f.db, f.alice, job.id);
+    assert.equal(history.saved, 2); assert.equal(history.published, 0); assert.equal(history.preservedHumanDecisions, 2); assert.equal(history.missingReviewHistory, 0);
+    assert.ok((await f.db.finding.findMany()).every((finding) => finding.llmAnalysis === "{\"humanAccepted\":true}"));
+  } finally { await f.close(); }
+});
+
+test("legacy publication history remains explicitly unavailable and is never inferred from current findings", async () => {
+  const f = await fixture();
+  try {
+    const job = await f.db.llmJob.create({ data: { scanId: f.scan.id, projectId: f.project.id, mode: "quick", status: "completed", reviewedCount: 2, totalFindings: 2 } });
+    await f.db.finding.updateMany({ data: { llmAnalysis: JSON.stringify({ jobId: job.id, reasoning: "Mutable legacy projection" }) } });
+    const history = await listReviewHistory(f.db, f.alice, job.id);
+    assert.equal(history.historyVersion, 0); assert.equal(history.missingReviewHistory, 2); assert.equal(history.saved, 0);
+    assert.deepEqual(history.reviews, []);
+  } finally { await f.close(); }
+});
+
+test("history insert failure rolls back suggestions and retains only the discarded call receipt", async () => {
+  const f = await fixture();
+  try {
+    await f.db.$executeRawUnsafe("CREATE TRIGGER owned_history_failure BEFORE INSERT ON LlmReview WHEN NEW.findingId = 'finding-0001' BEGIN SELECT RAISE(ABORT, 'owned fixture failure'); END");
+    const job = await f.queue(); await runLlmWorkerOnce(f.db, "worker", env, new AbortController().signal, { transport: successful });
+    assert.equal(await f.db.llmReview.count(), 0);
+    assert.equal(await f.db.finding.count({ where: { aiReviewStatus: "suggested" } }), 0);
+    assert.equal((await f.db.llmJob.findUniqueOrThrow({ where: { id: job.id } })).status, "failed");
+    assert.equal((await f.db.llmCall.findFirstOrThrow({ where: { jobId: job.id } })).status, "discarded");
+  } finally { await f.close(); }
+});
+
+test("history detects wrong keys, ciphertext corruption and valid ciphertext copied from another record", async () => {
+  const f = await fixture();
+  try {
+    const job = await f.queue(); await runLlmWorkerOnce(f.db, "worker", env, new AbortController().signal, { transport: successful });
+    const rows = await f.db.llmReview.findMany({ where: { jobId: job.id }, orderBy: { ordinal: "asc" } });
+    const secret = process.env.ENCRYPTION_SECRET;
+    try {
+      process.env.ENCRYPTION_SECRET = "owned-wrong-key";
+      await assert.rejects(readReviewHistory(f.db, f.alice, job.id, rows[0].id), { status: 409 });
+    } finally { process.env.ENCRYPTION_SECRET = secret; }
+    // Simulate an operator-modified database, beyond the normal append-only API.
+    await f.db.$executeRawUnsafe('DROP TRIGGER "LlmReview_no_update"');
+    await f.db.llmReview.update({ where: { id: rows[0].id }, data: { payloadCiphertext: "invalid" } });
+    await assert.rejects(readReviewHistory(f.db, f.alice, job.id, rows[0].id), { status: 409 });
+    await f.db.llmReview.update({ where: { id: rows[0].id }, data: { payloadCiphertext: rows[1].payloadCiphertext, payloadDigest: rows[1].payloadDigest } });
+    await assert.rejects(readReviewHistory(f.db, f.alice, job.id, rows[0].id), { status: 409 });
   } finally { await f.close(); }
 });
 

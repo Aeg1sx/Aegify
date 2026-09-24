@@ -10,7 +10,7 @@ export interface AiReviewJob {
   reviewedCount: number; falsePositives: number; currentBatch: number; totalBatches: number;
   errorMessage: string; createdAt: string; startedAt: string | null; completedAt: string | null;
   scan?: { id: string; repository: string; branch: string };
-  contractVersion?: number; provider?: string; model?: string; inputDigest?: string;
+  contractVersion?: number; historyVersion?: number; provider?: string; model?: string; inputDigest?: string;
   callsStarted?: number; maxCalls?: number; outputTokensReserved?: number; promptBytes?: number;
   workerReady?: boolean; heartbeatAt?: string | null; deadlineAt?: string | null;
   permissions?: { canCancel: boolean };
@@ -27,7 +27,7 @@ export function AiReviewJobCard({ job, onCancel, cancelling }: { job: AiReviewJo
     </CardTitle></CardHeader>
     <CardContent className="space-y-4 text-sm">
       <div role="status" aria-live="polite">
-        <p>{job.reviewedCount}/{job.totalFindings} suggestions saved · {job.currentBatch}/{job.totalBatches} batches saved</p>
+        <p>{job.reviewedCount}/{job.totalFindings} {job.historyVersion ? "reviews saved" : "suggestions published"} · {job.currentBatch}/{job.totalBatches} batches saved</p>
         <progress aria-label="Findings reviewed" className="mt-2 h-2 w-full" value={percent} max={100} />
       </div>
       {job.workerReady === false && !terminal && <p className="text-amber-700 dark:text-amber-300">No AI worker heartbeat. The job is stored; ask an operator to start the AI worker before the deadline.</p>}
