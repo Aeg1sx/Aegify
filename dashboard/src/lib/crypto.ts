@@ -18,7 +18,16 @@ function getEncryptionKey(secret = process.env.ENCRYPTION_SECRET): Buffer {
 }
 
 export function encrypt(plaintext: string, secret?: string): string {
+  return encryptMany([plaintext], secret)[0];
+}
+
+/** Derive once per bounded batch, without retaining a key between calls. */
+export function encryptMany(plaintexts: string[], secret?: string): string[] {
   const key = getEncryptionKey(secret);
+  return plaintexts.map((plaintext) => encryptWithKey(plaintext, key));
+}
+
+function encryptWithKey(plaintext: string, key: Buffer): string {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
 

@@ -755,7 +755,7 @@ Main analysis `1829802637` subsequently completed with the same 689 candidates
 and no error; both main CodeQL analyses have zero results. No alerts were
 dismissed to obtain those results.
 
-## SARIF file-path encoding: 2026-09-24, in progress
+## SARIF file-path encoding: 2026-09-24, merged via PR #55
 
 The #54 CI upload accepted its report but warned that Next route paths containing
 `[id]` were invalid URIs. Primary and code-flow artifact locations now percent
@@ -799,7 +799,7 @@ URI warning; bracketed Next route paths resolve correctly. It merged at
 `1829923523` completed with 691 candidates and no error; both main CodeQL
 analyses have zero results. No alerts were manually dismissed.
 
-## Structural cookie options: 2026-09-24, in progress
+## Structural cookie options: 2026-09-24, merged via PR #56
 
 The prior cookie patterns used unanchored negative lookaheads with regex search,
 so an explicitly true option could still produce a missing-flag candidate. A
@@ -841,3 +841,65 @@ both measurements, change locations and replay commands. Outcome digest:
 Scan times of 200.82/194.71 seconds and process peaks of 369,623,040/370,638,848
 bytes are observations on a shared developer machine. Exact-head CI, Linux
 container checks and actual GitHub SARIF processing remain the merge gate.
+
+PR #56 passed all required checks, both CodeQL analyses and native Aegify
+processing on `e982d7dcd2c861ac9386324cb48aabe30e48fb46`: 731 Linux scanner
+tests, 141 dashboard tests with two separately exercised container checks,
+114 production HTTP/CLI checks and 53 offline Linux worker checks. The root
+self-scan covered 312 files with 688 advisory candidates, zero blocking findings
+and no analysis gap. PR analysis `1830030714` completed without an error.
+It merged at 2026-09-24T04:15:12Z as verified signed commit
+`3a15bf1a698208865fb5c9d21a553af3e09b3e29`. Main CI and code scanning passed;
+main Aegify analysis `1830062510` has the same 688 results and no error. Both
+main CodeQL analyses have zero results. No alerts were manually dismissed.
+The live inventory was 693 open alerts: 688 Aegify candidates and five Scorecard
+observations. Repository protection rules remain active and unchanged.
+
+## Retained AI review evidence: 2026-09-24, in progress
+
+Each valid finding review now gets its own encrypted retained record, bound to
+its job, provider call, model, input/source/evidence digests and publication
+outcome. Publication, history, counters and audit events share one transaction.
+Accepted or rejected human decisions retain their current projection while the
+new narrative is saved separately. New jobs count every retained review;
+legacy jobs keep their prior publication-count semantics. A failed history
+insert rolls back the batch and keeps a discarded receipt without repeating the
+external request.
+
+Migration 22 adds append-only review records with database update protection.
+Deleting a finding or expiring a full job input preserves its saved narratives;
+deleting the parent scan removes them under the existing retention policy.
+Historical records are not fabricated from a mutable finding. Operators must
+stop the web and AI worker together, migrate, then start matching versions.
+Encrypted backup/restore preserves these records and their update protection.
+Installation-key checks also cover history-only ciphertext after input expiry.
+
+Project-scoped APIs page metadata at 20 records and fetch one authenticated,
+bounded record on demand. Job/call/project identities are checked; altered
+ciphertext, wrong keys and copied ciphertext from another row are rejected.
+The UI compares the saved suggestion with current human triage, marks changed
+source, superseded suggestions or deleted findings, and exports retained evidence.
+It refreshes active progress independently while an older run is being inspected.
+Revocation prevents new reads and a failed refresh removes stale visible evidence.
+
+Local acceptance: 147 dashboard tests passed, with two existing real-Python
+checks reserved for the offline container gate. The 22 focused review/recovery
+tests passed, including historical retrieval after restore, insertion rollback,
+pagination across batches, legacy gaps, project transfer and authenticated-record
+substitution. Strict TypeScript, lint and production build pass. Production
+HTTP and the real Python CLI passed 126 checks; isolated Chrome passed 25 checks
+covering two independent review narratives, download, human decisions, revocation,
+reselection, mobile layout, cancellation and viewer controls. These checks use
+owned static inputs and scripted provider replies, with no live AI provider call.
+Documentation build, links and accessibility pass, with existing color
+recommendations. Supply-chain pinning verification passes.
+Exact-head CI, the Linux worker container and native SARIF processing remain the
+merge gate.
+
+This closes historical finding-review storage and retrieval, not full agent
+integration or model-quality acceptance. Expired whole-job input cannot be
+reconstructed from retained per-finding excerpts and digests alone. Database
+update protection is not independent immutable storage against an administrator.
+Live provider isolation, calibrated confidence, billing reconciliation, broader
+source-tool agent roles and independent application-level precision/recall
+evaluation remain open. The measured OWASP quality ceiling is unchanged.

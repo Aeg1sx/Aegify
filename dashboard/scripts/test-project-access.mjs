@@ -16,6 +16,7 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { encode } from "next-auth/jwt";
 import { configureDatabase } from "../src/lib/database-runtime.ts";
 import { recordFindingTicket } from "../src/lib/finding-workflow.ts";
+import { runLlmWorkerOnce } from "../src/lib/llm-worker.ts";
 
 export async function runAccessIntegration({ verifyBrowser } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "aegify-access-http-"));
@@ -105,11 +106,35 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     const compatibilityReview = await call("/api/llm-scan", { method: "POST", body: { scanId: sa.id, mode: "quick" }, status: 202 });
     assert.equal(compatibilityReview.findingsCount, 1); assert.ok(compatibilityReview.jobId);
     await call(`/api/llm-jobs/${compatibilityReview.jobId}`, { method: "POST", body: { action: "cancel" } });
+    const historyJob = await call("/api/llm-jobs", { method: "POST", body: { scanId: sa.id, mode: "quick" }, status: 202 });
+    const previousEncryptionSecret = process.env.ENCRYPTION_SECRET;
+    try {
+      process.env.ENCRYPTION_SECRET = environment.ENCRYPTION_SECRET;
+      await runLlmWorkerOnce(db, "owned-http-review-worker", environment, new globalThis.AbortController().signal, { transport: async (request) => {
+        const input = JSON.parse(JSON.parse(request.body).messages[0].content).findings;
+        const reviews = input.map(({ id }) => ({ findingId: id, verdict: "needs_review", confidence: 0.2, reasoning: "Owned HTTP history evidence.", remediation: "Review supplied constraints.", adjustedSeverity: null, evidenceFor: [], evidenceAgainst: [], evidenceGaps: ["No runtime observation."] }));
+        return { status: 200, text: JSON.stringify({ id: "owned-http-response", model: "owned-fixture-model", stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(reviews) }] }) };
+      } });
+    } finally { if (previousEncryptionSecret === undefined) delete process.env.ENCRYPTION_SECRET; else process.env.ENCRYPTION_SECRET = previousEncryptionSecret; }
+    const savedHistory = await call(`/api/llm-jobs/${historyJob.id}/reviews?limit=1`, { user: "bob" });
+    assert.equal(savedHistory.saved, 1); assert.equal(savedHistory.historyVersion, 1);
+    assert.equal("payloadCiphertext" in savedHistory.reviews[0], false);
+    const savedPath = `/api/llm-jobs/${historyJob.id}/reviews/${savedHistory.reviews[0].id}`;
+    const savedDetail = await call(savedPath, { user: "bob" });
+    assert.equal(savedDetail.record.result.reasoning, "Owned HTTP history evidence."); assert.equal(savedDetail.current.state, "current");
+    await call(savedPath, { user: "outside", status: 404 });
+    await call(savedPath, { method: "PATCH", body: { verdict: "likely_false_positive" }, status: 405 });
+    await call(`/api/llm-jobs/${historyJob.id}/reviews?limit=21`, { status: 400 });
+    await call(`/api/llm-jobs/${historyJob.id}/reviews?cursor=missing-row`, { status: 400 });
+    await call(`/api/llm-jobs/${queuedReview.id}/reviews/${savedHistory.reviews[0].id}`, { status: 404 });
+    const cacheCheck = await globalThis.fetch(origin + savedPath, { headers: { Cookie: `authjs.session-token=${cookies.bob}` } });
+    assert.equal(cacheCheck.status, 200); assert.equal(cacheCheck.headers.get("cache-control"), "private, no-store"); checks++;
+    await db.llmWorker.deleteMany({ where: { id: "owned-http-review-worker" } });
     await call("/api/llm-jobs?limit=NaN", { status: 400 });
     await db.setting.deleteMany({ where: { key: { startsWith: "llm." } } });
     assert.equal((await call("/api/repos")).repos.length, 0, "Repository discovery uses only the caller's OAuth account");
     for (const path of [`/api/findings?projectId=${b.id}&language=Python&search=BRAVO`, `/api/scans?projectId=${b.id}`, `/api/endpoints?projectId=${b.id}`]) assert.equal((await call(path)).total, 0);
-    for (const path of [`/api/projects/${b.id}`, `/api/scans/${sb.id}`, `/api/scans/${sb.id}/progress`, `/api/findings/${fb.id}`, `/api/findings/${fb.id}/graph`, `/api/findings/${fb.id}/report`, `/api/graph/${sb.id}`, `/api/endpoints/${eb.id}`, `/api/endpoints/import-openapi?scanId=${sb.id}`, `/api/agent-runs/${rb.id}`, `/api/llm-jobs/${jb.id}`, `/api/llm-scan/${sb.id}`, `/api/projects/${b.id}/members`, `/api/projects/${b.id}/tokens`, `/api/projects/${b.id}/audit`]) await call(path, { status: 404 });
+    for (const path of [`/api/projects/${b.id}`, `/api/scans/${sb.id}`, `/api/scans/${sb.id}/progress`, `/api/findings/${fb.id}`, `/api/findings/${fb.id}/graph`, `/api/findings/${fb.id}/report`, `/api/graph/${sb.id}`, `/api/endpoints/${eb.id}`, `/api/endpoints/import-openapi?scanId=${sb.id}`, `/api/agent-runs/${rb.id}`, `/api/llm-jobs/${jb.id}`, `/api/llm-jobs/${jb.id}/reviews`, `/api/llm-jobs/${jb.id}/reviews/${savedHistory.reviews[0].id}`, `/api/llm-scan/${sb.id}`, `/api/projects/${b.id}/members`, `/api/projects/${b.id}/tokens`, `/api/projects/${b.id}/audit`]) await call(path, { status: 404 });
     const viewerFinding = await call(`/api/findings/${fa.id}`, { user: "bob" });
     assert.equal(viewerFinding.permissions.canTriage, false);
     await call(`/api/findings/${fa.id}`, { user: "bob", method: "PATCH", body: { status: "triaged" }, status: 404 });

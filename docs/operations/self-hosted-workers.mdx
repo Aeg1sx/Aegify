@@ -47,6 +47,13 @@ Migration `20260924060000_durable_ai_reviews` marks unfinished legacy AI jobs as
 failed and retains their history. It cannot infer their requester or provider
 outcome, so it never resumes them. Start all three services after the migration.
 
+Migration `20260924070000_ai_review_history` adds retained review records. Stop
+the web process and AI worker together before applying it, then run matching
+versions. Older jobs keep an explicit legacy history marker; existing mutable
+finding contents are not copied into invented historical records. An interrupted
+durable job may resume under its existing lease/recovery rules, but any missing
+output from batches completed before this upgrade remains unavailable.
+
 ## Durable AI finding reviews
 
 Open **LLM Security Review**, choose a project scan and select **Quick Review** or
@@ -85,7 +92,7 @@ Inspect provider billing before explicitly starting another review.
 | Context | 180,000 bytes per prompt; 4 MB total prompt budget and encrypted-input plaintext limit |
 | Output | Configured per-call ceiling, at most 32,768; total reservation at most 655,360 tokens |
 | Graph | At most 100 nodes and 100 edges within 20 KB, with omitted-record counts |
-| Retention | Encrypted inputs cleared seven days after terminal completion; receipts and events retained |
+| Retention | Encrypted job inputs cleared seven days after terminal completion; saved review records, receipts and events retained with the scan |
 
 Oversized jobs are rejected without contacting a provider. Per-field context
 truncation and omitted graph records are recorded as evidence gaps. Invalid,
@@ -100,6 +107,55 @@ Missing usage and cost are **unknown**, never zero. Cache and reasoning counters
 have provider-specific meanings and must not be summed blindly. No raw provider
 body or hidden reasoning is kept in a receipt. A valid provider envelope and
 schema remain suggestions requiring human review, not runtime verification.
+
+### Compare saved review results
+
+Choose a run's **Details** button to inspect its own saved results. A later review
+can replace the finding's current suggestion; it cannot rewrite the earlier run's
+retained narrative. The result panel shows the model verdict, explanation,
+remediation, supporting/contrary evidence, missing evidence and the source excerpt
+supplied to that run. **Download saved evidence** exports the verified record and
+its digest. Long summaries identify shortened metadata; the saved evidence keeps
+the bounded input actually supplied to the model.
+
+Current finding status and the current human AI-review decision appear separately
+and are labeled as current at load. The panel identifies a replaced suggestion,
+changed source evidence or a finding that has since been deleted. Use **Refresh
+results** to refresh that comparison. Removing project access prevents subsequent
+history reads; a scan transferred to another project does not transfer its prior
+project-bound review evidence.
+
+Every valid returned result is retained atomically with its call receipt, job
+counters and audit event. Results that would replace an accepted or rejected human
+decision are saved as **human decision preserved** without changing the finding.
+New jobs count these as completed reviews and distinguish them from published
+suggestions. Missing provider results remain omissions. Legacy jobs retain their
+earlier publication-count semantics and visibly report unavailable history.
+An insertion failure rolls back all suggestions from the batch; the worker keeps
+the discarded call receipt and does not automatically repeat the paid request.
+
+Saved records bind the job, call, finding, input/source/prompt/response identities
+and model. Narratives and supplied evidence are encrypted under
+`ENCRYPTION_SECRET`; listing metadata contains bounded location and verdict fields.
+Record digests and authenticated ciphertext are checked before returning details.
+Application writes and a database trigger prevent updates to retained records.
+This is not external immutable storage or protection against a database
+administrator who can change the schema and keys.
+
+History uses project viewer authorization. `GET /api/llm-jobs/{id}/reviews`
+returns at most 20 metadata entries with a cursor; each
+`GET /api/llm-jobs/{id}/reviews/{reviewId}` returns one verified record, bounded
+to 2 MiB of stored plaintext. Both endpoints use `Cache-Control: no-store`.
+No raw provider bodies or hidden reasoning are archived. Operator scan deletion
+cascades to these records; deleting only a finding retains its historical review.
+Backups preserve the records and their update protection. Keep the installation
+key for every backup that uses it.
+
+Per-finding evidence survives expiration of the full encrypted job input. Once
+that seven-day input expires, the retained digests and per-finding excerpts do
+not reconstruct the entire original batch prompt or graph context. Retain a
+verified backup before expiry if full-input replay is required. Provider
+nondeterminism and uncalibrated model confidence remain separate evaluation work.
 
 ## Scan a connected project
 

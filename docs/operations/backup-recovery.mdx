@@ -12,7 +12,7 @@ SQLite integrity and foreign keys. Restore creates a **new database file**;
 existing files are never overwritten and the running installation is not switched.
 
 The archive contains the database, including findings, triage, project memberships,
-saved integration settings and retained source snapshots. It does not contain
+saved integration settings, retained AI review records and source snapshots. It does not contain
 environment secrets, container images, external repository state, identity-provider
 configuration or files outside SQLite. Keep the matching Aegify release and a
 separate protected copy of the installation configuration available for recovery.
@@ -42,7 +42,7 @@ migration and does not accept arbitrary older SQLite copies as encrypted archive
 Inject these values into the one-off operator process from your secret manager:
 
 - `AEGIFY_BACKUP_KEY`: an independent, random 32-byte key encoded as 64 hex characters.
-- `ENCRYPTION_SECRET`: the original installation key used by saved settings and source snapshots.
+- `ENCRYPTION_SECRET`: the original installation key used by settings, source snapshots and saved AI review evidence.
 - `DATABASE_URL`: the source database for backup; the candidate database for account review.
 
 The Compose worker already receives `ENCRYPTION_SECRET` and `DATABASE_URL`. Pass
@@ -53,7 +53,10 @@ prevents this recovery procedure.
 
 When encrypted records exist, backup authenticates one stored ciphertext with
 the supplied installation key. The manifest reports `stored_ciphertext`; it does
-not claim to validate every integration credential. An empty installation reports
+not claim to validate every integration credential or historical review. The key
+check also covers installations whose only remaining ciphertext is saved review
+history after job-input expiry. Restoring preserves retained review records and
+their update protection while fencing unfinished calls. An empty installation reports
 `no_encrypted_records`, so key custody must be checked separately.
 
 Use a private destination directory on a local filesystem supporting hard links.

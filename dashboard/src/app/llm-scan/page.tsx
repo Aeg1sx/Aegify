@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SeverityBadge } from "@/components/severity-badge";
-import { StatusBadge } from "@/components/status-badge";
 import { isLlmJobTerminal } from "@/lib/llm-job-state";
 import { AiReviewJobCard, type AiReviewJob } from "@/components/ai-review-job-card";
+import { AiReviewHistory } from "@/components/ai-review-history";
 import {
   Bot,
   Zap,
@@ -18,8 +16,6 @@ import {
   AlertCircle,
   FolderKanban,
   ScanSearch,
-  ShieldCheck,
-  ShieldAlert,
   Clock,
   History,
 } from "lucide-react";
@@ -43,43 +39,6 @@ interface ScanOption {
   _count: { findings: number; graphNodes: number };
 }
 
-interface ScanResult {
-  scan: {
-    id: string;
-    scanType: string;
-    status: string;
-    filesScanned: number;
-    createdAt: string;
-  };
-  findings: Array<{
-    id: string;
-    ruleId: string;
-    ruleName: string;
-    severity: string;
-    status: string;
-    message: string;
-    filePath: string;
-    lineStart: number;
-    confidence: number;
-    remediation: string | null;
-    llmAnalysis: string | null;
-  }>;
-  summary: {
-    total: number;
-    bySeverity: Record<string, number>;
-  };
-}
-
-interface LLMAnalysis {
-  jobId?: string;
-  verdict?: "likely_true_positive" | "likely_false_positive" | "needs_review";
-  isFalsePositive: boolean;
-  confidence: number;
-  reasoning: string;
-  remediation: string;
-  adjustedSeverity?: string;
-}
-
 type LlmJob = AiReviewJob;
 
 export default function LLMScanPage() {
@@ -91,14 +50,15 @@ export default function LLMScanPage() {
   const [selectedScanId, setSelectedScanId] = useState("");
   const [scanning, setScanning] = useState(false);
   const [activeJob, setActiveJob] = useState<LlmJob | null>(null);
-  const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingScans, setLoadingScans] = useState(true);
   const [jobHistory, setJobHistory] = useState<LlmJob[]>([]);
   const [inspectedJob, setInspectedJob] = useState<LlmJob | null>(null);
-  const [resultJob, setResultJob] = useState<LlmJob | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [workerReady, setWorkerReady] = useState<boolean | null>(null);
+  const inspection = useRef(0);
+  const displayedJob = inspectedJob || activeJob;
+  const activeJobId = activeJob?.id;
   const selectedScan = scans.find((scan) => scan.id === selectedScanId);
   const canStart = Boolean(selectedScan?.projectId && projects.some((project) => project.id === selectedScan.projectId && ["admin", "maintainer"].includes(project.accessRole)));
 
@@ -160,27 +120,27 @@ export default function LLMScanPage() {
 
   // Poll active job for progress
   useEffect(() => {
-    if (!activeJob) return;
+    if (!activeJobId) return;
+    const controller = new AbortController();
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/llm-jobs/${activeJob.id}`);
+        const res = await fetch(`/api/llm-jobs/${activeJobId}`, { signal: controller.signal, cache: "no-store" });
+        if (controller.signal.aborted) return;
         if (!res.ok) { setError("Review status is unavailable; check your project access."); setActiveJob(null); setScanning(false); return; }
         const job: LlmJob = await res.json();
+        if (controller.signal.aborted) return;
 
         setActiveJob(job);
+        setInspectedJob((current) => current?.id === job.id ? job : current);
 
         if (isLlmJobTerminal(job.status)) {
           setScanning(false);
           setActiveJob(null);
-          setInspectedJob(job);
+          setInspectedJob((current) => !current || current.id === job.id ? job : current);
           fetchHistory();
 
           if (job.status === "completed" || job.status === "partial") {
-            const scanRes = await fetch(`/api/llm-scan/${job.scanId}`);
-            const scanData = await scanRes.json();
-            setResult(scanData);
-            setResultJob(job);
             if (job.status === "partial") {
               setError(job.errorMessage || "Review completed with unresolved batches");
             }
@@ -193,15 +153,14 @@ export default function LLMScanPage() {
       }
     }, 2000);
 
-    return () => clearInterval(interval);
-  }, [activeJob, fetchHistory]);
+    return () => { controller.abort(); clearInterval(interval); };
+  }, [activeJobId, fetchHistory]);
 
   const startReview = async () => {
     if (scanning || loadingScans || !selectedScanId || !canStart) return;
+    inspection.current++;
 
     setScanning(true);
-    setResult(null);
-    setResultJob(null);
     setInspectedJob(null);
     setError(null);
 
@@ -228,17 +187,18 @@ export default function LLMScanPage() {
   };
 
   const inspectJob = async (id: string) => {
+    const sequence = ++inspection.current;
+    setError(null);
     try {
-      const response = await fetch(`/api/llm-jobs/${id}`);
+      const response = await fetch(`/api/llm-jobs/${id}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Could not load this review.");
-      const job: LlmJob = await response.json(); setInspectedJob(job);
+      const job: LlmJob = await response.json();
+      if (sequence !== inspection.current) return;
+      setInspectedJob(job);
       if (!isLlmJobTerminal(job.status)) { setActiveJob(job); setScanning(true); }
-      else if (job.reviewedCount) {
-        const findings = await fetch(`/api/llm-scan/${job.scanId}`);
-        if (!findings.ok) throw new Error("Could not load review findings.");
-        setResult(await findings.json()); setResultJob(job);
-      } else { setResult(null); setResultJob(null); }
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not load review."); }
+    } catch (failure) {
+      if (sequence === inspection.current) { setInspectedJob(null); setError(failure instanceof Error ? failure.message : "Could not load review."); }
+    }
   };
 
   const cancelReview = async () => {
@@ -250,26 +210,6 @@ export default function LLMScanPage() {
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Cancellation failed."); }
     finally { setCancelling(false); }
   };
-
-  const parseLLMAnalysis = (raw: string | null): LLMAnalysis | null => {
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  };
-
-  const reviewedFindings = result?.findings.filter((f) => f.llmAnalysis && (!resultJob?.contractVersion || parseLLMAnalysis(f.llmAnalysis)?.jobId === resultJob.id)) || [];
-  const falsePositives = reviewedFindings.filter((f) => {
-    const a = parseLLMAnalysis(f.llmAnalysis);
-    return a?.verdict === "likely_false_positive" ||
-      (!a?.verdict && a?.isFalsePositive === true);
-  });
-  const truePositives = reviewedFindings.filter((f) => {
-    const a = parseLLMAnalysis(f.llmAnalysis);
-    return a?.verdict === "likely_true_positive";
-  });
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -416,7 +356,8 @@ export default function LLMScanPage() {
       </Card>
 
       {/* Active Job Progress */}
-      {(activeJob || inspectedJob) && <AiReviewJobCard job={(activeJob || inspectedJob)!} onCancel={() => void cancelReview()} cancelling={cancelling} />}
+      {activeJob && inspectedJob && activeJob.id !== inspectedJob.id && <Button variant="outline" onClick={() => setInspectedJob(null)}>Show active review</Button>}
+      {displayedJob && <AiReviewJobCard job={displayedJob} onCancel={() => void cancelReview()} cancelling={cancelling} />}
 
       {/* Error */}
       {error && (
@@ -426,148 +367,7 @@ export default function LLMScanPage() {
         </div>
       )}
 
-      {/* Results */}
-      {result && (
-        <div className="space-y-4">
-          {/* Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                {result.scan.status === "completed" ? (
-                  <CheckCircle className="h-4 w-4 text-[var(--status-fixed)]" />
-                ) : (
-                  <AlertCircle className="h-4 w-4 text-[var(--status-open)]" />
-                )}
-                Review Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Source Scan</p>
-                  <p className="text-sm font-medium capitalize">{result.scan.status}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Total Findings</p>
-                  <p className="text-sm font-medium">{result.summary.total}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Reviewed</p>
-                  <p className="text-sm font-medium">{reviewedFindings.length}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <ShieldCheck className="h-3 w-3" /> Suggested FPs
-                  </p>
-                  <p className="text-sm font-medium text-[var(--status-false-positive)]">
-                    {falsePositives.length}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <ShieldAlert className="h-3 w-3" /> Suggested TPs
-                  </p>
-                  <p className="text-sm font-medium text-[var(--status-open)]">
-                    {truePositives.length}
-                  </p>
-                </div>
-              </div>
-
-              {/* Severity breakdown */}
-              {result.summary.total > 0 && (
-                <div className="flex items-center gap-3 text-xs">
-                  {Object.entries(result.summary.bySeverity).map(([sev, count]) => (
-                    <div key={sev} className="flex items-center gap-1">
-                      <SeverityBadge severity={sev} />
-                      <span className="text-muted-foreground">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Reviewed findings */}
-          {reviewedFindings.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">
-                  Reviewed Findings ({reviewedFindings.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {reviewedFindings.map((f) => {
-                  const analysis = parseLLMAnalysis(f.llmAnalysis);
-                  return (
-                    <Link
-                      key={f.id}
-                      href={`/findings/${f.id}`}
-                      className="block p-3 rounded-md border border-border hover:bg-accent/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <SeverityBadge severity={f.severity} />
-                        <StatusBadge status={f.status} />
-                        {(analysis?.verdict === "likely_false_positive" ||
-                          (!analysis?.verdict && analysis?.isFalsePositive)) && (
-                          <Badge variant="outline" className="text-xs bg-[var(--status-false-positive-bg)] text-[var(--status-false-positive)]">
-                            FP
-                          </Badge>
-                        )}
-                        <span className="text-xs font-mono text-muted-foreground">
-                          {f.ruleId}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-auto">
-                          {analysis ? `${(analysis.confidence * 100).toFixed(0)}% model estimate` : ""}
-                        </span>
-                      </div>
-                      <p className="text-sm font-medium mb-1">{f.ruleName}</p>
-                      {analysis?.reasoning && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 mb-1">
-                          {analysis.reasoning}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="font-mono">{f.filePath}:{f.lineStart}</span>
-                      </div>
-                      {analysis?.remediation &&
-                        analysis.verdict !== "likely_false_positive" &&
-                        !(!analysis.verdict && analysis.isFalsePositive) && (
-                        <p className="text-xs mt-2 text-[var(--status-fixed)] line-clamp-2">
-                          Fix: {analysis.remediation}
-                        </p>
-                      )}
-                    </Link>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Unreviewed findings */}
-          {result.findings.length > reviewedFindings.length && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm text-muted-foreground">
-                  Unreviewed Findings ({result.findings.length - reviewedFindings.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  {result.findings.length - reviewedFindings.length} findings have no current suggestion from this job. Suggestions from other jobs and accepted decisions are not counted here. Inspect the call history before starting another paid review.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {result.findings.length === 0 && result.scan.status === "completed" && (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-              <CheckCircle className="h-10 w-10 mb-3 text-[var(--status-fixed)]" />
-              <p className="font-medium">No findings in this scan</p>
-              <p className="text-xs mt-1">Select a scan with findings to review.</p>
-            </div>
-          )}
-        </div>
-      )}
+      {displayedJob && <AiReviewHistory key={displayedJob.id} job={displayedJob} />}
 
       {/* Job History */}
       {jobHistory.length > 0 && (
@@ -583,6 +383,7 @@ export default function LLMScanPage() {
               {jobHistory.map((job) => (
                 <div
                   key={job.id}
+                  data-review-job={job.id}
                   className="flex items-center gap-3 p-2.5 rounded-md border border-border text-sm"
                 >
                   <div className="flex-shrink-0">

@@ -11,6 +11,7 @@ import { contractReviewInput, findingContractContext } from "./openapi-context.t
 import { sanitizeLLMText } from "./llm-safety.ts";
 import { batchPrompt, findingEvidenceDigest, freezeFinding, packSnapshot, promptDigest, REVIEW_LIMITS, REVIEW_VERSION, reviewFindingSelect, reviewSystem, scanEvidenceDigest, type ReviewResult, type ReviewSnapshot } from "./ai-review-contract.ts";
 import { llmJobTerminalStatus } from "./llm-job-state.ts";
+import { prepareReviewHistory, REVIEW_HISTORY_VERSION, type SavedReview } from "./ai-review-history.ts";
 
 export const AI_LEASE_MS = 120_000;
 export const AI_DEADLINE_MS = 30 * 60_000;
@@ -18,7 +19,7 @@ export const llmJobMetadata = {
   id: true, scanId: true, projectId: true, mode: true, status: true, totalFindings: true,
   reviewedCount: true, falsePositives: true, currentBatch: true, totalBatches: true,
   errorMessage: true, errorCode: true, errorCount: true, createdAt: true, startedAt: true, completedAt: true,
-  contractVersion: true, provider: true, model: true, inputDigest: true, attempts: true, maxAttempts: true,
+  contractVersion: true, historyVersion: true, provider: true, model: true, inputDigest: true, attempts: true, maxAttempts: true,
   maxCalls: true, callsStarted: true, promptBytes: true, outputTokensReserved: true, heartbeatAt: true, deadlineAt: true,
 } as const;
 export const llmCallMetadata = { id: true, batchIndex: true, status: true, promptDigest: true, responseDigest: true, receipt: true, errorCode: true, startedAt: true, completedAt: true } as const;
@@ -97,7 +98,7 @@ export async function enqueueLlmJob(db: PrismaClient, access: AccessPrincipal, s
     const input = JSON.stringify(snapshot);
     const job = await tx.llmJob.create({ data: {
       scanId, projectId: scan.projectId, requestedBy: access.userId!, activeKey: scanId, mode,
-      contractVersion: REVIEW_VERSION, provider: config.provider, model: config.model, configDigest: reviewConfigDigest(config),
+      contractVersion: REVIEW_VERSION, historyVersion: REVIEW_HISTORY_VERSION, provider: config.provider, model: config.model, configDigest: reviewConfigDigest(config),
       inputDigest: sha256(input), inputCiphertext: encrypt(input), totalFindings: findings.length, totalBatches: snapshot.batches.length,
       maxCalls: REVIEW_LIMITS.calls, deadlineAt: new Date(Date.now() + AI_DEADLINE_MS),
       events: { create: { code: "queued", message: aiMessages.queued, details: JSON.stringify({ inputDigest: sha256(input), findings: findings.length, batches: snapshot.batches.length, graphOmitted: graphContext?.omitted || 0, truncatedFindings: frozen.filter((item) => item.omittedFields.length).length }) } },
@@ -200,6 +201,7 @@ export async function publishLlmBatch(db: PrismaClient, job: LlmJob, snapshot: R
     const now = new Date();
     let protectedDecisions = 0;
     let suggestedFalsePositives = 0;
+    const history: SavedReview[] = [];
     const expected = snapshot.batches[batchIndex];
     if (new Set(results.map((result) => result.findingId)).size !== results.length) throw new AiJobError("invalid_review");
     for (const id of expected) {
@@ -210,28 +212,39 @@ export async function publishLlmBatch(db: PrismaClient, job: LlmJob, snapshot: R
       const frozen = snapshot.findings.find((finding) => finding.id === result.findingId);
       const finding = await tx.finding.findUnique({ where: { id: result.findingId }, select: { ...reviewFindingSelect, aiReviewStatus: true } });
       if (!snapshot.batches[batchIndex].includes(result.findingId) || !frozen || !finding || findingEvidenceDigest(finding) !== frozen.evidenceDigest) throw new AiJobError("source_changed");
-      if (["accepted", "rejected"].includes(finding.aiReviewStatus)) { protectedDecisions++; continue; }
-      if (result.verdict === "likely_false_positive") suggestedFalsePositives++;
+      const preserved = ["accepted", "rejected"].includes(finding.aiReviewStatus);
+      const historyId = randomUUID();
+      history.push({ version: REVIEW_HISTORY_VERSION, id: historyId, jobId: job.id, callId,
+        scanId: job.scanId, projectId: job.projectId!, batchIndex, ordinal: history.length,
+        publication: preserved ? "human_decision_preserved" : "published", provider: job.provider, model: job.model,
+        mode: job.mode, inputDigest: job.inputDigest, scanDigest: snapshot.scanDigest, promptDigest: call.promptDigest,
+        responseDigest: receipt.responseDigest || "", createdAt: now.toISOString(), finding: frozen, result });
+      if (result.verdict === "likely_false_positive" && (!preserved || current.historyVersion >= 1)) suggestedFalsePositives++;
+      if (preserved) { protectedDecisions++; continue; }
       await tx.finding.update({ where: { id: finding.id }, data: {
         aiVerdict: result.verdict, aiConfidence: result.confidence, aiReviewStatus: "suggested",
         llmAnalysis: JSON.stringify({ ...result, isFalsePositive: result.verdict === "likely_false_positive", mode: snapshot.mode,
-          producer: "aegify.dashboard.ai-finding-review", contractVersion: REVIEW_VERSION, jobId: job.id, callId,
+          producer: "aegify.dashboard.ai-finding-review", contractVersion: REVIEW_VERSION, jobId: job.id, callId, historyId,
           provider: job.provider, model: job.model, inputDigest: job.inputDigest, evidenceDigest: frozen.evidenceDigest,
           promptDigest: call.promptDigest, responseDigest: receipt.responseDigest, reviewedAt: now.toISOString(),
           apiContractContextRequested: snapshot.includeApiContracts, apiContractContext: frozen.apiContractContext, omittedFields: frozen.omittedFields, graphRecordsOmitted: snapshot.graphContext?.omitted || 0 }),
       } });
     }
+    if (history.length) await tx.llmReview.createMany({ data: prepareReviewHistory(history) });
     const publishedCount = results.length - protectedDecisions;
-    const missing = snapshot.batches[batchIndex].length - publishedCount;
-    const reviewedCount = current.reviewedCount + publishedCount;
+    // New jobs count every retained review, including one withheld to preserve
+    // a human decision. Legacy jobs retain their earlier publication counters.
+    const reviewedDelta = current.historyVersion >= 1 ? results.length : publishedCount;
+    const missing = snapshot.batches[batchIndex].length - reviewedDelta;
+    const reviewedCount = current.reviewedCount + reviewedDelta;
     const errorCount = current.errorCount + missing;
     const status = batchIndex + 1 === snapshot.batches.length ? llmJobTerminalStatus(current.totalFindings, reviewedCount, errorCount) : "running";
     await tx.llmCall.update({ where: { id: call.id }, data: { status: "completed", responseDigest: receipt.responseDigest || "", receipt: JSON.stringify(receipt), completedAt: now } });
     await tx.llmJob.update({ where: { id: job.id }, data: { currentBatch: batchIndex + 1, reviewedCount, errorCount,
       falsePositives: current.falsePositives + suggestedFalsePositives,
       status, ...(status !== "running" ? { activeKey: null, leaseToken: null, leaseExpiresAt: null, completedAt: now, errorCode: errorCount ? "partial_review" : "", errorMessage: errorCount ? aiMessages.partial_review : "" } : {}) } });
-    await tx.llmJobEvent.create({ data: { jobId: job.id, code: "batch_published", message: "AI suggestions published; human workflow decisions preserved", details: JSON.stringify({ batchIndex, reviewed: publishedCount, omitted: missing, protectedDecisions, callId, status }) } });
-    await tx.auditEvent.create({ data: { projectId: job.projectId, actorId: job.requestedBy!, action: "ai.review.batch_published", targetId: job.id, details: JSON.stringify({ callId, reviewed: publishedCount, omitted: missing, protectedDecisions }) } });
+    await tx.llmJobEvent.create({ data: { jobId: job.id, code: "batch_published", message: "AI reviews saved; human workflow decisions preserved", details: JSON.stringify({ batchIndex, reviewed: reviewedDelta, published: publishedCount, saved: history.length, omitted: missing, protectedDecisions, callId, status }) } });
+    await tx.auditEvent.create({ data: { projectId: job.projectId, actorId: job.requestedBy!, action: "ai.review.batch_published", targetId: job.id, details: JSON.stringify({ callId, reviewed: reviewedDelta, published: publishedCount, saved: history.length, omitted: missing, protectedDecisions }) } });
   }, { timeout: 10_000 });
 }
 
