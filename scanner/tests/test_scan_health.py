@@ -66,7 +66,9 @@ def test_reports_preserve_failure_and_partial_diagnostics(status: ScanStatus) ->
 def test_partial_benchmark_cannot_pass_even_with_perfect_finding_metrics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = tmp_path / "health.py"
+    root = tmp_path / "corpus"
+    root.mkdir()
+    source = root / "health.py"
     source.write_text("value = 1\n")
     manifest = tmp_path / "truth.json"
     manifest.write_text(

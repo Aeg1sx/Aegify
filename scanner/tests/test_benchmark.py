@@ -141,3 +141,18 @@ def test_matching_counts_duplicates_once_and_keeps_rule_and_file_boundaries() ->
 def test_negative_tolerance_is_rejected() -> None:
     with pytest.raises(ValueError, match="non-negative"):
         evaluate_findings([], [], line_tolerance=-1)
+
+
+def test_undefined_ratios_never_earn_a_perfect_score() -> None:
+    empty = evaluate_findings([], [])
+    assert empty.metrics.precision is None
+    assert empty.metrics.recall is None
+    assert empty.metrics.f1 is None
+    missing = evaluate_findings(
+        [], [ExpectedFinding(rule_id="AEG-ONE", file_path="a.py", line_start=1)]
+    )
+    assert missing.metrics.precision is None
+    assert missing.metrics.recall == missing.metrics.f1 == 0
+    unexpected = evaluate_findings([_finding("AEG-ONE", "a.py", 1)], [])
+    assert unexpected.metrics.precision == unexpected.metrics.f1 == 0
+    assert unexpected.metrics.recall is None

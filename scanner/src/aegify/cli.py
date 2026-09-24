@@ -335,13 +335,17 @@ def benchmark_owasp(
     """Statically evaluate exact case/CWE labels; never run benchmark applications."""
     import csv
 
+    from aegify.quality.artifacts import write_report
     from aegify.quality.owasp_runner import run_owasp_python
 
     try:
-        if output_file.resolve().is_relative_to(target.resolve()):
-            raise ValueError("output report must be outside the benchmark corpus")
+        if (
+            output_file.resolve().is_relative_to(target.resolve())
+            or output_file.resolve() == expected_results.resolve()
+        ):
+            raise ValueError("output report must be outside the benchmark corpus and label file")
         report = run_owasp_python(target, expected_results)
-        output_file.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        write_report(output_file, json.dumps(report, indent=2))
     except (OSError, UnicodeError, ValueError, csv.Error) as error:
         console.print(f"[red]Invalid or changed benchmark input: {error}[/red]")
         raise typer.Exit(code=2) from error
@@ -370,6 +374,57 @@ def benchmark_owasp(
         raise typer.Exit(code=1)
 
 
+@app.command("compare-owasp")
+def compare_owasp(
+    baseline: Annotated[Path, typer.Argument(help="Baseline OWASP JSON report", exists=True)],
+    candidate: Annotated[Path, typer.Argument(help="Candidate OWASP JSON report", exists=True)],
+    output_file: Annotated[
+        Path, typer.Option("--output-file", "-o", help="Comparison JSON report")
+    ],
+    baseline_cases: Annotated[Path | None, typer.Option("--baseline-cases", exists=True)] = None,
+    candidate_cases: Annotated[Path | None, typer.Option("--candidate-cases", exists=True)] = None,
+    require_identical: Annotated[
+        bool,
+        typer.Option("--require-identical", help="Require identical implementation and outcomes"),
+    ] = False,
+) -> None:
+    """Validate saved case evidence and gate paired regressions or repeatability."""
+    import csv
+
+    from aegify.quality.artifacts import write_report
+    from aegify.quality.comparison import compare_owasp_reports, load_owasp_report
+
+    try:
+        inputs = [
+            path.resolve()
+            for path in (baseline, candidate, baseline_cases, candidate_cases)
+            if path
+        ]
+        if output_file.resolve() in inputs:
+            raise ValueError("comparison output must not replace an input artifact")
+        report = compare_owasp_reports(
+            load_owasp_report(baseline, baseline_cases),
+            load_owasp_report(candidate, candidate_cases),
+            require_identical=require_identical,
+        )
+        write_report(output_file, json.dumps(report, indent=2))
+    except (OSError, UnicodeError, ValueError, csv.Error) as error:
+        console.print(f"[red]Invalid or incomparable benchmark evidence: {error}[/red]")
+        raise typer.Exit(code=2) from error
+    console.print_json(
+        data={
+            "mode": report["mode"],
+            "identical_replay": report["identical_replay"],
+            "regression_free": report["regression_free"],
+            "evaluation_complete": report["evaluation_complete"],
+            "changed_cases": len(report["changed_cases"]),
+            "coverage_lost": len(report["coverage_lost"]),
+            "report": str(output_file),
+        }
+    )
+    raise typer.Exit(code=report["exit_code"])
+
+
 @app.command("benchmark")
 def benchmark(
     target: Annotated[Path, typer.Argument(help="Owned benchmark source tree", exists=True)],
@@ -377,7 +432,7 @@ def benchmark(
         Path,
         typer.Option(
             "--ground-truth",
-            help="JSON file with an expected findings array",
+            help="Versioned JSON ground-truth manifest",
             exists=True,
         ),
     ],
@@ -392,56 +447,34 @@ def benchmark(
     ] = None,
 ) -> None:
     """Measure precision and recall against versioned, owned ground truth."""
-    from pydantic import ValidationError
-
-    from aegify.quality.benchmark import (
-        GroundTruthManifest,
-        digest_bytes,
-        digest_source_tree,
-        evaluate_findings,
-    )
-    from aegify.scanner.engine import ScanEngine
+    from aegify.quality.artifacts import write_report
+    from aegify.quality.benchmark_runner import benchmark_root, run_owned_benchmark
 
     try:
-        ground_truth_bytes = ground_truth.read_bytes()
-        payload = json.loads(ground_truth_bytes)
-        manifest = GroundTruthManifest.model_validate(payload)
-        source_digest = digest_source_tree(target)
-    except (
-        OSError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        ValidationError,
-        ValueError,
-    ) as error:
-        console.print(f"[red]Invalid benchmark corpus: {error}[/red]")
+        if output_file and (
+            output_file.resolve().is_relative_to(benchmark_root(target))
+            or output_file.resolve() == ground_truth.resolve()
+        ):
+            raise ValueError("output must be outside the source directory and label file")
+        report = run_owned_benchmark(target, ground_truth)
+        rendered = report.model_dump_json(indent=2)
+        if output_file:
+            write_report(output_file, rendered)
+        else:
+            console.print(rendered)
+    except (OSError, UnicodeError, ValueError) as error:
+        console.print(f"[red]Invalid or changed benchmark input: {error}[/red]")
         raise typer.Exit(code=2) from error
-
-    config = AegifyConfig.load(target if target.is_dir() else target.parent)
-    config.rules.severity_threshold = "low"
-    config.llm.enabled = False
-    result = ScanEngine(config=config).scan(target)
-    target_root = target if target.is_dir() else target.parent
-    report = evaluate_findings(
-        result.findings,
-        manifest.expected,
-        target_root=target_root,
-        rule_scope=manifest.rule_scope,
-        corpus_id=manifest.corpus_id,
-        corpus_version=manifest.corpus_version,
-        source_digest=source_digest,
-        ground_truth_digest=digest_bytes(ground_truth_bytes),
-    )
-    report.analysis_status = result.status
-    report.analysis_gaps = result.analysis_gaps
-    rendered = report.model_dump_json(indent=2)
-    if output_file:
-        output_file.write_text(rendered + "\n", encoding="utf-8")
-    else:
-        console.print(rendered)
-    if result.status != ScanStatus.COMPLETED or result.analysis_gaps:
-        raise typer.Exit(code=_scan_exit_code(result))
-    if report.metrics.precision < min_precision or report.metrics.recall < min_recall:
+    if report.analysis_status not in {ScanStatus.COMPLETED, ScanStatus.PARTIAL}:
+        raise typer.Exit(code=2)
+    if not report.evaluation_complete:
+        raise typer.Exit(code=3)
+    if (
+        report.metrics.precision is None
+        or report.metrics.recall is None
+        or report.metrics.precision < min_precision
+        or report.metrics.recall < min_recall
+    ):
         raise typer.Exit(code=1)
 
 
