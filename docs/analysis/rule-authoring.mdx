@@ -49,8 +49,10 @@ Patterns normalize into either call matching or source matching.
 Common call fields:
 
 - `callee` / `callee_match`
+- `callee_match_mode: full` for an exact parsed callee; the default uses regex search
 - `receiver` / `receiver_match`
 - `args_match`, `args_exclude`, and `missing_args`
+- `args_match_index` to inspect one zero-based argument rather than every argument together
 - language restrictions
 
 Common source fields:
@@ -76,6 +78,27 @@ configuration value, bind the identifier, assignment separator and value in one
 bounded expression. For API arguments, prefer a parsed call, an exact callee
 pattern and constraints on that call's arguments. Test an unrelated identifier,
 the same keyword on another line, and a matching keyword in a different argument.
+
+### Hash algorithm selection
+
+`AEG-A02-002` and `AEG-A02-003` separate named MD5/SHA-1 constructors from
+algorithm-selecting factories. A factory must match the complete parsed callee
+and select an MD5/SHA-1 literal in its first argument. An algorithm name inside
+data, options, another function name or model metadata is not that selection.
+This follows the argument contracts of
+[Node crypto](https://nodejs.org/api/crypto.html#cryptocreatehashalgorithm-options),
+[Python hashlib](https://docs.python.org/3/library/hashlib.html), and
+[Java MessageDigest](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/security/MessageDigest.html).
+Direct constructors, including zero-argument
+[Go md5.New](https://pkg.go.dev/crypto/md5#New), are checked separately.
+
+Fixtures cover explicit parsed call forms in Python, JavaScript, TypeScript, Java,
+Go, Rust, Swift and Kotlin. These are syntax/selection checks, not library runtime
+compatibility tests. Dynamic algorithms, wrappers, aliases and shadowed names
+still need symbol/value resolution and human review. A missing literal match
+does not establish safe cryptography. Candidates ask whether the resolved API is
+used for a security purpose; they do not treat every checksum or HMAC use as a
+confirmed vulnerability.
 
 ### OAuth scope review boundary
 
