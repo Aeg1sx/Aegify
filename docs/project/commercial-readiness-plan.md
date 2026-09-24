@@ -732,6 +732,10 @@ model quality, calibrated confidence, verified dollar costs, monetary quotas,
 live Claude Code/Codex isolation, or integration of the separate source-tool agent
 into every dashboard role. The frozen OWASP precision/recall measurements remain
 unchanged and below a commercial release target. Those acceptance items stay open.
+Receipts preserve each call's metadata, but unaccepted finding suggestions can be
+replaced by a later review. Immutable storage and retrieval of every historical
+AI narrative remain separate work; the history screen counts only suggestions
+still associated with its inspected job.
 
 The local self-scan preflight completed on 311 files in 218.5 seconds with 689
 advisory candidates, no blocking finding and no analysis error. This is a changed

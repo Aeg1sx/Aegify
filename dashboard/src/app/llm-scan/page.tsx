@@ -553,7 +553,7 @@ export default function LLMScanPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  {result.findings.length - reviewedFindings.length} findings have no current suggestion from this job. Earlier suggestions and accepted decisions are preserved. Inspect the call history before starting another paid review.
+                  {result.findings.length - reviewedFindings.length} findings have no current suggestion from this job. Suggestions from other jobs and accepted decisions are not counted here. Inspect the call history before starting another paid review.
                 </p>
               </CardContent>
             </Card>
