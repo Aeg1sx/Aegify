@@ -62,6 +62,9 @@ class YAMLRule(SecurityRule):
         self.definition = definition
         self.spec = spec
         self.raw_yaml = raw_yaml
+        # Authoring previews must not treat an early return at a detector's
+        # internal cap as exhaustive evaluation. Reset for every evaluation.
+        self.evaluation_limited = False
 
     def evaluate(
         self,
@@ -69,6 +72,7 @@ class YAMLRule(SecurityRule):
         call_graph: CodeGraph,
         taint_flows: list[TaintFlow],
     ) -> list[Finding]:
+        self.evaluation_limited = False
         findings: list[Finding] = []
 
         # Taint-based detection
@@ -166,6 +170,7 @@ class YAMLRule(SecurityRule):
                     if matched:
                         break
                 if len(findings) >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
                     break
         return findings
 
@@ -320,6 +325,7 @@ class YAMLRule(SecurityRule):
                 else:
                     file_findings.extend(self._match_pattern(ast, pattern_spec))
                 if len(file_findings) >= cap:
+                    self.evaluation_limited = True
                     break
 
             findings.extend(file_findings[:cap])
@@ -366,6 +372,7 @@ class YAMLRule(SecurityRule):
                     )
                 )
                 if len(findings) >= self._MAX_REGEX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
                     return findings
         return findings
 
@@ -405,6 +412,7 @@ class YAMLRule(SecurityRule):
         for call in ast.calls:
             # Early termination when file cap reached
             if len(findings) >= self._MAX_FINDINGS_PER_FILE:
+                self.evaluation_limited = True
                 break
 
             # Early skip: if args pattern required but call has no arguments
@@ -979,6 +987,8 @@ class TaintSpec:
     """Specification for taint-based matching."""
 
     def __init__(self, data: dict[str, Any]) -> None:
+        if errors := self.validation_errors(data):
+            raise ValueError("; ".join(errors))
         self.sink_types: list[str] = data.get("sink_types", [])
         self.source_types: list[str] = data.get("source_types", [])
         self.sink_pattern: str | None = data.get("sink_pattern")
@@ -994,6 +1004,58 @@ class TaintSpec:
         # Pre-build sets for O(1) lookup
         self._sink_types_set: set[str] = set(self.sink_types)
         self._source_types_set: set[str] = set(self.source_types)
+
+    @staticmethod
+    def validation_errors(data: object) -> list[str]:
+        if not isinstance(data, dict):
+            return ["taint must be a mapping"]
+        supported = {
+            "sink_types",
+            "source_types",
+            "sink_pattern",
+            "source_pattern",
+            "ignore_sanitizers",
+        }
+        errors = []
+        if any(key not in supported for key in data):
+            errors.append(
+                "unsupported taint field; use source_types/sink_types "
+                "or source_pattern/sink_pattern"
+            )
+        selectors = False
+        for key in ("sink_types", "source_types"):
+            if key not in data:
+                continue
+            value = data[key]
+            if (
+                not isinstance(value, list)
+                or len(value) > 100
+                or any(
+                    not isinstance(item, str) or not item.strip() or len(item) > 256
+                    for item in value
+                )
+            ):
+                errors.append(f"{key} must be a bounded list of nonempty type names")
+            else:
+                selectors = selectors or bool(value)
+        for key in ("sink_pattern", "source_pattern"):
+            if key not in data:
+                continue
+            value = data[key]
+            if not isinstance(value, str) or not value or len(value) > 4096:
+                errors.append(f"{key} must be a nonempty pattern of at most 4096 characters")
+                continue
+            try:
+                re.compile(value)
+            except re.error, OverflowError, RecursionError:
+                errors.append(f"{key} is not a valid regular expression")
+            else:
+                selectors = True
+        if "ignore_sanitizers" in data and type(data["ignore_sanitizers"]) is not bool:
+            errors.append("ignore_sanitizers must be a YAML boolean")
+        if not selectors:
+            errors.append("taint needs at least one source or sink selector")
+        return errors
 
 
 class SemanticSpec:

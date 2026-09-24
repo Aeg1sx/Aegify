@@ -82,12 +82,15 @@ installation and external filesystem, disk quota and egress controls. This adapt
 does not establish those isolation controls. No real-provider compatibility or
 model-quality result is implied by the offline contract tests.
 
-OpenAI and CLI adapters reject incomplete, refused, malformed or ambiguous results.
+API and CLI adapters reject incomplete, refused, malformed or ambiguous results.
 Their stages retain a `backend_error_code` and no narrative on failure; deterministic
 facts remain available. A finished run with partial/failed stages is `partial`.
 An outstanding approval retains `awaiting_approval`. See the
 [scanner adapter contract](/operations/ai-providers#scanner-agent-adapters) for
-the strict response shape, stop codes and remaining execution boundaries.
+the strict response shape, stop codes and remaining execution boundaries. Anthropic
+agent artifacts now retain bounded per-role call receipts and reported native usage.
+Their monetary cost remains unknown. Other providers currently expose no shared
+usage accounting; a null receipt summary must not be interpreted as zero spend.
 
 ## Tools and MCP boundary
 
@@ -100,7 +103,7 @@ output digests. It does not let a model discover or open arbitrary MCP servers.
 This pipeline currently makes one narrative call per stage using precollected
 evidence. Model-selected source reads belong to the separate
 [bounded AI review path](/analysis/ai-sast-operations); durable dashboard execution
-and a shared cost/usage receipt across providers remain separate work.
+and a shared cost/usage receipt across all providers remain separate work.
 
 Prompts are versioned and hashed. Repository content, tool results, issue text,
 and CVE descriptions are explicitly treated as untrusted data rather than

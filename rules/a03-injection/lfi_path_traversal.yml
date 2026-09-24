@@ -34,12 +34,13 @@ rules:
       source_types: [http_param, http_body, http_header]
       sink_types: [file_read]
       sink_pattern: "(fs\\.(readFile|createReadStream|promises\\.readFile)|open\\(|io\\.open|os\\.(Open|ReadFile)|ioutil\\.ReadFile|Files\\.(readAllBytes|readAllLines|readString)|FileInputStream|BufferedReader)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "path_join"
-        - through: "path_resolve"
-        - through: "string_concatenation"
-        - through: "template_literal"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "path_join"
+        # - through: "path_resolve"
+        # - through: "string_concatenation"
+        # - through: "template_literal"
     defense_patterns:
       - "path\\.resolve.*startsWith"
       - "path\\.normalize"
@@ -99,11 +100,12 @@ rules:
       source_types: [http_param, http_body, http_header]
       sink_types: [code_execution, file_inclusion]
       sink_pattern: "(require|import|__import__|importlib\\.import_module)\\s*\\("
-      propagation:
-        - through: "variable_assignment"
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "path_join"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "path_join"
     defense_patterns:
       - "allowlist"
       - "whitelist"
@@ -157,9 +159,10 @@ rules:
       source_types: [http_body, file_upload]
       sink_types: [file_write, file_extract]
       sink_pattern: "(extractall|extract\\(|getNextEntry|entries|unzip|decompress|tar\\.(extract|x))"
-      propagation:
-        - through: "variable_assignment"
-        - through: "archive_entry_name"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "archive_entry_name"
     defense_patterns:
       - "os\\.path\\.realpath.*startsWith"
       - "getCanonicalPath.*startsWith"
@@ -213,11 +216,12 @@ rules:
       source_types: [http_body, file_upload]
       sink_types: [file_write]
       sink_pattern: "(file\\.(save|mv)|fs\\.(writeFile|rename|createWriteStream)|shutil\\.(copy|move)|os\\.rename|Files\\.(copy|move)|FileOutputStream|os\\.Create)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "path_join"
-        - through: "string_concatenation"
-        - through: "template_literal"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "path_join"
+        # - through: "string_concatenation"
+        # - through: "template_literal"
     defense_patterns:
       - "path\\.basename"
       - "os\\.path\\.basename"
@@ -271,10 +275,11 @@ rules:
       source_types: [http_param, http_body, http_header]
       sink_types: [http_redirect]
       sink_pattern: "(redirect|sendRedirect|http\\.Redirect|HttpResponseRedirect|RedirectResponse|Location\\s*[=:])"
-      propagation:
-        - through: "variable_assignment"
-        - through: "string_concatenation"
-        - through: "template_literal"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "string_concatenation"
+        # - through: "template_literal"
     defense_patterns:
       - "allowlist"
       - "whitelist"
@@ -330,12 +335,13 @@ rules:
       source_types: [http_param, http_body, http_header]
       sink_types: [file_read, file_serve]
       sink_pattern: "(sendFile|download|send_file|send_from_directory|ServeFile|StreamingResponse|FileResponse|FileSystemResource)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "path_join"
-        - through: "path_resolve"
-        - through: "string_concatenation"
-        - through: "template_literal"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "path_join"
+        # - through: "path_resolve"
+        # - through: "string_concatenation"
+        # - through: "template_literal"
     defense_patterns:
       - "express\\.static"
       - "root\\s*:"

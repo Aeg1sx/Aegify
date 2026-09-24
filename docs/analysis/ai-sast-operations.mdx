@@ -42,6 +42,24 @@ history. Choose a run's **Details** to inspect its retained results and compare
 them with the current finding. See [saved review operations](/operations/self-hosted-workers#compare-saved-review-results)
 for migration, project access, bounded retrieval, backup and retention behavior.
 
+### Ordinary scanner and PR reviews
+
+The ordinary `scan --llm` and `scan-pr --llm` paths retain every deterministic
+finding. A model response must identify each reviewed finding by an in-range integer
+index; missing, conflicting or repeated indices invalidate the batch. Omitted
+findings receive an explicit review gap. Invalid verdict, confidence, evidence or
+reasoning fields produce `needs_review`. Suggested fixes remain inside `ai_review`
+and never overwrite scanner-authored remediation, severity, confidence or CI disposition.
+
+These commands and workspace source review use the
+[scanner Anthropic accounting contract](/operations/ai-providers#scanner-anthropic-calls-and-accounting).
+JSON/SARIF retain call receipts; terminal and GitHub output distinguish unknown
+cost from an unused model and an old estimate. Scanner exit codes continue to
+describe deterministic scan health and security gates. A failed optional AI call
+does not itself change a complete static scan to failed; consumers requiring AI
+completion must also inspect reviews and call outcomes. `agent-run` separately
+returns partial status and exit code 3 when its model stage fails.
+
 ## Repository source scan
 
 The dashboard's **Start source scan** action now queues the deterministic Python

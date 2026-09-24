@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any
 
 from aegify.llm.budget import TokenBudget
@@ -15,6 +14,7 @@ from aegify.llm.prompts import (
     REMEDIATION_SYSTEM,
     format_finding_for_batch,
 )
+from aegify.llm.review_result import review_from_result, save_batch, save_remediation
 from aegify.models import AIReview, AIReviewVerdict, Finding, Severity, TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -31,8 +31,9 @@ class LLMVerifier:
         verify_threshold: float = 0.7,
         batch_size: int = 5,
         base_url: str | None = None,
+        max_calls: int = 100,
     ) -> None:
-        self.budget = TokenBudget(total_budget=token_budget)
+        self.budget = TokenBudget(total_budget=token_budget, max_calls=max_calls)
         self.client = LLMClient(
             api_key=api_key,
             model=model,
@@ -48,25 +49,25 @@ class LLMVerifier:
         Strategy:
         1. Filter findings that need LLM verification (below confidence threshold)
         2. Batch verify in groups
-        3. Generate remediation for confirmed findings
+        3. Keep remediation suggestions separate from the scanner's guidance
         """
         if not findings:
             return findings
 
         # Split into findings that need verification vs already high confidence
         needs_verification: list[Finding] = []
-        auto_confirmed: list[Finding] = []
+        not_selected: list[Finding] = []
 
         for finding in findings:
             if finding.confidence < self.verify_threshold:
                 needs_verification.append(finding)
             else:
-                auto_confirmed.append(finding)
+                not_selected.append(finding)
 
         logger.info(
-            "LLM verification: %d need verification, %d auto-confirmed",
+            "LLM review: %d selected, %d outside the configured confidence threshold",
             len(needs_verification),
-            len(auto_confirmed),
+            len(not_selected),
         )
 
         # Batch verify
@@ -103,14 +104,8 @@ class LLMVerifier:
                 BATCH_VERIFICATION_SYSTEM, prompt, phase="verification"
             )
 
-            for result in results:
-                idx = result.get("finding_index", 0)
-                if idx >= len(batch):
-                    continue
-                finding = batch[idx]
-                finding.ai_review = self._review_from_result(result)
-                finding.llm_analysis = finding.ai_review.model_dump_json()
-                reviewed.append(finding)
+            save_batch(batch, results, self.client.model)
+            reviewed.extend(batch)
 
         return reviewed
 
@@ -146,60 +141,15 @@ class LLMVerifier:
             )
 
             if isinstance(result, dict):
-                finding.remediation = self._format_remediation(result)
+                save_remediation(finding, result, self.client.model)
 
     def get_token_usage(self) -> TokenUsage:
         """Get current token usage statistics."""
-        return TokenUsage(
-            input_tokens=self.budget.input_tokens_used,
-            output_tokens=self.budget.output_tokens_used,
-            total_cost_usd=self.budget.estimated_cost_usd,
-        )
-
-    @staticmethod
-    def _format_remediation(result: dict[str, Any]) -> str:
-        """Format LLM remediation result into readable text."""
-        parts: list[str] = []
-
-        if explanation := result.get("explanation"):
-            parts.append(f"**Vulnerability**: {explanation}")
-
-        if fixed_code := result.get("fixed_code"):
-            parts.append(f"\n**Fix**:\n```\n{fixed_code}\n```")
-
-        if recommendations := result.get("recommendations"):
-            parts.append("\n**Recommendations**:")
-            for rec in recommendations:
-                parts.append(f"- {rec}")
-
-        return "\n".join(parts) if parts else ""
+        return self.budget.get_token_usage()
 
     @staticmethod
     def _review_from_result(result: dict[str, Any]) -> AIReview:
-        verdicts = {
-            "TRUE_POSITIVE": AIReviewVerdict.LIKELY_TRUE_POSITIVE,
-            "LIKELY_TRUE_POSITIVE": AIReviewVerdict.LIKELY_TRUE_POSITIVE,
-            "FALSE_POSITIVE": AIReviewVerdict.LIKELY_FALSE_POSITIVE,
-            "LIKELY_FALSE_POSITIVE": AIReviewVerdict.LIKELY_FALSE_POSITIVE,
-        }
-        verdict = verdicts.get(str(result.get("verdict", "")).upper(), AIReviewVerdict.NEEDS_REVIEW)
-        confidence = result.get("confidence", 0.0)
-        if not isinstance(confidence, (int, float)) or not math.isfinite(confidence):
-            confidence = 0.0
-        return AIReview(
-            verdict=verdict,
-            confidence=max(0.0, min(float(confidence), 1.0)),
-            reasoning=str(result.get("reasoning", "")),
-            evidence_for=[
-                str(item) for item in result.get("evidence_for", []) if isinstance(item, str)
-            ],
-            evidence_against=[
-                str(item) for item in result.get("evidence_against", []) if isinstance(item, str)
-            ],
-            evidence_gaps=[
-                str(item) for item in result.get("evidence_gaps", []) if isinstance(item, str)
-            ],
-        )
+        return review_from_result(result)
 
     @staticmethod
     def _detect_language(file_path: str) -> str:

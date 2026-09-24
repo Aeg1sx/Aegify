@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "suite_id": "custom-call",
+  "suite_version": "1.0.0",
+  "rule_id": "AEG-CUSTOM-001",
+  "cases": [
+    {
+      "id": "request-argument",
+      "files": [{"path": "handlers/main.py", "content": "def handle(request):\n    return review_target(request)\n"}],
+      "expected": [{"rule_id": "AEG-CUSTOM-001", "file_path": "handlers/main.py", "line_start": 2}]
+    },
+    {
+      "id": "constant-argument",
+      "files": [{"path": "handlers/main.py", "content": "def handle(request):\n    return review_target('fixed')\n"}],
+      "expected": []
+    },
+    {
+      "id": "different-callee",
+      "files": [{"path": "handlers/main.py", "content": "def handle(request):\n    return different_target(request)\n"}],
+      "expected": []
+    },
+    {
+      "id": "different-argument",
+      "files": [{"path": "handlers/main.py", "content": "def handle(request):\n    return review_target('fixed', request)\n"}],
+      "expected": []
+    }
+  ]
+}

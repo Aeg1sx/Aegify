@@ -27,12 +27,13 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, environment_variable]
       sink_types: [code_execution]
       sink_pattern: "eval"
-      propagation:
-        - through: "string_concatenation"
-        - through: "format_string"
-        - through: "f_string"
-        - through: "percent_format"
-        - through: "str_join"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "format_string"
+        # - through: "f_string"
+        # - through: "percent_format"
+        # - through: "str_join"
     defense_patterns:
       - "ast\\.literal_eval"
       - "json\\.loads"
@@ -81,11 +82,12 @@ rules:
       source_types: [http_param, http_body, http_header, file_read, database_read]
       sink_types: [code_execution]
       sink_pattern: "exec"
-      propagation:
-        - through: "string_concatenation"
-        - through: "format_string"
-        - through: "file_read"
-        - through: "compile"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "format_string"
+        # - through: "file_read"
+        # - through: "compile"
     defense_patterns:
       - "ast\\.literal_eval"
       - "restricted_globals"
@@ -128,12 +130,13 @@ rules:
       source_types: [http_param, http_body, http_header, environment_variable, file_read]
       sink_types: [os_command]
       sink_pattern: "subprocess\\.(Popen|call|check_output|check_call|run)"
-      propagation:
-        - through: "string_concatenation"
-        - through: "format_string"
-        - through: "f_string"
-        - through: "list_append"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "format_string"
+        # - through: "f_string"
+        # - through: "list_append"
+        # - through: "variable_assignment"
     defense_patterns:
       - "shell\\s*=\\s*False"
       - "shlex\\.quote"
@@ -181,11 +184,12 @@ rules:
       source_types: [http_param, http_body, http_header, file_read, database_read, environment_variable]
       sink_types: [os_command]
       sink_pattern: "os\\.system"
-      propagation:
-        - through: "string_concatenation"
-        - through: "format_string"
-        - through: "f_string"
-        - through: "percent_format"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "format_string"
+        # - through: "f_string"
+        # - through: "percent_format"
     defense_patterns:
       - "subprocess\\.run\\s*\\(\\s*\\["
       - "shlex\\.quote"
@@ -228,11 +232,12 @@ rules:
       source_types: [http_param, http_body, http_header, file_read, environment_variable]
       sink_types: [os_command]
       sink_pattern: "os\\.popen"
-      propagation:
-        - through: "string_concatenation"
-        - through: "format_string"
-        - through: "f_string"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "format_string"
+        # - through: "f_string"
+        # - through: "variable_assignment"
     defense_patterns:
       - "subprocess\\.run\\s*\\(\\s*\\["
       - "subprocess\\.Popen\\s*\\(\\s*\\["
@@ -284,12 +289,13 @@ rules:
       source_types: [http_body, http_param, file_read, network_socket, cache_read, message_queue]
       sink_types: [deserialization]
       sink_pattern: "pickle\\.(loads|load)|Unpickler|cPickle\\.(loads|load)|shelve\\.open|joblib\\.load"
-      propagation:
-        - through: "base64_decode"
-        - through: "zlib_decompress"
-        - through: "network_receive"
-        - through: "file_read"
-        - through: "cache_get"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "base64_decode"
+        # - through: "zlib_decompress"
+        # - through: "network_receive"
+        # - through: "file_read"
+        # - through: "cache_get"
     defense_patterns:
       - "json\\.loads"
       - "hmac\\.compare_digest"

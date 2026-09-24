@@ -16,10 +16,45 @@ export interface RuleValidationResult {
 const RULE_ID = /^AEG-[A-Z0-9][A-Z0-9_-]{2,80}$/;
 const SEVERITIES = new Set(["critical", "high", "medium", "low"]);
 const MAX_RULE_BYTES = 1_000_000;
+const TAINT_FIELDS = new Set(["source_types", "sink_types", "source_pattern", "sink_pattern", "ignore_sanitizers"]);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
+}
+
+function taintShapeErrors(value: unknown): string[] {
+  const taint = asRecord(value);
+  if (!taint) return ["Taint must be a source/sink configuration object."];
+  const errors: string[] = [];
+  if (Object.keys(taint).some((key) => !TAINT_FIELDS.has(key))) {
+    errors.push("Unsupported taint field. Use source_types/sink_types or source_pattern/sink_pattern; propagation comes from scanner models.");
+  }
+  let selector = false;
+  for (const key of ["source_types", "sink_types"]) {
+    if (!Object.hasOwn(taint, key)) continue;
+    const types = taint[key];
+    if (!Array.isArray(types) || types.length > 100 || types.some((item) => typeof item !== "string" || !item.trim() || [...item].length > 256)) {
+      errors.push(`${key} must be a list of at most 100 nonempty type names, each at most 256 characters.`);
+    } else {
+      selector ||= types.length > 0;
+    }
+  }
+  for (const key of ["source_pattern", "sink_pattern"]) {
+    if (!Object.hasOwn(taint, key)) continue;
+    const pattern = taint[key];
+    if (typeof pattern !== "string" || !pattern || [...pattern].length > 4096) {
+      errors.push(`${key} must be a nonempty pattern of at most 4096 characters.`);
+    } else {
+      // Python regex syntax is checked by the scanner, never by JS RegExp.
+      selector = true;
+    }
+  }
+  if (Object.hasOwn(taint, "ignore_sanitizers") && typeof taint.ignore_sanitizers !== "boolean") {
+    errors.push("ignore_sanitizers must be a YAML boolean.");
+  }
+  if (!selector) errors.push("Taint needs at least one source or sink selector.");
+  return errors;
 }
 
 function ruleLine(source: string, id: string, occurrence = 0): number | undefined {
@@ -143,8 +178,10 @@ export function validateRuleYaml(
         }
       }
     }
-    if (rule.taint !== undefined && !asRecord(rule.taint)) {
-      diagnostics.push({ level: "error", message: "Taint must be a source/sink configuration object.", line, ruleId: id || undefined });
+    if (Object.hasOwn(rule, "taint")) {
+      diagnostics.push(...taintShapeErrors(rule.taint).map((message): RuleDiagnostic => ({
+        level: "error", message, line, ruleId: id || undefined,
+      })));
     }
     if (rule.cwe_id !== undefined && rule.cwe_id !== null && (typeof rule.cwe_id !== "number" || !Number.isSafeInteger(rule.cwe_id) || rule.cwe_id <= 0)) {
       diagnostics.push({ level: "error", message: "CWE ID must be a positive integer or null.", line, ruleId: id || undefined });
