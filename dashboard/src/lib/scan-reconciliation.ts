@@ -57,7 +57,7 @@ export async function publishScanImport(tx: Prisma.TransactionClient, imported: 
                 });
                 if (!absent.length) break;
                 const ids = absent.map((row) => row.id);
-                await tx.findingIdentity.updateMany({ where: { projectId, id: { in: ids } }, data: { absentAt: new Date() } });
+                await tx.findingIdentity.updateMany({ where: { projectId, id: { in: ids } }, data: { absentAt: new Date(), workflowRevision: { increment: 1 } } });
                 await tx.finding.updateMany({ where: { ...previous, identityId: { in: ids } }, data: { isCurrent: false } });
               }
               await tx.finding.updateMany({ where: { ...previous, ...scope }, data: { isCurrent: false } });
@@ -74,7 +74,7 @@ export async function publishScanImport(tx: Prisma.TransactionClient, imported: 
             const scope = { repositoryId: "", ruleId: { in: rules }, filePath: { in: files } };
             await tx.findingIdentity.updateMany({
               where: { projectId, ...scope, absentAt: null, lastSeenScanId: { not: scanId } },
-              data: { absentAt: new Date() },
+              data: { absentAt: new Date(), workflowRevision: { increment: 1 } },
             });
             await tx.finding.updateMany({ where: { ...previous, ...scope }, data: { isCurrent: false } });
           }

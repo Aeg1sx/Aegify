@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeFindingClassification, normalizeFindingEvidence, normalizeSourceSnippet, scanHealthForRun, workspaceSnapshotForRun } from "./sarif-evidence.ts";
 import { classifyFindingBaseline, findingIdentityScope, findingMessageDigest, legacyFindingFingerprint, relativeIdentityPath, stableFindingFingerprint } from "./finding-lifecycle.ts";
 import { migrateFindingIdentities, readFindingIdentities } from "./finding-identity-import.ts";
+import { findingManagement } from "./finding-workflow.ts";
 import { publishScanImport } from "./scan-reconciliation.ts";
 import { writeTransaction } from "./database-runtime.ts";
 
@@ -472,6 +473,9 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
             repositoryId: finding.repositoryId,
             modulePath: finding.modulePath,
             status,
+            ...(reopened || triageExpired ? {
+              workflowRevision: { increment: 1 }, triageReason: "", triageActor: "", triageExpiresAt: null,
+            } : {}),
             lastSeenAt: new Date(),
             lastSeenScanId: scan.id,
             occurrenceCount: { increment: 1 },
@@ -521,6 +525,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         const identity = identityByFingerprint.get(finding.fingerprint);
         return {
           ...finding,
+          ...(identity ? findingManagement(identity) : {}),
           status: identity?.status || "open",
           identityId: identity?.id || "",
           baselineState: baselineByFingerprint.get(finding.fingerprint) || "new",

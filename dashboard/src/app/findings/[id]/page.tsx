@@ -69,6 +69,13 @@ interface GraphEdge {
 }
 
 interface FindingDetail {
+  isCurrent: boolean;
+  permissions?: { canTriage: boolean };
+  workflow?: {
+    version: string; scope: "identity" | "observation"; needsReview: boolean;
+    status: string; owner: string; dueAt: string | null; priority: string; tags: string;
+    ticketKey: string; ticketUrl: string; reason: string; expiresAt: string | null;
+  };
   apiContractContext?: ApiContractContextView[];
   id: string;
   scanId: string;
@@ -187,6 +194,8 @@ export default function FindingDetailPage() {
   const [loadError, setLoadError] = useState("");
   const [updating, setUpdating] = useState(false);
   const [triageReason, setTriageReason] = useState("");
+  const [triageVersion, setTriageVersion] = useState("");
+  const [managementVersion, setManagementVersion] = useState("");
   const [triageExpiresAt, setTriageExpiresAt] = useState("");
   const [triageError, setTriageError] = useState("");
   const [owner, setOwner] = useState("");
@@ -230,13 +239,16 @@ export default function FindingDetailPage() {
         if (controller.signal.aborted) return;
         setLoadError("");
         setFinding(data);
-        setTriageReason(data.identity?.triageReason || "");
-        setTriageExpiresAt(data.identity?.triageExpiresAt?.slice(0, 10) || "");
-        setOwner(data.owner || "");
-        setDueAt(data.dueAt?.slice(0, 10) || "");
-        setPriority(data.priority || "");
+        const workflow = data.workflow || data;
+        setTriageVersion(workflow.version || "");
+        setManagementVersion(workflow.version || "");
+        setTriageReason(workflow.reason || data.identity?.triageReason || "");
+        setTriageExpiresAt(workflow.expiresAt?.slice(0, 10) || "");
+        setOwner(workflow.owner || "");
+        setDueAt(workflow.dueAt?.slice(0, 10) || "");
+        setPriority(workflow.priority || "");
         try {
-          setTags(Array.isArray(JSON.parse(data.tags || "[]")) ? JSON.parse(data.tags || "[]").join(", ") : "");
+          setTags(Array.isArray(JSON.parse(workflow.tags || "[]")) ? JSON.parse(workflow.tags || "[]").join(", ") : "");
         } catch {
           setTags("");
         }
@@ -278,8 +290,37 @@ export default function FindingDetailPage() {
     return () => obs.disconnect();
   }, [showGraph]);
 
-  const updateStatus = async (newStatus: string) => {
+  const refreshWorkflow = async (saved: "all" | "triage" | "management" | "ticket" = "all") => {
     if (!finding) return;
+    const response = await fetch(`/api/findings/${finding.id}`);
+    const data = await response.json();
+    if (!response.ok || !data.scan) throw new Error(data.error || "Unable to reload finding.");
+    setFinding(data);
+    const workflow = data.workflow || data;
+    const before = finding.workflow;
+    let previousTags = "";
+    try { previousTags = JSON.parse(before?.tags || "[]").join(", "); } catch { /* malformed legacy tags stay visible for review */ }
+    const untouchedTriage = triageVersion === before?.version && triageReason === before.reason
+      && triageExpiresAt === (before.expiresAt?.slice(0, 10) || "");
+    const untouchedManagement = managementVersion === before?.version && owner === before.owner
+      && dueAt === (before.dueAt?.slice(0, 10) || "") && priority === before.priority && tags === previousTags;
+    if (saved === "all" || saved === "triage" || untouchedTriage) {
+      setTriageReason(workflow.reason || "");
+      setTriageExpiresAt(workflow.expiresAt?.slice(0, 10) || "");
+      setTriageVersion(workflow.version || "");
+    }
+    if (saved === "all" || saved === "management" || untouchedManagement) {
+      setOwner(workflow.owner || "");
+      setDueAt(workflow.dueAt?.slice(0, 10) || "");
+      setPriority(workflow.priority || "");
+      try { setTags(JSON.parse(workflow.tags || "[]").join(", ")); } catch { setTags(""); }
+      setManagementVersion(workflow.version || "");
+    }
+    setTriageError("");
+  };
+
+  const updateStatus = async (newStatus: string) => {
+    if (!finding?.permissions?.canTriage) return;
     setUpdating(true);
     setTriageError("");
     try {
@@ -288,13 +329,13 @@ export default function FindingDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: newStatus,
+          expectedVersion: triageVersion,
           reason: triageReason,
           expiresAt: triageExpiresAt || null,
         }),
       });
       if (res.ok) {
-        const refreshed = await fetch(`/api/findings/${finding.id}`).then((response) => response.json());
-        setFinding(refreshed);
+        await refreshWorkflow("triage");
       } else {
         const error = await res.json();
         setTriageError(error.error || "Triage update failed");
@@ -307,7 +348,7 @@ export default function FindingDetailPage() {
   };
 
   const saveManagement = async () => {
-    if (!finding) return;
+    if (!finding?.permissions?.canTriage) return;
     setUpdating(true);
     setTriageError("");
     try {
@@ -316,6 +357,8 @@ export default function FindingDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           owner,
+          expectedVersion: managementVersion,
+          resolveWorkflowReview: finding.workflow?.needsReview || false,
           dueAt: dueAt || null,
           priority,
           tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
@@ -323,7 +366,7 @@ export default function FindingDetailPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Management update failed");
-      setFinding((current) => current ? { ...current, ...data } : current);
+      await refreshWorkflow("management");
     } catch (error) {
       setTriageError(error instanceof Error ? error.message : "Management update failed");
     } finally {
@@ -332,19 +375,14 @@ export default function FindingDetailPage() {
   };
 
   const createJiraTicket = async () => {
-    if (!finding) return;
+    if (!finding?.permissions?.canTriage) return;
     setJiraCreating(true);
     setTriageError("");
     try {
       const response = await fetch(`/api/findings/${finding.id}/jira`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Jira ticket creation failed");
-      setFinding((current) => current ? {
-        ...current,
-        ticketProvider: "jira",
-        ticketKey: data.key,
-        ticketUrl: data.url,
-      } : current);
+      await refreshWorkflow("ticket");
     } catch (error) {
       setTriageError(error instanceof Error ? error.message : "Jira ticket creation failed");
     } finally {
@@ -656,7 +694,7 @@ export default function FindingDetailPage() {
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             <SeverityBadge severity={finding.severity} />
-            <StatusBadge status={finding.status} />
+            <StatusBadge status={finding.workflow?.status || finding.status} />
             <span
               className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
                 finding.disposition === "advisory"
@@ -682,15 +720,17 @@ export default function FindingDetailPage() {
 
       <Card>
         <CardContent className="space-y-3 py-4">
+          {!finding.permissions?.canTriage && <p className="text-xs text-muted-foreground">You have read-only access to this finding.</p>}
+          {!finding.isCurrent && finding.workflow?.scope === "identity" && <p className="text-xs text-muted-foreground">This is a historical observation. Its saved status is {finding.status.replaceAll("_", " ")} and saved owner is {finding.owner || "unassigned"}. The controls below show the current issue; changes preserve this scan&apos;s source evidence.</p>}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground mr-2">Triage:</span>
             {["open", "triaged", "confirmed", "in_progress", "false_positive", "accepted_risk", "fixed"].map((s) => (
               <Button
                 key={s}
-                variant={finding.status === s ? "default" : "outline"}
+                variant={(finding.workflow?.status || finding.status) === s ? "default" : "outline"}
                 size="sm"
                 onClick={() => updateStatus(s)}
-                disabled={updating || finding.status === s}
+                disabled={updating || !finding.permissions?.canTriage || (finding.workflow?.status || finding.status) === s}
               >
                 {s === "false_positive"
                   ? "False Positive"
@@ -705,6 +745,9 @@ export default function FindingDetailPage() {
           <div className="grid gap-2 md:grid-cols-[1fr_180px]">
             <input
               value={triageReason}
+              disabled={updating || !finding.permissions?.canTriage}
+              maxLength={4000}
+              aria-label="Triage rationale"
               onChange={(event) => setTriageReason(event.target.value)}
               placeholder="Decision rationale (required for false positive / accepted risk)"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -712,12 +755,14 @@ export default function FindingDetailPage() {
             <input
               type="date"
               value={triageExpiresAt}
+              disabled={updating || !finding.permissions?.canTriage || finding.workflow?.scope !== "identity"}
               onChange={(event) => setTriageExpiresAt(event.target.value)}
               aria-label="Triage expiry"
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
-          {triageError && <p className="text-xs text-destructive">{triageError}</p>}
+          <Button size="sm" variant="outline" onClick={() => updateStatus(finding.workflow?.status || finding.status)} disabled={updating || !finding.permissions?.canTriage}>Save decision</Button>
+          {triageError && <div role="alert" className="space-y-2 text-xs text-destructive"><p>{triageError}</p><p className="text-muted-foreground">Reloading replaces unsaved triage and assignment drafts.</p><Button size="sm" variant="outline" disabled={updating} onClick={() => refreshWorkflow().catch((error) => setTriageError(error instanceof Error ? error.message : "Unable to reload finding."))}>Reload latest</Button></div>}
         </CardContent>
       </Card>
 
@@ -728,32 +773,33 @@ export default function FindingDetailPage() {
               <p className="text-sm font-semibold">Vulnerability ownership &amp; delivery</p>
               <p className="text-xs text-muted-foreground">Assign remediation, SLA priority, tags, and an auditable Jira ticket.</p>
             </div>
-            {finding.ticketUrl ? (
-              <a href={finding.ticketUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-medium hover:bg-accent">
-                <TicketCheck className="h-3.5 w-3.5" />{finding.ticketKey}<ExternalLink className="h-3 w-3" />
+            {(finding.workflow ? finding.workflow.ticketUrl : finding.ticketUrl) ? (
+              <a href={finding.workflow ? finding.workflow.ticketUrl : finding.ticketUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-medium hover:bg-accent">
+                <TicketCheck className="h-3.5 w-3.5" />{finding.workflow ? finding.workflow.ticketKey : finding.ticketKey}<ExternalLink className="h-3 w-3" />
               </a>
             ) : (
-              <Button variant="outline" size="sm" onClick={createJiraTicket} disabled={jiraCreating}>
+              <Button variant="outline" size="sm" onClick={createJiraTicket} disabled={jiraCreating || !finding.permissions?.canTriage}>
                 {jiraCreating ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <TicketCheck className="mr-1 h-3.5 w-3.5" />}
                 Create Jira ticket
               </Button>
             )}
           </div>
+          {finding.workflow?.needsReview && <p role="status" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">Historical assignments need review. Check the previous scan records, choose the current owner and delivery details, then save the reviewed assignment below.</p>}
           <div className="grid gap-2 md:grid-cols-[1fr_140px_160px_1fr_auto]">
-            <input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Owner / team" aria-label="Finding owner" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
-            <select value={priority} onChange={(event) => setPriority(event.target.value)} aria-label="Remediation priority" className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+            <input value={owner} disabled={updating || !finding.permissions?.canTriage} maxLength={200} onChange={(event) => setOwner(event.target.value)} placeholder="Owner / team" aria-label="Finding owner" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+            <select value={priority} disabled={updating || !finding.permissions?.canTriage} onChange={(event) => setPriority(event.target.value)} aria-label="Remediation priority" className="h-9 rounded-md border border-input bg-background px-3 text-sm">
               <option value="">Priority</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option><option value="p3">P3</option>
             </select>
-            <input type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} aria-label="Remediation due date" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
-            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="internet-facing, auth" aria-label="Finding tags" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
-            <Button size="sm" className="h-9" onClick={saveManagement} disabled={updating}><Save className="mr-1 h-3.5 w-3.5" />Save</Button>
+            <input type="date" value={dueAt} disabled={updating || !finding.permissions?.canTriage} onChange={(event) => setDueAt(event.target.value)} aria-label="Remediation due date" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+            <input value={tags} disabled={updating || !finding.permissions?.canTriage} onChange={(event) => setTags(event.target.value)} placeholder="internet-facing, auth" aria-label="Finding tags" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+            <Button size="sm" className="h-9" onClick={saveManagement} disabled={updating || !finding.permissions?.canTriage}><Save className="mr-1 h-3.5 w-3.5" />{finding.workflow?.needsReview ? "Save reviewed assignment" : "Save"}</Button>
           </div>
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <EvidenceWorkbench key={finding.id} finding={finding} />
+          <EvidenceWorkbench key={finding.id} finding={{ ...finding, owner: finding.workflow?.owner ?? finding.owner }} />
           <ApiContractPanel contexts={finding.apiContractContext || []} scanId={finding.scanId} />
 
           {/* Per-finding Call Graph */}

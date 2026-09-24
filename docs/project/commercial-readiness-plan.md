@@ -25,7 +25,7 @@ permissions and immutable source snapshots.
 | AI review | Bounded source browsing and evidence tools for threat modeling and supplied-finding review, abstention, triage and remediation advice | Tool-contract tests, source-bound citations, model comparison and repeated-run evaluations | In progress |
 | Agent operations | Durable jobs, logs, tool spans, evidence events, cancellation, retry, budgets and cost accounting | Worker interruption/recovery tests and dashboard observation | In progress |
 | Provider support | Claude Code and Codex adapters with explicit models, bounded read-only tools and reproducible traces | Local contract tests plus separately recorded live-provider checks | Pending |
-| Product experience | Clear analysis scope, uncertainty, repository navigation, data flow/graph views and triage workflow | Browser checks of the complete user flow and accessibility | Pending |
+| Product experience | Clear analysis scope, uncertainty, repository navigation, data flow/graph views and triage workflow | Browser checks of the complete user flow and accessibility | In progress |
 | Open-source evaluation | Pinned Juice Shop, DVWA and other relevant source corpora, with support gaps reported honestly | Static-only runs, scope inventory, reviewed labels and documented results | In progress |
 | Efficiency | Fixed-hardware latency/memory/cost baselines, dependency-aware incremental work and cache invalidation | p50/p95 and peak-memory reports; unchanged-result comparison | In progress |
 | Reproducibility | Engine/parser/rules/modelpack/config/source/provider manifests and replayable evidence | Clean-environment replay and artifact-digest checks | In progress |
@@ -446,7 +446,7 @@ and evidence text receive different finding fingerprints when only the checkout
 root changes. Correcting this CI/worker triage continuity issue, including legacy
 identity compatibility and multi-repository separation, is follow-up work.
 
-## Finding identity continuity: 2026-09-24, in progress
+## Finding identity continuity: 2026-09-24
 
 The owned check found two separate defects: Aegify's fingerprint included the
 physical checkout path, and the dashboard accepted opaque producer hashes without
@@ -483,13 +483,66 @@ local self-scan analyzed 300 files in 160.6 seconds, with no coverage gaps, 686
 advisory candidates and zero blocking findings. Exact-head remote CI remains a
 separate gate.
 
-Remaining workflow scope includes assignment/due-date/tag/ticket continuity
-(currently stored per observation), an operator conflict-review interface,
+At that checkpoint, remaining workflow scope included assignment/due-date/tag/ticket
+continuity (then stored per observation), an operator conflict-review interface,
 incremental/full equivalence, and broader application-level accuracy evaluation.
 This phase does not establish commercial detection quality.
+
+All required CI, both CodeQL languages, the Aegify self-scan and container checks
+passed on head `6fcdbae0d0898e0037a36d97df2798f95a51926a`. Linux CI passed all
+564 scanner tests with reported coverage rounded to 82%, and 25 offline worker,
+migration and recovery checks. Fresh installation applied 19 migrations. PR #50
+merged at 2026-09-23T23:36:31Z as signed, verified commit
+`3ad3184d2809c2c2e1f2c06c6277c47464b319ba`. Its main-branch Aegify analysis
+`1829182657` completed at 2026-09-23T23:41:33Z with 686 candidates and no analysis
+error. Both CodeQL analyses on that commit have zero results. No live production
+installation was upgraded. The subsequent open-alert snapshot contains 691 alerts:
+686 Aegify candidates and five Scorecard alerts. No dismissals were performed.
 
 The merged #49 baseline has completed main-branch Aegify analysis
 `1828934261` (2026-09-23 22:39:26 UTC). Its refreshed snapshot contains 683 open
 code-scanning alerts: 678 Aegify candidates and five Scorecard alerts. No alert
 was dismissed as part of the evaluation or identity work. Alert counts are not
 a substitute for per-finding security review.
+
+## Team finding workflow: 2026-09-24, in progress
+
+An owned production HTTP regression first showed that an assigned team disappeared
+when the same finding was imported from a new CI checkout. The identity now owns
+assignment, due date, priority, tags and ticket metadata. Imports inherit that
+workflow, updates affect current observations atomically, and historical rows
+retain their saved values. Optimistic workflow versions reject stale changes;
+permissions, account admission and archive state are rechecked in the transaction.
+
+An additive migration copies only a unique, bounded latest assignment with known
+logical scope. Other legacy assignments remain retained and require explicit
+review. The dashboard displays current controls on historical findings, disables
+edits for read-only users, preserves conflicting drafts and offers a visible
+reload action. The API now requires `expectedVersion`; existing clients must
+GET the current workflow version first. Expired triage reopens once and clears
+the active expiry while retaining the event history.
+
+Completed synthetic ticket receipts propagate to the current identity and future
+scans; conflicting receipts retain an audit record. No actual Jira ticket was
+created. A persistent delivery reservation/outbox and uncertain-result recovery
+are still needed: concurrent empty preflights or a timeout/database outage can
+produce an unlinked remote issue. No exactly-once integration claim is made.
+
+Final local checks passed all 124 dashboard tests, including actual Python subprocess
+contracts, and 104 production HTTP/CLI checks. An isolated Chrome check exercised
+two users changing one finding, draft preservation after `409`, reload and save,
+historical/current ownership, ticket display and viewer controls. No browser page
+errors occurred. A further simultaneous-writer SQLite check passed, allowing one
+commit and rejecting the stale competitor. Fresh-schema and populated legacy
+migration checks preserve historical rows; injected audit failure rolls the
+workflow update back. A fresh Prisma deployment applies all 20 migrations.
+TypeScript, ESLint and the final production build pass. The final browser run also
+preserves an unsaved triage draft when assignment is saved and rejects that stale
+triage save until reload. Documentation validation, links and accessibility pass
+with existing color recommendations. A preflight self-scan analyzed 302 files in
+159.7 seconds with no reported gaps, 693 advisory candidates and zero blocking
+findings. Final exact-head CI and merge remain separate gates.
+
+This phase improves team workflow reliability. It does not change the measured
+OWASP precision/recall, establish live-provider AI quality, or complete the wider
+self-hosting release contract.

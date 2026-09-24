@@ -15,6 +15,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { encode } from "next-auth/jwt";
 import { configureDatabase } from "../src/lib/database-runtime.ts";
+import { recordFindingTicket } from "../src/lib/finding-workflow.ts";
 
 export async function runAccessIntegration({ verifyBrowser } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "aegify-access-http-"));
@@ -88,7 +89,8 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await call("/api/repos")).repos.length, 0, "Repository discovery uses only the caller's OAuth account");
     for (const path of [`/api/findings?projectId=${b.id}&language=Python&search=BRAVO`, `/api/scans?projectId=${b.id}`, `/api/endpoints?projectId=${b.id}`]) assert.equal((await call(path)).total, 0);
     for (const path of [`/api/projects/${b.id}`, `/api/scans/${sb.id}`, `/api/scans/${sb.id}/progress`, `/api/findings/${fb.id}`, `/api/findings/${fb.id}/graph`, `/api/findings/${fb.id}/report`, `/api/graph/${sb.id}`, `/api/endpoints/${eb.id}`, `/api/endpoints/import-openapi?scanId=${sb.id}`, `/api/agent-runs/${rb.id}`, `/api/llm-jobs/${jb.id}`, `/api/llm-scan/${sb.id}`, `/api/projects/${b.id}/members`, `/api/projects/${b.id}/tokens`, `/api/projects/${b.id}/audit`]) await call(path, { status: 404 });
-    await call(`/api/findings/${fa.id}`, { user: "bob" });
+    const viewerFinding = await call(`/api/findings/${fa.id}`, { user: "bob" });
+    assert.equal(viewerFinding.permissions.canTriage, false);
     await call(`/api/findings/${fa.id}`, { user: "bob", method: "PATCH", body: { status: "triaged" }, status: 404 });
     await call(`/api/projects/${a.id}/tokens`, { user: "bob", method: "POST", body: { name: "denied", expiresAt: new Date(Date.now() + 86_400_000).toISOString() }, status: 404 });
     for (const [path, body] of [["/api/llm-jobs", { scanId: sb.id, mode: "quick" }], ["/api/llm-scan", { scanId: sb.id, mode: "quick" }], ["/api/agent-runs", { scanId: sb.id }], ["/api/findings/analyze-batch", { ids: [fa.id, fb.id] }]]) await call(path, { method: "POST", body, status: 404 });
@@ -98,7 +100,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     await call("/api/rules", { status: 403 });
     await call("/api/projects", { method: "POST", body: { name: "Denied" }, status: 403 });
     await call(`/api/projects/${a.id}/members`, { method: "PUT", body: { email: "bob@example.test", role: "triager" } });
-    await call(`/api/findings/${fa.id}`, { user: "bob", method: "PATCH", body: { status: "triaged" } });
+    await call(`/api/findings/${fa.id}`, { user: "bob", method: "PATCH", body: { status: "triaged", expectedVersion: viewerFinding.workflow.version } });
     await call(`/api/projects/${a.id}/members`, { method: "DELETE", body: { userId: "alice" }, status: 409 });
     const issued = await call(`/api/projects/${a.id}/tokens`, { method: "POST", body: { name: "CI integration check", expiresAt: new Date(Date.now() + 86_400_000).toISOString() }, status: 201 });
     const listing = await call(`/api/projects/${a.id}/tokens`);
@@ -145,22 +147,51 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     };
     const beforeMove = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/a") });
     const originalIdentityFinding = await db.finding.findFirstOrThrow({ where: { scanId: beforeMove.scanId } });
-    await call(`/api/findings/${originalIdentityFinding.id}`, { user: "bob", method: "PATCH", body: { status: "false_positive", reason: "Owned evidence reviewed" } });
+    const beforeTriage = await call(`/api/findings/${originalIdentityFinding.id}`, { user: "bob" });
+    assert.equal(beforeTriage.permissions.canTriage, true);
+    const triageUpdate = await call(`/api/findings/${originalIdentityFinding.id}`, { user: "bob", method: "PATCH", body: {
+      expectedVersion: beforeTriage.workflow.version,
+      status: "false_positive", reason: "Owned evidence reviewed", owner: "AppSec fixture team",
+      dueAt: "2026-12-01", priority: "p1", tags: ["owned-fixture"],
+    } });
     const afterMove = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/b") });
     const movedFinding = await db.finding.findFirstOrThrow({ where: { scanId: afterMove.scanId } });
     const movedDetail = await call(`/api/findings/${movedFinding.id}`);
     assert.equal(movedDetail.identityId, originalIdentityFinding.identityId);
     assert.equal(movedDetail.status, "false_positive");
+    assert.equal(movedDetail.owner, "AppSec fixture team");
+    assert.equal(movedDetail.dueAt.slice(0, 10), "2026-12-01");
+    assert.equal(movedDetail.priority, "p1");
+    assert.deepEqual(JSON.parse(movedDetail.tags), ["owned-fixture"]);
+    assert.equal(movedDetail.workflow.version, triageUpdate.workflow.version, "An unchanged scan must not cause edit conflicts");
     assert.equal(movedDetail.identity.triageEvents[0].reason, "Owned evidence reviewed");
     assert.equal(movedDetail.baselineState, "unchanged");
     assert.equal((await db.finding.findUniqueOrThrow({ where: { id: originalIdentityFinding.id } })).isCurrent, false);
     await call(`/api/findings/${movedFinding.id}`, { user: "outside", status: 404 });
+    await call(`/api/findings/${movedFinding.id}`, { user: "bob", method: "PATCH", body: { owner: "Stale edit", expectedVersion: beforeTriage.workflow.version }, status: 409 });
+    for (const body of [null, [], {}, { owner: "Missing version" }, { expectedVersion: movedDetail.workflow.version, owner: "x".repeat(40_000) }]) {
+      await call(`/api/findings/${movedFinding.id}`, { user: "bob", method: "PATCH", body, status: 400 });
+    }
+    const fromHistory = await call(`/api/findings/${originalIdentityFinding.id}`, { user: "bob", method: "PATCH", body: { owner: "Service fixture team", expectedVersion: movedDetail.workflow.version } });
+    assert.equal(fromHistory.owner, "AppSec fixture team", "Historical observation retains its saved assignment");
+    assert.equal(fromHistory.workflow.owner, "Service fixture team");
+    assert.equal((await db.finding.findUniqueOrThrow({ where: { id: movedFinding.id } })).owner, "Service fixture team");
+    // A synthetic completed receipt exercises storage; Jira stays disabled and
+    // no external ticket or message is sent by this integration harness.
+    const issue = { key: "FIXTURE-1", url: "https://issues.example.test/browse/FIXTURE-1" };
+    assert.deepEqual(await recordFindingTicket(db, { findingId: movedFinding.id, identityId: movedFinding.identityId, projectId: a.id, actorId: "alice" }, issue), { linked: true });
+    assert.deepEqual(await call(`/api/findings/${originalIdentityFinding.id}/jira`, { method: "POST" }), issue);
     await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/c", true) });
     assert.ok((await db.findingIdentity.findUniqueOrThrow({ where: { id: movedFinding.identityId } })).absentAt);
     const reappeared = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: identityReport("/runner/d") });
     const regression = await db.finding.findFirstOrThrow({ where: { scanId: reappeared.scanId } });
     const regressionDetail = await call(`/api/findings/${regression.id}`);
     assert.equal(regressionDetail.status, "open");
+    assert.equal(regressionDetail.owner, "Service fixture team");
+    assert.equal(regressionDetail.priority, "p1");
+    assert.equal(regressionDetail.ticketKey, issue.key);
+    assert.equal(regressionDetail.workflow.ticketUrl, issue.url);
+    assert.deepEqual(JSON.parse(regressionDetail.tags), ["owned-fixture"]);
     assert.equal(regressionDetail.baselineState, "regressed");
     assert.equal(regressionDetail.identity.triageEvents.length, 2);
     const reportPath = join(directory, "synthetic.sarif");
@@ -197,7 +228,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await call(`/api/scans/${queued.scanId}/job`)).job.status, "cancelled");
     const retry = await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "retry" }, status: 202 });
     assert.notEqual(retry.scanId, queued.scanId);
-    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id });
+    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id, workflowFindingId: regression.id, historicalFindingId: originalIdentityFinding.id });
     // Recovery rotates an epoch even if a restored session counter repeats.
     const recoveredEpoch = randomBytes(16).toString("hex");
     await db.user.update({ where: { id: "alice" }, data: { sessionEpoch: recoveredEpoch } });

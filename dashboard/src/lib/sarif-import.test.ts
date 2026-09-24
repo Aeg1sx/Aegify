@@ -111,11 +111,14 @@ async function identityDatabase(run: (db: PrismaClient, sql: ReturnType<typeof c
   const url = "file:" + join(directory, "identities.db");
   const sql = createClient({ url });
   const migrations = fileURLToPath(new URL("../../prisma/migrations/", import.meta.url));
-  const applyMigration = async () => { await sql.executeMultiple(await readFile(join(migrations, identityMigration, "migration.sql"), "utf8")); };
+  const entries = (await readdir(migrations, { withFileTypes: true })).filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+  const applyMigration = async () => {
+    for (const entry of entries.filter((item) => item.name >= identityMigration)) await sql.executeMultiple(await readFile(join(migrations, entry.name, "migration.sql"), "utf8"));
+  };
   const db = new PrismaClient({ adapter: new PrismaLibSql({ url }) });
   try {
-    for (const entry of (await readdir(migrations, { withFileTypes: true })).filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (!legacy || entry.name !== identityMigration) await sql.executeMultiple(await readFile(join(migrations, entry.name, "migration.sql"), "utf8"));
+    for (const entry of entries) {
+      if (!legacy || entry.name < identityMigration) await sql.executeMultiple(await readFile(join(migrations, entry.name, "migration.sql"), "utf8"));
     }
     await run(db, sql, applyMigration);
   } finally { sql.close(); await db.$disconnect(); await rm(directory, { recursive: true, force: true }); }
@@ -298,6 +301,32 @@ test("SARIF rejects malformed identity hints and unbounded or non-relative prove
     assert.throws(() => validateSarifReport(invalid));
   }
 });
+
+test("imports carry identity management and expire a triage decision only once", async () => identityDatabase(async (db) => {
+  const project = await db.project.create({ data: { name: "Workflow carry", defaultBranch: "main" } });
+  const context = importContext(project.id);
+  const first = await importSarif(db, scopedReport(), context);
+  const observation = await db.finding.findFirstOrThrow({ where: { scanId: first.scanId } });
+  await db.findingIdentity.update({ where: { id: observation.identityId }, data: {
+    status: "accepted_risk", triageReason: "Time bounded fixture", triageActor: "fixture", triageExpiresAt: new Date(0),
+    owner: "AppSec", dueAt: new Date("2026-12-01"), priority: "p1", tags: '["owned"]',
+    ticketProvider: "jira", ticketKey: "FIXTURE-1", ticketUrl: "https://issues.example.test/browse/FIXTURE-1",
+  } });
+  for (const root of ["/new/root", "/next/root"]) {
+    const receipt = await importSarif(db, scopedReport({ root }), context);
+    const finding = await db.finding.findFirstOrThrow({ where: { scanId: receipt.scanId } });
+    assert.equal(finding.status, "open");
+    assert.equal(finding.owner, "AppSec");
+    assert.equal(finding.priority, "p1");
+    assert.equal(finding.ticketKey, "FIXTURE-1");
+    assert.deepEqual(JSON.parse(finding.tags), ["owned"]);
+    const identity = await db.findingIdentity.findUniqueOrThrow({ where: { id: finding.identityId } });
+    assert.equal(identity.triageExpiresAt, null);
+    assert.equal(identity.triageReason, "");
+    assert.equal(identity.workflowRevision, 1);
+    assert.equal(await db.findingTriageEvent.count(), 1);
+  }
+}));
 
 test("contradictory finding and inventory namespaces roll back the entire report", async () => identityDatabase(async (db) => {
   const project = await db.project.create({ data: { name: "Contradictory scope", defaultBranch: "main" } });
