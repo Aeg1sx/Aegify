@@ -209,8 +209,17 @@ origin lines and unresolved details across AST serialization. Their states are
 multiple literal branch alternatives; they do not assert a unique runtime string
 or safe application behavior. Only constructed SQL text produces this rule's
 candidate. The finding asks reviewers to establish the database receiver and
-input trust before assessing injection impact. `AEG-SQL-001` taint evidence is
-separate and unchanged.
+input trust before assessing injection impact.
+
+For the standard first-argument SQL sink model, the taint solver also consumes
+these facts: a recognized SQL program that is constant, with no uncertainty,
+cannot acquire SQL syntax from its bound values. This applies to the first
+positional string or its selected `sql`/`text` field. Unknown or missing facts,
+ambiguous query objects, dynamic SQL, custom nonzero argument models and other
+sink categories retain their existing conservative taint behavior. Facts belong
+to each call position, so a constant call cannot suppress a dynamic call on the
+same line. This does not resolve general cross-call context or receiver binding
+uncertainty, and does not mark other tainted values as sanitized.
 
 The analysis does not execute source or evaluate arbitrary expressions. It bounds
 text to 4,096 characters, traversal to 48 levels and 100,000 steps per file,
