@@ -151,7 +151,8 @@ export async function recordFindingTicket(db: PrismaClient,
     const identity = context.identityId ? await tx.findingIdentity.findFirst({ where: { id: context.identityId, projectId: context.projectId || "" } }) : null;
     const observation = !context.identityId ? await tx.finding.findFirst({ where: { id: context.findingId, scan: { projectId: context.projectId } } }) : null;
     const target = identity || observation;
-    const linked = Boolean(target && (!target.ticketKey || target.ticketKey === issue.key));
+    const linked = Boolean(target && (!target.ticketKey ||
+      (target.ticketProvider === "jira" && target.ticketKey === issue.key && target.ticketUrl === issue.url)));
     if (linked && target) {
       const data = { ticketProvider: "jira", ticketKey: issue.key, ticketUrl: issue.url, lastNotifiedAt: new Date() };
       if (identity) {

@@ -152,6 +152,9 @@ test("ticket receipts bind current identity observations and retain conflicting 
   assert.equal((await db.findingIdentity.findUniqueOrThrow({ where: { id: f.identity.id } })).ticketKey, issue.key);
   const audit = await db.auditEvent.findFirstOrThrow({ where: { action: "finding.ticket.link_review_required" } });
   assert.equal(JSON.parse(audit.details).ticketKey, conflict.key);
+  assert.deepEqual(await recordFindingTicket(db, prepared.context, { key: issue.key, url: `https://other-issues.example.test/browse/${issue.key}` }), { linked: false });
+  assert.equal((await db.findingIdentity.findUniqueOrThrow({ where: { id: f.identity.id } })).ticketUrl, issue.url,
+    "An equal key in a different Jira installation is a different ticket");
   await assert.rejects(recordFindingTicket(db, prepared.context, { key: "FIXTURE-3", url: "javascript:invalid" }), { status: 400 });
 }));
 
