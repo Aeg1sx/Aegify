@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
@@ -320,7 +321,9 @@ def _assert_child_stopped(pid: int) -> None:
                 status = proc_status.read_text().rsplit(")", 1)[-1].strip()
                 if status.startswith("Z"):
                     return
-            except FileNotFoundError:
+            except FileNotFoundError, ProcessLookupError:
+                # Linux can return ESRCH when an exiting task disappears while
+                # /proc is being read. Recheck liveness on the next iteration.
                 pass
             time.sleep(0.02)
         pytest.fail("owned child continued running after the CLI invocation")
@@ -329,6 +332,51 @@ def _assert_child_stopped(pid: int) -> None:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+
+@pytest.mark.skipif(os.name != "posix", reason="CLI process containment is POSIX-only")
+@pytest.mark.parametrize("error_type", [FileNotFoundError, ProcessLookupError])
+def test_owned_child_observer_rechecks_disappearing_proc_status(
+    monkeypatch: pytest.MonkeyPatch, error_type: type[OSError]
+) -> None:
+    owned_pid = 71234
+    probes = []
+
+    def probe(pid: int, sig: int) -> None:
+        assert pid == owned_pid
+        probes.append(sig)
+        if sig == 0 and probes.count(0) == 1:
+            return
+        raise ProcessLookupError(errno.ESRCH, "owned fixture stopped")
+
+    def read_status(path: Path, *args: Any, **kwargs: Any) -> str:
+        assert path == Path(f"/proc/{owned_pid}/stat")
+        code = errno.ESRCH if error_type is ProcessLookupError else errno.ENOENT
+        raise error_type(code, "owned fixture disappeared during read")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "kill", probe)
+        patch.setattr(Path, "read_text", read_status)
+        patch.setattr(time, "sleep", lambda _: None)
+        _assert_child_stopped(owned_pid)
+    assert probes == [0, 0, signal.SIGKILL]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="CLI process containment is POSIX-only")
+def test_owned_child_observer_rejects_live_child() -> None:
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        with pytest.raises(pytest.fail.Exception, match="owned child continued running"):
+            _assert_child_stopped(child.pid)
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=5)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="CLI process containment is POSIX-only")
