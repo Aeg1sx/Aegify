@@ -1,7 +1,10 @@
 """Owned, non-executable controls for benchmark admission and evidence."""
 
 import json
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -330,3 +333,55 @@ def test_many_labels_share_one_bounded_file_read_for_line_validation(
     report = run_owned_benchmark(root, labels)
     assert source_reads == 1
     assert report.metrics.false_negatives == 999
+
+
+def test_descriptor_admission_rejects_symlinks_without_reading_the_target(tmp_path: Path) -> None:
+    original = tmp_path / "owned.json"
+    original.write_text('{"owned":true}')
+    alias = tmp_path / "link.json"
+    alias.symlink_to(original)
+    with pytest.raises(OSError):
+        read_regular_file(alias, limit=1024)
+    assert read_regular_file(original, limit=1024) == b'{"owned":true}'
+    with pytest.raises(ValueError, match="regular file"):
+        read_regular_file(tmp_path, limit=1024)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="bounded FIFO admission requires POSIX")
+def test_descriptor_admission_rejects_fifo_without_waiting_for_a_writer(tmp_path: Path) -> None:
+    fifo = tmp_path / "owned-fifo"
+    os.mkfifo(fifo)
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path\n"
+            "import sys\n"
+            "from aegify.quality.artifacts import read_regular_file\n"
+            "try:\n"
+            "    read_regular_file(Path(sys.argv[1]), limit=1024)\n"
+            "except ValueError:\n"
+            "    sys.exit(0)\n"
+            "sys.exit(1)\n",
+            str(fifo),
+        ],
+        capture_output=True,
+        timeout=3,
+    )
+    assert child.returncode == 0, child.stderr.decode()
+
+
+def test_cli_artifact_diagnostics_remain_literal_and_bounded(tmp_path: Path) -> None:
+    root, labels, _ = _fixture(tmp_path)
+    key = "[bold]owned[/bold]\nlabel"
+    encoded = json.dumps(key)
+    labels.write_text("{" + encoded + ":1," + encoded + ":2}")
+    result = CliRunner().invoke(app, ["benchmark", str(root), "--ground-truth", str(labels)])
+    assert result.exit_code == 2
+    assert "[bold]owned[/bold]\\nlabel" in result.output
+    huge = json.dumps("x" * 8000)
+    labels.write_text("{" + huge + ":1," + huge + ":2}")
+    result = CliRunner().invoke(app, ["benchmark", str(root), "--ground-truth", str(labels)])
+    assert result.exit_code == 2
+    assert "(truncated)" in result.output
+    assert len(result.output) < 3000

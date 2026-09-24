@@ -53,6 +53,15 @@ def _scan_exit_code(result: ScanResult) -> int:
     return 1 if _has_blocking_high_findings(result) else 0
 
 
+def _benchmark_error(prefix: str, error: Exception) -> None:
+    """Keep untrusted artifact diagnostics bounded and literal in terminal logs."""
+    message = str(error)
+    escaped = repr(message[:2000])[1:-1]
+    if len(message) > 2000:
+        escaped += " (truncated)"
+    console.print(prefix, escaped, style="red", markup=False, highlight=False)
+
+
 @app.command()
 def scan(
     target: Annotated[
@@ -347,7 +356,7 @@ def benchmark_owasp(
         report = run_owasp_python(target, expected_results)
         write_report(output_file, json.dumps(report, indent=2))
     except (OSError, UnicodeError, ValueError, csv.Error) as error:
-        console.print(f"[red]Invalid or changed benchmark input: {error}[/red]")
+        _benchmark_error("Invalid or changed benchmark input:", error)
         raise typer.Exit(code=2) from error
 
     channel = "blocking" if blocking_only else "all_candidates"
@@ -409,7 +418,7 @@ def compare_owasp(
         )
         write_report(output_file, json.dumps(report, indent=2))
     except (OSError, UnicodeError, ValueError, csv.Error) as error:
-        console.print(f"[red]Invalid or incomparable benchmark evidence: {error}[/red]")
+        _benchmark_error("Invalid or incomparable benchmark evidence:", error)
         raise typer.Exit(code=2) from error
     console.print_json(
         data={
@@ -463,7 +472,7 @@ def benchmark(
         else:
             console.print(rendered)
     except (OSError, UnicodeError, ValueError) as error:
-        console.print(f"[red]Invalid or changed benchmark input: {error}[/red]")
+        _benchmark_error("Invalid or changed benchmark input:", error)
         raise typer.Exit(code=2) from error
     if report.analysis_status not in {ScanStatus.COMPLETED, ScanStatus.PARTIAL}:
         raise typer.Exit(code=2)

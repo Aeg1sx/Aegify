@@ -42,7 +42,11 @@ Keep output outside the source directory and separate from the label file.
 Single-file targets bind their complete enclosing directory, including auxiliary
 inputs. Use an isolated directory: inventory is bounded to 50,000 entries, 8 MiB
 per file and 256 MiB overall; parsing remains bounded to 1 MiB per source file.
-Links and special files are rejected. Reports are published atomically.
+Links and special files are rejected. Artifact reads require a POSIX host
+(Linux/macOS): they use non-following, nonblocking opens and validate the opened
+descriptor's type and size. Unsupported hosts fail before evaluation. Reports
+are published atomically. Evaluate an isolated, immutable checkout; before/after
+hashes detect observed changes and are not a substitute for filesystem isolation.
 
 Version 1 manifests remain valid. Earlier use of repository settings, environment
 overrides, output inside the corpus or coercible JSON values requires migration

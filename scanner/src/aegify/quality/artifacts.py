@@ -5,16 +5,26 @@ from __future__ import annotations
 import json
 import math
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
 
 
 def read_regular_file(path: Path, *, limit: int) -> bytes:
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
-        raise ValueError(f"artifact must be a regular file of at most {limit} bytes")
-    with path.open("rb") as stream:
-        material = stream.read(limit + 1)
+    # Reject links and non-regular inputs on the descriptor actually read. The
+    # nonblocking flag lets FIFO/device admission fail without waiting for data.
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_NONBLOCK"):
+        raise ValueError("benchmark artifact admission requires a POSIX host")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > limit:
+            raise ValueError(f"artifact must be a regular file of at most {limit} bytes")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            material = stream.read(limit + 1)
+    finally:
+        os.close(descriptor)
     if len(material) > limit:
         raise ValueError("artifact grew beyond its byte limit")
     return material
