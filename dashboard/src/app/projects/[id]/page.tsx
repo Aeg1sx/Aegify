@@ -182,6 +182,7 @@ export default function ProjectDetailPage() {
             </a>
           )}
         </div>
+        <Link href={`/projects/${encodeURIComponent(project.id)}/rule-lab`} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent">Rule lab</Link>
         <Button variant="outline" size="sm" onClick={deleteProject} disabled={!canManage} aria-label="Archive project">
           <Trash2 className="h-4 w-4" />
         </Button>

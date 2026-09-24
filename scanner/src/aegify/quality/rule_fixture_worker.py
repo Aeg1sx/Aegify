@@ -344,10 +344,16 @@ def main() -> int:
             raise ValueError("invalid worker input")
         if not isinstance(payload["rule_yaml"], str):
             raise ValueError("invalid rule input")
+        timeout = payload["timeout_seconds"]
+        if type(timeout) not in (int, float) or not 0.01 <= timeout <= 120:
+            raise ValueError("invalid worker timeout")
+        # JavaScript serializes 30.0 as 30. Keep equivalent worker and CLI
+        # requests identical without changing the report digest algorithm.
+        timeout = float(timeout)
         suite = RuleFixtureSuite.model_validate(payload["suite"])
         with tempfile.TemporaryDirectory(prefix="evaluation-") as directory:
             report = evaluate_suite(payload["rule_yaml"], suite, Path(directory))
-        report.manifest["wall_timeout_seconds"] = payload["timeout_seconds"]
+        report.manifest["wall_timeout_seconds"] = int(timeout) if timeout.is_integer() else timeout
         report.manifest["memory_limit_bytes"] = memory_limit
         report.result_digest = result_digest(report)
         raw = canonical_json(report.model_dump(mode="json"))

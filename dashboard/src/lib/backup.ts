@@ -116,6 +116,10 @@ async function checkInstallationKey(client: Client, secret: string): Promise<Bac
   if (!sample) sample = (await client.execute('SELECT length(sourceCiphertext) AS bytes, CASE WHEN length(sourceCiphertext) <= 67108864 THEN sourceCiphertext ELSE NULL END AS value FROM "ScanJob" WHERE sourceCiphertext IS NOT NULL ORDER BY id LIMIT 1')).rows[0];
   if (!sample && (await client.execute('PRAGMA table_info("LlmJob")')).rows.some((row) => row.name === "inputCiphertext")) sample = (await client.execute('SELECT length(inputCiphertext) AS bytes, CASE WHEN length(inputCiphertext) <= 67108864 THEN inputCiphertext ELSE NULL END AS value FROM "LlmJob" WHERE inputCiphertext IS NOT NULL ORDER BY id LIMIT 1')).rows[0];
   if (!sample && (await client.execute('PRAGMA table_info("LlmReview")')).rows.some((row) => row.name === "payloadCiphertext")) sample = (await client.execute('SELECT length(payloadCiphertext) AS bytes, CASE WHEN length(payloadCiphertext) <= 67108864 THEN payloadCiphertext ELSE NULL END AS value FROM "LlmReview" ORDER BY id LIMIT 1')).rows[0];
+  if (!sample && (await client.execute('PRAGMA table_info("RuleFixtureJob")')).rows.some((row) => row.name === "inputCiphertext")) {
+    sample = (await client.execute('SELECT length(inputCiphertext) AS bytes, CASE WHEN length(inputCiphertext) <= 67108864 THEN inputCiphertext ELSE NULL END AS value FROM "RuleFixtureJob" WHERE inputCiphertext IS NOT NULL ORDER BY id LIMIT 1')).rows[0];
+    if (!sample) sample = (await client.execute('SELECT length(resultCiphertext) AS bytes, CASE WHEN length(resultCiphertext) <= 67108864 THEN resultCiphertext ELSE NULL END AS value FROM "RuleFixtureJob" WHERE resultCiphertext IS NOT NULL ORDER BY id LIMIT 1')).rows[0];
+  }
   if (!sample) return "no_encrypted_records";
   if (typeof sample.value !== "string") throw new Error("Stored ciphertext exceeds the installation-key check limit.");
   try { decrypt(sample.value, secret); }
@@ -253,6 +257,7 @@ export async function restoreEncryptedBackup(options: BackupKeys & { archivePath
     const copy = createClient({ url: "file:" + candidate });
     try {
       const durableAi = (await copy.execute("SELECT name FROM sqlite_schema WHERE type='table' AND name='LlmCall'")).rows.length > 0;
+      const ruleFixtures = (await copy.execute("SELECT name FROM sqlite_schema WHERE type='table' AND name='RuleFixtureJob'")).rows.length > 0;
       const statements: InStatement[] = [
         { sql: 'UPDATE "User" SET disabled = 1, sessionEpoch = ?, updatedAt = ?', args: [randomUUID(), now] },
         'DELETE FROM "Session"', 'DELETE FROM "VerificationToken"', 'DELETE FROM "AuthActionToken"',
@@ -261,6 +266,10 @@ export async function restoreEncryptedBackup(options: BackupKeys & { archivePath
         { sql: 'UPDATE "Scan" SET status = \'cancelled\', progressPhaseName = \'recovered_cancelled\', progressMessage = ?, progressUpdatedAt = ? WHERE status IN (\'pending\', \'running\')', args: ["Cancelled during backup recovery", now] },
         { sql: 'UPDATE "ScanJob" SET status = \'cancelled\', activeKey = NULL, leaseToken = NULL, leaseExpiresAt = NULL, errorCode = \'recovered_cancelled\', completedAt = ?, updatedAt = ? WHERE status IN (\'queued\', \'running\')', args: [now, now] },
         'DELETE FROM "ScanWorker"',
+        ...(ruleFixtures ? [
+          { sql: 'INSERT INTO "RuleFixtureJobEvent" (jobId, code, message, createdAt) SELECT id, ?, ?, ? FROM "RuleFixtureJob" WHERE status IN (\'queued\', \'running\')', args: ["recovered_cancelled", "Cancelled during backup recovery; rerun after reviewing the retained input", now] },
+          { sql: 'UPDATE "RuleFixtureJob" SET status = \'cancelled\', activeKey = NULL, leaseToken = NULL, leaseExpiresAt = NULL, errorCode = \'recovered_cancelled\', completedAt = ?, updatedAt = ? WHERE status IN (\'queued\', \'running\')', args: [now, now] },
+        ] : []),
         ...(durableAi ? [
           { sql: 'INSERT INTO "LlmJobEvent" (id, jobId, code, message, details, createdAt) SELECT ? || id, id, ?, ?, ?, ? FROM "LlmJob" WHERE status IN (\'pending\', \'running\')', args: [restoreId + "-ai-", "recovered_cancelled", "Interrupted by backup recovery; provider outcome may be unknown", JSON.stringify({ restoreId }), now] },
           { sql: 'UPDATE "LlmCall" SET status = \'unknown\', errorCode = \'provider_outcome_unknown\' WHERE status = \'dispatched\'', args: [] },

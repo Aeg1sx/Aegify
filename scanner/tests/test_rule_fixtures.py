@@ -17,6 +17,7 @@ from aegify.cli import app
 from aegify.quality.rule_fixtures import (
     MAX_FILE_BYTES,
     MAX_RULE_BYTES,
+    FixtureReport,
     FixtureWorkerError,
     RuleFixtureSuite,
     _supervise,
@@ -80,6 +81,49 @@ def test_real_taint_flow_with_constant_and_parameterized_negatives():
         step["propagation_type"] == "argument" and step["call_context"]
         for step in cross_file["path"]
     )
+
+
+def test_direct_json_worker_and_cli_controller_share_timeout_identity(tmp_path):
+    reports = []
+    request = tmp_path / "request.json"
+    for timeout in (30, 30.0):
+        request.write_text(
+            json.dumps(
+                {"rule_yaml": _rule(), "suite": _suite().model_dump(), "timeout_seconds": timeout}
+            )
+        )
+        raw = _supervise(
+            [sys.executable, "-I", "-m", "aegify.quality.rule_fixture_worker", str(request)],
+            tmp_path,
+            30,
+        )
+        report = FixtureReport.model_validate(strict_json(raw))
+        assert report.exit_code == 0
+        assert type(report.manifest["wall_timeout_seconds"]) is int
+        assert report.result_digest == result_digest(report)
+        reports.append(report)
+    controller = run_rule_fixtures(_rule(), _suite(), timeout_seconds=30.0)
+    assert controller.exit_code == 0
+    assert reports[0].result_digest == reports[1].result_digest == controller.result_digest
+
+
+@pytest.mark.parametrize("timeout", [True, "30", None, 0, 120.1])
+def test_direct_worker_rejects_invalid_timeout_before_analysis(tmp_path, timeout):
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {"rule_yaml": _rule(), "suite": _suite().model_dump(), "timeout_seconds": timeout}
+        )
+    )
+    raw = _supervise(
+        [sys.executable, "-I", "-m", "aegify.quality.rule_fixture_worker", str(request)],
+        tmp_path,
+        30,
+    )
+    report = FixtureReport.model_validate(strict_json(raw))
+    assert report.status == "error"
+    assert report.issues == ["rule_or_worker_invalid"]
+    assert report.cases == []
 
 
 def test_cross_file_constant_and_unused_source_are_negative_controls():

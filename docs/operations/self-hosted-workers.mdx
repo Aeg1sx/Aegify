@@ -54,6 +54,32 @@ finding contents are not copied into invented historical records. An interrupted
 durable job may resume under its existing lease/recovery rules, but any missing
 output from batches completed before this upgrade remains unavailable.
 
+Migration `20260924080000_rule_fixture_jobs` adds project rule evaluation history
+and a worker capability flag. Stop the web process and source worker, apply the
+migration, and run matching versions. Older source workers remain usable for
+source scans but are not advertised as available rule evaluation workers.
+
+## Project rule evaluations
+
+The project's **Rule lab** sends one YAML rule and positive/negative source
+examples to the same source worker. It uses the real parser and taint engine;
+the web process does not evaluate patterns. Multiple files within a case can
+exercise helper flows. See [rule authoring](/analysis/rule-authoring#evaluate-in-the-project-rule-lab)
+for the editing flow, bounds, exact-location assertions and CI export.
+
+The worker alternates preference between source scans and rule evaluations,
+running one job at a time. A running source scan can delay the next evaluation.
+Each evaluation has a 30-second subprocess deadline, one-minute lease and
+five-second authorization heartbeat. The child receives no installation secrets
+or repository credentials. It uses the container's existing CPU, memory, process
+and temporary-storage limits. No application code or model call is executed.
+
+Input and full report ciphertexts expire seven days after enqueue. Reads enforce
+expiry immediately; hourly worker maintenance clears the fields. Encrypted
+backups have a separate retention policy. A restored installation cancels active
+evaluations, retains terminal records, and requires a maintainer to explicitly
+rerun a saved input. Keep the original installation encryption key.
+
 ## Durable AI finding reviews
 
 Open **LLM Security Review**, choose a project scan and select **Quick Review** or

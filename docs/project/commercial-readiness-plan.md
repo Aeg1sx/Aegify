@@ -21,7 +21,7 @@ permissions and immutable source snapshots.
 | Analysis fidelity | Accurate parser diagnostics, typed sources/sinks/sanitizers, validated paths, framework and alias models | Supported-stack matrix and positive/negative semantic regression cases | In progress |
 | Shared scan service | UI, CLI and CI invoke the same engine and preserve the same evidence | End-to-end scan/upload/review tests and failure recovery | In progress |
 | Repository context | Collision-safe multi-repository and monorepo identity, dependencies, snapshots and incremental invalidation | Cross-repository fixtures; incremental/full result equivalence | In progress |
-| Rule authoring | Guided templates, schema diagnostics, source/sink/propagation explanations, preview and regression cases | Author a rule, preview matches, export and run it in CI | Pending |
+| Rule authoring | Guided templates, schema diagnostics, source/sink/propagation explanations, preview and regression cases | Author a rule, preview matches, export and run it in CI | In progress |
 | AI review | Bounded source browsing and evidence tools for threat modeling and supplied-finding review, abstention, triage and remediation advice | Tool-contract tests, source-bound citations, model comparison and repeated-run evaluations | In progress |
 | Agent operations | Durable jobs, logs, tool spans, evidence events, cancellation, retry, budgets and cost accounting | Worker interruption/recovery tests and dashboard observation | In progress |
 | Provider support | Claude Code and Codex adapters with explicit models, bounded read-only tools and reproducible traces | Local contract tests plus separately recorded live-provider checks | Pending |
@@ -985,3 +985,40 @@ separate implementation. Nonzero legacy `llm.max_retries` is now rejected and
 cost consumers must accept null plus its status. Source-tool loop integration
 across all agent roles/providers remains open. Existing external OWASP metrics
 are unchanged; local contract tests do not demonstrate improved detection quality.
+
+## Project Rule lab integration: 2026-09-24
+
+The project Rule lab connects guided call/taint examples and editable fixture
+suites to the same Python evaluator used by `aegify test-rule`. Reports retain
+exact matched, missed and unexpected locations, parser gaps, static data-flow
+paths and implementation/input digests. The selected result is bound to its
+saved input, with a visible warning when the current draft differs.
+
+Project maintainers can submit, cancel, restore and rerun saved inputs. Viewers
+can inspect results; source input restoration requires maintainer access. Jobs
+use encrypted inputs and reports, serialized admission, expiring leases, bounded
+recovery, retention cleanup and permission rechecks before publication. The
+source worker evaluates fixtures without target execution, repository credentials
+or model calls. Installation and worker capability checks are documented in the
+self-hosting guide.
+
+The production browser contract covers project navigation, editing, actual
+Python worker results, static taint paths, saved history, cancellation, permission
+revocation and mobile layout. It also downloads the rule, suite and report from
+the actual export buttons and runs the downloaded inputs in a separate CLI
+process. Both passing and mismatched suites must retain their expected exit code,
+manifest, canonical result digest and case evidence; case timing is excluded from
+that replay comparison. This integration check found that integer and floating
+representations of the same timeout produced different report hashes. The worker
+now validates the timeout and emits one integer representation for whole seconds;
+the digest algorithm is unchanged. A real-process regression checks direct JSON
+worker requests against the CLI controller. Required Linux CI separately checks installed-image
+fixtures and recovery of an interrupted encrypted job in a new worker process.
+
+This is a source-only rule-authoring workflow. Fixture location labels do not
+independently validate the displayed taint paths or establish general detector
+precision/recall. Broader framework coverage, independent labels and the public
+quality gates remain open. The existing Project/Rule schema-default mismatch is
+tracked separately in PR #61; this change adds fixture tables without claiming
+that the earlier schema drift is resolved. Exact integration commits and test
+results are recorded in PR #60.
