@@ -764,6 +764,13 @@ run contract lets the dashboard decode once before source inventory matching,
 fingerprinting, triage carryover and flow import. Unmarked historical reports
 keep literal paths, including literal percent escapes. Invalid marked encodings
 and unsupported versions fail before artifact publication.
+The main alert inventory also exposed 689 paths starting with `../`. Self-scan
+now runs from the repository root with `uv run --project scanner --locked` so
+artifact paths are relative to the checkout, as GitHub expects. The target's
+same `.aegify.yml` still supplies scope and analysis settings.
+Local comparison confirmed identical scan/rule/context/taint settings and the
+same 310 discovered source paths from both working directories. The pinned uv
+command selects the scanner project while retaining the repository-root cwd.
 
 This changes interchange encoding only, not rule detection, evidence strength,
 source identity, or precision/recall. It preserves native path syntax rather than

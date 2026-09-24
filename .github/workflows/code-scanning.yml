@@ -88,10 +88,9 @@ jobs:
 
       - name: Run deterministic self-scan
         id: scan
-        working-directory: scanner
         run: |
           set +e
-          uv run aegify scan .. --no-llm --severity medium --output sarif --output-file ../aegify-results.sarif
+          uv run --project scanner --locked aegify scan . --no-llm --severity medium --output sarif --output-file aegify-results.sarif
           scan_status="$?"
           set -e
           echo "exit-code=$scan_status" >> "$GITHUB_OUTPUT"
