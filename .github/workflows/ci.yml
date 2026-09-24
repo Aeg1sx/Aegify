@@ -250,6 +250,18 @@ jobs:
       - name: Smoke test scanner image
         run: docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges aegify-scanner:ci --help
 
+      - name: Run source-only rule fixtures from the installed scanner image
+        run: |
+          for fixture in call taint; do
+            docker run --rm --init --read-only --network none \
+              --cap-drop=ALL --security-opt=no-new-privileges \
+              --memory=1g --pids-limit=64 \
+              --tmpfs /tmp:rw,noexec,nosuid,size=64m,mode=1777 \
+              --mount "type=bind,source=${PWD}/scanner/examples/rule-fixtures,target=/fixtures,readonly" \
+              aegify-scanner:ci test-rule "/fixtures/${fixture}.yml" \
+              --fixtures "/fixtures/${fixture}.fixtures.json" --json
+          done
+
       - name: Build dashboard image
         run: docker build --pull --file dashboard/Dockerfile --tag aegify-dashboard:ci dashboard
 

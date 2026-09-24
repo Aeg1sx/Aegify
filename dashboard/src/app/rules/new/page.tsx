@@ -24,14 +24,12 @@ patterns:
   - callee: "dangerous_function"
     args_match: "(user_input|request)"
 
-# OR taint-based detection
+# Alternative: remove patterns above before enabling taint.
+# These selectors filter flows recognized by the scanner models.
 # taint:
-#   sources:
-#     - type: function_parameter
-#       pattern: "request"
-#   sinks:
-#     - type: sql_query
-#       pattern: "execute"
+#   source_types: [http_param, http_body]
+#   sink_types: [sql_query]
+#   sink_pattern: "execute|query"
 
 message: "Security finding: {sink} called with untrusted input at line {sink_line}"
 `;

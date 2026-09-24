@@ -29,12 +29,13 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, jndi_lookup, database_read]
       sink_types: [os_command]
       sink_pattern: "Runtime\\.getRuntime\\s*\\(\\s*\\)\\.exec|runtime\\.exec"
-      propagation:
-        - through: "string_concatenation"
-        - through: "string_format"
-        - through: "string_builder"
-        - through: "variable_assignment"
-        - through: "method_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "string_format"
+        # - through: "string_builder"
+        # - through: "variable_assignment"
+        # - through: "method_parameter"
     defense_patterns:
       - "ProcessBuilder"
       - "allowlist"
@@ -87,12 +88,13 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, database_read]
       sink_types: [os_command]
       sink_pattern: "(new\\s+)?ProcessBuilder"
-      propagation:
-        - through: "string_concatenation"
-        - through: "list_add"
-        - through: "arrays_as_list"
-        - through: "variable_assignment"
-        - through: "method_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "list_add"
+        # - through: "arrays_as_list"
+        # - through: "variable_assignment"
+        # - through: "method_parameter"
     defense_patterns:
       - "allowlist"
       - "whitelist"
@@ -149,12 +151,13 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, log_message, jms_message]
       sink_types: [jndi_lookup]
       sink_pattern: "\\.lookup\\s*\\("
-      propagation:
-        - through: "string_concatenation"
-        - through: "string_format"
-        - through: "log_message"
-        - through: "expression_language"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "string_format"
+        # - through: "log_message"
+        # - through: "expression_language"
+        # - through: "variable_assignment"
     defense_patterns:
       - "com\\.sun\\.jndi\\.ldap\\.object\\.trustURLCodebase.*false"
       - "com\\.sun\\.jndi\\.rmi\\.object\\.trustURLCodebase.*false"
@@ -211,11 +214,12 @@ rules:
       source_types: [http_param, http_body, http_header, database_read, file_read]
       sink_types: [code_execution]
       sink_pattern: "ScriptEngine.*\\.eval|GroovyShell.*\\.evaluate|GroovyClassLoader.*\\.parseClass"
-      propagation:
-        - through: "string_concatenation"
-        - through: "string_format"
-        - through: "reader_wrapper"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "string_format"
+        # - through: "reader_wrapper"
+        # - through: "variable_assignment"
     defense_patterns:
       - "SandboxTransformer"
       - "SecureASTCustomizer"
@@ -274,12 +278,13 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, database_read, configuration_file]
       sink_types: [reflection_invocation]
       sink_pattern: "Class\\.forName|getMethod|getDeclaredMethod|invoke|newInstance|loadClass"
-      propagation:
-        - through: "string_concatenation"
-        - through: "string_format"
-        - through: "variable_assignment"
-        - through: "method_parameter"
-        - through: "map_get"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "string_format"
+        # - through: "variable_assignment"
+        # - through: "method_parameter"
+        # - through: "map_get"
     defense_patterns:
       - "allowlist"
       - "whitelist"

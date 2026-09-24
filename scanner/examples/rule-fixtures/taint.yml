@@ -1,0 +1,9 @@
+id: AEG-TAINT-DEMO
+name: Review request data reaching a SQL argument
+description: Filter the scanner's modeled HTTP-parameter to SQL-query flows.
+severity: high
+languages: [python]
+taint:
+  source_types: [http_param]
+  sink_types: [sql_query]
+message: Review this statically modeled source-to-sink flow.

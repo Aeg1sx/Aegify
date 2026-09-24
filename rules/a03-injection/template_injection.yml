@@ -32,11 +32,12 @@ rules:
       source_types: [http_param, http_body, http_query, form_input]
       sink_types: [template_render]
       sink_pattern: "(Template\\(|render_template_string|from_string|Environment.*parse)"
-      propagation:
-        - "string_concat"
-        - "f_string"
-        - "format\\("
-        - "%s.*%"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "f_string"
+        # - "format\\("
+        # - "%s.*%"
     defense_patterns:
       - "render_template\\("
       - "SandboxedEnvironment"
@@ -78,10 +79,11 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [template_render]
       sink_pattern: "(Handlebars\\.(compile|precompile)|hbs\\.(compile|precompile))"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "assignment"
     defense_patterns:
       - "Handlebars\\.SafeString"
       - "Handlebars\\.escapeExpression"
@@ -127,10 +129,11 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [template_render]
       sink_pattern: "(ejs\\.(render|compile|renderFile)|res\\.render)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "assignment"
     defense_patterns:
       - "res\\.render\\(\\s*[\"']"
       - "ejs\\.renderFile\\(\\s*[\"']"
@@ -175,12 +178,13 @@ rules:
       source_types: [http_param, http_body, http_query, spring_path_variable]
       sink_types: [template_render]
       sink_pattern: "(templateEngine\\.process|return.*\\+|th:(utext|text).*__\\$\\{)"
-      propagation:
-        - "string_concat"
-        - "String\\.format"
-        - "request\\.getParameter"
-        - "@RequestParam"
-        - "@PathVariable"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "String\\.format"
+        # - "request\\.getParameter"
+        # - "@RequestParam"
+        # - "@PathVariable"
     defense_patterns:
       - "redirect:"
       - "forward:"
@@ -225,10 +229,11 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [template_render]
       sink_pattern: "(pug\\.(compile|render|compileClient|compileFile)|jade\\.(compile|render))"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "assignment"
     defense_patterns:
       - "pug\\.compileFile\\(\\s*[\"']"
       - "res\\.render\\(\\s*[\"']"
@@ -271,12 +276,13 @@ rules:
       source_types: [http_param, http_body, http_query, spring_path_variable]
       sink_types: [template_render]
       sink_pattern: "(Template\\.process|processTemplateIntoString|new\\s+Template.*Reader)"
-      propagation:
-        - "string_concat"
-        - "String\\.format"
-        - "request\\.getParameter"
-        - "@RequestParam"
-        - "new\\s+StringReader"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "String\\.format"
+        # - "request\\.getParameter"
+        # - "@RequestParam"
+        # - "new\\s+StringReader"
     defense_patterns:
       - "Configuration\\.setNewBuiltinClassResolver\\(.*SAFER"
       - "TemplateClassResolver\\.SAFER_RESOLVER"

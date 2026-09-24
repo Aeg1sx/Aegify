@@ -33,11 +33,12 @@ rules:
       source_types: [http_body, file_upload, http_param, xml_input]
       sink_types: [xml_parse]
       sink_pattern: "etree\\.(parse|fromstring|XML|iterparse|XMLParser|DTD)"
-      propagation:
-        - through: "file_read"
-        - through: "request_body"
-        - through: "string_decode"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "file_read"
+        # - through: "request_body"
+        # - through: "string_decode"
+        # - through: "variable_assignment"
     defense_patterns:
       - "resolve_entities\\s*=\\s*False"
       - "no_network\\s*=\\s*True"
@@ -91,10 +92,11 @@ rules:
       source_types: [http_body, file_upload, http_param, xml_input]
       sink_types: [xml_parse]
       sink_pattern: "xml\\.(sax|dom|etree|parsers)"
-      propagation:
-        - through: "file_read"
-        - through: "request_body"
-        - through: "string_decode"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "file_read"
+        # - through: "request_body"
+        # - through: "string_decode"
     defense_patterns:
       - "defusedxml"
       - "feature_external_ges.*False"
@@ -148,11 +150,12 @@ rules:
       source_types: [http_body, file_upload, http_param, xml_input, jms_message]
       sink_types: [xml_parse]
       sink_pattern: "SAXParser.*\\.parse|XMLReader.*\\.parse"
-      propagation:
-        - through: "input_stream"
-        - through: "reader_wrapper"
-        - through: "input_source"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "input_stream"
+        # - through: "reader_wrapper"
+        # - through: "input_source"
+        # - through: "variable_assignment"
     defense_patterns:
       - "disallow-doctype-decl.*true"
       - "external-general-entities.*false"
@@ -208,11 +211,12 @@ rules:
       source_types: [http_body, file_upload, http_param, xml_input, soap_message, jms_message]
       sink_types: [xml_parse]
       sink_pattern: "DocumentBuilder.*\\.parse|Transformer.*\\.transform"
-      propagation:
-        - through: "input_stream"
-        - through: "reader_wrapper"
-        - through: "input_source"
-        - through: "byte_array_input_stream"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "input_stream"
+        # - through: "reader_wrapper"
+        # - through: "input_source"
+        # - through: "byte_array_input_stream"
     defense_patterns:
       - "disallow-doctype-decl.*true"
       - "external-general-entities.*false"
@@ -270,11 +274,12 @@ rules:
       source_types: [http_body, file_upload, http_param, query_string, form_data]
       sink_types: [xml_parse]
       sink_pattern: "XmlDocument.*\\.(Load|LoadXml|InnerXml)"
-      propagation:
-        - through: "stream_reader"
-        - through: "string_assignment"
-        - through: "variable_assignment"
-        - through: "method_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "stream_reader"
+        # - through: "string_assignment"
+        # - through: "variable_assignment"
+        # - through: "method_parameter"
     defense_patterns:
       - "XmlResolver\\s*=\\s*null"
       - "DtdProcessing\\.Prohibit"
@@ -325,10 +330,11 @@ rules:
       source_types: [http_body, file_upload, http_param, form_data]
       sink_types: [xml_parse]
       sink_pattern: "(new\\s+XmlTextReader|XmlReader\\.Create)"
-      propagation:
-        - through: "stream_reader"
-        - through: "string_reader"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "stream_reader"
+        # - through: "string_reader"
+        # - through: "variable_assignment"
     defense_patterns:
       - "DtdProcessing\\.Prohibit"
       - "DtdProcessing\\.Ignore"
@@ -386,11 +392,12 @@ rules:
       source_types: [http_body, http_param, file_upload, php_input_stream]
       sink_types: [xml_parse]
       sink_pattern: "simplexml_load_(string|file)|new\\s+SimpleXMLElement"
-      propagation:
-        - through: "variable_assignment"
-        - through: "file_get_contents"
-        - through: "fread"
-        - through: "function_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "file_get_contents"
+        # - through: "fread"
+        # - through: "function_parameter"
     defense_patterns:
       - "libxml_disable_entity_loader\\s*\\(\\s*true\\s*\\)"
       - "LIBXML_NONET"
@@ -447,11 +454,12 @@ rules:
       source_types: [http_body, http_param, file_upload, php_input_stream]
       sink_types: [xml_parse]
       sink_pattern: "DOMDocument.*(loadXML|load)\\s*\\("
-      propagation:
-        - through: "variable_assignment"
-        - through: "file_get_contents"
-        - through: "fread"
-        - through: "function_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "file_get_contents"
+        # - through: "fread"
+        # - through: "function_parameter"
     defense_patterns:
       - "libxml_disable_entity_loader\\s*\\(\\s*true\\s*\\)"
       - "substituteEntities\\s*=\\s*false"

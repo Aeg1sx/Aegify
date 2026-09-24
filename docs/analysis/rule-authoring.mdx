@@ -243,10 +243,139 @@ reference rule `enabled: false` with a concrete `disabled_reason`.
 
 ## Taint rules
 
-Taint rules declare compatible source and sink categories and may select library
-model behavior. They must preserve the path, source, sink, sanitizer decision,
-call context, and repository/module identity in evidence. Avoid broad categories
-that cannot be tested with positive and negative fixtures.
+Top-level `taint` filters flows already recognized by scanner source, sink and
+propagation models. It does not install a new model or create a flow from text.
+
+| Field | Meaning |
+|---|---|
+| `source_types` | Exact source category names, such as `http_param` |
+| `sink_types` | Exact sink category names, such as `sql_query` |
+| `source_pattern` | Python regex search over the source variable |
+| `sink_pattern` | Python regex search over the sink function |
+| `ignore_sanitizers` | Boolean; defaults to `false`, which omits sanitized flows |
+
+Selectors combine as filters. Type lists may contain at most 100 nonempty names
+of at most 256 characters each; patterns are limited to 4,096 characters. At least
+one nonempty selector is required. Regex matching uses Python's case-insensitive
+mode; inline flags can refine it. An empty mapping, malformed regex, non-boolean
+sanitizer option or unsupported field fails audit and rule loading.
+
+**Migration:** `sources`, `sinks` and `propagation` are not executable fields in
+this mapping. Previously they could be silently ignored. Use `source_types` /
+`sink_types` and the supported pattern fields for flow selection. Move descriptive
+propagation lists into comments; changing propagation behavior requires scanner
+model work and tests. The bundled migration only comments out unused propagation
+notes; its existing selectors and detection patterns are unchanged.
+
+Ordinary, selected-file and workspace scans also audit configured custom rules.
+Invalid, empty, missing or partially loaded custom rule sets add the
+`custom_rule_load_failed` analysis gap. Remaining findings are retained, but the
+scan is `partial` and exits `3`; a skipped custom rule cannot produce a clean CI
+result. Run `audit-rules --strict` for the detailed rule diagnostics.
+
+Preserve the path, source, sink, sanitizer decision, call context and module
+identity in evidence. Avoid broad categories that cannot be tested with positive
+and negative fixtures. The dashboard checks this field structure; Python regex
+compilation and detector behavior are verified by the scanner.
+
+## Run rule fixtures
+
+`test-rule` runs one submitted YAML rule through the actual parser, call graph,
+taint analysis and detector. Built-in and other custom rules are excluded. Use it
+while authoring and as a CI regression gate:
+
+```bash
+cd scanner
+uv run aegify test-rule examples/rule-fixtures/call.yml \
+  --fixtures examples/rule-fixtures/call.fixtures.json \
+  --output-file /tmp/call-fixture-report.json
+
+uv run aegify test-rule examples/rule-fixtures/taint.yml \
+  --fixtures examples/rule-fixtures/taint.fixtures.json --json
+```
+
+Copy these examples for a new rule. The call example includes a request argument,
+a constant, a different callee and a different argument position. The taint
+example includes direct and cross-file request-to-SQL flows, a constant query and
+a parameterized query. These are owned static fixtures; neither the application nor
+the database is executed.
+
+Each JSON suite declares `schema_version: 1`, a stable `suite_id`, semantic
+`suite_version`, one `rule_id`, and `cases`. Each case has a unique `id`, a list of
+`files` with `path` and UTF-8 `content`, and an `expected` list:
+
+```json
+{
+  "id": "request-argument",
+  "files": [{
+    "path": "main.py",
+    "content": "def handle(request):\n    return review_target(request)\n"
+  }],
+  "expected": [{
+    "rule_id": "AEG-CUSTOM-001",
+    "file_path": "main.py",
+    "line_start": 2
+  }]
+}
+```
+
+An empty `expected` list is a negative case. A passing suite requires at least one
+positive case and two negative cases. Every finding must match the expected rule,
+relative path and exact starting line; there is no line tolerance. Missing and
+unexpected findings fail the gate. Several files in one case share the same
+analysis context. Separate cases have fresh sources, storage and engine state.
+
+Reports contain actual evidence states, CI dispositions and available taint paths,
+but these fields are displayed rather than asserted by this location-only fixture
+schema. Add scanner tests when changing evidence classification or flow semantics.
+Fixtures cover their submitted inputs; a pass does not establish library runtime
+compatibility, all declared languages, application-wide security, or general
+precision/recall. Use the [evaluation protocol](/analysis/benchmark-evaluation)
+for broader quality claims.
+
+| Exit | Meaning |
+|---:|---|
+| `0` | All cases matched and the control requirement was met |
+| `1` | Complete analysis with missing or unexpected findings |
+| `2` | Invalid input/rule, worker failure, deadline, output limit or report-write failure |
+| `3` | Incomplete analysis or insufficient positive/negative controls |
+
+Unsupported source, syntax recovery, missing rule evaluation and analysis limits
+cannot pass as negative cases. Reaching a YAML detector's internal finding cap
+is conservatively incomplete, even if the last emitted finding matched an
+expectation. Split broad fixtures into smaller cases when appropriate. Metrics
+are `null` for incomplete analysis; ratios with empty denominators are also `null`.
+There is no line-based accuracy or true-negative count inferred from the source.
+
+### Bounds and replay
+
+Suites allow 20 cases, 12 files per case, 100 expectations per case, 64 KiB per
+source file and 1 MiB of source in total. Paths use ASCII letters, digits,
+underscores, hyphens, dots and slashes, with no absolute/dot/hidden segments,
+case collisions or file/directory collisions. Input files must be regular files,
+not symlinks or FIFOs. Rule YAML is limited to 128 KiB and 100 patterns; aliases,
+duplicate mapping keys and excessive nesting are rejected. The suite JSON limit
+is 2 MiB and the report limit is 4 MiB.
+
+The parent enforces a whole-suite wall deadline (`--timeout-seconds`, default 30,
+range 1–120) and stops the worker process group when it exits or reaches a limit.
+Linux workers also lower address-space limits to at most 2 GiB. macOS reports no
+address-space limit. The subprocess uses a minimal environment, fixed memory
+storage, no AI, and no target configuration, imports, installs or build commands.
+This process boundary is not an OS security sandbox; run untrusted submissions in
+an isolated worker/container with egress and resource limits. The container CI
+gate uses a read-only, unprivileged, network-disabled scanner image.
+
+The manifest records exact rule bytes, canonical suite/source digests, scanner
+implementation and rules, parser fingerprint, Python/package version, effective
+configuration and worker limits. `result_digest` hashes inputs and normalized
+results while excluding per-case runtime duration. Compare it across fresh
+processes with the same implementation and environment. It is an integrity and
+replay aid, not a signature or independent truth label.
+
+The dashboard's current editor validates structure and offers syntax preview.
+Run this CLI for actual fixture evaluation; a dashboard fixture-job interface is
+not yet available.
 
 ## Defense patterns
 
