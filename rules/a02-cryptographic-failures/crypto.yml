@@ -34,13 +34,18 @@ rules:
     owasp_category: "A02:2021-Cryptographic Failures"
     defense_patterns: ["sha256", "sha384", "sha512", "bcrypt", "scrypt", "argon2", "pbkdf2"]
     patterns:
-      - callee: "md5"
-      - callee_match: "(hashlib\\.md5|MD5\\.Create|MessageDigest\\.getInstance|createHash|crypto\\.createHash|md5\\.New|Md5\\.hashBytes)"
-        args_match: "(.*|['\"]md5['\"]|['\"]MD5['\"])"
+      - callee_match: "(?:(?:hashlib\\.)?md5|MD5\\.Create|md5\\.(?:New|Sum)|Md5\\.hashBytes|md5(?:\\.|::)(?:compute|new)|Md5(?:\\.|::)(?:new|digest)|(?:Insecure\\.)?MD5\\.hash)"
+        callee_match_mode: full
+      - callee_match: "(?:(?:crypto\\.)?createHash|hashlib\\.new|(?:java\\.security\\.)?MessageDigest\\.getInstance)"
+        callee_match_mode: full
+        args_match_index: 0
+        args_match: "^\\s*(?:name\\s*=\\s*)?['\"](?i:md5)['\"]\\s*$"
     message: >
-      Weak hash algorithm MD5 used at line {sink_line}. MD5 is
-      cryptographically broken. Use SHA-256 or stronger for integrity
-      checks, and bcrypt/argon2/scrypt for password hashing.
+      MD5 hash selection at line {line} needs a security-use review. MD5 is
+      unsuitable for collision-resistant security checks. Verify the resolved
+      API and purpose; use SHA-256 or stronger for security-sensitive integrity
+      and a password KDF for passwords. A non-security checksum alone does not
+      establish a vulnerability.
 
   - id: AEG-A02-003
     name: Weak Hash Algorithm SHA-1
@@ -56,14 +61,16 @@ rules:
     owasp_category: "A02:2021-Cryptographic Failures"
     defense_patterns: ["sha256", "sha384", "sha512", "sha3"]
     patterns:
-      - callee_match: "(hashlib\\.sha1|SHA1\\.Create|createHash\\(['\"]sha1['\"]\\)|MessageDigest\\.getInstance\\(['\"]SHA-?1['\"]\\)|sha1\\.New|crypto\\.SHA1)"
-        args_match: ".*"
-      - callee_match: "(crypto\\.createHash|hashlib\\.new)"
-        args_match: "['\"]sha-?1['\"]"
+      - callee_match: "(?:(?:hashlib\\.)?sha1|SHA1\\.Create|sha1\\.(?:New|Sum)|crypto\\.SHA1|(?:sha1(?:\\.|::))?Sha1(?:\\.|::)(?:new|digest)|(?:Insecure\\.)?SHA1\\.hash)"
+        callee_match_mode: full
+      - callee_match: "(?:(?:crypto\\.)?createHash|hashlib\\.new|(?:java\\.security\\.)?MessageDigest\\.getInstance)"
+        callee_match_mode: full
+        args_match_index: 0
+        args_match: "^\\s*(?:name\\s*=\\s*)?['\"](?i:sha-?1)['\"]\\s*$"
     message: >
-      Weak hash algorithm SHA-1 used at line {sink_line}. SHA-1 has known
-      collision vulnerabilities. Migrate to SHA-256 or SHA-3 for
-      security-sensitive hashing.
+      SHA-1 hash selection at line {line} needs a security-use review. Verify the
+      resolved API and purpose; migrate collision-resistant security checks to
+      SHA-256 or SHA-3. A checksum or HMAC use requires its own context review.
 
   - id: AEG-A02-004
     name: Insecure Random Number Generator for Cryptographic Use

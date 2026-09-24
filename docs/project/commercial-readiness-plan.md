@@ -505,7 +505,7 @@ code-scanning alerts: 678 Aegify candidates and five Scorecard alerts. No alert
 was dismissed as part of the evaluation or identity work. Alert counts are not
 a substitute for per-finding security review.
 
-## Team finding workflow: 2026-09-24, in progress
+## Team finding workflow: 2026-09-24
 
 An owned production HTTP regression first showed that an assigned team disappeared
 when the same finding was imported from a new CI checkout. The identity now owns
@@ -543,6 +543,69 @@ with existing color recommendations. A preflight self-scan analyzed 302 files in
 159.7 seconds with no reported gaps, 693 advisory candidates and zero blocking
 findings. Final exact-head CI and merge remain separate gates.
 
+All required checks, CodeQL in both languages, self-scan and container checks
+passed on final head `16b50dfea661125572a0a05cf310fa350909dc11`. Linux CI passed
+564 scanner tests and 34 offline worker, recovery and workflow checks; the
+container applied all 20 migrations. Equal Jira keys from different installations
+also retain separate linkage. PR #51 merged on 2026-09-24T00:31:08Z as verified
+signed commit `456255ea76fe5e87714969a2a20302556a25679d`. No production installation
+or external Jira/provider action was performed. Main analysis `1829373077`
+completed at 2026-09-24T00:36:04Z with 693 Aegify candidates and no reported error;
+both CodeQL analyses on the merge have zero results.
+The refreshed open-alert snapshot contains 698 alerts: 693 Aegify candidates and
+five Scorecard alerts. No alert was manually dismissed.
+
 This phase improves team workflow reliability. It does not change the measured
 OWASP precision/recall, establish live-provider AI quality, or complete the wider
 self-hosting release contract.
+
+## Hash algorithm rule precision: 2026-09-24, in progress
+
+Source review of the workflow self-scan found SHA-256 calls labeled as MD5. An
+owned source-only regression confirmed this for both SHA-256 and SHA-512. The MD5
+rule's factory argument expression accepted every argument, and partial callee
+matching also admitted metadata and unrelated names. SHA-1 selection had related
+callee/argument attribution gaps.
+
+The two rules now distinguish exact named constructors from factories whose
+first argument selects the literal algorithm. Messages request security-use and
+resolved-API review; findings remain advisory candidates. Explicit call fixtures
+cover eight parser languages, safe factory algorithms, names in other arguments,
+metadata, dynamic values, zero-argument constructors and nearby strong hashes.
+Computed choices, wrapper/alias resolution and distinguishing non-security use
+remain outside this change's coverage.
+
+A paired comparison over the same 302 source files at workflow head
+`16b50dfea661125572a0a05cf310fa350909dc11` removed 16 MD5 candidates at SHA-256
+calls and one SHA-1 metadata candidate, with no added candidate in that cohort.
+These are reviewed regressions in this repository, not a universal accuracy
+estimate. The first full OWASP Python rerun preserves CWE-328 TP=71, FP=0, FN=0,
+TN=80 and the overall baseline metrics. Per-rule attribution changes, so the
+outcome digest differs from the frozen original baseline. A separate report
+retains the new provenance; the original evaluation artifacts remain unchanged.
+
+The full local scanner preflight passed 594 tests with one platform skip.
+Ruff and formatting pass across 152 files; the changed rule file passes strict
+audit with ten executable rules, 17 executable patterns and no warnings/errors.
+The final focused suite passes 32 tests, including the observed metadata decoy
+and complete-analysis assertions for every source fixture. A replay script and
+301 tracked-file digests preserve the paired comparison; the initial 302-file
+cohort additionally contained generated Next.js declarations with no hash match.
+
+Two independent OWASP processes have identical provenance, case outcomes and
+all metrics, with outcome digest
+`45aff2e6f1253bf6252febbdcc95ab18249b0a90f35088d760f8bf958d2a0ec9`.
+`scanner/benchmarks/hash-selection-v1` retains the new metrics, all case outcomes,
+source/rule provenance and replay commands. Observed scan times are 206.93 and
+202.00 seconds; process RSS peaks are 368,787,456 and 367,460,352 bytes. Both runs
+correctly exit 3 for the 37 unscored CWE-501 cases; no quality-gate pass is claimed.
+
+The preflight worktree self-scan analyzed 301 files in 144.9 seconds with no
+reported gaps, 676 advisory candidates and zero blocking findings. Its generated
+file inventory differs from the prior development checkout; the pinned paired
+comparison is the evidence for the rule-specific reduction. Documentation checks
+pass with existing color recommendations. Exact-head remote CI remains the merge
+gate, including the replay script added after this preflight scan.
+The added replay script separately passes its pinned comparison and an owned
+single-file self-scan with no findings or analysis gaps; Ruff/format checks pass
+across 153 source, test and replay files.
