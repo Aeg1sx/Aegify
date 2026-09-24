@@ -13,6 +13,7 @@ from aegify.models import (
     TaintFlow,
 )
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
+from aegify.scanner.sql_queries import QUERY_METHODS, SUPPORTED
 
 
 class SQLInjectionRule(SecurityRule):
@@ -95,32 +96,42 @@ class SQLStringConcatRule(SecurityRule):
         ),
         severity=Severity.HIGH,
         default_confidence=0.7,
-        languages=[Language.PYTHON, Language.JAVASCRIPT],
+        languages=[Language.PYTHON, Language.JAVASCRIPT, Language.TYPESCRIPT],
         cwe_id=89,
         owasp_category="A03:2021-Injection",
         requires_taint_path=False,
         llm_verify_threshold=0.6,
     )
 
-    SQL_KEYWORDS = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE"]
-
     def get_detection_metadata(self) -> dict[str, Any]:
         return {
-            "detection_method": "pattern_matching",
+            "detection_method": "structural_sql_expression",
+            "contract_version": 1,
             "patterns": {
-                "callee_match": ["execute", "query", "raw", "cursor"],
-                "args_match": {
-                    "sql_keywords": self.SQL_KEYWORDS,
-                    "concat_operators": ["+", "f'", 'f"', ".format(", "%"],
-                    "logic": "argument contains SQL keyword AND string concatenation operator",
-                },
+                "callee_match": sorted(QUERY_METHODS),
+                "callee_match_mode": "full_leaf_name",
+                "query_selection": [
+                    "first_positional",
+                    "sql/query/operation/statement_keyword",
+                    "sql/text_object_property",
+                ],
+                "constructions": [
+                    "concatenation",
+                    "interpolation",
+                    "percent_format",
+                    "format_call",
+                ],
             },
             "description": (
-                "Scans all function calls matching DB execution methods "
-                "(execute, query, raw, cursor). "
-                "For each matching call, checks if arguments contain SQL keywords combined with "
-                "string concatenation operators (f-strings, +, .format(), %). "
-                "Flags queries built via string interpolation instead of parameterized queries."
+                "Selects query text separately from bound values, follows bounded local string "
+                "assignments, and reports SQL text assembled with unresolved values. Fixed strings "
+                "and finite literal-only compositions are not constructions with external data. "
+                "This is candidate evidence; source trust and database receiver identity "
+                "require review."
+            ),
+            "uncertainty": (
+                "Unmodeled values are unknown; parser cache version changes "
+                "require reparsing legacy ASTs."
             ),
         }
 
@@ -133,38 +144,37 @@ class SQLStringConcatRule(SecurityRule):
         findings: list[Finding] = []
 
         for ast in file_asts:
+            if ast.language not in SUPPORTED:
+                continue
             for call in ast.calls:
-                call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
-
-                if not any(
-                    sink in call_text.lower() for sink in ("execute", "query", "raw", "cursor")
-                ):
+                facts = call.query_expression
+                if facts is None or facts.state != "constructed" or not facts.has_sql:
                     continue
-
-                for arg in call.arguments:
-                    if self._is_string_concat_sql(arg):
-                        findings.append(
-                            self._create_finding(
-                                file_path=ast.file_path,
-                                line_start=call.line,
-                                line_end=call.line,
-                                code_snippet="",
-                                message=(
-                                    f"SQL query at line {call.line} uses string concatenation "
-                                    f"in call to '{call_text}'. Use parameterized queries instead."
-                                ),
-                            )
-                        )
-                        break
+                call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
+                origin = ", ".join(str(line) for line in facts.origin_lines) or str(call.line)
+                operations = ", ".join(facts.constructions)
+                uncertainty = (
+                    f" Unresolved analysis details: {', '.join(facts.uncertainties)}."
+                    if facts.uncertainties
+                    else ""
+                )
+                findings.append(
+                    self._create_finding(
+                        file_path=ast.file_path,
+                        line_start=call.line,
+                        line_end=call.line,
+                        code_snippet="",
+                        message=(
+                            f"SQL text passed to '{call_text}' is assembled using {operations} "
+                            f"with unresolved values (selected {facts.selection}; "
+                            f"value origins: {origin}). "
+                            "Use bound parameters for data values. Static construction candidate; "
+                            f"input trust and database binding require review.{uncertainty}"
+                        ),
+                    )
+                )
 
         return findings
-
-    def _is_string_concat_sql(self, arg: str) -> bool:
-        """Check if an argument looks like SQL built with string concat."""
-        arg_upper = arg.upper()
-        has_sql = any(kw in arg_upper for kw in self.SQL_KEYWORDS)
-        has_concat = any(op in arg for op in ["+", "f'", 'f"', ".format(", "%"])
-        return has_sql and has_concat
 
 
 # Register rules

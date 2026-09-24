@@ -1782,6 +1782,15 @@ class ScanEngine:
         for ast in asts:
             remaining = 1000 - len(result.parse_diagnostics)
             result.parse_diagnostics.extend(ast.parse_diagnostics[:remaining])
+        query_limits = sum(ast.query_expression_limit_count for ast in asts)
+        if query_limits:
+            result.add_gap(
+                "sql_expression_limit",
+                "parsing",
+                "SQL expression analysis exceeded its bounded syntax budget; "
+                "affected calls remain unknown",
+                query_limits,
+            )
 
     def _parse_directory_parallel(
         self, target: Path, result: ScanResult | None = None
