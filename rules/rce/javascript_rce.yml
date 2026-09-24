@@ -32,12 +32,13 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, websocket_message, cli_argument]
       sink_types: [os_command]
       sink_pattern: "(child_process\\.)?exec(Sync)?\\s*\\("
-      propagation:
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "variable_assignment"
-        - through: "array_join"
-        - through: "destructuring"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "variable_assignment"
+        # - through: "array_join"
+        # - through: "destructuring"
     defense_patterns:
       - "execFile\\s*\\("
       - "spawn\\s*\\("
@@ -89,10 +90,11 @@ rules:
       source_types: [http_param, http_body, websocket_message, database_read]
       sink_types: [code_execution]
       sink_pattern: "vm\\.(runInNewContext|runInThisContext|runInContext|compileFunction|Script)"
-      propagation:
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "variable_assignment"
     defense_patterns:
       - "vm2"
       - "isolated-vm"
@@ -146,12 +148,13 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, websocket_message, url_fragment, local_storage, query_string]
       sink_types: [code_execution]
       sink_pattern: "eval|setTimeout\\s*\\(\\s*['\"`]|setInterval\\s*\\(\\s*['\"`]"
-      propagation:
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "base64_decode"
-        - through: "url_decode"
-        - through: "json_parse_value"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "base64_decode"
+        # - through: "url_decode"
+        # - through: "json_parse_value"
     defense_patterns:
       - "JSON\\.parse"
       - "parseInt"
@@ -205,11 +208,12 @@ rules:
       source_types: [http_param, http_body, websocket_message, local_storage, database_read]
       sink_types: [code_execution]
       sink_pattern: "(new\\s+)?Function\\s*\\(|constructor\\.constructor\\s*\\("
-      propagation:
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "variable_assignment"
-        - through: "array_element"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "variable_assignment"
+        # - through: "array_element"
     defense_patterns:
       - "Content-Security-Policy.*unsafe-eval"
       - "Object\\.freeze"
@@ -264,12 +268,13 @@ rules:
       source_types: [http_param, http_body, http_header, cli_argument, environment_variable]
       sink_types: [code_execution, file_inclusion]
       sink_pattern: "(require|import)\\s*\\("
-      propagation:
-        - through: "template_literal"
-        - through: "string_concatenation"
-        - through: "path_join"
-        - through: "path_resolve"
-        - through: "variable_assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "template_literal"
+        # - through: "string_concatenation"
+        # - through: "path_join"
+        # - through: "path_resolve"
+        # - through: "variable_assignment"
     defense_patterns:
       - "path\\.basename"
       - "path\\.normalize.*includes.*\\.\\."

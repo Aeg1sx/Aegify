@@ -31,6 +31,19 @@ aegify audit-rules ../rules/path/to/changed-rule.yml --strict
 The bundled rule tree must retain zero strict-audit issues. Do not add an
 ignored field or copy an unsupported construct into another rule.
 
+Exercise a single rule with owned positive and negative source fixtures:
+
+```bash
+cd scanner
+uv run aegify test-rule examples/rule-fixtures/call.yml \
+  --fixtures examples/rule-fixtures/call.fixtures.json
+```
+
+The source is parsed, never executed. Exit `0` requires all expected locations,
+at least one positive and two negative cases, and no analysis gaps. Fixtures do
+not replace the broader precision/recall evaluation or evidence-classification
+tests. See the rule contract for limits, report digests and taint-field migration.
+
 ## Rules and framework models
 
 Every detection change should include:

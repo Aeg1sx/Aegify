@@ -902,6 +902,76 @@ def audit_rule_files(
         raise typer.Exit(code=2)
 
 
+@app.command("test-rule")
+def test_rule(
+    rule_file: Annotated[Path, typer.Argument(help="One YAML rule; source is never executed")],
+    fixtures: Annotated[Path, typer.Option("--fixtures", help="Versioned JSON fixture suite")],
+    output_file: Annotated[Path | None, typer.Option("--output-file", "-o")] = None,
+    timeout_seconds: Annotated[
+        int, typer.Option("--timeout-seconds", min=1, max=120, help="Whole-suite wall deadline")
+    ] = 30,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit the full JSON report")] = False,
+) -> None:
+    """Evaluate exact finding locations with one positive and two negative controls.
+
+    Exit 0=passed, 1=mismatched findings, 2=invalid input/worker failure,
+    3=incomplete analysis or insufficient controls. No AI or application execution.
+    """
+    from aegify.quality.rule_fixtures import (
+        MAX_RULE_BYTES,
+        MAX_SUITE_BYTES,
+        FixtureReport,
+        RuleFixtureSuite,
+        read_input,
+        run_rule_fixtures,
+        strict_json,
+    )
+
+    if os.name != "posix":
+        report = FixtureReport(status="error", issues=["unsupported_platform"])
+    else:
+        try:
+            rule_yaml = read_input(rule_file, MAX_RULE_BYTES).decode("utf-8")
+            suite = RuleFixtureSuite.model_validate(
+                strict_json(read_input(fixtures, MAX_SUITE_BYTES))
+            )
+            report = run_rule_fixtures(rule_yaml, suite, timeout_seconds=timeout_seconds)
+        except OSError, ValueError, UnicodeError, RecursionError:
+            report = FixtureReport(status="error", issues=["invalid_input"])
+    encoded = report.model_dump_json(indent=2)
+    if output_file is not None:
+        try:
+            output_file.write_text(encoded + "\n", encoding="utf-8")
+        except OSError:
+            console.print("Could not write the fixture report.", style="red")
+            raise typer.Exit(code=2) from None
+    if json_output:
+        print(encoded)
+    else:
+        table = Table(title=f"Rule fixtures: {report.status}")
+        for label in ("Case", "Status", "TP", "FP", "FN", "Analysis gaps"):
+            table.add_column(label)
+        for case in report.cases:
+            metrics = case.metrics
+            table.add_row(
+                case.id,
+                case.status,
+                str(metrics.true_positives) if metrics else "—",
+                str(metrics.false_positives) if metrics else "—",
+                str(metrics.false_negatives) if metrics else "—",
+                ", ".join(case.issues),
+            )
+        console.print(table)
+        if report.issues:
+            console.print(", ".join(report.issues))
+        for diagnostic in report.diagnostics:
+            message = str(diagnostic.get("message", "Invalid rule"))
+            console.print(Text("".join(char if char.isprintable() else " " for char in message)))
+        console.print("Fixture labels measure this suite only; source code was not executed.")
+    if report.exit_code:
+        raise typer.Exit(code=report.exit_code)
+
+
 @app.command("verify-plan")
 def verify_plan(
     plan_file: Annotated[
