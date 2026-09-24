@@ -31,7 +31,7 @@ from aegify.models import (
 from aegify.models import (
     Language as Lang,
 )
-from aegify.scanner import call_arguments
+from aegify.scanner import call_arguments, sql_queries
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,10 @@ def parser_fingerprint() -> str:
     """Invalidate serialized ASTs when extraction code or grammar packages change."""
     packages = ["tree-sitter", *[f"tree-sitter-{lang.value}" for lang in Lang]]
     material = {
-        "schema": 3,
+        "schema": 4,
         "extractor": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "call_arguments": hashlib.sha256(Path(call_arguments.__file__).read_bytes()).hexdigest(),
+        "sql_queries": hashlib.sha256(Path(sql_queries.__file__).read_bytes()).hexdigest(),
         "packages": {package: version(package) for package in packages},
     }
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
@@ -167,6 +168,7 @@ class ASTParser:
         extractor = _get_extractor(lang)
         ast = extractor.extract(tree.root_node, source, str(file_path), lang)
         call_arguments.annotate_call_arguments(ast, tree.root_node, source)
+        sql_queries.annotate_sql_queries(ast, tree.root_node, source)
         ast.source_digest = hashlib.sha256(source).hexdigest()
         ast.parser_grammar = "tsx" if file_path.suffix.lower() == ".tsx" else lang.value
         pending = [tree.root_node] if tree.root_node.has_error else []
