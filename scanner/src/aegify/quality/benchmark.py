@@ -6,14 +6,16 @@ import hashlib
 from collections import defaultdict
 from collections.abc import Collection
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from aegify.models import AnalysisGap, Finding, ScanStatus
+from aegify.quality.artifacts import read_regular_file
 
 
 class ExpectedFinding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     rule_id: str = Field(pattern=r"^AEG-[A-Z0-9-]+$")
     file_path: str
@@ -23,7 +25,13 @@ class ExpectedFinding(BaseModel):
     @classmethod
     def validate_relative_source_path(cls, value: str) -> str:
         normalized = PurePosixPath(value.replace("\\", "/"))
-        if not normalized.parts or normalized.is_absolute() or ".." in normalized.parts:
+        if (
+            not normalized.parts
+            or normalized.is_absolute()
+            or ".." in normalized.parts
+            or ":" in normalized.parts[0]
+            or "\x00" in value
+        ):
             raise ValueError("file_path must stay inside the benchmark source tree")
         return normalized.as_posix()
 
@@ -31,13 +39,13 @@ class ExpectedFinding(BaseModel):
 class GroundTruthManifest(BaseModel):
     """Versioned, explicit benchmark scope and expected evidence identities."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     schema_version: int = Field(default=1, ge=1, le=1)
     corpus_id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     corpus_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
-    rule_scope: list[str] = Field(min_length=1)
-    expected: list[ExpectedFinding] = Field(min_length=1)
+    rule_scope: list[str] = Field(min_length=1, max_length=10_000)
+    expected: list[ExpectedFinding] = Field(min_length=1, max_length=50_000)
 
     @model_validator(mode="after")
     def validate_scope(self) -> GroundTruthManifest:
@@ -65,13 +73,14 @@ class RuleMetrics(BaseModel):
     true_positives: int = 0
     false_positives: int = 0
     false_negatives: int = 0
-    precision: float = 1.0
-    recall: float = 1.0
-    f1: float = 1.0
+    precision: float | None = None
+    recall: float | None = None
+    f1: float | None = None
 
 
 class BenchmarkReport(BaseModel):
-    schema_version: int = 1
+    schema_version: int = 2
+    evaluation: str = "owned-findings-v2"
     corpus_id: str = ""
     corpus_version: str = ""
     source_digest: str = ""
@@ -80,6 +89,12 @@ class BenchmarkReport(BaseModel):
     evaluated_rules: list[str] = Field(default_factory=list)
     analysis_status: ScanStatus = ScanStatus.COMPLETED
     analysis_gaps: list[AnalysisGap] = Field(default_factory=list)
+    evaluation_complete: bool = False
+    missing_rules: list[str] = Field(default_factory=list)
+    missing_files: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    measurement: dict[str, Any] = Field(default_factory=dict)
+    outcomes_digest: str = ""
     metrics: RuleMetrics
     by_rule: dict[str, RuleMetrics]
     unmatched_actual: list[str]
@@ -101,18 +116,30 @@ def _path(value: str, target_root: Path | None = None) -> str:
 
 def digest_source_tree(target: Path) -> str:
     """Hash source paths and bytes so a benchmark report identifies its exact corpus."""
+    if target.is_symlink() or not (target.is_dir() or target.is_file()):
+        raise ValueError("benchmark target must be a regular file or directory")
     root = target if target.is_dir() else target.parent
-    paths = [target] if target.is_file() else sorted(target.rglob("*"))
+    paths: list[Path] = []
+    for path in [target] if target.is_file() else target.rglob("*"):
+        if len(paths) >= 50_000:
+            raise ValueError("benchmark corpus exceeds 50000 entries")
+        paths.append(path)
     digest = hashlib.sha256()
-    for path in paths:
+    total_bytes = 0
+    for path in sorted(paths):
         if path.is_symlink():
             raise ValueError(f"benchmark corpus must not contain symlinks: {path}")
-        if not path.is_file():
+        if path.is_dir():
             continue
-        relative = path.relative_to(root).as_posix()
-        material = path.read_bytes()
+        if not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
+            raise ValueError("benchmark inputs must be regular files of at most 8 MiB")
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        material = read_regular_file(path, limit=8 * 1024 * 1024)
+        total_bytes += len(material)
+        if len(material) > 8 * 1024 * 1024 or total_bytes > 256 * 1024 * 1024:
+            raise ValueError("benchmark corpus exceeds byte limits")
         digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative.encode("utf-8"))
+        digest.update(relative)
         digest.update(len(material).to_bytes(8, "big"))
         digest.update(material)
     return f"sha256:{digest.hexdigest()}"
@@ -123,9 +150,9 @@ def digest_bytes(material: bytes) -> str:
 
 
 def _metrics(tp: int, fp: int, fn: int) -> RuleMetrics:
-    precision = tp / (tp + fp) if tp + fp else 1.0
-    recall = tp / (tp + fn) if tp + fn else 1.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    precision = tp / (tp + fp) if tp + fp else None
+    recall = tp / (tp + fn) if tp + fn else None
+    f1 = 2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else None
     return RuleMetrics(
         true_positives=tp,
         false_positives=fp,

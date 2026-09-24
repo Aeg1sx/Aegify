@@ -9,6 +9,53 @@ public labeled corpora for broader diagnostics, and independently reviewed
 application cases for release decisions. A high score on one layer does not
 establish commercial detection accuracy.
 
+## Owned finding-location evaluation
+
+`aegify benchmark` evaluates a version 1 ground-truth manifest against an isolated
+local source tree. The manifest declares the rule scope and expected file/line
+locations; the checked-in core corpus is a small regression contract. The output
+is **report schema version 2**. Consumers of older reports must allow `null`
+precision, recall and F1 when the corresponding denominator is empty.
+
+```bash
+cd scanner
+uv run aegify benchmark benchmarks/core-v1/sources \
+  --ground-truth benchmarks/core-v1/ground-truth.json \
+  --min-precision 1.0 --min-recall 1.0 \
+  --output-file /path/to/reports/core.json
+```
+
+The runner uses bundled rules, memory storage, sequential parsing, no output
+caps and a 50,000-context taint budget. It ignores repository configuration and
+`AEGIFY_*` environment overrides. Its explicit empty exclusion list includes owned
+test fixtures. Unsupported inputs or parser/resource gaps still make analysis
+incomplete. No provider, corpus dependencies or application code is invoked.
+
+Source, auxiliary files, label bytes, effective configuration and implementation
+must remain unchanged during analysis. Labels must reference existing source
+lines; missing executed rules or analyzed labeled files produce an incomplete
+evaluation. The report keeps observed matching metrics for diagnosis alongside
+`evaluation_complete`, `missing_rules`, `missing_files` and analysis gaps.
+Only complete evaluations with defined ratios can pass a quality threshold.
+
+Keep output outside the source directory and separate from the label file.
+Single-file targets bind their complete enclosing directory, including auxiliary
+inputs. Use an isolated directory: inventory is bounded to 50,000 entries, 8 MiB
+per file and 256 MiB overall; parsing remains bounded to 1 MiB per source file.
+Links and special files are rejected. Artifact reads require a POSIX host
+(Linux/macOS): they use non-following, nonblocking opens and validate the opened
+descriptor's type and size. Unsupported hosts fail before evaluation. Reports
+are published atomically. Evaluate an isolated, immutable checkout; before/after
+hashes detect observed changes and are not a substitute for filesystem isolation.
+
+Version 1 manifests remain valid. Earlier use of repository settings, environment
+overrides, output inside the corpus or coercible JSON values requires migration
+to these explicit inputs. The UTF-8 source digest uses byte lengths; non-ASCII
+path digests from the older implementation require a new baseline. CI runs the
+core evaluation in two separate processes and compares source/label/outcome and
+implementation/configuration identities. This proves repeatability only within
+that owned regression scope.
+
 ## OWASP Python case evaluation
 
 `aegify benchmark-owasp` reads a local
@@ -139,6 +186,58 @@ baseline.
 Timing includes scan time and complete evaluation time. Process and child RSS
 high-water marks are separate and must not be summed as simultaneous memory
 usage. Individual developer-machine runs are not p50/p95 latency guarantees.
+
+## Compare saved OWASP reports
+
+Use `aegify compare-owasp` to compare full JSON reports without rescanning or
+executing their source. The comparison supports the exact-case/CWE v1 adapter.
+
+```bash
+aegify compare-owasp baseline.json candidate.json \
+  --output-file comparison.json
+
+aegify compare-owasp first-run.json repeat-run.json \
+  --require-identical --output-file replay-comparison.json
+```
+
+The loader recomputes aggregate, per-CWE and per-rule metrics from every case;
+checks the outcome/configuration digests, identities, health, counts, matching
+rules and abstentions; and rejects ambiguous or non-finite JSON. Source, label,
+configuration and case identities must match between reports. It does not trust
+an aggregate score or an embedded claim of successful evaluation.
+
+The default gate rejects **any** correct-to-incorrect case transition in any
+channel, even when another case improves enough to hide the regression in an
+aggregate metric. Losing scored coverage also fails. Metrics are compared on the
+jointly scored cases; coverage gains/losses and all changed case evidence remain
+visible separately. No statistical significance is inferred from correlated
+synthetic templates.
+
+`--require-identical` additionally requires equal implementation, dependency,
+parser, environment and executed-rule identities, matching observations/counts,
+analysis health and snapshot. Timing and process RSS are excluded. Use reports
+from separately executed processes; comparing one report with itself only checks
+artifact consistency.
+
+Archived reports with separate CSV files require explicit `--baseline-cases` and
+`--candidate-cases` paths. Both historical `|` and `;` rule separators are supported;
+the reconstructed cases must reproduce the JSON outcome digest. The command never
+discovers or downloads a companion file from a report. Embedded cases and an
+external CSV cannot be supplied together. Inputs are bounded to 32 MiB JSON,
+16 MiB CSV and 50,000 cases; output cannot replace an input artifact.
+
+| Exit | Comparison result |
+|---:|---|
+| `0` | Complete reports and selected comparison gate passed |
+| `1` | A case/coverage regression, or a requested replay mismatch |
+| `2` | Invalid/incomparable input, a failed scanner run, or report write failure |
+| `3` | Gate has no detected regression/mismatch, but at least one evaluation is incomplete |
+
+A comparison passing its relative gate does not establish an absolute quality
+threshold. Preserve exit `3` for the public baseline's unscored category. Artifact
+hashes identify supplied data and do not authenticate its author or independently
+adjudicate labels. Detection quality remains dependent on the workload and
+weakness classes, as discussed in [NIST SATE VI](https://doi.org/10.6028/NIST.SP.500-341).
 
 ## Release evaluation
 
