@@ -8,6 +8,7 @@ import { setInterval, clearInterval } from "node:timers";
 import { log, error } from "node:console";
 import { prisma } from "../src/lib/prisma.ts";
 import { runLlmWorkerOnce } from "../src/lib/llm-worker.ts";
+import { expireLlmInputs } from "../src/lib/llm-jobs.ts";
 import { configureDatabase } from "../src/lib/database-runtime.ts";
 
 if (!process.env.AUTH_SECRET || !process.env.ENCRYPTION_SECRET || !process.env.DATABASE_URL || !process.env.AUTH_ADMIN_EMAILS || (!process.env.AUTH_ALLOWED_EMAILS && !process.env.AUTH_ALLOWED_DOMAINS)) throw new Error("The AI worker requires the dashboard's database, encryption, authentication and admission configuration.");
@@ -20,7 +21,7 @@ let lastMaintenance = 0;
 function register() {
   if (registration) return registration;
   registration = (async () => {
-    await prisma.llmWorker.upsert({ where: { id: workerId }, create: { id: workerId, version: "review-v1" }, update: { lastSeenAt: new Date() } });
+    await prisma.llmWorker.upsert({ where: { id: workerId }, create: { id: workerId, version: "review-v2" }, update: { lastSeenAt: new Date(), version: "review-v2" } });
     await writeFile(join(tmpdir(), "aegify-ai-worker-health"), new Date().toISOString(), { mode: 0o600 });
   })().finally(() => { registration = undefined; });
   return registration;
@@ -33,7 +34,7 @@ try {
   while (!stopping.signal.aborted) {
     try {
       if (Date.now() - lastMaintenance > 3_600_000) {
-        await prisma.llmJob.updateMany({ where: { completedAt: { lt: new Date(Date.now() - 7 * 86_400_000) }, inputCiphertext: { not: null }, status: { in: ["completed", "partial", "failed", "cancelled"] } }, data: { inputCiphertext: null } });
+        await expireLlmInputs(prisma);
         await prisma.llmWorker.deleteMany({ where: { lastSeenAt: { lt: new Date(Date.now() - 86_400_000) } } });
         lastMaintenance = Date.now();
       }

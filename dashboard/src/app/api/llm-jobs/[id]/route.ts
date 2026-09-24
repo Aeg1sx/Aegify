@@ -11,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (access instanceof Response) return access;
   const job = await prisma.llmJob.findUnique({ where: { id }, select: { ...llmJobMetadata,
     scan: { select: { id: true, repository: true, branch: true, status: true } },
-    calls: { orderBy: { batchIndex: "asc" }, take: 20, select: llmCallMetadata },
+    calls: { orderBy: [{ batchIndex: "asc" }, { roundIndex: "asc" }], take: 20, select: llmCallMetadata },
     events: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100, select: { id: true, code: true, message: true, details: true, createdAt: true } },
   } });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });

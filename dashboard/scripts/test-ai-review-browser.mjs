@@ -19,7 +19,7 @@ async function elementWithText(page, selector, text) {
 }
 async function waitText(page, text) { await page.waitForFunction((value) => globalThis.document.body.innerText.includes(value), { timeout: 15_000 }, text); checks++; }
 try {
-  await runAccessIntegration({ verifyBrowser: async ({ origin, cookies, projectId, reviewScanId, db, environment }) => {
+  await runAccessIntegration({ verifyBrowser: async ({ origin, cookies, projectId, reviewScanId, sourceScanId, db, environment }) => {
     const previous = process.env.ENCRYPTION_SECRET;
     process.env.ENCRYPTION_SECRET = environment.ENCRYPTION_SECRET;
     const context = await browser.createBrowserContext();
@@ -89,6 +89,47 @@ try {
       // so the ancestor clip cannot hide the lower half of the retained evidence.
       await page.setViewport({ width: 390, height: 2000 });
       await mobileHistory.screenshot({ path: "/private/tmp/aegify-review-history-mobile-evidence.png" });
+      await page.setViewport({ width: 390, height: 844 });
+      // Select and review a retained source fixture through the visible dashboard flow.
+      await page.setViewport({ width: 1280, height: 1000 });
+      await (await elementWithText(page, "button", "Source Investigation")).click();
+      await page.select("#review-scan", sourceScanId);
+      await page.waitForSelector('[aria-label="Select findings for source review"] input[type="checkbox"]');
+      assert.equal(await (await elementWithText(page, "button", "Start Source Investigation")).evaluate((node) => node.disabled), true); checks++;
+      await page.click('[aria-label="Select findings for source review"] input[type="checkbox"]');
+      await waitText(page, "Choose findings to investigate · 1/25");
+      await Promise.all([
+        page.waitForResponse((response) => response.url().includes(`/api/findings?scanId=${sourceScanId}`) && response.status() === 200),
+        (await page.$('[aria-label="Select findings for source review"] button')).click(),
+      ]);
+      await page.waitForSelector('[aria-label="Select findings for source review"] input[type="checkbox"]');
+      assert.equal(await page.$eval('[aria-label="Select findings for source review"] input[type="checkbox"]', (node) => node.checked), true); checks++;
+      await (await elementWithText(page, "button", "Start Source Investigation")).click();
+      let sourceJob;
+      for (let i = 0; i < 100; i++) { sourceJob = await db.llmJob.findFirst({ where: { scanId: sourceScanId, status: "pending" } }); if (sourceJob) break; await delay(50); }
+      assert.ok(sourceJob); assert.equal(sourceJob.mode, "source"); checks++;
+      await runLlmWorkerOnce(db, "owned-browser-source-worker", environment, new globalThis.AbortController().signal, { transport: async (request) => {
+        const input = JSON.parse(JSON.parse(request.body).messages[0].content);
+        const value = input.source_progress.round === 1
+          ? { kind: "tools", requests: [{ name: "source_read", arguments: { file_id: input.findings[0].finding_source.file_id, line_start: 1, line_end: 2 } }] }
+          : { kind: "review", reviews: input.findings.map(({ id }) => ({ findingId: id, verdict: "needs_review", confidence: 0.3, reasoning: "Owned browser source investigation.", remediation: "Inspect caller constraints.", adjustedSeverity: null, evidenceFor: [], evidenceAgainst: [], evidenceGaps: ["Static evidence only."], citationIds: [input.source_progress.tool_results[0].evidence.citation.citation_id] })) };
+        return { status: 200, text: JSON.stringify({ id: "owned-source-browser", model: "owned-browser-model", stop_reason: "end_turn", usage: { input_tokens: 100, output_tokens: 50 }, content: [{ type: "text", text: JSON.stringify(value) }] }) };
+      } });
+      await waitText(page, "Owned browser source investigation.");
+      await waitText(page, "Batch 1 · Turn 1 · Source tools · completed");
+      await waitText(page, "Batch 1 · Turn 2 · Review · completed");
+      await waitText(page, "Source evidence & tool activity");
+      await (await elementWithText(page, '[aria-label="Source references"] summary', "main.py:1–2")).click();
+      await waitText(page, "OWNED_SOURCE_HTTP_EVIDENCE");
+      const sourceDownload = await page.$('[aria-label="Saved review detail"] a[download]');
+      const downloadedSource = await page.evaluate(async (path) => (await globalThis.fetch(path)).json(), await sourceDownload.evaluate((node) => node.href));
+      assert.equal(downloadedSource.record.sourceEvidence.tools_used.length, 1); assert.equal(downloadedSource.record.sourceEvidence.trace.model_calls, 2); checks += 2;
+      await page.screenshot({ path: "/private/tmp/aegify-source-review-desktop.png", fullPage: true });
+      await page.setViewport({ width: 390, height: 844 });
+      assert.ok(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.window.innerWidth), "Source evidence must fit mobile width"); checks++;
+      assert.ok(await page.$eval('[aria-label="Saved review detail"] span.break-all', (node) => node.getBoundingClientRect().right <= node.parentElement.getBoundingClientRect().right + 1), "The immutable commit must wrap inside its evidence panel"); checks++;
+      await page.setViewport({ width: 390, height: 2500 });
+      await (await page.$('[aria-label="Saved AI review history"]')).screenshot({ path: "/private/tmp/aegify-source-review-mobile-evidence.png" });
       await page.setViewport({ width: 390, height: 844 });
       await db.projectMember.upsert({ where: { projectId_userId: { projectId, userId: "bob" } }, create: { projectId, userId: "bob", role: "viewer" }, update: { role: "viewer" } });
       await context.setCookie({ name: "authjs.session-token", value: cookies.bob, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" });
