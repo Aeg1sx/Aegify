@@ -945,6 +945,21 @@ class StructuredTaintAnalyzer:
         call_string: _CallString,
     ) -> None:
         index = event.sink.argument_index
+        query = event.call.query_expression
+        if (
+            event.sink.sink_type == "sql_query"
+            and index == 0
+            and query is not None
+            and query.version == 1
+            and query.state == "constant"
+            and query.has_sql
+            and not query.uncertainties
+            and query.selection in {"positional:0", "positional:0.sql", "positional:0.text"}
+        ):
+            # Object argument taint includes bound values. A fixed selected SQL
+            # program cannot become SQL syntax through those values. Keep the
+            # conservative path for unknown facts and custom argument models.
+            return
         if index == -1:
             states = receiver_state
         elif index < 0 or index >= len(argument_states):
