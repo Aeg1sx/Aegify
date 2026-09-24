@@ -52,13 +52,29 @@ def _finite_float(value: str) -> float:
     return number
 
 
+def _check_unicode(value: Any) -> None:
+    # JSON permits escaped unpaired surrogates that cannot be retained as UTF-8
+    # in the result artifact. Reject them before a caller saves a finding.
+    if isinstance(value, str):
+        value.encode("utf-8")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            key.encode("utf-8")
+            _check_unicode(item)
+    elif isinstance(value, list):
+        for item in value:
+            _check_unicode(item)
+
+
 def strict_json(text: str) -> Any:
-    return json.loads(
+    value = json.loads(
         text,
         object_pairs_hook=_unique_object,
         parse_constant=_reject_constant,
         parse_float=_finite_float,
     )
+    _check_unicode(value)
+    return value
 
 
 def _label(value: object, limit: int = 256) -> str:

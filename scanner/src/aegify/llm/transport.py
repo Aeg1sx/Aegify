@@ -82,6 +82,8 @@ def guard_response(response: httpx2.Response) -> None:
     if current is None:
         raise httpx2.TransportError("unreserved_model_response")
     current.check_deadline()
+    if not 100 <= response.status_code <= 599:
+        current.fail("invalid_http_status")
     current.http_status = response.status_code
     if 300 <= response.status_code < 400:
         current.fail("redirect_rejected")
@@ -98,7 +100,7 @@ def guard_response(response: httpx2.Response) -> None:
     ):
         current.fail("response_too_large")
     if (
-        response.status_code == 200
+        200 <= response.status_code < 300
         and response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         != "application/json"
     ):

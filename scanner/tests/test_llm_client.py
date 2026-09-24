@@ -101,6 +101,9 @@ def test_nonnormal_completion_is_not_a_review_but_retains_usage(stop: Any) -> No
         '{"number":NaN}',
         '{"number":Infinity}',
         '{"number":1e309}',
+        '{"reasoning":"\\ud800"}',
+        '{"\\ud800":"invalid key"}',
+        '{"nested":[{"value":"\\udfff"}]}',
         '{"unfinished":',
         "null",
         "true",
@@ -139,6 +142,7 @@ def test_unusable_content_abstains(content: Any) -> None:
         b"[]",
         b"\xff",
         b'{"partial":',
+        b'{"model":"\\ud800"}',
     ],
 )
 def test_outer_envelope_must_be_strict_json(body: bytes) -> None:
@@ -229,6 +233,9 @@ def test_success_and_sdk_error_bodies_share_size_bound(status: int, buffered: bo
         (200, {"content-length": "99999999999"}, "response_too_large"),
         (503, {"content-length": "-1"}, "response_too_large"),
         (200, {"content-type": "text/html"}, "unsupported_content_type"),
+        (201, {"content-type": "text/html"}, "unsupported_content_type"),
+        (99, {}, "invalid_http_status"),
+        (700, {}, "invalid_http_status"),
     ],
 )
 def test_unsafe_headers_stop_before_body_read(

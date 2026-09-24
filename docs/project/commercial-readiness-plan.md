@@ -964,6 +964,11 @@ interrupts, concurrent admission, immutable snapshots and admission limits.
 CLI tests cover ordinary scan, PR scan, workspace source-tool review and all six
 Anthropic roles, including receipt persistence and client closure. No paid model
 or external test target was contacted.
+Subsequent source review identified two artifact-loss cases: a nonstandard HTTP
+status could invalidate settlement, and an escaped unpaired surrogate could fail
+result serialization. Both were observed with owned SDK fixtures, fixed and covered
+by seven additional cases. The 81 client/CLI checks passed after those fixes;
+the complete current-head suite remains part of CI acceptance below.
 
 Strict mypy, Ruff lint/format, wheel build, dependency audit (64 packages, no known
 vulnerabilities/adverse statuses) and immutable-reference policy pass. Rule audit
