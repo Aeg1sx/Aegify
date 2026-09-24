@@ -9,34 +9,38 @@ human triage decision remain authoritative.
 
 ## Structured review contract
 
-Every AI review records one of `likely_true_positive`,
-`likely_false_positive`, or `needs_review`, plus:
+AI finding reviews record one of `likely_true_positive`,
+`likely_false_positive`, or `needs_review`, an explanation, an uncalibrated
+confidence estimate, remediation advice, supplied evidence for/against the
+conclusion and explicit evidence gaps. Dashboard jobs bind these suggestions
+to their provider, model, input and prompt identities.
 
-- supplied evidence for and against the conclusion;
-- explicit evidence gaps;
-- a bounded attack scenario that is not described as observed impact;
-- concrete remediation, corrected code, and ordered fix steps;
-- an owned-fixture-only proof plan with approval, preconditions, expected
-  signal, and a negative control;
-- model, prompt digest, and tool evidence when the scanner-side orchestrator is used.
+The scanner-side review schema additionally supports corrected code, ordered
+fix steps, bounded scenario/fixture guidance and retained tool evidence. These
+fields do not imply runtime observation or execution, and their presence in
+that schema does not mean every provider or dashboard review supplies them.
 
 The dashboard stores this as a suggestion. A user must separately accept or
 reject the suggestion through the finding lifecycle.
 
-Dashboard AI review runs as a separately tracked `LlmJob`; it never rewrites
-the deterministic source scan status. Next.js tracks the post-response task,
-provider requests have a bounded timeout, and abandoned jobs are failed after
-the execution bound. A model must return one valid review per supplied finding.
-Omitted or failed batches produce `partial` or `failed`, never a false
-`completed` state. `needs_review` remains unresolved and is not counted as a
-true positive. Provider responses and parsed review counts are size-bounded,
-including for custom endpoints that ignore requested token limits.
+Dashboard AI review is a durable `LlmJob` executed by the separate AI worker.
+The web process queues work; renewable leases, deadlines and permission checks
+govern dispatch and publication. An interrupted dispatched request is marked
+uncertain and is not automatically repeated. The deterministic source scan
+status stays unchanged. Missing provider results produce `partial` or `failed`;
+`needs_review` remains unresolved and is not counted as a true positive.
+Provider responses and parsed review counts are size-bounded, including for
+custom endpoints that ignore requested token limits.
 Each persisted review names its producer, provider, model, and prompt digest.
 Suggested remediation stays inside the AI review record and does not overwrite
 the scanner-authored remediation field before human acceptance.
-The database also holds a nullable unique lease for each active scan review, so
-concurrent requests cannot create duplicate provider work or conflicting
-updates.
+The database also holds a nullable unique key for each active scan review, so
+concurrent requests cannot enqueue duplicate active work. Valid review output,
+its call receipt and retained narrative publish in one transaction. Accepted
+or rejected human decisions are preserved while the new review is saved in
+history. Choose a run's **Details** to inspect its retained results and compare
+them with the current finding. See [saved review operations](/operations/self-hosted-workers#compare-saved-review-results)
+for migration, project access, bounded retrieval, backup and retention behavior.
 
 ## Repository source scan
 
