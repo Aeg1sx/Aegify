@@ -41,6 +41,7 @@ class ProgramGraphBuilder:
         "class_body",
         "function_body",
         "statement_block",
+        "statement_list",
     }
     _IF_TYPES = {"if_statement", "if_expression"}
     _SWITCH_TYPES = {"switch_expression", "switch_statement", "when_expression"}
@@ -1002,10 +1003,12 @@ class ProgramGraphBuilder:
         if node is None:
             return []
         if node.type in self._BLOCK_TYPES:
-            children = list(node.named_children)
-            if len(children) == 1 and children[0].type in self._BLOCK_TYPES:
-                return self._statements(children[0])
-            return children
+            # Go wraps its statements in a statement_list, sometimes preceded
+            # by a comment. Transparent containers must not become one atomic
+            # operation or calls will run before their local assignments.
+            return [
+                statement for child in node.named_children for statement in self._statements(child)
+            ]
         return [node]
 
     @staticmethod
