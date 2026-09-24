@@ -66,8 +66,11 @@ class AnthropicAPIBackend:
             max_tokens=4_096,
         )
         if not isinstance(response, dict):
-            raise RuntimeError("model did not return a JSON object")
-        return AgentNarrative.model_validate(redact_sensitive(response))
+            raise AgentBackendError(
+                self.client.budget.get_token_usage().last_error_code or "invalid_response",
+                "Model review is unavailable; inspect the call receipt for its outcome",
+            )
+        return _validate_narrative(response, require_all=True)
 
 
 class OpenAIResponsesBackend:

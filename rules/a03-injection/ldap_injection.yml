@@ -29,12 +29,13 @@ rules:
       source_types: [http_param, http_body, http_query, form_input]
       sink_types: [ldap_query]
       sink_pattern: "(search|search_s|search_ext|Search|SearchRequest|ldap_search|Filter\\.create)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
-        - "%s.*%"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
+        # - "%s.*%"
     defense_patterns:
       - "ldap\\.filter\\.escape_filter_chars"
       - "escape_filter_chars"
@@ -75,11 +76,12 @@ rules:
       source_types: [http_param, http_body, form_input]
       sink_types: [ldap_bind, ldap_query]
       sink_pattern: "(bind|bind_s|simple_bind|simple_bind_s|Bind|add|modify|delete|rename|modrdn)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
     defense_patterns:
       - "ldap\\.dn\\.escape_dn_chars"
       - "escape_dn_chars"
@@ -118,10 +120,11 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [ldap_query]
       sink_pattern: "(search|search_s|search_ext|SearchRequest|DirectorySearcher|ldap_search)"
-      propagation:
-        - "string_concat"
-        - "assignment"
-        - "parameter_passing"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "assignment"
+        # - "parameter_passing"
     defense_patterns:
       - "allowlist|whitelist"
       - "VALID_BASES"
@@ -162,11 +165,12 @@ rules:
       source_types: [http_param, http_body, http_query, form_input]
       sink_types: [ldap_query, ldap_bind]
       sink_pattern: "(DirectorySearcher|PrincipalSearcher|DirectoryEntry|SearchRequest|Get-AD|Search-AD)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "String\\.Format"
-        - "interpolated_string"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "String\\.Format"
+        # - "interpolated_string"
     defense_patterns:
       - "SearchFilter\\.Encode"
       - "ldap\\.filter\\.escape"

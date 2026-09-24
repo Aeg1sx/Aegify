@@ -1,0 +1,12 @@
+id: AEG-CUSTOM-001
+name: Review request argument
+description: Demonstrate a call selector against owned, non-executed source fixtures.
+severity: medium
+confidence: 0.7
+languages: [python]
+patterns:
+  - callee: '(?-i:review_target)'
+    callee_match_mode: full
+    args_match: request
+    args_match_index: 0
+message: Review request data passed to review_target; this is a static candidate.

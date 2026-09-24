@@ -1,41 +1,66 @@
-"""Token budget manager for LLM API calls."""
+"""Reserve model work before dispatch and preserve uncertainty after interruption."""
 
 from __future__ import annotations
 
 import logging
+import threading
+import uuid
 from dataclasses import dataclass, field
+from typing import Literal, get_args
+
+from aegify.models import NATIVE_TOKEN_COUNTERS, ModelCallPhase, ModelCallReceipt, TokenUsage
 
 logger = logging.getLogger(__name__)
+Phase = ModelCallPhase
+PHASES = frozenset(get_args(Phase))
+TOKEN_COUNTERS = NATIVE_TOKEN_COUNTERS
+MAX_PROMPT_BYTES = 262_144
+MAX_TOTAL_PROMPT_BYTES = 4_000_000
+MAX_OUTPUT_TOKENS_REQUESTED = 655_360
+MAX_COUNTER = 1_000_000_000_000
 
-# Approximate pricing per 1M tokens (Claude Opus 4.6)
-INPUT_COST_PER_1M = 15.0  # $15 per 1M input tokens
-OUTPUT_COST_PER_1M = 75.0  # $75 per 1M output tokens
+
+def valid_counter(value: object) -> bool:
+    return type(value) is int and 0 <= value <= MAX_COUNTER
 
 
 @dataclass
 class BudgetAllocation:
-    """Budget allocation for different analysis phases."""
-
-    verification: int  # 60% default
-    remediation: int  # 30% default
-    additional_search: int  # 10% default
+    verification: int
+    remediation: int
+    additional_search: int
 
 
 @dataclass
 class TokenBudget:
-    """Manages token budget for LLM operations."""
+    """Estimated token admission plus hard call/prompt/output-request caps.
+
+    Token estimates and provider counters cannot enforce an invoice limit.
+    Unknown calls keep their reservation; they never replenish the budget.
+    """
 
     total_budget: int
-    input_tokens_used: int = 0
-    output_tokens_used: int = 0
+    max_calls: int = 100
+    input_tokens_used: int = field(default=0, init=False)
+    output_tokens_used: int = field(default=0, init=False)
     allocation: BudgetAllocation = field(init=False)
-
-    # Phase usage tracking
-    verification_used: int = 0
-    remediation_used: int = 0
-    additional_used: int = 0
+    _cache_creation: int = field(default=0, init=False)
+    _cache_read: int = field(default=0, init=False)
+    _unknown_reservations: int = field(default=0, init=False)
+    _prompt_bytes: int = field(default=0, init=False)
+    _output_requested: int = field(default=0, init=False)
+    _rejected: int = field(default=0, init=False)
+    _last_error: str = field(default="", init=False)
+    _legacy_usage: bool = field(default=False, init=False)
+    _calls: list[ModelCallReceipt] = field(default_factory=list, init=False)
+    _pending: dict[str, tuple[int, int]] = field(default_factory=dict, init=False)
+    _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        if type(self.total_budget) is not int or not 0 <= self.total_budget <= 10_000_000:
+            raise ValueError("token budget must be an integer from 0 to 10000000")
+        if type(self.max_calls) is not int or not 1 <= self.max_calls <= 250:
+            raise ValueError("model call limit must be an integer from 1 to 250")
         self.allocation = BudgetAllocation(
             verification=int(self.total_budget * 0.6),
             remediation=int(self.total_budget * 0.3),
@@ -44,63 +69,194 @@ class TokenBudget:
 
     @property
     def total_used(self) -> int:
-        return self.input_tokens_used + self.output_tokens_used
+        return (
+            self.input_tokens_used
+            + self.output_tokens_used
+            + self._cache_creation
+            + self._cache_read
+        )
+
+    @property
+    def reserved(self) -> int:
+        return self._unknown_reservations + sum(amount for _, amount in self._pending.values())
 
     @property
     def remaining(self) -> int:
-        return max(0, self.total_budget - self.total_used)
+        with self._lock:
+            return max(0, self.total_budget - self.total_used - self.reserved)
 
     @property
-    def estimated_cost_usd(self) -> float:
-        input_cost = (self.input_tokens_used / 1_000_000) * INPUT_COST_PER_1M
-        output_cost = (self.output_tokens_used / 1_000_000) * OUTPUT_COST_PER_1M
-        return round(input_cost + output_cost, 4)
+    def estimated_cost_usd(self) -> float | None:
+        # A model name and token count do not establish a tariff, cache price,
+        # service tier, gateway markup or paid-call outcome.
+        return None if self._calls or self._legacy_usage else 0.0
 
     def can_spend(self, phase: str, estimated_tokens: int) -> bool:
-        """Check if there's budget for the estimated token usage."""
-        if self.total_used + estimated_tokens > self.total_budget:
-            logger.warning(
-                "Budget exceeded: %d used of %d, need %d more",
-                self.total_used,
-                self.total_budget,
-                estimated_tokens,
+        with self._lock:
+            return (
+                phase in PHASES
+                and type(estimated_tokens) is int
+                and estimated_tokens >= 0
+                and estimated_tokens <= self.remaining
+                and len(self._calls) < self.max_calls
             )
-            return False
 
-        phase_budget = getattr(self.allocation, phase, 0)
-        phase_used = getattr(self, f"{phase}_used", 0)
-        if phase_used + estimated_tokens > phase_budget:
-            logger.warning(
-                "Phase '%s' budget exceeded: %d used of %d",
-                phase,
-                phase_used,
-                phase_budget,
+    def reject(self, code: str) -> None:
+        with self._lock:
+            self._rejected += 1
+            self._last_error = code
+
+    def reserve(
+        self,
+        phase: Phase,
+        *,
+        estimated_input: int,
+        max_output: int,
+        prompt_bytes: int,
+        model: str,
+        request_digest: str,
+    ) -> str | None:
+        with self._lock:
+            if (
+                not valid_counter(estimated_input)
+                or type(max_output) is not int
+                or not 1 <= max_output <= 32_768
+                or type(prompt_bytes) is not int
+                or not 0 < prompt_bytes <= MAX_PROMPT_BYTES
+            ):
+                self.reject("invalid_request_limits")
+                return None
+            amount = estimated_input + max_output
+            if (
+                not self.can_spend(phase, amount)
+                or self._prompt_bytes + prompt_bytes > MAX_TOTAL_PROMPT_BYTES
+                or self._output_requested + max_output > MAX_OUTPUT_TOKENS_REQUESTED
+            ):
+                self.reject("budget_exhausted")
+                return None
+            call_id = str(uuid.uuid4())
+            receipt = ModelCallReceipt(
+                id=call_id,
+                model=model,
+                phase=phase,
+                estimated_input_tokens=estimated_input,
+                requested_output_tokens=max_output,
+                prompt_bytes=prompt_bytes,
+                request_digest=request_digest,
             )
-            # Allow using other phases' remaining budget
-            return self.remaining >= estimated_tokens
+            self._pending[call_id] = (len(self._calls), amount)
+            self._calls.append(receipt)
+            self._prompt_bytes += prompt_bytes
+            self._output_requested += max_output
+            logger.info("Model call reserved: id=%s phase=%s", call_id, phase)
+            return call_id
 
-        return True
+    def settle(
+        self,
+        call_id: str,
+        *,
+        usage: dict[str, int],
+        usage_complete: bool,
+        state: Literal["completed", "rejected", "unknown"],
+        error_code: str = "",
+        response_digest: str = "",
+        request_digest: str = "",
+        response_model: str = "",
+        response_id: str = "",
+        stop_reason: str = "",
+        http_status: int | None = None,
+        elapsed_ms: int = 0,
+    ) -> None:
+        with self._lock:
+            if call_id not in self._pending:
+                raise ValueError("model reservation is absent or already settled")
+            if any(
+                key not in TOKEN_COUNTERS or not valid_counter(value)
+                for key, value in usage.items()
+            ):
+                raise ValueError("invalid native usage counter")
+            if usage_complete and not {"input_tokens", "output_tokens"} <= usage.keys():
+                raise ValueError("complete usage needs both input and output counters")
+            index, amount = self._pending[call_id]
+            previous = self._calls[index]
+            # Construct before mutating accounting so validation failure cannot
+            # release a reservation or leave a half-published receipt.
+            receipt = ModelCallReceipt(
+                **{
+                    **previous.model_dump(),
+                    "state": state,
+                    "usage_status": "reported"
+                    if usage_complete
+                    else "partial"
+                    if usage
+                    else "unknown",
+                    "reported_usage": dict(usage),
+                    "error_code": error_code,
+                    "request_digest": request_digest or previous.request_digest,
+                    "response_digest": response_digest,
+                    "response_model": response_model,
+                    "response_id": response_id,
+                    "stop_reason": stop_reason,
+                    "http_status": http_status,
+                    "elapsed_ms": elapsed_ms,
+                }
+            )
+            del self._pending[call_id]
+            self.input_tokens_used += usage.get("input_tokens", 0)
+            self.output_tokens_used += usage.get("output_tokens", 0)
+            self._cache_creation += usage.get("cache_creation_input_tokens", 0)
+            self._cache_read += usage.get("cache_read_input_tokens", 0)
+            if not usage_complete:
+                self._unknown_reservations += max(0, amount - sum(usage.values()))
+            self._calls[index] = receipt
+            if error_code:
+                self._last_error = error_code
+            logger.info(
+                "Model call finished: id=%s state=%s usage=%s error=%s cost=unknown",
+                call_id,
+                state,
+                receipt.usage_status,
+                error_code or "none",
+            )
 
     def record_usage(self, phase: str, input_tokens: int, output_tokens: int) -> None:
-        """Record token usage for a phase."""
-        self.input_tokens_used += input_tokens
-        self.output_tokens_used += output_tokens
-        total = input_tokens + output_tokens
+        """Compatibility for caller-supplied counters; provenance remains legacy."""
+        if (
+            phase not in PHASES
+            or not valid_counter(input_tokens)
+            or not valid_counter(output_tokens)
+        ):
+            raise ValueError("invalid caller-supplied usage")
+        with self._lock:
+            self.input_tokens_used += input_tokens
+            self.output_tokens_used += output_tokens
+            self._legacy_usage = True
 
-        match phase:
-            case "verification":
-                self.verification_used += total
-            case "remediation":
-                self.remediation_used += total
-            case "additional_search":
-                self.additional_used += total
-
-        logger.debug(
-            "Token usage: phase=%s, input=%d, output=%d, total_used=%d/%d, cost=$%.4f",
-            phase,
-            input_tokens,
-            output_tokens,
-            self.total_used,
-            self.total_budget,
-            self.estimated_cost_usd,
-        )
+    def get_token_usage(self) -> TokenUsage:
+        with self._lock:
+            unknown = sum(call.usage_status != "reported" for call in self._calls)
+            status: Literal["not_used", "reported", "partial", "unknown", "legacy"]
+            if not self._calls:
+                status = "legacy" if self._legacy_usage else "not_used"
+            elif unknown or self._legacy_usage:
+                known = any(call.reported_usage for call in self._calls) or self._legacy_usage
+                status = "partial" if known else "unknown"
+            else:
+                status = "reported"
+            return TokenUsage(
+                input_tokens=self.input_tokens_used,
+                output_tokens=self.output_tokens_used,
+                cache_creation_input_tokens=self._cache_creation,
+                cache_read_input_tokens=self._cache_read,
+                total_cost_usd=self.estimated_cost_usd,
+                cost_status="not_used" if status == "not_used" else "unavailable",
+                usage_status=status,
+                calls_started=len(self._calls),
+                calls_rejected_before_dispatch=self._rejected,
+                calls_with_unknown_usage=unknown,
+                reserved_tokens=self.reserved,
+                prompt_bytes=self._prompt_bytes,
+                output_tokens_requested=self._output_requested,
+                last_error_code=self._last_error,
+                calls=[call.model_copy(deep=True) for call in self._calls],
+            )

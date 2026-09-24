@@ -3,6 +3,15 @@
 The dashboard is the authenticated review surface for Aegify findings, evidence
 graphs, rule management, scan history, AI suggestions, and auditable triage.
 
+Each project also has a **Rule lab** for testing one YAML rule against positive,
+negative and multi-file source examples using the real scanner worker. Maintainers
+can edit, queue, cancel, rerun and export inputs for `aegify test-rule` in CI;
+viewers can inspect results, static data flow and job history. Inputs and full
+reports are encrypted and retained for seven days after enqueue. Install the
+matching source worker and apply migration `20260924080000_rule_fixture_jobs`.
+See the [rule authoring contract](../docs/analysis/rule-authoring.mdx) for bounds
+and the distinction between fixture scores and broader detector accuracy.
+
 Repository AI scans resolve refs to immutable provider commit SHAs and retain
 only model candidates whose file, line, and redacted snippet bind to the fetched
 source. They are always advisory. A provider/file/model bound or failed batch is

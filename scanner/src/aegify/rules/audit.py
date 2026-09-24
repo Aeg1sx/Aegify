@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
-from aegify.rules.yaml_rule import LANG_MAP, SEVERITY_MAP, PatternSpec
+from aegify.rules.yaml_rule import LANG_MAP, SEVERITY_MAP, PatternSpec, TaintSpec
 
 SUPPORTED_PATTERN_FIELDS = {
     "annotation_match",
@@ -207,7 +207,10 @@ def audit_rules(path: Path) -> RuleAuditReport:
 
             patterns = rule.get("patterns") or []
             semantic_executable = _check_semantic(report, rule, file_path, rule_id)
-            executable_for_rule = bool(rule.get("taint")) or semantic_executable
+            taint_errors = TaintSpec.validation_errors(rule["taint"]) if "taint" in rule else []
+            for message in taint_errors:
+                _issue(report, "error", "invalid-taint", message, file_path, rule_id)
+            executable_for_rule = ("taint" in rule and not taint_errors) or semantic_executable
             for index, pattern in enumerate(patterns):
                 report.patterns += 1
                 if not isinstance(pattern, dict):

@@ -7,6 +7,8 @@ import { encrypt } from "../src/lib/crypto.ts";
 import { enqueueScan } from "../src/lib/scan-jobs.ts";
 import { resolvePrincipal } from "../src/lib/project-access.ts";
 import { makeSourceSnapshot } from "../src/lib/scan-worker.ts";
+import { enqueueRuleFixture, readRuleFixture } from "../src/lib/rule-fixture-jobs.ts";
+import { ruleFixtureExamples } from "../src/lib/rule-fixture-examples.ts";
 
 // Only called with a fresh CI volume. The worker itself runs without networking.
 try {
@@ -28,5 +30,22 @@ try {
     assert.ok(await prisma.finding.findFirst({ where: { scanId: job.scanId, ruleId: "AEG-PATH-001", filePath: "app.py" } }));
     assert.ok(await prisma.scanJobEvent.findFirst({ where: { jobId: job.id, code: "recovered" } }));
     log("New worker process recovered and published the pinned source scan with partial coverage.");
-  } else throw new Error("Choose setup or verify.");
+  } else if (process.argv[2] === "fixture-setup") {
+    const access = await resolvePrincipal(prisma, "worker-ci-fixture", process.env);
+    const job = await enqueueRuleFixture(prisma, access, "worker-ci-fixture", ruleFixtureExamples.taint, process.env);
+    await prisma.ruleFixtureJob.update({ where: { id: job.id }, data: { status: "running", attempts: 1, leaseToken: "expired-fixture-lease", leaseExpiresAt: new Date(0) } });
+    log("Prepared a persisted interrupted rule fixture evaluation.");
+  } else if (process.argv[2] === "fixture-verify") {
+    const job = await prisma.ruleFixtureJob.findFirstOrThrow({ where: { projectId: "worker-ci-fixture" } });
+    const access = await resolvePrincipal(prisma, "worker-ci-fixture", process.env);
+    const detail = await readRuleFixture(prisma, access, job.projectId, job.id, process.env, true);
+    assert.equal(job.status, "completed"); assert.equal(job.outcome, "passed"); assert.equal(job.attempts, 2);
+    assert.deepEqual(detail.input, ruleFixtureExamples.taint);
+    assert.equal(detail.report.metrics.true_positives, 2);
+    assert.equal(detail.report.manifest.source_execution, false);
+    assert.ok(detail.report.cases.some((item) => item.id === "cross-file-query" && item.actual.some((finding) => finding.taint_flow?.sink.file_path === "helper.py")));
+    assert.ok(detail.events.some((item) => item.code === "recovered"));
+    assert.ok(job.resultCiphertext); assert.match(job.resultDigest, /^sha256:[a-f0-9]{64}$/);
+    log("New worker process recovered encrypted rule input and published actual multi-file taint evidence without networking.");
+  } else throw new Error("Choose setup, verify, fixture-setup or fixture-verify.");
 } finally { await prisma.$disconnect(); }

@@ -33,11 +33,12 @@ rules:
       source_types: [external_api_response]
       sink_types: [sql_query, os_command, html_output, file_write, code_execution]
       sink_pattern: "(execute|query|exec|eval|innerHTML|document\\.write|render|system|popen|spawn|writeFile|open)"
-      propagation:
-        - through: "variable_assignment"
-        - through: "object_property"
-        - through: "destructuring"
-        - through: "json_parse_value"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "variable_assignment"
+        # - through: "object_property"
+        # - through: "destructuring"
+        # - through: "json_parse_value"
     defense_patterns:
       - "schema.*validate"
       - "joi\\.object"
