@@ -54,6 +54,27 @@ rules and legacy reports without scope cannot establish absence. Files removed
 from the source tree remain unresolved until their deletion is reviewed. Import
 failure rolls back absence reconciliation.
 
+### File paths in SARIF
+
+New Aegify reports mark `artifactPathEncoding=percent-encoded-path-v1` in run
+properties. Primary and code-flow `artifactLocation.uri` values encode UTF-8
+file-path characters such as spaces, brackets, `#`, `?`, and literal `%`. A
+`%WORKDIR%` base records the report generator's working directory. The source
+inventory, provenance, call graph, and fingerprints retain their original paths.
+
+The dashboard decodes this marked format exactly once before matching source
+identities and importing flow locations. Unmarked legacy reports retain their
+literal paths; `%2F` in an old filename is not interpreted as a separator.
+Malformed marked encodings, unsupported encoding versions, and an imported code
+flow above 10,000 locations are rejected before publication. Keep scanner and dashboard
+versions aligned: upgrade the dashboard before importing reports from a newer
+scanner. Older dashboards do not understand the encoding marker.
+
+This contract preserves the scanner's path syntax. It does not rebase paths to
+another checkout, normalize Windows paths on a Unix host, or change generic
+third-party SARIF URI handling. GitHub's [SARIF guidance](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support)
+describes source-root and relative URI requirements for other producers.
+
 ## Finding disposition
 
 - `advisory` results remain visible in console, SARIF, GitHub annotations, and

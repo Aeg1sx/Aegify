@@ -181,6 +181,7 @@ interface SARIFReport {
       };
     }>;
     properties?: {
+      artifactPathEncoding?: unknown;
       analysisStatus?: unknown;
       analysisGaps?: unknown;
       analysisScope?: unknown;
@@ -226,6 +227,29 @@ const LEVEL_TO_SEVERITY: Record<string, string> = {
 };
 
 export class SarifValidationError extends Error {}
+
+// Aegify's original reports stored literal paths in URI fields. Decode only the
+// versioned producer contract, once, so an old literal "%2F" cannot change identity.
+function artifactSourcePath(uri: unknown, encoding: unknown): string {
+  if (uri === undefined) return "";
+  if (typeof uri !== "string" || uri.length > (encoding ? 36_864 : 4096)) {
+    throw new SarifValidationError("Invalid source path.");
+  }
+  let path = uri;
+  if (encoding === "percent-encoded-path-v1") {
+    try {
+      path = decodeURIComponent(uri);
+      const canonical = encodeURIComponent(path)
+        .replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+        .replaceAll("%2F", "/");
+      if (canonical !== uri) throw new Error("Noncanonical path encoding");
+    } catch {
+      throw new SarifValidationError("Invalid encoded source path.");
+    }
+  }
+  if (path.length > 4096 || /[\x00-\x1f]/.test(path)) throw new SarifValidationError("Invalid source path.");
+  return path;
+}
 export interface ImportReceipt {
   scanId: string;
   findingsCount: number;
@@ -251,13 +275,23 @@ export function validateSarifReport(value: unknown): SARIFReport {
   const report = value as SARIFReport;
   if (report.version !== "2.1.0" || !Array.isArray(report.runs) || report.runs.length !== 1 || !report.runs[0]?.tool?.driver || !Array.isArray(report.runs[0].results)) throw new SarifValidationError("Upload one SARIF 2.1.0 run with a driver and results array.");
   const run = report.runs[0];
+  const pathEncoding = run.properties?.artifactPathEncoding;
+  if (pathEncoding !== undefined && pathEncoding !== "percent-encoded-path-v1") throw new SarifValidationError("Unsupported artifact path encoding.");
   if (run.results.length > 50_000) throw new SarifValidationError("Report exceeds 50,000 results; split the scan scope.");
   for (const result of run.results) {
     if (!result || typeof result.ruleId !== "string" || !result.ruleId || result.ruleId.length > 128 || result.ruleId.trim() !== result.ruleId || /[\x00-\x1f]/.test(result.ruleId) || typeof result.message?.text !== "string" || result.message.text.length > 100_000) throw new SarifValidationError("Every result needs a canonical bounded rule ID and message.");
     const region = result.locations?.[0]?.physicalLocation?.region;
     if (region && (!Number.isSafeInteger(region.startLine) || region.startLine < 1 || (region.endLine !== undefined && (!Number.isSafeInteger(region.endLine) || region.endLine < region.startLine)))) throw new SarifValidationError("Invalid source range.");
     const uri = result.locations?.[0]?.physicalLocation?.artifactLocation?.uri;
-    if (uri !== undefined && (typeof uri !== "string" || uri.length > 4096 || /[\x00-\x1f]/.test(uri))) throw new SarifValidationError("Invalid source path.");
+    artifactSourcePath(uri, pathEncoding);
+    const flowLocations = result.codeFlows?.[0]?.threadFlows?.[0]?.locations;
+    if (flowLocations !== undefined) {
+      if (!Array.isArray(flowLocations) || flowLocations.length > 10_000) throw new SarifValidationError("Invalid code flow locations.");
+      for (const location of flowLocations) {
+        if (!location?.location || typeof location.location !== "object") throw new SarifValidationError("Invalid code flow location.");
+        artifactSourcePath(location.location.physicalLocation?.artifactLocation?.uri, pathEncoding);
+      }
+    }
     const fingerprints = result.partialFingerprints;
     if (fingerprints !== undefined && (!fingerprints || typeof fingerprints !== "object" || Array.isArray(fingerprints)
       || Object.keys(fingerprints).length > 16 || Object.entries(fingerprints).some(([key, value]) => key.length > 128 || typeof value !== "string" || value.length > 4096))) throw new SarifValidationError("Invalid producer fingerprints.");
@@ -319,6 +353,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
     const parsedFindings = run.results.map((result) => {
       const rule = ruleMap.get(result.ruleId);
       const loc = result.locations?.[0]?.physicalLocation;
+      const filePath = artifactSourcePath(loc?.artifactLocation?.uri, run.properties?.artifactPathEncoding);
       const severity =
         result.properties?.severity ||
         LEVEL_TO_SEVERITY[result.level] ||
@@ -326,13 +361,13 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
       const evidence = normalizeFindingEvidence(result.properties);
       const sourceSnippet = normalizeSourceSnippet(loc);
       const classification = normalizeFindingClassification(result.properties);
-      const admittedSource = analyzedSourceByPath.get(loc?.artifactLocation?.uri || "");
+      const admittedSource = analyzedSourceByPath.get(filePath);
       if (admittedSource && ((evidence.repositoryId && evidence.repositoryId !== admittedSource.repositoryId)
         || (evidence.modulePath && relativeIdentityPath(evidence.modulePath) !== admittedSource.modulePath))) {
         throw new SarifValidationError("Finding provenance contradicts its analyzed source identity.");
       }
       const identityInput = {
-        ruleId: result.ruleId, filePath: loc?.artifactLocation?.uri || "", message: result.message.text,
+        ruleId: result.ruleId, filePath, message: result.message.text,
         codeSnippet: sourceSnippet.codeSnippet, partialFingerprints: result.partialFingerprints,
         repositoryId: evidence.repositoryId || admittedSource?.repositoryId || "",
         modulePath: evidence.modulePath || admittedSource?.modulePath || "",
@@ -365,7 +400,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
       if (result.codeFlows?.[0]?.threadFlows?.[0]?.locations) {
         taintFlow = JSON.stringify(
           result.codeFlows[0].threadFlows[0].locations.map((loc) => ({
-            file: loc.location.physicalLocation?.artifactLocation?.uri || "",
+            file: artifactSourcePath(loc.location.physicalLocation?.artifactLocation?.uri, run.properties?.artifactPathEncoding),
             line: loc.location.physicalLocation?.region?.startLine || 0,
             message: loc.location.message?.text || "",
           }))
@@ -382,7 +417,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         disposition: classification.disposition,
         status: "open",
         isCurrent: publishBaseline,
-        filePath: loc?.artifactLocation?.uri || "",
+        filePath,
         lineStart: loc?.region?.startLine || 0,
         lineEnd: loc?.region?.endLine || loc?.region?.startLine || 0,
         codeSnippet: sourceSnippet.codeSnippet,

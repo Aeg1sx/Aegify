@@ -742,3 +742,47 @@ advisory candidates, no blocking finding and no analysis error. This is a change
 source scope, not an accuracy comparison. The final recovery edge case also
 terminates a job interrupted between saving a discarded receipt and job
 finalization, instead of consuming further local recovery attempts.
+
+PR #54 passed every exact-head required check, both CodeQL analyses and native
+Aegify processing on `dceef0fdc7d14f0209af79cdb933bdc943925971`. Remote evidence:
+664 scanner tests, 139 dashboard tests with two container-only skips, 114
+production HTTP/CLI checks, and 51 network-disabled Linux worker checks with no
+skips. PR analysis `1829769754` completed with 689 candidates and no analysis
+error. It merged at 2026-09-24T02:51:34Z as verified signed commit
+`6b42f10888f16e812ad7dd89158aa5a310955076`; repository protection rules were
+unchanged. This is a merged implementation, not a live self-hosted deployment.
+Main analysis `1829802637` subsequently completed with the same 689 candidates
+and no error; both main CodeQL analyses have zero results. No alerts were
+dismissed to obtain those results.
+
+## SARIF file-path encoding: 2026-09-24, in progress
+
+The #54 CI upload accepted its report but warned that Next route paths containing
+`[id]` were invalid URIs. Primary and code-flow artifact locations now percent
+encode file-path characters and record a working-directory URI base. An explicit
+run contract lets the dashboard decode once before source inventory matching,
+fingerprinting, triage carryover and flow import. Unmarked historical reports
+keep literal paths, including literal percent escapes. Invalid marked encodings
+and unsupported versions fail before artifact publication.
+The main alert inventory also exposed 689 paths starting with `../`. Self-scan
+now runs from the repository root with `uv run --project scanner --locked` so
+artifact paths are relative to the checkout, as GitHub expects. The target's
+same `.aegify.yml` still supplies scope and analysis settings.
+Local comparison confirmed identical scan/rule/context/taint settings and the
+same 310 discovered source paths from both working directories. The pinned uv
+command selects the scanner project while retaining the repository-root cwd.
+
+This changes interchange encoding only, not rule detection, evidence strength,
+source identity, or precision/recall. It preserves native path syntax rather than
+adding Windows-to-Unix path conversion or general third-party URI resolution.
+Operators must align scanner/dashboard versions, upgrading the dashboard first.
+Local acceptance: 15 Python SARIF tests passed, including reserved characters,
+Unicode, literal escapes, both artifact/flow locations and root-directory bases.
+All 15 import tests passed with the real Python producer enabled; the static-only
+fixture used `[id]`, Korean text, spaces, `#` and literal `%2F` in its filename.
+Legacy and encoded imports retain the same identity, human triage and flow paths,
+and contradictory inventory/provenance rolls back publication. The full dashboard
+suite passed 141 tests with two checks reserved for the Linux container. Strict
+types, lint, Ruff and supply-chain policy pass. Documentation build, links and
+accessibility pass with existing color recommendations. Exact-head CI and actual
+GitHub SARIF processing remain acceptance gates.

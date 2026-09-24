@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from aegify.models import Finding, ScanResult, Severity
 
@@ -44,6 +45,9 @@ class SARIFReporter:
         """
         rules = self._build_rules(scan_result.findings)
         results = [self._build_result(f) for f in scan_result.findings]
+        working_directory_uri = Path.cwd().as_uri()
+        if not working_directory_uri.endswith("/"):
+            working_directory_uri += "/"
 
         run: dict[str, Any] = {
             "tool": {
@@ -55,6 +59,7 @@ class SARIFReporter:
                 }
             },
             "results": results,
+            "originalUriBaseIds": {"%WORKDIR%": {"uri": working_directory_uri}},
             "invocations": [
                 {
                     "executionSuccessful": scan_result.status == "completed"
@@ -74,6 +79,7 @@ class SARIFReporter:
         # Serialize call graph and endpoints if provided
         run_props: dict[str, Any] = {
             "evidenceContractVersion": 1,
+            "artifactPathEncoding": "percent-encoded-path-v1",
             "analysisStatus": scan_result.status.value,
             "analysisGaps": [gap.model_dump() for gap in scan_result.analysis_gaps],
             "analysisScope": scan_result.analysis_scope,
@@ -484,7 +490,8 @@ class SARIFReporter:
                 {
                     "physicalLocation": {
                         "artifactLocation": {
-                            "uri": finding.file_path,
+                            "uri": quote(finding.file_path, safe="/"),
+                            "uriBaseId": "%WORKDIR%",
                         },
                         "region": {
                             "startLine": finding.line_start,
@@ -570,7 +577,10 @@ class SARIFReporter:
                 {
                     "location": {
                         "physicalLocation": {
-                            "artifactLocation": {"uri": step.file_path},
+                            "artifactLocation": {
+                                "uri": quote(step.file_path, safe="/"),
+                                "uriBaseId": "%WORKDIR%",
+                            },
                             "region": {"startLine": step.line},
                         },
                         "message": {"text": f"{step.propagation_type}: {step.variable}"},
