@@ -8,13 +8,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import pytest
 from typer.testing import CliRunner
 
 from aegify.cli import app
 from aegify.config import AegifyConfig
 from aegify.llm import sources as source_module
-from aegify.llm.client import LLMClient
 from aegify.llm.orchestrator import AISTASTOrchestrator
 from aegify.llm.sources import SourceCatalog
 from aegify.llm.tools import AnalysisToolContext, ToolRequest, default_tool_registry
@@ -29,6 +29,7 @@ from aegify.models import (
 )
 from aegify.scanner.ast_parser import ASTParser
 from aegify.scanner.engine import ScanEngine
+from tests.llm_support import ScriptedProvider, message
 
 
 def _ast(root: Path, path: str, text: str, repository: str = "service") -> FileAST:
@@ -401,14 +402,13 @@ def test_workspace_cli_persists_source_evidence_and_usage_in_sarif(
     monkeypatch.setattr(ScanEngine, "scan_workspace", supplied_candidate)
     calls = 0
 
-    def query(client: LLMClient, _system: str, prompt: str, phase: str) -> dict[str, Any]:
+    def query(request: httpx2.Request) -> httpx2.Response:
         nonlocal calls
         calls += 1
-        client.budget.record_usage(phase, 21, 7)
-        evidence = json.loads(prompt)
+        evidence = json.loads(json.loads(request.content)["messages"][0]["content"])
         if calls == 1:
             location = evidence["finding_source"]
-            return {
+            response = {
                 "tool_requests": [
                     {
                         "name": "source_read",
@@ -419,19 +419,29 @@ def test_workspace_cli_persists_source_evidence_and_usage_in_sarif(
                     }
                 ]
             }
-        citation = evidence["tool_results"][0]["output"]["citation"]["citation_id"]
-        return {
-            "verdict": "likely_false_positive",
-            "confidence": 0.7,
-            "citations": [citation],
-            "remediation_summary": "Unaccepted model suggestion",
-        }
+        else:
+            citation = evidence["tool_results"][0]["output"]["citation"]["citation_id"]
+            response = {
+                "verdict": "likely_false_positive",
+                "confidence": 0.7,
+                "citations": [citation],
+                "remediation_summary": "Unaccepted model suggestion",
+            }
+        return httpx2.Response(
+            200,
+            json=message(
+                json.dumps(response),
+                usage={"input_tokens": 21, "output_tokens": 7},
+            ),
+        )
 
-    monkeypatch.setattr(LLMClient, "query", query)
     report = tmp_path / "result.sarif"
-    result = CliRunner().invoke(
-        app, ["scan-workspace", str(manifest), "--ai-tools", "--output-file", str(report)]
-    )
+    with ScriptedProvider(handler=query) as provider:
+        provider.install(monkeypatch)
+        result = CliRunner().invoke(
+            app, ["scan-workspace", str(manifest), "--ai-tools", "--output-file", str(report)]
+        )
+        assert provider.http_clients and all(client.is_closed for client in provider.http_clients)
     assert result.exit_code == 0, result.output
     run = json.loads(report.read_text())["runs"][0]
     properties = run["results"][0]["properties"]
@@ -442,6 +452,8 @@ def test_workspace_cli_persists_source_evidence_and_usage_in_sarif(
     usage = run["invocations"][0]["properties"]["tokenUsage"]
     assert usage["input_tokens"] == 42
     assert usage["output_tokens"] == 14
+    assert usage["total_cost_usd"] is None and usage["usage_status"] == "reported"
+    assert usage["calls_started"] == 2 and len(usage["calls"]) == 2
 
 
 def test_digest_bound_admission_requires_parser_hash(tmp_path: Path) -> None:

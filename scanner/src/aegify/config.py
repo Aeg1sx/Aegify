@@ -120,10 +120,11 @@ class LLMConfig(BaseModel):
     enabled: bool = False
     model: str = "claude-opus-5"
     base_url: str | None = None
-    token_budget: int = 100_000
-    verify_threshold: float = 0.7
-    batch_size: int = 5
-    max_retries: int = 3
+    token_budget: int = Field(default=100_000, ge=0, le=10_000_000, strict=True)
+    max_calls: int = Field(default=100, ge=1, le=250, strict=True)
+    verify_threshold: float = Field(default=0.7, ge=0, le=1, allow_inf_nan=False)
+    batch_size: int = Field(default=5, ge=1, le=50, strict=True)
+    max_retries: int = Field(default=0, ge=0, le=0, strict=True)
 
 
 class ReportingConfig(BaseModel):
