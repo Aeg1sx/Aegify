@@ -706,9 +706,9 @@ marks unfinished calls unknown and removes old AI worker registrations. The
 backup key check now recognizes encrypted AI snapshots as well as settings and
 source snapshots. Inputs expire seven days after terminal completion.
 
-Local acceptance: 138 dashboard tests passed, with two existing real-Python checks
+Local acceptance: 139 dashboard tests passed, with two existing real-Python checks
 reserved for the offline container gate; lint, strict TypeScript and production
-build pass. Twelve durable job tests include concurrent claims, fresh-client
+build pass. Thirteen durable job tests include concurrent claims, fresh-client
 recovery, interruption after dispatch, completed-batch resume, cancellation,
 revocation, changed source/settings, caps, atomic rollback, legacy migration and
 a separate production worker process. Four provider receipt/schema tests cover
@@ -732,3 +732,9 @@ model quality, calibrated confidence, verified dollar costs, monetary quotas,
 live Claude Code/Codex isolation, or integration of the separate source-tool agent
 into every dashboard role. The frozen OWASP precision/recall measurements remain
 unchanged and below a commercial release target. Those acceptance items stay open.
+
+The local self-scan preflight completed on 311 files in 218.5 seconds with 689
+advisory candidates, no blocking finding and no analysis error. This is a changed
+source scope, not an accuracy comparison. The final recovery edge case also
+terminates a job interrupted between saving a discarded receipt and job
+finalization, instead of consuming further local recovery attempts.

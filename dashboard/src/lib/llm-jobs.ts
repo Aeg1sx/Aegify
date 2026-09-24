@@ -135,6 +135,7 @@ export async function claimLlmJob(db: PrismaClient, workerId: string, env: AuthE
       if (!job) return null;
       let code = "";
       if (await tx.llmCall.count({ where: { jobId: job.id, status: { in: ["dispatched", "unknown"] } } })) code = "provider_outcome_unknown";
+      else if (await tx.llmCall.count({ where: { jobId: job.id, batchIndex: { gte: job.currentBatch } } })) code = "provider_failed";
       else if (!job.deadlineAt || job.deadlineAt <= now) code = "deadline_exceeded";
       else if (job.attempts >= job.maxAttempts) code = "attempts_exhausted";
       if (!code) {

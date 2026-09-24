@@ -10,7 +10,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { resolvePrincipal } from "./project-access.ts";
 import { configureDatabase } from "./database-runtime.ts";
-import { AiLeaseLost, cancelLlmJob, claimLlmJob, enqueueLlmJob, heartbeatLlmJob, loadReviewSnapshot, publishLlmBatch, startLlmCall } from "./llm-jobs.ts";
+import { AiLeaseLost, cancelLlmJob, claimLlmJob, enqueueLlmJob, heartbeatLlmJob, loadReviewSnapshot, publishLlmBatch, recordDiscardedLlmCall, startLlmCall } from "./llm-jobs.ts";
 import { runClaimedLlmJob, runLlmWorkerOnce } from "./llm-worker.ts";
 import { callProviderDetailed } from "./provider-receipt.ts";
 import { parseReviewResults, REVIEW_LIMITS } from "./ai-review-contract.ts";
@@ -110,6 +110,20 @@ test("completed batches survive restart and only the next undispatched batch is 
     await runLlmWorkerOnce(f.db, "restarted", env, new AbortController().signal, { transport: async (request) => { calls++; const ids = JSON.parse(JSON.parse(request.body).messages[0].content).findings; assert.equal(ids.length, 1); assert.equal(ids[0].id, "finding-0050"); return responseFor(request); } });
     assert.equal(calls, 1); const saved = await f.db.llmJob.findUniqueOrThrow({ where: { id: job.id } });
     assert.equal(saved.status, "completed"); assert.equal(saved.reviewedCount, 51); assert.equal(saved.callsStarted, 2); assert.equal(saved.attempts, 2);
+  } finally { await f.close(); }
+});
+
+test("crash between saving a discarded receipt and finalizing the job does not cycle recovery leases", async () => {
+  const f = await fixture();
+  try {
+    await f.queue(); const job = await claimLlmJob(f.db, "first", env); assert.ok(job); const snapshot = loadReviewSnapshot(job);
+    const started = await startLlmCall(f.db, job, snapshot, 0, env);
+    const response = await callProviderDetailed(started.config, snapshot.system, started.user, new AbortController().signal, successful);
+    await recordDiscardedLlmCall(f.db, job, started.callId, "publication_failed", response.receipt);
+    await f.db.llmJob.update({ where: { id: job.id }, data: { leaseExpiresAt: new Date(0) } });
+    assert.equal(await claimLlmJob(f.db, "restarted", env), null);
+    const saved = await f.db.llmJob.findUniqueOrThrow({ where: { id: job.id } });
+    assert.equal(saved.status, "failed"); assert.equal(saved.errorCode, "provider_failed"); assert.equal(saved.attempts, 1);
   } finally { await f.close(); }
 });
 
