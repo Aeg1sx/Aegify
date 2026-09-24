@@ -16,6 +16,7 @@ uv sync --extra dev
 cd ../dashboard
 npm ci
 npx prisma generate
+npm run test:migrations
 npm run lint
 npm run build
 npm audit

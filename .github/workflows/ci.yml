@@ -196,6 +196,12 @@ jobs:
       - name: Apply migrations to a fresh database
         run: npx --no-install prisma migrate deploy
 
+      - name: Check migration history against the declared schema
+        run: npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      - name: Verify populated database upgrades and migration rollback
+        run: npm run test:migrations
+
       - name: Test
         run: npm test
 

@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test src/lib/*.test.ts",
+    "test:migrations": "node --test scripts/database-upgrade.test.mjs",
     "test:access": "node scripts/test-project-access.mjs",
     "worker": "node scripts/scan-worker.mjs",
     "worker:ai": "node scripts/llm-worker.mjs",
