@@ -17,6 +17,8 @@ import { encode } from "next-auth/jwt";
 import { configureDatabase } from "../src/lib/database-runtime.ts";
 import { recordFindingTicket } from "../src/lib/finding-workflow.ts";
 import { runLlmWorkerOnce } from "../src/lib/llm-worker.ts";
+import { sourceDigest } from "../src/lib/source-snapshot.ts";
+import { encrypt } from "../src/lib/crypto.ts";
 import { ruleFixtureExamples } from "../src/lib/rule-fixture-examples.ts";
 
 export async function runAccessIntegration({ verifyBrowser } = {}) {
@@ -155,6 +157,41 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     await call(`/api/llm-jobs/${queuedReview.id}/reviews/${savedHistory.reviews[0].id}`, { status: 404 });
     const cacheCheck = await globalThis.fetch(origin + savedPath, { headers: { Cookie: `authjs.session-token=${cookies.bob}` } });
     assert.equal(cacheCheck.status, 200); assert.equal(cacheCheck.headers.get("cache-control"), "private, no-store"); checks++;
+    // The source agent uses owned immutable fixtures and a scripted provider through production HTTP admission.
+    await call("/api/llm-jobs", { method: "POST", body: { scanId: sa.id, mode: "source", findingIds: [fa.id] }, status: 409 });
+    const sourceScan = await db.scan.create({ data: { projectId: a.id, repository: "owned/source-review", commitSha: "a".repeat(40), status: "completed" } });
+    const sourceFinding = await db.finding.create({ data: { ...finding, scanId: sourceScan.id, filePath: "main.py", codeSnippet: "value = normalize(value)" } });
+    const sourceText = "value = normalize(value)\nreturn 'OWNED_SOURCE_HTTP_EVIDENCE'\n";
+    const sourceBase = { version: 1, provider: "github", repository: sourceScan.repository, commit: sourceScan.commitSha, truncated: false,
+      files: [{ path: "main.py", content: sourceText, sha256: createHash("sha256").update(sourceText).digest("hex") }] };
+    const sourceSnapshot = { ...sourceBase, sourceDigest: sourceDigest(sourceBase) };
+    await db.scanJob.create({ data: { scanId: sourceScan.id, projectId: a.id, requestedBy: "alice", provider: "github", ownerSlug: sourceScan.repository, requestedRef: "main", commitSha: sourceScan.commitSha,
+      sourceDigest: sourceSnapshot.sourceDigest, sourceCiphertext: encrypt(JSON.stringify(sourceSnapshot), environment.ENCRYPTION_SECRET), status: "completed",
+      resultManifest: JSON.stringify({ version: 1, commit: sourceSnapshot.commit, sourceDigest: sourceSnapshot.sourceDigest }) } });
+    const sourceBody = { scanId: sourceScan.id, mode: "source", findingIds: [sourceFinding.id] };
+    await call("/api/llm-jobs", { user: "bob", method: "POST", body: sourceBody, status: 404 });
+    await call("/api/llm-jobs", { method: "POST", body: { ...sourceBody, findingIds: [fb.id] }, status: 400 });
+    await call("/api/llm-jobs", { method: "POST", body: { ...sourceBody, findingIds: [sourceFinding.id, sourceFinding.id] }, status: 400 });
+    const sourceReview = await call("/api/llm-jobs", { method: "POST", body: sourceBody, status: 202 });
+    try {
+      process.env.ENCRYPTION_SECRET = environment.ENCRYPTION_SECRET;
+      await runLlmWorkerOnce(db, "owned-http-source-worker", environment, new globalThis.AbortController().signal, { transport: async (request) => {
+        const input = JSON.parse(JSON.parse(request.body).messages[0].content);
+        const value = input.source_progress.round === 1
+          ? { kind: "tools", requests: [{ name: "source_read", arguments: { file_id: input.findings[0].finding_source.file_id, line_start: 1, line_end: 2 } }] }
+          : { kind: "review", reviews: input.findings.map(({ id }) => ({ findingId: id, verdict: "needs_review", confidence: 0.2, reasoning: "Owned source HTTP review.", remediation: "Inspect caller contracts.", adjustedSeverity: null, evidenceFor: [], evidenceAgainst: [], evidenceGaps: ["Static evidence only."], citationIds: [input.source_progress.tool_results[0].evidence.citation.citation_id] })) };
+        return { status: 200, text: JSON.stringify({ id: "owned-source-http", model: "owned-fixture-model", stop_reason: "end_turn", usage: { input_tokens: 100, output_tokens: 50 }, content: [{ type: "text", text: JSON.stringify(value) }] }) };
+      } });
+    } finally { if (previousEncryptionSecret === undefined) delete process.env.ENCRYPTION_SECRET; else process.env.ENCRYPTION_SECRET = previousEncryptionSecret; }
+    const sourceJobDetail = await call(`/api/llm-jobs/${sourceReview.id}`, { user: "bob" });
+    assert.equal(sourceJobDetail.status, "completed"); assert.equal(sourceJobDetail.callsStarted, 2);
+    assert.deepEqual(sourceJobDetail.calls.map((item) => item.roundIndex), [0, 1]);
+    assert.ok(!JSON.stringify(sourceJobDetail).includes("continuationCiphertext")); assert.ok(!JSON.stringify(sourceJobDetail).includes("OWNED_SOURCE_HTTP_EVIDENCE"));
+    const sourceHistory = await call(`/api/llm-jobs/${sourceReview.id}/reviews`, { user: "bob" });
+    const sourceSavedPath = `/api/llm-jobs/${sourceReview.id}/reviews/${sourceHistory.reviews[0].id}`;
+    const sourceSaved = await call(sourceSavedPath, { user: "bob" });
+    assert.equal(sourceSaved.record.sourceEvidence.citations[0].path, "main.py"); assert.equal(sourceSaved.record.sourceEvidence.tools_used[0].evidence.content, sourceText.trimEnd());
+    await call(sourceSavedPath, { user: "outside", status: 404 });
     await db.llmWorker.deleteMany({ where: { id: "owned-http-review-worker" } });
     await call("/api/llm-jobs?limit=NaN", { status: 400 });
     await db.setting.deleteMany({ where: { key: { startsWith: "llm." } } });
@@ -300,7 +337,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await call(`/api/scans/${queued.scanId}/job`)).job.status, "cancelled");
     const retry = await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "retry" }, status: 202 });
     assert.notEqual(retry.scanId, queued.scanId);
-    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id, workflowFindingId: regression.id, historicalFindingId: originalIdentityFinding.id, reviewJobId: queuedReview.id, reviewScanId: sa.id, db, environment });
+    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id, workflowFindingId: regression.id, historicalFindingId: originalIdentityFinding.id, reviewJobId: queuedReview.id, reviewScanId: sa.id, sourceScanId: sourceScan.id, sourceFindingId: sourceFinding.id, db, environment });
     // Recovery rotates an epoch even if a restored session counter repeats.
     const recoveredEpoch = randomBytes(16).toString("hex");
     await db.user.update({ where: { id: "alice" }, data: { sessionEpoch: recoveredEpoch } });

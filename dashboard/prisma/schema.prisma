@@ -474,6 +474,10 @@ model LlmCall {
   id             String   @id @default(cuid())
   jobId          String
   batchIndex     Int
+  roundIndex     Int      @default(0)
+  responseKind   String   @default("review")
+  continuationDigest String @default("")
+  continuationCiphertext String?
   leaseToken     String
   status         String   @default("dispatched")
   promptDigest   String
@@ -484,7 +488,7 @@ model LlmCall {
   completedAt    DateTime?
   job LlmJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   reviews LlmReview[]
-  @@unique([jobId, batchIndex])
+  @@unique([jobId, batchIndex, roundIndex])
   @@index([jobId, status])
 }
 

@@ -14,7 +14,7 @@ export interface AiReviewJob {
   callsStarted?: number; maxCalls?: number; outputTokensReserved?: number; promptBytes?: number;
   workerReady?: boolean; heartbeatAt?: string | null; deadlineAt?: string | null;
   permissions?: { canCancel: boolean };
-  calls?: Array<{ id: string; batchIndex: number; status: string; errorCode: string; receipt: string; promptDigest: string; responseDigest: string }>;
+  calls?: Array<{ id: string; batchIndex: number; roundIndex?: number; responseKind?: string; status: string; errorCode: string; receipt: string; promptDigest: string; responseDigest: string }>;
   events?: Array<{ id: string; code: string; message: string; details: string; createdAt: string }>;
 }
 
@@ -32,6 +32,7 @@ export function AiReviewJobCard({ job, onCancel, cancelling }: { job: AiReviewJo
       </div>
       {job.workerReady === false && !terminal && <p className="text-amber-700 dark:text-amber-300">No AI worker heartbeat. The job is stored; ask an operator to start the AI worker before the deadline.</p>}
       {job.errorMessage && <p className="text-destructive">{job.errorMessage}</p>}
+      {job.mode === "source" && <p className="text-xs text-muted-foreground">Source investigation · reads only the frozen source admitted for this scan. Completed source turns are recoverable; interrupted provider requests are never automatically replayed. Review suggestions require human triage.</p>}
       <dl className="grid gap-3 text-xs sm:grid-cols-2">
         <div><dt className="text-muted-foreground">Provider / model</dt><dd className="break-all">{job.provider || "Legacy record"} / {job.model || "Not recorded"}</dd></div>
         <div><dt className="text-muted-foreground">Calls started / limit</dt><dd>{job.callsStarted ?? "Unknown"} / {job.maxCalls ?? "Unknown"}</dd></div>
@@ -47,7 +48,7 @@ export function AiReviewJobCard({ job, onCancel, cancelling }: { job: AiReviewJo
           let receipt: { reportedUsage?: Record<string, number> | null; outcome?: string; completion?: string; stopReason?: string; responseId?: string; requestDigest?: string } = {};
           try { receipt = JSON.parse(call.receipt); } catch { /* Legacy receipt remains unknown. */ }
           return <div key={call.id} className="rounded-md border p-3 text-xs">
-            <p className="font-medium">Batch {call.batchIndex + 1} · {call.status}{call.errorCode ? " · " + call.errorCode : ""}</p>
+            <p className="font-medium">Batch {call.batchIndex + 1}{job.mode === "source" ? ` · Turn ${(call.roundIndex ?? 0) + 1} · ${call.responseKind === "tools" ? "Source tools" : "Review"}` : ""} · {call.status}{call.errorCode ? " · " + call.errorCode : ""}</p>
             <p className="mt-1 text-muted-foreground">Outcome: {receipt.outcome || "unknown"} · Completion: {receipt.completion || "unknown"}{receipt.stopReason ? " · " + receipt.stopReason : ""}</p>
             <details className="mt-2"><summary className="cursor-pointer">Usage and receipt</summary>
               <p className="mt-2 text-muted-foreground">Provider-reported token counters retain their native names. Cache and reasoning counters may overlap other counters; do not add them together.</p>
