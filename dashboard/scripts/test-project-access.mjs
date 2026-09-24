@@ -17,6 +17,7 @@ import { encode } from "next-auth/jwt";
 import { configureDatabase } from "../src/lib/database-runtime.ts";
 import { recordFindingTicket } from "../src/lib/finding-workflow.ts";
 import { runLlmWorkerOnce } from "../src/lib/llm-worker.ts";
+import { ruleFixtureExamples } from "../src/lib/rule-fixture-examples.ts";
 
 export async function runAccessIntegration({ verifyBrowser } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "aegify-access-http-"));
@@ -87,6 +88,31 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.deepEqual((await call("/api/endpoints")).frameworks, ["alpha-only"]);
     assert.equal((await call("/api/agent-runs")).runs.length, 0);
     assert.equal((await call("/api/llm-jobs")).jobs.length, 0);
+    const fixturePath = `/api/projects/${a.id}/rule-fixtures`;
+    await call(fixturePath, { user: null, status: 401 });
+    await call(fixturePath, { user: "outside", status: 404 });
+    await call(fixturePath, { user: "bob", method: "POST", body: ruleFixtureExamples.call, status: 404 });
+    await call(fixturePath, { method: "POST", body: ruleFixtureExamples.call, requestOrigin: "https://foreign.example.test", status: 403 });
+    await call(fixturePath, { method: "POST", body: ruleFixtureExamples.call, token: "owned-unused-token", status: 401 });
+    await call(fixturePath, { method: "POST", body: { ...ruleFixtureExamples.call, extra: "unsupported" }, status: 400 });
+    const fixtureJob = await call(fixturePath, { method: "POST", body: ruleFixtureExamples.call, status: 202 });
+    assert.equal(fixtureJob.status, "queued"); assert.equal("inputCiphertext" in fixtureJob, false); assert.equal("leaseToken" in fixtureJob, false);
+    assert.equal((await call(fixturePath, { user: "bob" })).jobs[0].id, fixtureJob.id);
+    const fixtureDetailPath = `${fixturePath}/${fixtureJob.id}`;
+    await call(`/api/projects/${b.id}/rule-fixtures/${fixtureJob.id}`, { user: "bob", status: 404 });
+    await call(fixtureDetailPath, { user: "outside", status: 404 });
+    await call(fixtureDetailPath + "?input=1", { user: "bob", status: 404 });
+    assert.deepEqual((await call(fixtureDetailPath + "?input=1")).input, ruleFixtureExamples.call);
+    await call(fixtureDetailPath + "?input=1&input=1", { status: 400 });
+    await call(fixtureDetailPath, { user: "bob", method: "POST", body: { action: "cancel" }, status: 404 });
+    await call(fixtureDetailPath, { method: "POST", body: { action: "cancel" } });
+    assert.equal((await call(fixtureDetailPath, { user: "bob" })).job.status, "cancelled");
+    const rerunFixture = await call(fixtureDetailPath, { method: "POST", body: { action: "rerun" }, status: 202 });
+    assert.notEqual(rerunFixture.id, fixtureJob.id); assert.equal(rerunFixture.inputDigest, fixtureJob.inputDigest);
+    await call(`${fixturePath}/${rerunFixture.id}`, { method: "POST", body: { action: "cancel" } });
+    await db.ruleFixtureJob.update({ where: { id: fixtureJob.id }, data: { expiresAt: new Date(0) } });
+    await call(fixtureDetailPath + "?input=1", { status: 410 });
+    await call(fixtureDetailPath, { method: "POST", body: { action: "rerun" }, status: 410 });
     // Both public AI entry points enqueue durable work; no request-lifetime task calls a model.
     for (const [key, value] of Object.entries({ "llm.enabled": "true", "llm.provider": "anthropic", "llm.model": "owned-fixture-model", "llm.anthropic_api_key": "owned-nonworking-placeholder" })) await db.setting.create({ data: { key, value } });
     const queuedReview = await call("/api/llm-jobs", { method: "POST", body: { scanId: sa.id, mode: "deep" }, status: 202 });

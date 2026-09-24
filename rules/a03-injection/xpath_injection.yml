@@ -31,13 +31,14 @@ rules:
       source_types: [http_param, http_body, http_query, form_input]
       sink_types: [xpath_query]
       sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath|XPathExpression|etree\\.xpath)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
-        - "String\\.Format"
-        - "%s.*%"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
+        # - "String\\.Format"
+        # - "%s.*%"
     defense_patterns:
       - "XPathVariable"
       - "setXPathVariableResolver"
@@ -79,11 +80,12 @@ rules:
       source_types: [http_param, http_body, form_input]
       sink_types: [xpath_query, authentication]
       sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath).*\\b(user|login|auth|password|credential)\\b"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
     defense_patterns:
       - "XPathVariable"
       - "setXPathVariableResolver"
@@ -125,11 +127,12 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [xpath_query]
       sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath|XPathExpression)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
     defense_patterns:
       - "XPathVariable"
       - "setXPathVariableResolver"

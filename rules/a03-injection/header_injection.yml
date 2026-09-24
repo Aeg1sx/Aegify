@@ -29,11 +29,12 @@ rules:
       source_types: [http_param, http_body, http_query, http_header]
       sink_types: [http_response_header]
       sink_pattern: "(setHeader|addHeader|set_header|writeHead|header\\(|res\\.set|response\\.headers)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "assignment"
     defense_patterns:
       - "\\.replace\\(.*[\\\\]r|[\\\\]n"
       - "\\.(strip|trim|replace).*\\\\n|\\\\r"
@@ -80,12 +81,13 @@ rules:
       source_types: [http_header]
       sink_types: [url_construction, email_content, redirect]
       sink_pattern: "(url_for|build_url|redirect|send_mail|send_email|Location|href|action)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
-        - "assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
+        # - "assignment"
     defense_patterns:
       - "ALLOWED_HOSTS"
       - "VALID_HOSTS"
@@ -130,12 +132,13 @@ rules:
       source_types: [http_param, http_body, http_query, http_header]
       sink_types: [http_response_header, redirect]
       sink_pattern: "(redirect|sendRedirect|Location|Set-Cookie|writeHead|header\\()"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
-        - "urllib\\.parse\\.urljoin"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
+        # - "urllib\\.parse\\.urljoin"
     defense_patterns:
       - "encodeURIComponent"
       - "urllib\\.parse\\.quote"
@@ -178,12 +181,13 @@ rules:
       source_types: [http_param, http_body, form_input]
       sink_types: [email_header]
       sink_pattern: "(send_mail|sendmail|send_message|sendEmail|transport\\.sendMail|MIMEText|MimeMessage|mail\\()"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
-        - "assignment"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
+        # - "assignment"
     defense_patterns:
       - "\\.replace\\(.*[\\\\]r|[\\\\]n"
       - "strip_newlines"

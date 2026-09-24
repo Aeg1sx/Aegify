@@ -24,10 +24,11 @@ rules:
       source_types: [http_body, http_param, http_query]
       sink_types: [nosql_query]
       sink_pattern: "\\.(find|findOne|update|delete|aggregate|count|distinct)\\("
-      propagation:
-        - "JSON\\.parse"
-        - "Object\\.assign"
-        - "spread_operator"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "JSON\\.parse"
+        # - "Object\\.assign"
+        # - "spread_operator"
     defense_patterns:
       - "mongo-sanitize"
       - "express-mongo-sanitize"
@@ -66,11 +67,12 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [nosql_command]
       sink_pattern: "redis\\.(get|set|hset|hget|del|eval|send_command|execute_command|call)\\("
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "format\\("
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "format\\("
     defense_patterns:
       - "encodeURIComponent"
       - "validator\\.isAlphanumeric"
@@ -105,10 +107,11 @@ rules:
       source_types: [http_body, http_param, http_query]
       sink_types: [nosql_query]
       sink_pattern: "\\.(find|view|query|search|list|show)\\("
-      propagation:
-        - "JSON\\.parse"
-        - "Object\\.assign"
-        - "spread_operator"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "JSON\\.parse"
+        # - "Object\\.assign"
+        # - "spread_operator"
     defense_patterns:
       - "Joi\\.(object|string|number)"
       - "ajv\\.validate"
@@ -144,11 +147,12 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [nosql_query]
       sink_pattern: "(FilterExpression|KeyConditionExpression|UpdateExpression|ConditionExpression|executeStatement)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
     defense_patterns:
       - "ExpressionAttributeValues"
       - "ExpressionAttributeNames"
@@ -189,11 +193,12 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [nosql_query]
       sink_pattern: "\\.(search|index|update|msearch|bulk|deleteByQuery|updateByQuery)\\("
-      propagation:
-        - "JSON\\.parse"
-        - "Object\\.assign"
-        - "spread_operator"
-        - "string_concat"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "JSON\\.parse"
+        # - "Object\\.assign"
+        # - "spread_operator"
+        # - "string_concat"
     defense_patterns:
       - "escapeQueryString"
       - "querystring\\.escape"
@@ -234,12 +239,13 @@ rules:
       source_types: [http_param, http_body, http_query]
       sink_types: [nosql_query]
       sink_pattern: "(session\\.execute|cluster\\.connect|execute_async|SimpleStatement)"
-      propagation:
-        - "string_concat"
-        - "template_literal"
-        - "f_string"
-        - "String\\.format"
-        - "%s.*%"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - "string_concat"
+        # - "template_literal"
+        # - "f_string"
+        # - "String\\.format"
+        # - "%s.*%"
     defense_patterns:
       - "PreparedStatement"
       - "prepare\\("

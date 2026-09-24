@@ -35,13 +35,14 @@ rules:
       source_types: [http_param, http_body, http_header, http_cookie, grpc_field, cli_argument, environment_variable]
       sink_types: [os_command]
       sink_pattern: "exec\\.(Command|CommandContext)"
-      propagation:
-        - through: "string_concatenation"
-        - through: "fmt_sprintf"
-        - through: "strings_join"
-        - through: "variable_assignment"
-        - through: "slice_append"
-        - through: "function_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "fmt_sprintf"
+        # - through: "strings_join"
+        # - through: "variable_assignment"
+        # - through: "slice_append"
+        # - through: "function_parameter"
     defense_patterns:
       - "allowlist"
       - "whitelist"
@@ -99,12 +100,13 @@ rules:
       source_types: [http_param, http_body, http_header, cli_argument, environment_variable, grpc_field]
       sink_types: [os_command]
       sink_pattern: "syscall\\.(Exec|ForkExec|StartProcess)|unix\\.Exec"
-      propagation:
-        - through: "string_concatenation"
-        - through: "fmt_sprintf"
-        - through: "slice_literal"
-        - through: "variable_assignment"
-        - through: "function_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "fmt_sprintf"
+        # - through: "slice_literal"
+        # - through: "variable_assignment"
+        # - through: "function_parameter"
     defense_patterns:
       - "allowlist"
       - "whitelist"
@@ -157,12 +159,13 @@ rules:
       source_types: [http_param, http_body, file_upload, cli_argument, environment_variable]
       sink_types: [code_execution, dynamic_library_load]
       sink_pattern: "plugin\\.Open"
-      propagation:
-        - through: "string_concatenation"
-        - through: "fmt_sprintf"
-        - through: "filepath_join"
-        - through: "variable_assignment"
-        - through: "function_parameter"
+      # Reference only; propagation comes from scanner models.
+      # propagation:
+        # - through: "string_concatenation"
+        # - through: "fmt_sprintf"
+        # - through: "filepath_join"
+        # - through: "variable_assignment"
+        # - through: "function_parameter"
     defense_patterns:
       - "allowlist"
       - "whitelist"

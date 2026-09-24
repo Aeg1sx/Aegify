@@ -17,7 +17,8 @@ from rich.text import Text
 
 from aegify import __version__
 from aegify.config import AegifyConfig
-from aegify.models import ScanProgress, ScanResult, ScanStatus, Severity, TokenUsage
+from aegify.llm.reporting import format_token_usage, has_model_activity
+from aegify.models import ScanProgress, ScanResult, ScanStatus, Severity
 
 app = typer.Typer(
     name="aegify",
@@ -180,11 +181,15 @@ def scan(
             model=cfg.llm.model,
             token_budget=cfg.llm.token_budget,
             verify_threshold=cfg.llm.verify_threshold,
+            max_calls=cfg.llm.max_calls,
             batch_size=cfg.llm.batch_size,
             base_url=cfg.llm.base_url,
         )
-        result.findings = verifier.verify_and_remediate(result.findings)
-        result.token_usage = verifier.get_token_usage()
+        try:
+            result.findings = verifier.verify_and_remediate(result.findings)
+            result.token_usage = verifier.get_token_usage()
+        finally:
+            verifier.client.close()
 
     # Output
     if output == "sarif":
@@ -559,7 +564,7 @@ def scan_workspace(
         from aegify.scanner.workspace import WorkspaceManifest
 
         workspace_manifest = WorkspaceManifest.load(manifest)
-        budget = TokenBudget(total_budget=cfg.llm.token_budget)
+        budget = TokenBudget(total_budget=cfg.llm.token_budget, max_calls=cfg.llm.max_calls)
         client = LLMClient(
             api_key=cfg.anthropic_api_key,
             model=model,
@@ -586,20 +591,19 @@ def scan_workspace(
                 endpoint.model_dump(mode="json") for endpoint in result.endpoints[:500]
             ],
         }
-        for finding in result.findings[:max_ai_findings]:
-            finding.ai_review = orchestrator.review_finding(
-                finding,
-                model_call,
-                workspace=workspace_context,
-                model=model,
-                sources=engine.source_catalog,
-            )
-            finding.llm_analysis = finding.ai_review.model_dump_json()
-        result.token_usage = TokenUsage(
-            input_tokens=budget.input_tokens_used,
-            output_tokens=budget.output_tokens_used,
-            total_cost_usd=budget.estimated_cost_usd,
-        )
+        try:
+            for finding in result.findings[:max_ai_findings]:
+                finding.ai_review = orchestrator.review_finding(
+                    finding,
+                    model_call,
+                    workspace=workspace_context,
+                    model=model,
+                    sources=engine.source_catalog,
+                )
+                finding.llm_analysis = finding.ai_review.model_dump_json()
+            result.token_usage = budget.get_token_usage()
+        finally:
+            client.close()
 
     if semantic_graph_file is not None and result.status == "completed":
         engine.export_semantic_graph(semantic_graph_file)
@@ -938,6 +942,76 @@ def audit_rule_files(
 
     if report.errors or (strict and report.warnings):
         raise typer.Exit(code=2)
+
+
+@app.command("test-rule")
+def test_rule(
+    rule_file: Annotated[Path, typer.Argument(help="One YAML rule; source is never executed")],
+    fixtures: Annotated[Path, typer.Option("--fixtures", help="Versioned JSON fixture suite")],
+    output_file: Annotated[Path | None, typer.Option("--output-file", "-o")] = None,
+    timeout_seconds: Annotated[
+        int, typer.Option("--timeout-seconds", min=1, max=120, help="Whole-suite wall deadline")
+    ] = 30,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit the full JSON report")] = False,
+) -> None:
+    """Evaluate exact finding locations with one positive and two negative controls.
+
+    Exit 0=passed, 1=mismatched findings, 2=invalid input/worker failure,
+    3=incomplete analysis or insufficient controls. No AI or application execution.
+    """
+    from aegify.quality.rule_fixtures import (
+        MAX_RULE_BYTES,
+        MAX_SUITE_BYTES,
+        FixtureReport,
+        RuleFixtureSuite,
+        read_input,
+        run_rule_fixtures,
+        strict_json,
+    )
+
+    if os.name != "posix":
+        report = FixtureReport(status="error", issues=["unsupported_platform"])
+    else:
+        try:
+            rule_yaml = read_input(rule_file, MAX_RULE_BYTES).decode("utf-8")
+            suite = RuleFixtureSuite.model_validate(
+                strict_json(read_input(fixtures, MAX_SUITE_BYTES))
+            )
+            report = run_rule_fixtures(rule_yaml, suite, timeout_seconds=timeout_seconds)
+        except OSError, ValueError, UnicodeError, RecursionError:
+            report = FixtureReport(status="error", issues=["invalid_input"])
+    encoded = report.model_dump_json(indent=2)
+    if output_file is not None:
+        try:
+            output_file.write_text(encoded + "\n", encoding="utf-8")
+        except OSError:
+            console.print("Could not write the fixture report.", style="red")
+            raise typer.Exit(code=2) from None
+    if json_output:
+        print(encoded)
+    else:
+        table = Table(title=f"Rule fixtures: {report.status}")
+        for label in ("Case", "Status", "TP", "FP", "FN", "Analysis gaps"):
+            table.add_column(label)
+        for case in report.cases:
+            metrics = case.metrics
+            table.add_row(
+                case.id,
+                case.status,
+                str(metrics.true_positives) if metrics else "—",
+                str(metrics.false_positives) if metrics else "—",
+                str(metrics.false_negatives) if metrics else "—",
+                ", ".join(case.issues),
+            )
+        console.print(table)
+        if report.issues:
+            console.print(", ".join(report.issues))
+        for diagnostic in report.diagnostics:
+            message = str(diagnostic.get("message", "Invalid rule"))
+            console.print(Text("".join(char if char.isprintable() else " " for char in message)))
+        console.print("Fixture labels measure this suite only; source code was not executed.")
+    if report.exit_code:
+        raise typer.Exit(code=report.exit_code)
 
 
 @app.command("verify-plan")
@@ -1337,19 +1411,23 @@ def agent_run(
         raise typer.Exit(code=2) from error
 
     backend: AgentBackend | None = None
+    model_client: LLMClient | None = None
     config = AegifyConfig.load(workspace)
     if provider == "anthropic-api":
         if not config.anthropic_api_key:
             console.print("[red]anthropic-api requires ANTHROPIC_API_KEY[/red]")
             raise typer.Exit(code=2)
         selected_model = model or config.llm.model
-        client = LLMClient(
+        model_client = LLMClient(
             api_key=config.anthropic_api_key,
             model=selected_model,
-            budget=TokenBudget(total_budget=config.llm.token_budget),
+            budget=TokenBudget(
+                total_budget=config.llm.token_budget,
+                max_calls=config.llm.max_calls,
+            ),
             base_url=config.llm.base_url,
         )
-        backend = AnthropicAPIBackend(client)
+        backend = AnthropicAPIBackend(model_client)
     elif provider == "openai-api":
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
@@ -1382,6 +1460,9 @@ def agent_run(
     except (RuntimeError, ValueError, ValidationError) as error:
         console.print(f"[red]Agent run failed: {error}[/red]")
         raise typer.Exit(code=2) from error
+    finally:
+        if model_client is not None:
+            model_client.close()
     rendered = run.model_dump_json(indent=2)
     if output_file is not None:
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1546,6 +1627,7 @@ def scan_pr(
             api_key=cfg.anthropic_api_key,
             model=cfg.llm.model,
             token_budget=cfg.llm.token_budget,
+            max_calls=cfg.llm.max_calls,
             batch_size=cfg.llm.batch_size,
             base_url=cfg.llm.base_url,
         )
@@ -1557,13 +1639,15 @@ def scan_pr(
             if ast:
                 file_asts.append(ast)
 
-        result.findings = verifier.verify_all(result.findings, file_asts)
-        result.token_usage = verifier.get_token_usage()
+        try:
+            result.findings = verifier.verify_all(result.findings, file_asts)
+            result.token_usage = verifier.get_token_usage()
+        finally:
+            verifier.client.close()
 
         console.print(
-            f"  After LLM: {len(result.findings)} confirmed findings | "
-            f"Tokens: {result.token_usage.input_tokens + result.token_usage.output_tokens:,} | "
-            f"Cost: ${result.token_usage.total_cost_usd:.4f}"
+            f"  After AI review: {len(result.findings)} findings retained | "
+            f"{format_token_usage(result.token_usage)}"
         )
 
     # Step 5: Output SARIF
@@ -1648,11 +1732,8 @@ def _output_console(result: ScanResult) -> None:
         f"Files scanned: {result.files_scanned} | Duration: {result.duration_seconds:.1f}s"
     )
 
-    if result.token_usage.total_cost_usd > 0:
-        console.print(
-            f"LLM tokens: {result.token_usage.input_tokens + result.token_usage.output_tokens:,} | "
-            f"Cost: ${result.token_usage.total_cost_usd:.4f}"
-        )
+    if has_model_activity(result.token_usage):
+        console.print(format_token_usage(result.token_usage))
 
 
 def _output_sarif(
