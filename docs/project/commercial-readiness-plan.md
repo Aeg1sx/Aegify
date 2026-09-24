@@ -559,7 +559,7 @@ This phase improves team workflow reliability. It does not change the measured
 OWASP precision/recall, establish live-provider AI quality, or complete the wider
 self-hosting release contract.
 
-## Hash algorithm rule precision: 2026-09-24, in progress
+## Hash algorithm rule precision: 2026-09-24
 
 Source review of the workflow self-scan found SHA-256 calls labeled as MD5. An
 owned source-only regression confirmed this for both SHA-256 and SHA-512. The MD5
@@ -609,3 +609,56 @@ gate, including the replay script added after this preflight scan.
 The added replay script separately passes its pinned comparison and an owned
 single-file self-scan with no findings or analysis gaps; Ruff/format checks pass
 across 153 source, test and replay files.
+
+All required checks, both CodeQL analyses, self-scan and container checks passed
+on head `53382df85587d9e422073e8a48a4164b6f5ad198`. Linux CI passed 596 scanner
+tests with reported coverage rounded to 82%; the dashboard passed 124 tests and
+the offline container passed 34 checks with all 20 migrations. PR #52 merged at
+2026-09-24T00:51:44Z as verified signed commit
+`32659293bff58195cc4cea2d8bb5dcee90480da1`. Main Aegify analysis `1829441217`
+completed at 2026-09-24T00:57:17Z with 676 candidates and no error; both CodeQL
+analyses on that merge have zero results. The fresh open-alert snapshot has 681
+alerts: 676 Aegify candidates and five Scorecard alerts. No manual dismissal was
+performed. The comparison also replays from a fresh detached checkout of the
+pinned source, with the same 301 files, 17 removed candidates and no additions.
+
+## Scanner agent provider contracts: 2026-09-24, in progress
+
+Eight offline regressions first reproduced incomplete OpenAI strict-schema fields,
+unfinished/refused Responses envelopes accepted as valid narratives, and an
+oversized Codex output file accepted after truncation. The adapters now require
+all narrative fields, validate provider completion/refusal states, reject ambiguous
+JSON and retain bounded failure codes. Finished runs with incomplete stages are
+reported as partial while preserving deterministic facts.
+The CLI persists its artifact and returns exit 3 for partial/awaiting-approval
+runs, allowing CI to distinguish them from a completed review (exit 0).
+
+The CLI transport now sends input while draining bounded stdout/stderr, enforces
+a deadline and terminates its POSIX process group even after successful parent
+exit. Codex message files are monitored and read as bounded regular UTF-8 files.
+The first expanded local check passed 83 focused tests, including real owned
+subprocesses and descendants. The initial process-inspection test hit the local
+sandbox's `ps` restriction; it now checks only its owned child PID directly and
+recognizes Linux zombie state. No restriction was relaxed.
+
+Official OpenAI structured-output/Codex configuration and Claude Code result
+contracts were checked. Installed Codex 0.155.1 help accepts the current flags;
+no live CLI/model invocation, credential check, usage-cost verification or real
+provider-quality evaluation was performed. Inherited CLI configuration/hooks,
+detached descendants, external isolation, provider-neutral usage/cost receipts
+and durable AI jobs remain open work. Exact-head CI remains a separate gate.
+
+The full scanner preflight passed 657 tests with one platform skip; subsequent
+focused checks pass 92 tests covering CI exit codes and premature stdin closure. Legacy artifact
+digest compatibility is checked against an independently computed pre-change
+digest. Ruff, formatting and strict types pass; documentation validation, links
+and accessibility pass with existing color recommendations. The sandboxed
+documentation command initially failed during its network availability probe;
+the approved normal-network retry of the same command passed.
+
+The preflight self-scan analyzed 301 files in 203.4 seconds, with 677 advisory
+candidates, no blocking finding and successful analysis. Its one added candidate
+is `AEG-HDR-003` at the `_NoRedirects` class declaration: source review confirms
+this hook rejects redirects rather than writing an HTTP response/header. It is a
+retained heuristic false positive for a separate rule fix; no alert suppression
+or rule weakening is included here. Exact-head CI remains the merge gate.

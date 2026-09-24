@@ -7,7 +7,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
-from aegify.agents.backends import AgentBackend
+from aegify.agents.backends import AgentBackend, AgentBackendError
 from aegify.agents.catalog import AGENT_CATALOG, AgentSpec
 from aegify.agents.models import (
     AgentEvidence,
@@ -92,12 +92,15 @@ class SecurityAgentPipeline:
         for stage in stages:
             run.evidence.extend(self._attach_narrative(stage, tool_context))
             run.stages.append(stage)
-        run.status = (
-            AgentRunStatus.AWAITING_APPROVAL
-            if any(stage.status == AgentStageStatus.WAITING_APPROVAL for stage in stages)
-            else AgentRunStatus.COMPLETED
-        )
-        if run.status == AgentRunStatus.COMPLETED:
+        if any(stage.status == AgentStageStatus.WAITING_APPROVAL for stage in stages):
+            run.status = AgentRunStatus.AWAITING_APPROVAL
+        elif any(
+            stage.status in {AgentStageStatus.PARTIAL, AgentStageStatus.FAILED} for stage in stages
+        ):
+            run.status = AgentRunStatus.PARTIAL
+        else:
+            run.status = AgentRunStatus.COMPLETED
+        if run.status in {AgentRunStatus.COMPLETED, AgentRunStatus.PARTIAL}:
             run.completed_at = datetime.now(UTC)
         return run
 
@@ -523,6 +526,8 @@ class SecurityAgentPipeline:
             stage.narrative = self.backend.invoke(spec, payload)
         except Exception as error:
             stage.error = str(error)[:1_000]
+            if isinstance(error, AgentBackendError):
+                stage.backend_error_code = error.code
             if stage.status == AgentStageStatus.COMPLETED:
                 stage.status = AgentStageStatus.PARTIAL
         return [
