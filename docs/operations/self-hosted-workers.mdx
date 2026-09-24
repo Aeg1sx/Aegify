@@ -1,6 +1,6 @@
 ---
-title: Self-hosted scan workers
-description: Install, observe and recover source scans in one internal Aegify workspace.
+title: Self-hosted workers
+description: Install, observe and recover source scans and AI finding reviews in one internal workspace.
 ---
 
 ## Start the team installation
@@ -10,9 +10,9 @@ and configure [encrypted backups and separate key custody](/operations/backup-re
 From the repository root:
 
 ```bash
-docker compose up -d --build dashboard worker
+docker compose up -d --build dashboard worker ai-worker
 docker compose ps
-docker compose logs --tail=100 worker
+docker compose logs --tail=100 worker ai-worker
 ```
 
 The dashboard applies migrations and enables SQLite WAL before it becomes healthy. The worker then starts
@@ -25,13 +25,81 @@ Readers and the worker share WAL snapshots; lock contention retries the entire
 rolled-back write transaction up to four times with jitter. A failed retry remains
 an error. See [SQLite's isolation contract](https://www.sqlite.org/isolation.html).
 Use the [operator backup CLI](/operations/backup-recovery), which captures a
-consistent live snapshot, or stop both services before copying database files.
+consistent live snapshot, or stop the dashboard and both workers before copying database files.
 Copying only the live `.db` file can omit committed WAL data.
 
 The worker image pins its Python, Node and uv base images. Its build context is an
 explicit allowlist excluding local credentials, databases and reports. It runs as
 a non-root user with a read-only root filesystem, a temporary workspace, no added
 capabilities, a two-CPU/two-GiB limit and a 128-process limit.
+
+The separate `ai-worker` service uses the same trusted image and database, with a
+one-CPU/one-GiB limit and a 64-process limit. Each service has its own heartbeat.
+AI calls cannot occupy the source scanner's job loop. No model is called until
+an admitted project maintainer explicitly queues a review and AI settings are enabled.
+
+## Upgrade an existing installation
+
+Back up and verify the current database first. Stop `worker`, `ai-worker` (if
+already installed), and `dashboard` before applying this upgrade. The old web
+process must be stopped: its request-lifetime AI tasks do not understand leases.
+Migration `20260924060000_durable_ai_reviews` marks unfinished legacy AI jobs as
+failed and retains their history. It cannot infer their requester or provider
+outcome, so it never resumes them. Start all three services after the migration.
+
+## Durable AI finding reviews
+
+Open **LLM Security Review**, choose a project scan and select **Quick Review** or
+**Deep Analysis**. Completed and partial static scans are eligible; review does
+not upgrade a partial scan's coverage. Deep mode supplies a bounded graph context.
+This screen reviews a fixed snapshot of existing findings; the scanner's separate
+source-tool agent is described in [AI SAST operations](/analysis/ai-sast-operations).
+
+Both `POST /api/llm-jobs` and the compatible `POST /api/llm-scan` return `202` after
+storing a job. The web process never dispatches these review calls. Inputs are
+sanitized, hashed and encrypted, with the requester, project, provider, model,
+prompt version and configuration identity fixed at enqueue time. Published
+suggestions link the job, batch, source evidence, prompt and response digests.
+API job metadata omits encrypted input, credentials and lease tokens.
+
+The AI worker rechecks admission, membership, project archival, scan binding,
+provider configuration and source identity before dispatch and publication.
+Its two-minute lease is renewed every ten seconds. Cancellation fences publication
+immediately and aborts the local request on the next heartbeat. An already sent
+request may still incur charges. Human finding status, owner, priority, ticket
+and accepted/rejected AI decisions are preserved.
+
+Local work can recover up to three times. A provider call is recorded **before**
+dispatch. If the worker stops without storing a receipt, that call becomes
+`unknown` and the job stops without an automatic retry. Completed batches survive
+a restart; the next undispatched batch can continue. This avoids automatic paid
+replays but cannot guarantee exactly-once execution at an external provider.
+Inspect provider billing before explicitly starting another review.
+
+| Bound | Review contract |
+| --- | --- |
+| Queue | One active job per scan; two per project; 50 per workspace |
+| Deadline | 30 minutes including queue time; no dispatch/publication after expiry |
+| Provider calls | At most 20; no automatic provider retry or continuation |
+| Findings | 1–1000; at most 50 complete records per batch |
+| Context | 180,000 bytes per prompt; 4 MB total prompt budget and encrypted-input plaintext limit |
+| Output | Configured per-call ceiling, at most 32,768; total reservation at most 655,360 tokens |
+| Graph | At most 100 nodes and 100 edges within 20 KB, with omitted-record counts |
+| Retention | Encrypted inputs cleared seven days after terminal completion; receipts and events retained |
+
+Oversized jobs are rejected without contacting a provider. Per-field context
+truncation and omitted graph records are recorded as evidence gaps. Invalid,
+refused, incomplete, foreign-ID and duplicate-ID responses cannot publish a batch.
+Missing review records remain explicit omissions. These are resource bounds,
+not monetary quotas or measured precision/recall guarantees. A worker must be
+running to reconcile expired queued jobs; a maintainer can cancel them meanwhile.
+
+The job **Details** view exposes status, cancellation, heartbeat, budget
+reservations, provider-native usage counters, digests and an event history.
+Missing usage and cost are **unknown**, never zero. Cache and reasoning counters
+have provider-specific meanings and must not be summed blindly. No raw provider
+body or hidden reasoning is kept in a receipt. A valid provider envelope and
+schema remain suggestions requiring human review, not runtime verification.
 
 ## Scan a connected project
 
@@ -110,6 +178,7 @@ prevents snapshot recovery and decryption of saved integration settings.
 Install the locked scanner virtualenv at `scanner/.venv` and the dashboard's locked
 Node dependencies. Export the same database and auth environment as the dashboard,
 run `npm run db:prepare`, then run `npm run worker` from `dashboard/`.
+Run `npm run worker:ai` in a separate process for AI finding reviews.
 The worker uses the fixed repository virtualenv path and passes no OAuth or
 integration credentials to its Python child. Windows hosts should use the container.
 

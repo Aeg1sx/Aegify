@@ -1,4 +1,4 @@
-export type LlmJobTerminalStatus = "completed" | "partial" | "failed";
+export type LlmJobTerminalStatus = "completed" | "partial" | "failed" | "cancelled";
 
 export function llmJobTerminalStatus(
   totalFindings: number,
@@ -12,5 +12,5 @@ export function llmJobTerminalStatus(
 }
 
 export function isLlmJobTerminal(status: string): boolean {
-  return status === "completed" || status === "partial" || status === "failed";
+  return status === "completed" || status === "partial" || status === "failed" || status === "cancelled";
 }

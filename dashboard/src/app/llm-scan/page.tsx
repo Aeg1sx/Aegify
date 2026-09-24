@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
 import { StatusBadge } from "@/components/status-badge";
 import { isLlmJobTerminal } from "@/lib/llm-job-state";
+import { AiReviewJobCard, type AiReviewJob } from "@/components/ai-review-job-card";
 import {
   Bot,
   Zap,
@@ -27,11 +28,13 @@ interface Project {
   id: string;
   name: string;
   scanCount: number;
+  accessRole: string;
 }
 
 interface ScanOption {
   id: string;
   repository: string;
+  projectId: string | null;
   branch: string;
   scanType: string;
   status: string;
@@ -68,6 +71,7 @@ interface ScanResult {
 }
 
 interface LLMAnalysis {
+  jobId?: string;
   verdict?: "likely_true_positive" | "likely_false_positive" | "needs_review";
   isFalsePositive: boolean;
   confidence: number;
@@ -76,22 +80,7 @@ interface LLMAnalysis {
   adjustedSeverity?: string;
 }
 
-interface LlmJob {
-  id: string;
-  scanId: string;
-  mode: string;
-  status: string;
-  totalFindings: number;
-  reviewedCount: number;
-  falsePositives: number;
-  currentBatch: number;
-  totalBatches: number;
-  errorMessage: string;
-  createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  scan: { id: string; repository: string; branch: string };
-}
+type LlmJob = AiReviewJob;
 
 export default function LLMScanPage() {
   const [mode, setMode] = useState<"quick" | "deep">("quick");
@@ -106,6 +95,12 @@ export default function LLMScanPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadingScans, setLoadingScans] = useState(true);
   const [jobHistory, setJobHistory] = useState<LlmJob[]>([]);
+  const [inspectedJob, setInspectedJob] = useState<LlmJob | null>(null);
+  const [resultJob, setResultJob] = useState<LlmJob | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [workerReady, setWorkerReady] = useState<boolean | null>(null);
+  const selectedScan = scans.find((scan) => scan.id === selectedScanId);
+  const canStart = Boolean(selectedScan?.projectId && projects.some((project) => project.id === selectedScan.projectId && ["admin", "maintainer"].includes(project.accessRole)));
 
   // Fetch projects
   useEffect(() => {
@@ -126,7 +121,7 @@ export default function LLMScanPage() {
       .then((data) => {
         if (controller.signal.aborted) return;
         const scanList = (data.scans || []).filter(
-          (s: ScanOption) => s.status === "completed" && s._count.findings > 0
+          (s: ScanOption) => ["completed", "partial"].includes(s.status) && s._count.findings > 0
         );
         setScans(scanList);
       })
@@ -141,7 +136,7 @@ export default function LLMScanPage() {
   const fetchHistory = useCallback(() => {
     fetch("/api/llm-jobs?limit=10")
       .then((r) => r.json())
-      .then((data) => setJobHistory(data.jobs || []))
+      .then((data) => { setJobHistory(data.jobs || []); setWorkerReady(data.workerReady === true); })
       .catch(() => {});
   }, []);
 
@@ -170,6 +165,7 @@ export default function LLMScanPage() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/llm-jobs/${activeJob.id}`);
+        if (!res.ok) { setError("Review status is unavailable; check your project access."); setActiveJob(null); setScanning(false); return; }
         const job: LlmJob = await res.json();
 
         setActiveJob(job);
@@ -177,12 +173,14 @@ export default function LLMScanPage() {
         if (isLlmJobTerminal(job.status)) {
           setScanning(false);
           setActiveJob(null);
+          setInspectedJob(job);
           fetchHistory();
 
           if (job.status === "completed" || job.status === "partial") {
             const scanRes = await fetch(`/api/llm-scan/${job.scanId}`);
             const scanData = await scanRes.json();
             setResult(scanData);
+            setResultJob(job);
             if (job.status === "partial") {
               setError(job.errorMessage || "Review completed with unresolved batches");
             }
@@ -199,10 +197,12 @@ export default function LLMScanPage() {
   }, [activeJob, fetchHistory]);
 
   const startReview = async () => {
-    if (scanning || loadingScans || !selectedScanId) return;
+    if (scanning || loadingScans || !selectedScanId || !canStart) return;
 
     setScanning(true);
     setResult(null);
+    setResultJob(null);
+    setInspectedJob(null);
     setError(null);
 
     try {
@@ -227,6 +227,30 @@ export default function LLMScanPage() {
     }
   };
 
+  const inspectJob = async (id: string) => {
+    try {
+      const response = await fetch(`/api/llm-jobs/${id}`);
+      if (!response.ok) throw new Error("Could not load this review.");
+      const job: LlmJob = await response.json(); setInspectedJob(job);
+      if (!isLlmJobTerminal(job.status)) { setActiveJob(job); setScanning(true); }
+      else if (job.reviewedCount) {
+        const findings = await fetch(`/api/llm-scan/${job.scanId}`);
+        if (!findings.ok) throw new Error("Could not load review findings.");
+        setResult(await findings.json()); setResultJob(job);
+      } else { setResult(null); setResultJob(null); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not load review."); }
+  };
+
+  const cancelReview = async () => {
+    if (!activeJob || cancelling) return;
+    setCancelling(true);
+    try {
+      const response = await fetch(`/api/llm-jobs/${activeJob.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel" }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error || "Cancellation failed.");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Cancellation failed."); }
+    finally { setCancelling(false); }
+  };
+
   const parseLLMAnalysis = (raw: string | null): LLMAnalysis | null => {
     if (!raw) return null;
     try {
@@ -236,7 +260,7 @@ export default function LLMScanPage() {
     }
   };
 
-  const reviewedFindings = result?.findings.filter((f) => f.llmAnalysis) || [];
+  const reviewedFindings = result?.findings.filter((f) => f.llmAnalysis && (!resultJob?.contractVersion || parseLLMAnalysis(f.llmAnalysis)?.jobId === resultJob.id)) || [];
   const falsePositives = reviewedFindings.filter((f) => {
     const a = parseLLMAnalysis(f.llmAnalysis);
     return a?.verdict === "likely_false_positive" ||
@@ -247,11 +271,6 @@ export default function LLMScanPage() {
     return a?.verdict === "likely_true_positive";
   });
 
-  const jobPercent =
-    activeJob && activeJob.totalFindings > 0
-      ? Math.round((activeJob.reviewedCount / activeJob.totalFindings) * 100)
-      : 0;
-
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
@@ -260,6 +279,8 @@ export default function LLMScanPage() {
           AI-powered review of existing scan findings for false positive detection and remediation guidance
         </p>
       </div>
+
+      {workerReady === false && !activeJob && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">No AI worker is online. New reviews are stored with a 30 minute deadline.</p>}
 
       {/* Mode Selector */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -318,7 +339,7 @@ export default function LLMScanPage() {
             <div className="space-y-2">
               <label htmlFor="review-project" className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                 <FolderKanban className="h-3 w-3" />
-                Project (optional)
+                Filter by project
               </label>
               <select
                 id="review-project"
@@ -369,10 +390,11 @@ export default function LLMScanPage() {
             <input type="checkbox" className="mt-1.5" checked={includeApiContracts} disabled={scanning} onChange={(event) => setIncludeApiContracts(event.target.checked)} />
             <span><span className="block font-medium">Include API contract context</span><span className="text-muted-foreground">Send bounded, matching OpenAPI/Swagger requirements to the configured AI provider for defensive review. Documentation does not prove enforcement or resolve findings automatically. Off by default.</span></span>
           </label>
+          <p className="text-xs text-muted-foreground">Each review sends a fixed snapshot to the configured provider: at most 20 calls and 1000 findings. Provider usage is recorded when available. Costs require provider billing confirmation. Starting another review can incur new charges.</p>
           <div className="flex items-center gap-3">
             <Button
               type="submit"
-              disabled={scanning || loadingScans || !selectedScanId}
+              disabled={scanning || loadingScans || !selectedScanId || !canStart}
               className="flex items-center gap-2"
             >
               {scanning ? (
@@ -387,38 +409,14 @@ export default function LLMScanPage() {
                 </>
               )}
             </Button>
+            {selectedScanId && !canStart && <p className="text-xs text-muted-foreground">An active project and maintainer access are required to start reviews.</p>}
           </div>
         </CardContent>
         </form>
       </Card>
 
       {/* Active Job Progress */}
-      {activeJob && (
-        <Card className="border-primary/30">
-          <CardContent className="pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                Reviewing {activeJob.scan?.repository || "scan"}
-                <Badge variant="outline" className="text-xs capitalize">{activeJob.mode}</Badge>
-              </div>
-              <span className="text-sm font-mono text-muted-foreground">{jobPercent}%</span>
-            </div>
-            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all duration-500"
-                style={{ width: `${Math.max(jobPercent, 2)}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                Batch {activeJob.currentBatch}/{activeJob.totalBatches} — {activeJob.reviewedCount}/{activeJob.totalFindings} findings
-              </span>
-              <span className="capitalize">{activeJob.status}</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {(activeJob || inspectedJob) && <AiReviewJobCard job={(activeJob || inspectedJob)!} onCancel={() => void cancelReview()} cancelling={cancelling} />}
 
       {/* Error */}
       {error && (
@@ -459,7 +457,7 @@ export default function LLMScanPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <ShieldCheck className="h-3 w-3" /> False Positives
+                    <ShieldCheck className="h-3 w-3" /> Suggested FPs
                   </p>
                   <p className="text-sm font-medium text-[var(--status-false-positive)]">
                     {falsePositives.length}
@@ -467,7 +465,7 @@ export default function LLMScanPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <ShieldAlert className="h-3 w-3" /> True Positives
+                    <ShieldAlert className="h-3 w-3" /> Suggested TPs
                   </p>
                   <p className="text-sm font-medium text-[var(--status-open)]">
                     {truePositives.length}
@@ -519,7 +517,7 @@ export default function LLMScanPage() {
                           {f.ruleId}
                         </span>
                         <span className="text-xs text-muted-foreground ml-auto">
-                          {analysis ? `${(analysis.confidence * 100).toFixed(0)}% confidence` : ""}
+                          {analysis ? `${(analysis.confidence * 100).toFixed(0)}% model estimate` : ""}
                         </span>
                       </div>
                       <p className="text-sm font-medium mb-1">{f.ruleName}</p>
@@ -555,7 +553,7 @@ export default function LLMScanPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  {result.findings.length - reviewedFindings.length} findings were not reviewed by the LLM. Run the review again to cover more findings.
+                  {result.findings.length - reviewedFindings.length} findings have no current suggestion from this job. Suggestions from other jobs and accepted decisions are not counted here. Inspect the call history before starting another paid review.
                 </p>
               </CardContent>
             </Card>
@@ -590,7 +588,7 @@ export default function LLMScanPage() {
                   <div className="flex-shrink-0">
                     {job.status === "completed" ? (
                       <CheckCircle className="h-4 w-4 text-[var(--status-fixed)]" />
-                    ) : job.status === "failed" || job.status === "partial" ? (
+                    ) : isLlmJobTerminal(job.status) ? (
                       <AlertCircle className="h-4 w-4 text-destructive" />
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -607,7 +605,7 @@ export default function LLMScanPage() {
                         className={`text-[10px] capitalize ${
                           job.status === "completed"
                             ? "text-[var(--status-fixed)]"
-                            : job.status === "failed" || job.status === "partial"
+                            : isLlmJobTerminal(job.status)
                             ? "text-destructive"
                             : "text-primary"
                         }`}
@@ -618,13 +616,14 @@ export default function LLMScanPage() {
                     <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                       <span>{job.reviewedCount}/{job.totalFindings} reviewed</span>
                       {job.falsePositives > 0 && (
-                        <span>{job.falsePositives} FPs</span>
+                        <span>{job.falsePositives} suggested FPs</span>
                       )}
-                      {job.errorMessage && (job.status === "failed" || job.status === "partial") && (
+                      {job.errorMessage && isLlmJobTerminal(job.status) && (
                         <span className="text-destructive truncate">{job.errorMessage}</span>
                       )}
                     </div>
                   </div>
+                  <Button size="sm" variant="outline" onClick={() => void inspectJob(job.id)}>Details</Button>
                   <div className="flex-shrink-0 text-xs text-muted-foreground flex items-center gap-1">
                     <Clock className="h-3 w-3" />
                     {new Date(job.createdAt).toLocaleDateString()}

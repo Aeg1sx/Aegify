@@ -101,10 +101,10 @@ and [service copy](https://docs.docker.com/reference/cli/docker/compose/cp/) int
 ## Rehearse restoration
 
 First rehearse in an isolated installation with the matching release and keys.
-For production promotion, stop **both** services before changing their database:
+For production promotion, stop the dashboard and **both workers** before changing their database:
 
 ```bash
-docker compose stop worker dashboard
+docker compose stop worker ai-worker dashboard
 
 docker compose run --rm --no-deps --env AEGIFY_BACKUP_KEY worker \
   node scripts/recovery.mjs restore \
@@ -149,7 +149,7 @@ other accounts remain disabled until reviewed.
 1. Keep the original database and its WAL files intact for rollback. Do not copy
    the candidate over an active database or mix old and new WAL files.
 2. In the private deployment configuration, set
-   `DATABASE_URL=file:/data/recovered-2026-09-24.db` for both services. Keep the
+   `DATABASE_URL=file:/data/recovered-2026-09-24.db` for the dashboard and both workers. Keep the
    original `ENCRYPTION_SECRET`; review all other authentication and admission settings.
 3. Start only the dashboard with `docker compose up -d dashboard`. Its entrypoint
    applies migrations and enables WAL. Confirm migration status and sign in as the
@@ -162,13 +162,13 @@ other accounts remain disabled until reviewed.
 5. Confirm old browser sessions and old project CI tokens fail. The legacy
    environment upload token is disabled on restored databases. Issue new scoped,
    expiring CI credentials and validate a small owned SARIF upload.
-6. Start the worker with `docker compose up -d worker`. Interrupted jobs stay
+6. Start the workers with `docker compose up -d worker ai-worker`. Interrupted jobs stay
    terminal; start an explicit new job or retry after reviewing its scope.
 7. Record the restore ID, software revision, checks, missing data since the snapshot,
    and elapsed time until the team's workflow works again. Remove the backup key
    and recovery password from the operator environment.
 
-Rolling back is a separate operator decision: stop both services, restore the
+Rolling back is a separate operator decision: stop the dashboard and both workers, restore the
 previous `DATABASE_URL` configuration and reconcile writes made after promotion.
 Do not run two installations against divergent copies and expect automatic merging.
 

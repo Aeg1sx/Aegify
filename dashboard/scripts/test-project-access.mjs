@@ -86,6 +86,27 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.deepEqual((await call("/api/endpoints")).frameworks, ["alpha-only"]);
     assert.equal((await call("/api/agent-runs")).runs.length, 0);
     assert.equal((await call("/api/llm-jobs")).jobs.length, 0);
+    // Both public AI entry points enqueue durable work; no request-lifetime task calls a model.
+    for (const [key, value] of Object.entries({ "llm.enabled": "true", "llm.provider": "anthropic", "llm.model": "owned-fixture-model", "llm.anthropic_api_key": "owned-nonworking-placeholder" })) await db.setting.create({ data: { key, value } });
+    const queuedReview = await call("/api/llm-jobs", { method: "POST", body: { scanId: sa.id, mode: "deep" }, status: 202 });
+    assert.equal(queuedReview.status, "pending"); assert.equal(queuedReview.contractVersion, 1);
+    assert.equal("inputCiphertext" in queuedReview, false); assert.equal("configDigest" in queuedReview, false); assert.equal("leaseToken" in queuedReview, false);
+    assert.ok((await db.llmJob.findUniqueOrThrow({ where: { id: queuedReview.id } })).inputCiphertext);
+    assert.equal(await db.llmCall.count({ where: { jobId: queuedReview.id } }), 0, "The web request must never dispatch a provider call");
+    const reviewDetail = await call(`/api/llm-jobs/${queuedReview.id}`);
+    assert.equal(reviewDetail.workerReady, false); assert.equal(reviewDetail.permissions.canCancel, true);
+    assert.equal(reviewDetail.events[0].code, "queued"); assert.equal("inputCiphertext" in reviewDetail, false);
+    assert.equal((await call(`/api/llm-jobs/${queuedReview.id}`, { user: "bob" })).permissions.canCancel, false);
+    await call(`/api/llm-jobs/${queuedReview.id}`, { user: "bob", method: "POST", body: { action: "cancel" }, status: 404 });
+    await call(`/api/llm-jobs/${queuedReview.id}`, { method: "POST", body: { action: "cancel" }, requestOrigin: "https://unrelated.example.test", status: 403 });
+    await call("/api/llm-scan", { method: "POST", body: { scanId: sa.id, mode: "quick" }, status: 409 });
+    await call(`/api/llm-jobs/${queuedReview.id}`, { method: "POST", body: { action: "cancel" } });
+    assert.equal((await call(`/api/llm-jobs/${queuedReview.id}`)).status, "cancelled");
+    const compatibilityReview = await call("/api/llm-scan", { method: "POST", body: { scanId: sa.id, mode: "quick" }, status: 202 });
+    assert.equal(compatibilityReview.findingsCount, 1); assert.ok(compatibilityReview.jobId);
+    await call(`/api/llm-jobs/${compatibilityReview.jobId}`, { method: "POST", body: { action: "cancel" } });
+    await call("/api/llm-jobs?limit=NaN", { status: 400 });
+    await db.setting.deleteMany({ where: { key: { startsWith: "llm." } } });
     assert.equal((await call("/api/repos")).repos.length, 0, "Repository discovery uses only the caller's OAuth account");
     for (const path of [`/api/findings?projectId=${b.id}&language=Python&search=BRAVO`, `/api/scans?projectId=${b.id}`, `/api/endpoints?projectId=${b.id}`]) assert.equal((await call(path)).total, 0);
     for (const path of [`/api/projects/${b.id}`, `/api/scans/${sb.id}`, `/api/scans/${sb.id}/progress`, `/api/findings/${fb.id}`, `/api/findings/${fb.id}/graph`, `/api/findings/${fb.id}/report`, `/api/graph/${sb.id}`, `/api/endpoints/${eb.id}`, `/api/endpoints/import-openapi?scanId=${sb.id}`, `/api/agent-runs/${rb.id}`, `/api/llm-jobs/${jb.id}`, `/api/llm-scan/${sb.id}`, `/api/projects/${b.id}/members`, `/api/projects/${b.id}/tokens`, `/api/projects/${b.id}/audit`]) await call(path, { status: 404 });
@@ -228,7 +249,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await call(`/api/scans/${queued.scanId}/job`)).job.status, "cancelled");
     const retry = await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "retry" }, status: 202 });
     assert.notEqual(retry.scanId, queued.scanId);
-    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id, workflowFindingId: regression.id, historicalFindingId: originalIdentityFinding.id });
+    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id, workflowFindingId: regression.id, historicalFindingId: originalIdentityFinding.id, reviewJobId: queuedReview.id, reviewScanId: sa.id, db, environment });
     // Recovery rotates an epoch even if a restored session counter repeats.
     const recoveredEpoch = randomBytes(16).toString("hex");
     await db.user.update({ where: { id: "alice" }, data: { sessionEpoch: recoveredEpoch } });

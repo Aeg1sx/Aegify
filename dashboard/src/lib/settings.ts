@@ -1,7 +1,8 @@
 import { prisma } from "./prisma.ts";
 import { decrypt } from "./crypto.ts";
+import type { Prisma } from "@prisma/client";
 
-export async function getSetting(key: string, db = prisma): Promise<string> {
+export async function getSetting(key: string, db: Pick<Prisma.TransactionClient, "setting"> = prisma): Promise<string> {
   const setting = await db.setting.findUnique({ where: { key } });
   if (!setting) return "";
   if (setting.encrypted) {
@@ -14,27 +15,16 @@ export async function getSetting(key: string, db = prisma): Promise<string> {
   return setting.value;
 }
 
-export async function getLLMConfig() {
+export async function getLLMConfig(db: Pick<Prisma.TransactionClient, "setting"> = prisma) {
   const [
     provider, model, anthropicKey, openaiKey, googleKey,
     enabled, autoVerify, threshold,
     customEndpoint, customHeaders, language, maxOutputTokens, timeoutSeconds, chatTokenParameter,
   ] = await Promise.all([
-    getSetting("llm.provider"),
-    getSetting("llm.model"),
-    getSetting("llm.anthropic_api_key"),
-    getSetting("llm.openai_api_key"),
-    getSetting("llm.google_api_key"),
-    getSetting("llm.enabled"),
-    getSetting("llm.auto_verify"),
-    getSetting("llm.verify_threshold"),
-    getSetting("llm.custom_endpoint"),
-    getSetting("llm.custom_headers"),
-    getSetting("llm.language"),
-    getSetting("llm.max_output_tokens"),
-    getSetting("llm.timeout_seconds"),
-    getSetting("llm.chat_token_parameter"),
-  ]);
+    "llm.provider", "llm.model", "llm.anthropic_api_key", "llm.openai_api_key", "llm.google_api_key",
+    "llm.enabled", "llm.auto_verify", "llm.verify_threshold", "llm.custom_endpoint", "llm.custom_headers",
+    "llm.language", "llm.max_output_tokens", "llm.timeout_seconds", "llm.chat_token_parameter",
+  ].map((key) => getSetting(key, db)));
 
   let parsedHeaders: Record<string, string> = {};
   if (customHeaders) {

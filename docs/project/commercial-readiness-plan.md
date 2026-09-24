@@ -662,3 +662,83 @@ is `AEG-HDR-003` at the `_NoRedirects` class declaration: source review confirms
 this hook rejects redirects rather than writing an HTTP response/header. It is a
 retained heuristic false positive for a separate rule fix; no alert suppression
 or rule weakening is included here. Exact-head CI remains the merge gate.
+
+PR #53 subsequently passed all required checks, both CodeQL analyses, self-scan
+and containers on head `666a78003acda8f71f5676c064a4b1f1b45f0c76`.
+Linux passed 664 scanner tests (coverage rounded to 83%); dashboard passed 122
+with two scanner-dependent checks separately exercised by 34 offline container
+checks. It merged as verified signed commit
+`9161b97408a4a1cea3e3d95e40a3e8c597fb1c3f` at 2026-09-24T01:35:11Z.
+Main Aegify analysis `1829580346` completed with 677 candidates and no error;
+both main CodeQL analyses have zero results. The observed open-alert snapshot
+contains 677 Aegify candidates and five Scorecard alerts. No alerts were dismissed.
+
+## Durable dashboard finding reviews: 2026-09-24, in progress
+
+Both dashboard finding-review entry points now enqueue database jobs instead of
+Next request-lifetime `after` tasks. A separate AI worker uses an authenticated
+requester/project binding, encrypted immutable evidence input, configuration
+identity, fenced leases, bounded local recovery, a 30-minute queue/execution
+deadline and per-job call/context/output reservations. It rechecks admission,
+project membership, archival, scan binding, configuration and evidence at dispatch
+and publication. Cancellation fences result writes immediately; local requests
+abort on heartbeat. Human workflow metadata and accepted/rejected AI decisions
+are preserved.
+
+A dispatch row is committed before a provider call. A crash without a saved
+receipt leaves an uncertain outcome and prevents automatic replay. Completed
+batches can survive restart; the next undispatched batch can resume. Batch result,
+receipt, counters and audit publication are atomic. Discarded/late receipts may
+be retained without allowing stale workers to change findings or job state.
+This is not an exactly-once guarantee at an external provider.
+
+Provider receipts enforce normal completion/refusal/tool-output boundaries for
+Anthropic, OpenAI Responses/Chat and Gemini, retain numeric native usage counters
+and digest identities, and omit raw bodies/hidden reasoning. Missing usage and
+cost remain unknown. Browser details show queue/heartbeat/cancel state, native
+usage, reservations, input/call digests and events. Current suggestions are scoped
+to the inspected job; earlier suggestions are not counted as new coverage.
+
+Migration 21 closes unfinished legacy reviews without inferring an actor or
+replaying paid calls. Operators must stop the old web process before migration.
+Compose includes the separate AI service; backup restoration fences its jobs,
+marks unfinished calls unknown and removes old AI worker registrations. The
+backup key check now recognizes encrypted AI snapshots as well as settings and
+source snapshots. Inputs expire seven days after terminal completion.
+
+Local acceptance: 139 dashboard tests passed, with two existing real-Python checks
+reserved for the offline container gate; lint, strict TypeScript and production
+build pass. Thirteen durable job tests include concurrent claims, fresh-client
+recovery, interruption after dispatch, completed-batch resume, cancellation,
+revocation, changed source/settings, caps, atomic rollback, legacy migration and
+a separate production worker process. Four provider receipt/schema tests cover
+all four protocols without external models. Three recovery tests pass.
+The production HTTP harness passed 114 checks. An isolated Chrome session passed
+14 UI checks for enqueue, cancellation, worker publication, native usage, mobile
+layout and viewer controls. Screenshots were inspected; no client runtime errors
+were observed. These use owned synthetic responses, not live provider evidence.
+
+Documentation build, links and accessibility pass, with existing color
+recommendations. The normal network command was initially rejected by automatic
+approval review for potential documentation egress. Inspection of the installed
+CLI showed local prebuild and download-only client updates; rerunning with its
+supported telemetry-disable variables was explicitly approved and passed.
+CI now sets those variables as well. Supply-chain pinning checks and standalone
+Compose configuration validation pass. Linux container and exact-head PR checks
+remain the merge gate.
+
+This phase implements the durable finding-review lifecycle. It does not establish
+model quality, calibrated confidence, verified dollar costs, monetary quotas,
+live Claude Code/Codex isolation, or integration of the separate source-tool agent
+into every dashboard role. The frozen OWASP precision/recall measurements remain
+unchanged and below a commercial release target. Those acceptance items stay open.
+Receipts preserve each call's metadata, but unaccepted finding suggestions can be
+replaced by a later review. Immutable storage and retrieval of every historical
+AI narrative remain separate work; the history screen counts only suggestions
+still associated with its inspected job.
+
+The local self-scan preflight completed on 311 files in 218.5 seconds with 689
+advisory candidates, no blocking finding and no analysis error. This is a changed
+source scope, not an accuracy comparison. The final recovery edge case also
+terminates a job interrupted between saving a discarded receipt and job
+finalization, instead of consuming further local recovery attempts.

@@ -1,7 +1,7 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { ApiContract, ContractEndpoint } from "./openapi-contract.ts";
 
-export async function endpointContractContext(db: PrismaClient, endpoint: ContractEndpoint & { scanId: string; repositoryId: string }) {
+export async function endpointContractContext(db: Prisma.TransactionClient, endpoint: ContractEndpoint & { scanId: string; repositoryId: string }) {
   const snapshots = await db.apiSpecification.findMany({ where: { scanId: endpoint.scanId, repositoryId: endpoint.repositoryId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 10 });
   return {
     boundary: "Documentation only. Exact route matches do not establish runtime reachability or authentication enforcement. Conflicting snapshots must be reviewed, not combined as facts.",
@@ -20,7 +20,7 @@ export async function endpointContractContext(db: PrismaClient, endpoint: Contra
 }
 
 /** Only overlapping handlers in the same scan/repository can supply review context. */
-export async function findingContractContext(db: PrismaClient, finding: { scanId: string; repositoryId: string; filePath: string; lineStart: number; lineEnd: number }) {
+export async function findingContractContext(db: Prisma.TransactionClient, finding: { scanId: string; repositoryId: string; filePath: string; lineStart: number; lineEnd: number }) {
   if (finding.lineStart < 1 || finding.lineEnd < finding.lineStart) return [];
   const endpoints = await db.endpoint.findMany({ where: { scanId: finding.scanId, repositoryId: finding.repositoryId, filePath: finding.filePath, framework: { not: "OpenAPI" }, lineStart: { gte: 1, lte: finding.lineEnd }, lineEnd: { gte: finding.lineStart } }, take: 5, orderBy: { id: "asc" } });
   const contexts = await Promise.all(endpoints.filter((endpoint) => endpoint.lineEnd >= endpoint.lineStart).map(async (endpoint) => ({ endpointId: endpoint.id, ...(await endpointContractContext(db, endpoint)) })));

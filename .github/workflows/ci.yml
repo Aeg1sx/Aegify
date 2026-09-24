@@ -194,6 +194,9 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      MINTLIFY_TELEMETRY_DISABLED: "1"
+      DO_NOT_TRACK: "1"
     defaults:
       run:
         working-directory: docs
@@ -263,7 +266,7 @@ jobs:
           docker run --rm --read-only --network none --cap-drop=ALL --security-opt=no-new-privileges \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,size=536870912 \
             --env DATABASE_URL=file:/tmp/unused.db --env AEGIFY_TEST_SCANNER_CLI=1 \
-            aegify-worker:ci node --test src/lib/scan-jobs.test.ts src/lib/sarif-import.test.ts src/lib/finding-workflow.test.ts src/lib/repo-fetcher.test.ts src/lib/backup.test.ts
+            aegify-worker:ci node --test src/lib/scan-jobs.test.ts src/lib/llm-jobs.test.ts src/lib/provider-receipt.test.ts src/lib/sarif-import.test.ts src/lib/finding-workflow.test.ts src/lib/repo-fetcher.test.ts src/lib/backup.test.ts
 
       - name: Verify dashboard migration and fail-closed startup
         shell: bash

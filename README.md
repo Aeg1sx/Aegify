@@ -328,11 +328,11 @@ jobs:
 ## Docker
 
 ```bash
-# Start dashboard and its durable source scanner
+# Start dashboard, durable source scanner and optional AI review worker
 # First configure AUTH_SECRET, ENCRYPTION_SECRET, an authentication method,
 # AUTH_ALLOWED_EMAILS (or AUTH_ALLOWED_DOMAINS), AUTH_ADMIN_EMAILS and AUTH_URL
 # in a local ignored .env or via Vault. Issue CI tokens inside each project.
-docker compose up -d --build dashboard worker
+docker compose up -d --build dashboard worker ai-worker
 
 # Run a scan
 docker compose run scanner scan /scan/target --output sarif --output-file /scan/target/results.sarif --no-llm
@@ -346,7 +346,8 @@ Back up the database and apply migrations before deployment. See
 [worker operations](docs/operations/self-hosted-workers.mdx). The project's
 **Start source scan** action queues the same Python engine used by the CLI;
 the scan page shows progress, recovery attempts, source/report digests, cancel,
-and retry controls. AI review remains a separate optional step; see
+and retry controls. AI finding reviews use a separate durable worker with input
+digests, cancellation, call receipts and no automatic replay of uncertain calls. See
 [AI provider configuration](docs/operations/ai-providers.mdx).
 
 The [backup and recovery CLI](docs/operations/backup-recovery.mdx) creates encrypted

@@ -44,7 +44,8 @@ async function fixture() {
   await db.scan.create({ data: { id: "active", projectId: project.id, repository: "owned", status: "running" } });
   await db.scanJob.create({ data: { id: "job", scanId: "active", projectId: project.id, requestedBy: "root", provider: "github", ownerSlug: "owned/fixture", requestedRef: "main", status: "running", activeKey: project.id, leaseToken: "owned-lease", leaseExpiresAt: new Date(Date.now() + 60_000), workerId: "worker" } });
   await db.scanWorker.create({ data: { id: "worker", version: "fixture" } });
-  await db.llmJob.create({ data: { id: "review", scanId: scan.id, mode: "quick", status: "running", activeKey: scan.id } });
+  await db.llmJob.create({ data: { id: "review", scanId: scan.id, mode: "quick", status: "running", activeKey: scan.id, leaseToken: "owned-ai-lease", leaseExpiresAt: new Date(Date.now() + 60_000), inputCiphertext: encrypt("owned-review-snapshot", keys.encryptionSecret), calls: { create: { batchIndex: 0, leaseToken: "owned-ai-lease", promptDigest: "owned-prompt" } } } });
+  await db.llmWorker.create({ data: { id: "owned-ai-worker", version: "fixture" } });
   await db.agentRun.create({ data: { id: "agent", scanId: scan.id, status: "awaiting_approval", stages: { create: { sequence: 0, role: "static", agentCode: "fixture", agentName: "Fixture" } }, approvals: { create: { resourceId: "owned-plan", status: "approved", scopeDigest: "fixture" } } } });
   const principal = await resolvePrincipal(db, "root", environment);
   const issued = await issueProjectToken(db, principal, project.id, "Owned CI fixture", new Date(Date.now() + 60_000));
@@ -84,6 +85,10 @@ test("encrypted WAL snapshot restores history while invalidating accounts, crede
     assert.equal((await restored.scanJob.findUniqueOrThrow({ where: { id: "job" } })).leaseToken, null);
     assert.equal(await restored.scanWorker.count(), 0);
     assert.equal((await restored.llmJob.findUniqueOrThrow({ where: { id: "review" } })).status, "failed");
+    assert.equal((await restored.llmJob.findUniqueOrThrow({ where: { id: "review" } })).leaseToken, null);
+    assert.equal((await restored.llmCall.findFirstOrThrow({ where: { jobId: "review" } })).status, "unknown");
+    assert.equal(await restored.llmWorker.count(), 0);
+    assert.ok(await restored.llmJobEvent.count({ where: { code: "recovered_cancelled" } }));
     assert.equal((await restored.agentRun.findUniqueOrThrow({ where: { id: "agent" } })).status, "cancelled");
     assert.equal((await restored.agentApproval.findFirstOrThrow()).status, "expired");
     assert.equal(await restored.user.count({ where: { disabled: true } }), 3);
@@ -163,6 +168,10 @@ test("concurrent publication has one winner and the operator CLI emits no key ma
     assert.equal(JSON.parse(command.stdout).status, "backup_verified");
     assert.ok(!command.stdout.includes(owned.keys.backupKey) && !command.stdout.includes(owned.keys.encryptionSecret));
     await owned.db.setting.delete({ where: { key: "fixture.encrypted" } });
+    const aiArchive = join(owned.directory, "ai-key-check.aegify");
+    assert.equal((await createEncryptedBackup({ ...owned.keys, databasePath: owned.databasePath, outputPath: aiArchive })).encryptionKeyCheck, "stored_ciphertext");
+    assert.equal((await verifyEncryptedBackup({ ...owned.keys, archivePath: aiArchive })).encryptionKeyCheck, "stored_ciphertext");
+    await owned.db.llmJob.update({ where: { id: "review" }, data: { inputCiphertext: null } });
     const emptyManifest = await createEncryptedBackup({ ...owned.keys, databasePath: owned.databasePath, outputPath: join(owned.directory, "no-encrypted-records.aegify") });
     assert.equal(emptyManifest.encryptionKeyCheck, "no_encrypted_records");
     await owned.db.scanJob.update({ where: { id: "job" }, data: { sourceCiphertext: encrypt("owned-source-placeholder", owned.keys.encryptionSecret) } });

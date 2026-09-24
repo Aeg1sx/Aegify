@@ -28,5 +28,6 @@ dashboard/src/**
 !dashboard/scripts/
 dashboard/scripts/**
 !dashboard/scripts/scan-worker.mjs
+!dashboard/scripts/llm-worker.mjs
 !dashboard/scripts/test-worker-container.mjs
 !dashboard/scripts/recovery.mjs
