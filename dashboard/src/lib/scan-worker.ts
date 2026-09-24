@@ -14,18 +14,13 @@ import { importSarif } from "./sarif-import.ts";
 import { notifyImportedScan } from "./scan-notifications.ts";
 import { writeTransaction } from "./database-runtime.ts";
 import { assertJobLease, claimScanJob, completeScanJob, failScanJob, heartbeatScanJob, JOB_DEADLINE_MS, LeaseLost } from "./scan-jobs.ts";
+import { sourceDigest, type SourceSnapshot } from "./source-snapshot.ts";
+
+export { sourceDigest } from "./source-snapshot.ts";
+export type { SourceSnapshot } from "./source-snapshot.ts";
 
 const sha256 = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const MAX_REPORT_BYTES = 100 * 1024 * 1024;
-export interface SourceSnapshot {
-  version: 1; provider: string; repository: string; commit: string; sourceDigest: string;
-  truncated: boolean; files: Array<{ path: string; content: string; sha256: string }>;
-}
-export function sourceDigest(snapshot: Omit<SourceSnapshot, "sourceDigest">): string {
-  const hash = createHash("sha256").update(`aegify-source/v1\n${snapshot.provider}\0${snapshot.repository}\0${snapshot.commit}\n`);
-  for (const file of [...snapshot.files].sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)))) hash.update(`${file.path}\0${file.sha256}\n`);
-  return `sha256:${hash.digest("hex")}`;
-}
 export function makeSourceSnapshot(job: ScanJob, bundle: CodeBundle): SourceSnapshot {
   if (bundle.ref !== job.commitSha) throw new Error("Source commit changed after pinning.");
   const snapshot: Omit<SourceSnapshot, "sourceDigest"> = { version: 1, provider: job.provider, repository: job.ownerSlug, commit: bundle.ref, truncated: bundle.truncated, files: bundle.files.map((file) => {
