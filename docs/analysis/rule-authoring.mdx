@@ -373,9 +373,50 @@ results while excluding per-case runtime duration. Compare it across fresh
 processes with the same implementation and environment. It is an integrity and
 replay aid, not a signature or independent truth label.
 
-The dashboard's current editor validates structure and offers syntax preview.
-Run this CLI for actual fixture evaluation; a dashboard fixture-job interface is
-not yet available.
+## Evaluate in the project Rule lab
+
+Open a project and choose **Rule lab**. A project maintainer can load the call
+selector or taint example, edit the YAML, and add cases, files and expected
+locations. The **Suite JSON** tab accepts the same version 1 input as the CLI.
+Select **Run evaluation** to queue the saved input on the source worker.
+
+The result shows matched, unexpected and missed locations, parser gaps, fixture
+precision/recall, static source-to-sink paths and the reproducibility manifest.
+Incomplete analysis has no aggregate precision/recall. Location assertions do
+not assert the displayed taint path or prove runtime impact. The draft may change
+while an earlier result remains selected; the screen identifies that result as
+belonging to its saved input.
+
+Project viewers can read reports and job logs. Maintainers can cancel, load saved
+input or rerun it. Testing a draft does not publish it to global rule management.
+The lab invokes the installed Python fixture worker with one rule, without AI,
+repository credentials, application execution or builds. An old worker without
+fixture support is shown as unavailable; upgrade the worker with the dashboard.
+
+**Export rule** and **Export fixtures** produce inputs for the same CI command:
+
+```bash
+aegify test-rule rule.yml --fixtures fixtures.json --timeout-seconds 30 --json
+```
+
+The dashboard has a fixed 30-second execution budget, one active evaluation per
+project, 10 new jobs per user per hour, 25 unexpired jobs per project and 16 active
+jobs per installation. It shows the latest 25 jobs. A source scan already running
+can delay a fixture job; the shared worker alternates queue preference between
+completed jobs. The other fixture size limits above apply unchanged.
+
+Inputs and full reports are encrypted with the installation key and expire seven
+days after enqueue. The API stops returning them at expiry even before the worker's
+hourly cleanup. Status, fixed job messages, audit records and digests remain.
+The report-byte digest includes timing; the report's `result_digest` excludes
+case duration for same-environment comparison. Neither digest is a signature.
+Backups have their own retention policy and may contain earlier encrypted records.
+
+Cancellation fences publication immediately and stops computation at the next
+five-second heartbeat. Project/account revocation and archival are rechecked on
+claim, heartbeat and publication. Interrupted workers can recover the same input
+up to three attempts. Backup restoration cancels active fixture jobs; a maintainer
+must explicitly rerun them after reviewing the restored access and input.
 
 ## Defense patterns
 

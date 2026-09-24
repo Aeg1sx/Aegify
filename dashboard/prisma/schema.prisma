@@ -29,6 +29,7 @@ model Project {
   members ProjectMember[]
   serviceTokens ProjectServiceToken[]
   scanJobs ScanJob[]
+  ruleFixtureJobs RuleFixtureJob[]
 
   @@index([name])
   @@index([userId])
@@ -127,7 +128,52 @@ model ScanWorker {
   version     String
   lastSeenAt  DateTime @default(now())
   startedAt   DateTime @default(now())
+  ruleFixturesVersion Int @default(0)
   @@index([lastSeenAt])
+}
+
+model RuleFixtureJob {
+  id                String @id @default(cuid())
+  projectId         String
+  requestedBy       String
+  contractVersion   Int @default(1)
+  inputDigest       String
+  inputCiphertext   String?
+  resultDigest      String @default("")
+  resultCiphertext  String?
+  status            String @default("queued")
+  outcome           String @default("")
+  activeKey         String? @unique
+  attempts          Int @default(0)
+  maxAttempts       Int @default(3)
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  heartbeatAt       DateTime?
+  workerId          String @default("")
+  nextAttemptAt     DateTime @default(now())
+  errorCode         String @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  completedAt       DateTime?
+  expiresAt         DateTime
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events RuleFixtureJobEvent[]
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([leaseExpiresAt])
+  @@index([projectId, createdAt])
+  @@index([requestedBy, createdAt])
+  @@index([expiresAt])
+}
+
+model RuleFixtureJobEvent {
+  id Int @id @default(autoincrement())
+  jobId String
+  code String
+  message String
+  createdAt DateTime @default(now())
+  job RuleFixtureJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@index([jobId, id])
 }
 
 model Finding {
