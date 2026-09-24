@@ -171,6 +171,22 @@ class ImportInfo(BaseModel):
     line: int = 0
 
 
+class BooleanOption(BaseModel):
+    """One ordered literal property; an unknown name may overwrite any key."""
+
+    name: str | None = None
+    state: Literal["true", "false", "unknown"] = "unknown"
+
+
+class CallArgument(BaseModel):
+    """Bounded syntax facts, without executing or resolving application values."""
+
+    kind: Literal["positional", "keyword", "spread", "keyword_spread", "unknown"]
+    name: str = ""
+    state: Literal["true", "false", "unknown"] = "unknown"
+    options: list[BooleanOption] | None = None
+
+
 class CallSite(BaseModel):
     """Function call site in source code."""
 
@@ -180,6 +196,7 @@ class CallSite(BaseModel):
     column: int
     arguments: list[str] = Field(default_factory=list)
     argument_types: list[str] = Field(default_factory=list)
+    structured_arguments: list[CallArgument] | None = None
     receiver: str | None = None  # object.method() -> receiver = object
     receiver_type: str = ""
     in_function: str | None = None  # enclosing function

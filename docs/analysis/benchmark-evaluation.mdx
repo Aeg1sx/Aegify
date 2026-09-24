@@ -39,6 +39,31 @@ instructions are in
 The adapter currently supports the Python `testcode/BenchmarkTestNNNNN.py`
 layout. Java and other benchmark formats need their own adapters.
 
+### Cookie-option regression, 2026-09-24
+
+The structural cookie-option change is recorded in
+[`scanner/benchmarks/cookie-options-v1`](https://github.com/Aeg1sx/Aegify/tree/main/scanner/benchmarks/cookie-options-v1).
+It uses the same pinned source, official labels, matching policy and configuration
+as the preceding hash-selection baseline. The original frozen reports remain
+available.
+
+| All-candidate cases | Before | After |
+|---|---:|---:|
+| True positives | 209 | 209 |
+| False positives | 114 | 99 |
+| False negatives | 225 | 225 |
+| True negatives | 645 | 660 |
+| Precision | 64.71% | 67.86% |
+| Recall | 48.16% | 48.16% |
+| Accuracy | 71.58% | 72.84% |
+
+The 15 changed labels are CWE-614 negatives with literal `secure=True`; the
+updated selector retains all 24 positive cases. Other-CWE and blocking-channel
+metrics are unchanged. All 1,236 Python files were analyzed without a reported
+gap; 37 CWE-501 cases remain unscored. This diagnostic baseline still exits 3
+and does not pass the release gate. The 39 public cookie cases measure a narrow
+selection regression, not general cookie detection or held-out AI quality.
+
 ## What gets counted
 
 Each label identifies one case, intended CWE and positive/negative outcome.

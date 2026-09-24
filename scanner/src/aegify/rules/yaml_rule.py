@@ -21,6 +21,7 @@ from aegify.models import (
     TaintFlow,
 )
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
+from aegify.rules.call_options import BooleanOptionSpec
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +424,11 @@ class YAMLRule(SecurityRule):
                     continue
 
             args_text = " ".join(call.arguments)
+            option_state = "unmodeled"
+            if pattern.boolean_option is not None:
+                option_state = pattern.boolean_option.state(call)
+                if option_state not in pattern.boolean_option.states:
+                    continue
             if pattern.args_match_index is not None:
                 if pattern.args_match_index >= len(call.arguments):
                     continue
@@ -465,6 +471,7 @@ class YAMLRule(SecurityRule):
                 sink_line=call.line,
                 source_type="call_argument",
                 sink_type="call",
+                option_state=option_state,
             )
 
             findings.append(
@@ -604,6 +611,7 @@ class PatternSpec:
                     "args_match",
                     "args_exclude",
                     "missing_args",
+                    "boolean_option",
                     *self._CALL_CONTEXT_REQUIRED_FIELDS,
                     *self._CALL_CONTEXT_EXCLUDED_FIELDS,
                 )
@@ -644,6 +652,9 @@ class PatternSpec:
         self.receiver: str | None = data.get("receiver")
         self.args_match: str | None = data.get("args_match")
         self.args_exclude: str | None = data.get("args_exclude")
+        self.boolean_option = (
+            BooleanOptionSpec.parse(data["boolean_option"]) if "boolean_option" in data else None
+        )
         raw_args_match_index = data.get("args_match_index")
         self.args_match_index: int | None = None
         if raw_args_match_index is not None:
@@ -761,6 +772,8 @@ class PatternSpec:
 
     @property
     def is_executable(self) -> bool:
+        if self.boolean_option is not None and self.source_mode:
+            return False
         if self.source_mode:
             return bool(
                 self._primary_res
@@ -775,6 +788,7 @@ class PatternSpec:
             or self.args_match
             or self.args_exclude
             or self._missing_args_res
+            or self.boolean_option is not None
         )
 
     def _configure_source(self, data: dict[str, Any]) -> None:

@@ -23,6 +23,7 @@ SUPPORTED_PATTERN_FIELDS = {
     "args_exclude",
     "args_match",
     "args_match_index",
+    "boolean_option",
     "assignment_match",
     "attribute_match",
     "block_match",
@@ -244,7 +245,14 @@ def audit_rules(path: Path) -> RuleAuditReport:
                         rule_id,
                         index,
                     )
-                if _is_executable_pattern(pattern):
+                try:
+                    executable = _is_executable_pattern(pattern)
+                except (TypeError, ValueError) as error:
+                    _issue(
+                        report, "error", "invalid-pattern", str(error), file_path, rule_id, index
+                    )
+                    continue
+                if executable:
                     executable_for_rule = True
                     report.executable_patterns += 1
                 else:

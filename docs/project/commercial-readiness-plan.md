@@ -786,3 +786,58 @@ suite passed 141 tests with two checks reserved for the Linux container. Strict
 types, lint, Ruff and supply-chain policy pass. Documentation build, links and
 accessibility pass with existing color recommendations. Exact-head CI and actual
 GitHub SARIF processing remain acceptance gates.
+
+PR #55 passed all required checks and both CodeQL analyses on
+`3ab06cec35b620b086f30c9a69cde4c05d227eb9`: 671 scanner tests, 141 dashboard
+tests plus two separately exercised container checks, 114 production HTTP/CLI
+checks and 53 offline Linux worker checks. Paired scans retain the same 691
+observations after path rebasing, including rule/location, message, disposition,
+evidence and fingerprints. GitHub received 691 checkout-relative paths with no
+URI warning; bracketed Next route paths resolve correctly. It merged at
+2026-09-24T03:28:19Z as verified signed commit
+`5b192a2ad8792ace76192a7cf69503194b91973a`. Main CI passed and analysis
+`1829923523` completed with 691 candidates and no error; both main CodeQL
+analyses have zero results. No alerts were manually dismissed.
+
+## Structural cookie options: 2026-09-24, in progress
+
+The prior cookie patterns used unanchored negative lookaheads with regex search,
+so an explicitly true option could still produce a missing-flag candidate. A
+second constructor pattern contained a true-literal typo. New parsed call facts
+bind boolean options to a Python keyword or one JS/TS/Go argument object.
+They preserve duplicate-property/spread ordering, ignore argument comments,
+retain unknown states and invalidate the serialized parser cache on extractor
+changes. Go's extractor also now retains its previously omitted raw arguments.
+
+The reusable `boolean_option` rule contract rejects invalid selectors through
+strict audit and documents exact API spelling, argument selection, bounds and
+unsupported value resolution. Cookie findings explicitly distinguish false,
+missing, unknown and unmodeled states; all remain advisory candidates. Literal
+facts do not establish resolved API identity or application-level safety. Java
+stateful setters, variables, aliases and generic header/configuration heuristics
+still need separate models or review.
+
+Sixty focused tests pass on owned syntax data across Python, JS, TS/TSX, Go and
+the Java advisory fallback, including close negatives, serialization, malformed
+rule definitions, parser cache identity and extraction limits. Ruff/format and
+strict types pass. The whole rule tree has 311 definitions, 303 executable rules,
+eight disabled references and 986 executable patterns, with zero audit issues.
+The full local suite passed 730 tests with one platform skip. Documentation
+validation, links and accessibility pass, retaining existing color recommendations.
+The supply-chain pinning policy passes.
+
+Two independent OWASP processes match in complete provenance, all case outcomes
+and all metric channels. All 1,236 Python files were analyzed with no reported
+gap. The same 1,193 scored labels now yield TP=209, FP=99, FN=225, TN=660:
+precision 67.86%, recall 48.16%, F1 56.33%, accuracy 72.84%. The 15 removed
+false positives are CWE-614 negatives with literal `secure=True`; its 24 true
+positives remain. Other-CWE and blocking-channel metrics are unchanged. The
+37 CWE-501 cases remain unscored and both commands correctly exit 3. No complete
+quality gate or broad accuracy claim is made.
+
+`scanner/benchmarks/cookie-options-v1` preserves every case, aggregate metrics,
+both measurements, change locations and replay commands. Outcome digest:
+`5cc2b4a7c50a4250f6711d810863d81d36560aa4442b6b5341877f2b10477198`.
+Scan times of 200.82/194.71 seconds and process peaks of 369,623,040/370,638,848
+bytes are observations on a shared developer machine. Exact-head CI, Linux
+container checks and actual GitHub SARIF processing remain the merge gate.
