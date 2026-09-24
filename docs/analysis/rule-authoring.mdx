@@ -410,6 +410,10 @@ days after enqueue. The API stops returning them at expiry even before the worke
 hourly cleanup. Status, fixed job messages, audit records and digests remain.
 The report-byte digest includes timing; the report's `result_digest` excludes
 case duration for same-environment comparison. Neither digest is a signature.
+Whole-second timeouts use an integer in new report manifests, so JSON inputs
+containing `30` and `30.0` retain the same replay identity. The downloaded report
+can be parsed as a `FixtureReport` and checked with `result_digest`; the digest
+algorithm is unchanged and previously saved reports are not rewritten.
 Backups have their own retention policy and may contain earlier encrypted records.
 
 Cancellation fences publication immediately and stops computation at the next
