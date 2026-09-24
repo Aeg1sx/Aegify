@@ -54,6 +54,36 @@ finding contents are not copied into invented historical records. An interrupted
 durable job may resume under its existing lease/recovery rules, but any missing
 output from batches completed before this upgrade remains unavailable.
 
+Migration `20260924090000_schema_parity` corrects the database default for a new
+rule's `updatedAt`. It copies the Rule table in a transaction, preserving every
+stored value, including legacy epoch timestamps and custom rule contents. It
+does not estimate missing historical dates. Allow temporary space for a second
+copy of the Rule table while the services are stopped.
+
+The Prisma ownership relation now explicitly matches the existing database:
+a user referenced by `Project.userId` cannot be deleted until that ownership is
+transferred or removed. This does not change project memberships or admission
+policy. The migration does not rebuild the Project table.
+
+CI deploys the migration history to a fresh database and compares it with the
+declared Prisma schema. It also upgrades an owned, populated previous-version
+database, checks retained access and evidence, and injects a statement failure
+after the old Rule table is dropped to verify transaction rollback. Run that
+isolated regression locally after generating the Prisma client:
+
+```bash
+cd dashboard
+npm run test:migrations
+```
+
+The regression creates and removes private temporary databases; it does not use
+the installation's `DATABASE_URL`. Schema comparison covers Prisma-supported
+objects; separate assertions check SQLite integrity, foreign keys, the membership
+role constraint and the saved-review update trigger. A failed migration keeps
+startup blocked. Inspect its error and migration history against the verified
+backup before an operator chooses a recovery action; restarting alone does not
+clear a failed migration record.
+
 ## Durable AI finding reviews
 
 Open **LLM Security Review**, choose a project scan and select **Quick Review** or

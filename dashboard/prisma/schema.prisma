@@ -22,7 +22,8 @@ model Project {
   updatedAt      DateTime  @default(now()) @updatedAt
 
   userId String?
-  user   User?   @relation(fields: [userId], references: [id])
+  // Preserve the deployed ownership constraint: transfer ownership before deletion.
+  user   User?   @relation(fields: [userId], references: [id], onDelete: NoAction)
 
   scans Scan[]
   findingIdentities FindingIdentity[]
