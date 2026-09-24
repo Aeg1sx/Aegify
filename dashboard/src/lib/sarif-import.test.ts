@@ -146,6 +146,57 @@ async function legacyIdentity(db: PrismaClient, sql: ReturnType<typeof createCli
 
 const importContext = (projectId: string) => ({ projectId, repository: "synthetic", branch: "main", commitSha: "fixture", actorId: "fixture", authorize: async () => {} });
 
+test("encoded artifact paths retain legacy identity, triage, source binding and code flow paths", async () => identityDatabase(async (db) => {
+  const project = await db.project.create({ data: { name: "Encoded paths", defaultBranch: "main" } });
+  const raw = scopedReport({ root: "/checkout/[id] 한글 #?%2F" });
+  const originalPath = raw.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri;
+  const first = await importSarif(db, raw, importContext(project.id));
+  const original = await db.finding.findFirstOrThrow({ where: { scanId: first.scanId } });
+  assert.equal(original.filePath, originalPath);
+  await db.findingIdentity.update({ where: { id: original.identityId! }, data: { status: "accepted_risk", triageReason: "Owned fixture decision" } });
+  // Fixed independently from the Python exporter; a literal %2F stays literal.
+  const uri = "/checkout/%5Bid%5D%20%ED%95%9C%EA%B8%80%20%23%3F%252F/src/app.py";
+  const encoded = structuredClone(raw);
+  encoded.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri = uri;
+  const incoming = { ...encoded, runs: [{ ...encoded.runs[0],
+    properties: { ...encoded.runs[0].properties, artifactPathEncoding: "percent-encoded-path-v1" },
+    results: [{ ...encoded.runs[0].results[0], codeFlows: [{ threadFlows: [{ locations: [{ location: {
+      physicalLocation: { artifactLocation: { uri }, region: { startLine: 12 } }, message: { text: "Owned fixture" },
+    } }] }] }] }],
+  }] };
+  const second = await importSarif(db, incoming, importContext(project.id));
+  const current = await db.finding.findFirstOrThrow({ where: { scanId: second.scanId } });
+  assert.equal(current.identityId, original.identityId);
+  assert.equal(current.fingerprint, original.fingerprint);
+  assert.equal(current.status, "accepted_risk");
+  assert.equal(current.filePath, originalPath);
+  assert.equal(JSON.parse(current.taintFlow!)[0].file, originalPath);
+  assert.equal((await db.findingIdentity.findUniqueOrThrow({ where: { id: original.identityId! } })).triageReason, "Owned fixture decision");
+  incoming.runs[0].results[0].properties.provenance.repository_id = "contradictory";
+  await assert.rejects(importSarif(db, incoming, importContext(project.id)), /contradicts/);
+  assert.equal(await db.scan.count(), 2);
+}));
+
+test("encoded artifact paths reject malformed encodings, controls, unsupported versions and excessive flows", () => {
+  const tagged = () => { const base = report(); return { ...base, runs: [{ ...base.runs[0], properties: { ...base.runs[0].properties, artifactPathEncoding: "percent-encoded-path-v1" } }] }; };
+  for (const uri of ["src/%", "src/%ff.py", "src/%00.py", "src/%0a.py", "src/%2F.py", "src/[id].py", "src/%61.py", "src/a#b.py", "src/" + "a".repeat(4097)]) {
+    const invalid = tagged();
+    invalid.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri = uri;
+    assert.throws(() => validateSarifReport(invalid), /source path/);
+  }
+  const unsupported = tagged();
+  unsupported.runs[0].properties.artifactPathEncoding = "future";
+  assert.throws(() => validateSarifReport(unsupported), /Unsupported/);
+  const wide = tagged();
+  wide.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri = "src/" + "%ED%95%9C".repeat(500) + ".py";
+  assert.doesNotThrow(() => validateSarifReport(wide));
+  for (const locations of [[{ location: { physicalLocation: { artifactLocation: { uri: "bad%" } } } }], Array.from({ length: 10_001 }, () => ({ location: {} }))]) {
+    const base = tagged();
+    const incoming = { ...base, runs: [{ ...base.runs[0], results: [{ ...base.runs[0].results[0], codeFlows: [{ threadFlows: [{ locations }] }] }] }] };
+    assert.throws(() => validateSarifReport(incoming));
+  }
+});
+
 test("legacy database upgrade retains triage across checkouts and rolls back identity migration with artifacts", async () => identityDatabase(async (db, sql, applyMigration) => {
   const project = await db.project.create({ data: { name: "Synthetic", defaultBranch: "main" } });
   const old = await legacyIdentity(db, sql, project.id, { id: "legacy-reviewed", modulePath: "./src\\app.py" });
@@ -364,6 +415,7 @@ test("real Python source reports retain one identity through fresh checkout root
   const directory = await mkdtemp(join(tmpdir(), "aegify-source-roots-"));
   const project = await db.project.create({ data: { name: "Real scanner", defaultBranch: "main" } });
   const python = fileURLToPath(new URL("../../../scanner/.venv/bin/python", import.meta.url));
+  const sourceName = "[id] 한글 #%2F.py";
   const script = [
     "import json, sys", "from pathlib import Path", "from aegify.config import AegifyConfig",
     "from aegify.scanner.engine import ScanEngine", "from aegify.reporter.sarif import SARIFReporter",
@@ -378,12 +430,13 @@ test("real Python source reports retain one identity through fresh checkout root
     for (const name of ["checkout-a", "checkout-b"]) {
       const root = join(directory, name);
       await mkdir(join(root, "src"), { recursive: true });
-      await writeFile(join(root, "src", "app.py"), "from flask import request\nraise RuntimeError('STATIC INPUT MUST NEVER EXECUTE')\ndef read_document():\n    value = request.args.get('path')\n    return open(value)\n");
+      await writeFile(join(root, "src", sourceName), "from flask import request\nraise RuntimeError('STATIC INPUT MUST NEVER EXECUTE')\ndef read_document():\n    value = request.args.get('path')\n    return open(value)\n");
       const { stdout } = await promisify(execFile)(python, ["-I", "-c", script, root], {
         timeout: 60_000, maxBuffer: 8 * 1024 * 1024,
         env: { NODE_ENV: "test", PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: "1", TMPDIR: directory },
       });
       const sarif = validateSarifReport(JSON.parse(stdout));
+      assert.equal(sarif.runs[0].properties?.artifactPathEncoding, "percent-encoded-path-v1");
       const candidate = sarif.runs[0].results.find((result) => result.ruleId === "AEG-PATH-001");
       assert.ok(candidate, "The owned fixture must exercise a real detector");
       emitted.push(candidate);
@@ -396,6 +449,7 @@ test("real Python source reports retain one identity through fresh checkout root
     assert.equal(old.isCurrent, false);
     assert.equal(current.isCurrent, true);
     assert.equal(current.fingerprint, `aegify-finding/v2:${emitted[1].partialFingerprints?.["aegifyFingerprint/v2"]}`);
-    assert.equal(current.modulePath, "src/app.py");
+    assert.equal(current.modulePath, `src/${sourceName}`);
+    assert.equal(current.filePath, join(directory, "checkout-b", "src", sourceName));
   } finally { await rm(directory, { recursive: true, force: true }); }
 }));

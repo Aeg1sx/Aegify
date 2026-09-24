@@ -2,15 +2,75 @@
 
 import shutil
 from pathlib import Path
+from urllib.parse import unquote, urljoin, urlsplit
 
 import pytest
 
 from aegify.config import AegifyConfig
-from aegify.models import Finding, FindingDisposition, Severity
+from aegify.models import (
+    Finding,
+    FindingDisposition,
+    ScanResult,
+    Severity,
+    TaintFlow,
+    TaintPropagation,
+    TaintSink,
+    TaintSource,
+)
 from aegify.reporter.sarif import SARIFReporter
 from aegify.scanner.engine import ScanEngine
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("../app/[id]/page.tsx", "../app/%5Bid%5D/page.tsx"),
+        ("src/a b#c?d%25.py", "src/a%20b%23c%3Fd%2525.py"),
+        ("src/한글.py", "src/%ED%95%9C%EA%B8%80.py"),
+        ("src/literal%2F.py", "src/literal%252F.py"),
+        ("/checkout/src/(group)/a!b'c*d.py", "/checkout/src/%28group%29/a%21b%27c%2Ad.py"),
+        ("./src/colon:name.py", "./src/colon%3Aname.py"),
+    ],
+)
+def test_artifact_and_flow_uris_encode_paths_without_changing_evidence(path, expected):
+    finding = Finding(
+        rule_id="DEMO",
+        rule_name="Owned path fixture",
+        severity=Severity.LOW,
+        confidence=0.5,
+        file_path=path,
+        line_start=2,
+        line_end=2,
+        taint_flow=TaintFlow(
+            source=TaintSource(variable="value", file_path=path, line=1, source_type="fixture"),
+            sink=TaintSink(function="review", file_path=path, line=2, sink_type="fixture"),
+            path=[
+                TaintPropagation(
+                    variable="value", file_path=path, line=2, propagation_type="argument"
+                )
+            ],
+        ),
+    )
+    fingerprint = finding.fingerprint
+    run = SARIFReporter().generate(ScanResult(findings=[finding]))["runs"][0]
+    result = run["results"][0]
+    artifacts = [
+        result["locations"][0]["physicalLocation"]["artifactLocation"],
+        result["codeFlows"][0]["threadFlows"][0]["locations"][0]["location"]["physicalLocation"][
+            "artifactLocation"
+        ],
+    ]
+    for artifact in artifacts:
+        assert artifact == {"uri": expected, "uriBaseId": "%WORKDIR%"}
+        assert unquote(artifact["uri"]) == path
+        absolute = urlsplit(urljoin(run["originalUriBaseIds"]["%WORKDIR%"]["uri"], artifact["uri"]))
+        assert absolute.scheme == "file"
+        assert not absolute.query and not absolute.fragment
+    assert run["properties"]["artifactPathEncoding"] == "percent-encoded-path-v1"
+    assert finding.file_path == path
+    assert result["partialFingerprints"]["aegifyFingerprint/v2"] == fingerprint
 
 
 def test_context_snippet_retains_its_source_offset(tmp_path):
@@ -37,6 +97,18 @@ def test_context_snippet_retains_its_source_offset(tmp_path):
     assert location["contextRegion"]["startLine"] == 5
     assert location["contextRegion"]["endLine"] == 16
     assert location["contextRegion"]["snippet"]["text"] == finding.code_snippet
+
+
+def test_uri_base_preserves_root_and_encodes_working_directory(tmp_path, monkeypatch):
+    for directory in [Path(tmp_path.anchor), tmp_path / "build # [id]"]:
+        directory.mkdir(exist_ok=True)
+        monkeypatch.chdir(directory)
+        run = SARIFReporter().generate(ScanResult())["runs"][0]
+        base = run["originalUriBaseIds"]["%WORKDIR%"]["uri"]
+        assert base.startswith("file:///")
+        assert base.endswith("/")
+        assert " " not in base and "#" not in base and "[" not in base
+        assert urljoin(base, "src/app.py").endswith("/src/app.py")
 
 
 class TestSARIFReporter:
