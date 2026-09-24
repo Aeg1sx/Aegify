@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { SavedReview } from "@/lib/ai-review-history";
+import { normalizeAIReviewEvidence } from "@/lib/ai-review-evidence";
+import { AIToolEvidence } from "./finding/ai-tool-evidence";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -124,6 +126,10 @@ export function AiReviewHistory({ job }: { job: AiReviewJob }) {
                 {record.finding.omittedFields.length > 0 && <p className="mt-2 text-xs">Input fields shortened before review: {record.finding.omittedFields.join(", ")}</p>}
               </details>
               <details><summary className="cursor-pointer font-medium">Evidence identities</summary><dl className="mt-2 space-y-2 break-all font-mono text-xs">{Object.entries({ "Saved record": currentDetail.payloadDigest, "Input snapshot": record.inputDigest, "Finding evidence": record.finding.evidenceDigest, "Source scan": record.scanDigest, Prompt: record.promptDigest, "Provider response": record.responseDigest, Call: record.callId }).map(([key, value]) => <div key={key}><dt className="font-medium">{key}</dt><dd>{value}</dd></div>)}</dl></details>
+              {record.sourceEvidence && <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">Admitted source: {record.sourceEvidence.catalog.files} files · commit <span className="break-all font-mono">{record.sourceEvidence.catalog.commit}</span>. {record.sourceEvidence.catalog.truncated ? `Coverage is incomplete (${record.sourceEvidence.catalog.omittedFiles} additional files omitted from review; the original fetch may also be incomplete).` : "All files in the stored provider snapshot were admitted; this does not establish whole-repository coverage."}</p>
+                <AIToolEvidence evidence={normalizeAIReviewEvidence({ ...record.sourceEvidence })} />
+              </div>}
               <a className="inline-block text-xs underline" href={`${root}/${encodeURIComponent(record.id)}`} download={`aegify-review-${record.id}.json`}>Download saved evidence</a>
             </div>}
           </section>

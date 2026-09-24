@@ -54,13 +54,21 @@ finding contents are not copied into invented historical records. An interrupted
 durable job may resume under its existing lease/recovery rules, but any missing
 output from batches completed before this upgrade remains unavailable.
 
+Migration `20260924100000_ai_source_tools` preserves existing call receipts and
+history, assigning old calls round zero. It adds encrypted source continuations
+and unique `(job, batch, round)` identities. Stop the web and AI worker processes,
+apply migrations, and restart both with matching versions before enabling source
+investigation. Version 1 quick/deep snapshots remain readable; old workers cannot
+process version 2 source-review snapshots. Use a verified pre-upgrade backup to
+roll back; do not remove the round columns from a database containing new reviews.
+
 ## Durable AI finding reviews
 
-Open **LLM Security Review**, choose a project scan and select **Quick Review** or
-**Deep Analysis**. Completed and partial static scans are eligible; review does
-not upgrade a partial scan's coverage. Deep mode supplies a bounded graph context.
-This screen reviews a fixed snapshot of existing findings; the scanner's separate
-source-tool agent is described in [AI SAST operations](/analysis/ai-sast-operations).
+Open **LLM Security Review** and choose a project scan. **Quick Review** uses
+finding excerpts; **Deep Analysis** adds bounded graph context. **Source
+Investigation** lets the agent list, read and search the retained repository
+snapshot. Choose up to 25 findings using the paginated selector. Completed and
+partial static scans are eligible; review does not upgrade scan coverage.
 
 Both `POST /api/llm-jobs` and the compatible `POST /api/llm-scan` return `202` after
 storing a job. The web process never dispatches these review calls. Inputs are
@@ -79,7 +87,11 @@ and accepted/rejected AI decisions are preserved.
 Local work can recover up to three times. A provider call is recorded **before**
 dispatch. If the worker stops without storing a receipt, that call becomes
 `unknown` and the job stops without an automatic retry. Completed batches survive
-a restart; the next undispatched batch can continue. This avoids automatic paid
+a restart; the next undispatched batch can continue. In source mode, completed
+tool turns also survive: the worker verifies and replays their local source reads
+from the frozen catalog, then starts the next model turn. It never repeats the
+completed model request. A missing or inconsistent continuation stops recovery.
+This avoids automatic paid
 replays but cannot guarantee exactly-once execution at an external provider.
 Inspect provider billing before explicitly starting another review.
 
@@ -87,12 +99,15 @@ Inspect provider billing before explicitly starting another review.
 | --- | --- |
 | Queue | One active job per scan; two per project; 50 per workspace |
 | Deadline | 30 minutes including queue time; no dispatch/publication after expiry |
-| Provider calls | At most 20; no automatic provider retry or continuation |
-| Findings | 1–1000; at most 50 complete records per batch |
+| Provider calls | At most 20; no automatic replay; source mode allows at most four distinct turns per batch |
+| Findings | Quick/deep: 1–1000, at most 50 per batch; source: 1–25 selected findings, at most five per batch |
 | Context | 180,000 bytes per prompt; 4 MB total prompt budget and encrypted-input plaintext limit |
 | Output | Configured per-call ceiling, at most 32,768; total reservation at most 655,360 tokens |
 | Graph | At most 100 nodes and 100 edges within 20 KB, with omitted-record counts |
-| Retention | Encrypted job inputs cleared seven days after terminal completion; saved review records, receipts and events retained with the scan |
+| Source tools | Eight requests per batch; 200 lines / 16 KiB per read; 20 literal-search matches; 50 paths per list page |
+| Source catalog | At most 512 complete files within 2.5 MB; selected finding paths admitted first, with explicit omissions |
+| Tool evidence | At most 24 KB per tool output and 120 KB across each batch; encrypted with the job |
+| Retention | Encrypted job inputs and tool continuations cleared seven days after terminal completion; saved review records, receipts and events retained with the scan |
 
 Oversized jobs are rejected without contacting a provider. Per-field context
 truncation and omitted graph records are recorded as evidence gaps. Invalid,
@@ -107,6 +122,52 @@ Missing usage and cost are **unknown**, never zero. Cache and reasoning counters
 have provider-specific meanings and must not be summed blindly. No raw provider
 body or hidden reasoning is kept in a receipt. A valid provider envelope and
 schema remain suggestions requiring human review, not runtime verification.
+
+### Investigate retained source
+
+Source investigation uses only the completed repository scan's encrypted source
+snapshot. Admission verifies project/scan binding, repository, immutable commit,
+worker result manifest, source manifest and every file hash before any provider
+dispatch. It makes no new repository fetch. CI SARIF uploads alone have no full
+source snapshot; absent, expired or inconsistent source is rejected before a
+model call. Multi-repository SARIF is not a supported source catalog here; use
+the scanner's workspace source-review flow for that scope.
+
+The provider selects `source_list`, `source_read` or literal `source_search` by
+returning a bounded JSON action. Aegify validates it, executes the read against
+executor-issued file IDs and supplies the retained result on the next turn.
+Native provider tool calls remain rejected. There is no shell, filesystem path,
+network, runtime reproduction or automatic fix tool. This protocol works with the
+existing completed-text provider adapters and does not depend on their native
+function-calling syntax. Live model quality needs separate evaluation.
+
+Common credential patterns are redacted before the catalog is frozen. Redaction
+preserves line numbers; it is not a guarantee that arbitrary sensitive business
+data or every secret format is removed. Source excerpts leave the installation
+through its configured AI provider. Check that provider's organization settings
+before enabling source review for sensitive projects.
+
+The final response may cite only executor-issued citations returned by successful
+source tools. Invented citations invalidate the batch. A likely verdict without
+a cited read covering the finding's start line is downgraded to `needs_review`
+with zero confidence and an explicit gap. Reading that line is a necessary
+grounding check, not proof that the reasoning is correct or the path is reachable.
+Missing context, truncated search and omitted files must be reviewed by a person.
+
+**Details** lists every provider turn and receipt. Source tool events contain
+names, status, truncation and digests; source text is excluded from ordinary logs.
+Saved results show the catalog coverage, commit, tool activity and cited source
+excerpts with hashes and line numbers. Those excerpts remain encrypted in the
+historical review even after the full catalog and recovery continuations expire.
+The current finding projection contains source-review counts and identity only;
+open the saved result to inspect its source excerpts. A failed run has no invented
+final review; its completed-turn metadata and receipts remain available.
+
+For API clients, use `mode: "source"` and `findingIds: ["<finding-id>", ...]`
+with either enqueue endpoint. The IDs must be distinct and belong to the scan.
+Omitting `findingIds` is allowed only when the entire scan fits the 25-finding
+limit. Context admission may require a smaller selection. Selecting fewer
+findings reduces the maximum work; it does not promise a particular token cost.
 
 ### Compare saved review results
 
