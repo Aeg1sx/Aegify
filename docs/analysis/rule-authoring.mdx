@@ -166,6 +166,70 @@ Java stateful builders and retained header/configuration heuristics report
 advisory candidates. An unknown value is not a proved missing flag, and a true
 literal alone does not establish that an application handles cookies safely.
 
+### SQL text construction
+
+The built-in `AEG-SQL-002` rule (CWE-89) uses version 1 `QueryExpression`
+facts on parsed calls. It selects SQL text before examining how the text was
+built. SQL-looking bound data, arithmetic in parameter values, and `%` or `+`
+inside fixed SQL literals cannot establish string construction.
+
+| Shape | Selected text | Excluded bound values |
+|---|---|---|
+| `db.execute(query, values)` | First positional argument | Later arguments |
+| `db.execute(sql=query, parameters=values)` | Named `sql`, `query`, `operation` or `statement` argument | Other keywords |
+| `db.query({text: query, values})` | Top-level `text` property | `values` and other properties |
+| `db.execute({sql: query, args})` | Top-level `sql` property | `args` and other properties |
+
+Positional SQL and bound values follow the separation documented by
+[Python sqlite3](https://docs.python.org/3/library/sqlite3.html#how-to-use-placeholders-to-bind-values-in-sql-queries)
+and [node-postgres](https://node-postgres.com/features/queries). Keyword and
+`sql` object forms are syntax adapters for other wrappers; matching them does
+not prove the receiver implements that API. An object containing both `sql`
+and `text` is ambiguous and stays unknown.
+
+The detector matches complete method leaf names, including `execute`,
+`executemany`, `executescript`, `execute_async`, `executesql`, `query`, `raw`,
+`exec`, `prepare`, `$queryRawUnsafe` and `$executeRawUnsafe`. A matching substring
+in `querySelector` or `executeHandler` does not select a sink. Receiver binding
+still needs review: these common names can belong to unrelated APIs.
+
+Owned source fixtures cover Python string concatenation, f-strings, percent
+formatting and `format`/`format_map`; JS/TS concatenation and template strings;
+TS `as`, `satisfies`, non-null and TSX syntax; local assignments, reassignments,
+branch joins, bounded loop-carried values, literal argument expansion, and
+direct object aliases and property writes. Fixed compositions and later literal
+overwrites have paired negative cases. The locked parser versions exercised are
+tree-sitter 0.26.0, Python and JavaScript grammars 0.25.0, and TypeScript grammar
+0.23.2, under Python 3.14. These are parsing checks, not database/framework runtime
+compatibility tests.
+
+Facts preserve the selected argument/property, construction operators, local
+origin lines and unresolved details across AST serialization. Their states are
+`constant`, `constructed` and `unknown` within this model. Constants can represent
+multiple literal branch alternatives; they do not assert a unique runtime string
+or safe application behavior. Only constructed SQL text produces this rule's
+candidate. The finding asks reviewers to establish the database receiver and
+input trust before assessing injection impact. `AEG-SQL-001` taint evidence is
+separate and unchanged.
+
+The analysis does not execute source or evaluate arbitrary expressions. It bounds
+text to 4,096 characters, traversal to 48 levels and 100,000 steps per file,
+object fields/identity alternatives to 64, each value merge to 1,024 steps,
+and displayed origins to 16 lines. Loops receive one additional carried pass.
+Expression budget exhaustion makes affected calls unknown and emits the
+`sql_expression_limit` scan gap, so the scan is partial. Origin display truncation
+alone does not change a result. The cache fingerprint includes the extractor;
+legacy ASTs without these facts must be reparsed, not treated as negatives.
+
+This is bounded local value analysis, not a complete control-flow, type, import,
+alias or SQL-grammar analysis. Function returns, global/closure propagation,
+nested heap aliases, arbitrary helper calls, tagged SQL templates, sanitizers,
+path feasibility and exact exception/loop semantics require further models.
+Unknown spreads, computed keys and call effects retain uncertainty where tracked.
+Unsupported forms can remain undetected; absence of a finding is not proof of
+safety. The rule does not create a taint path or promote candidates to blocking
+or runtime-proven evidence.
+
 ### OAuth scope review boundary
 
 `AEG-OAUTH-004` recognizes selected OAuth authorization/provider calls with

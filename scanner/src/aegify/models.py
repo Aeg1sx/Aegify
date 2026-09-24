@@ -99,6 +99,7 @@ class FileAST(BaseModel):
     parser_grammar: str = ""
     parse_error_count: int = 0
     parse_diagnostics: list[ParseDiagnostic] = Field(default_factory=list)
+    query_expression_limit_count: int = 0
 
 
 class FunctionDef(BaseModel):
@@ -197,11 +198,24 @@ class CallSite(BaseModel):
     arguments: list[str] = Field(default_factory=list)
     argument_types: list[str] = Field(default_factory=list)
     structured_arguments: list[CallArgument] | None = None
+    query_expression: QueryExpression | None = None
     receiver: str | None = None  # object.method() -> receiver = object
     receiver_type: str = ""
     in_function: str | None = None  # enclosing function
     caller_symbol_id: str = ""
     repository_id: str = ""
+
+
+class QueryExpression(BaseModel):
+    """Versioned, bounded syntax evidence for the selected SQL text argument."""
+
+    version: Literal[1] = 1
+    state: Literal["constant", "constructed", "unknown"] = "unknown"
+    has_sql: bool = False
+    selection: str = ""
+    constructions: list[str] = Field(default_factory=list)
+    origin_lines: list[int] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
 
 
 # --- Taint / Dataflow Models ---
