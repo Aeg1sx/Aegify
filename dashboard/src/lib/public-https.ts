@@ -12,7 +12,7 @@ export function publicProviderAddress(address: string): boolean {
   if (family === 4) return !blocked.check(address, "ipv4");
   return family === 6 && globalV6.check(address, "ipv6") && !blocked.check(address, "ipv6");
 }
-export interface ProviderHttpRequest { url: string; headers: Record<string, string>; body: string; timeoutMs: number; method?: "GET" | "POST" }
+export interface ProviderHttpRequest { url: string; headers: Record<string, string>; body: string; timeoutMs: number; method?: "GET" | "POST"; signal?: AbortSignal }
 export type ProviderTransport = (input: ProviderHttpRequest) => Promise<{ status: number; text: string }>;
 
 /** DNS results are validated and pinned into this TLS connection; no redirect or retry. */
@@ -21,9 +21,10 @@ export const publicProviderRequest: ProviderTransport = async (input) => {
   if (!valid.valid) throw new Error(valid.error);
   const url = new URL(input.url);
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
-  const signal = AbortSignal.timeout(input.timeoutMs);
+  const signal = AbortSignal.any([AbortSignal.timeout(input.timeoutMs), ...(input.signal ? [input.signal] : [])]);
+  signal.throwIfAborted();
   const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await new Promise<Array<{ address: string; family: number }>>((resolve, reject) => {
-    const abort = () => reject(new Error("Provider DNS lookup timed out."));
+    const abort = () => reject(new Error("Provider DNS lookup interrupted."));
     signal.addEventListener("abort", abort, { once: true });
     lookup(hostname, { all: true }).then(resolve, () => reject(new Error("Provider DNS lookup failed."))).finally(() => signal.removeEventListener("abort", abort));
   });

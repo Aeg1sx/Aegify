@@ -365,7 +365,7 @@ model LlmJob {
   scanId         String
   activeKey      String?   @unique // scan ID while pending/running; null after terminal state
   mode           String // "quick" | "deep"
-  status         String    @default("pending") // pending, running, partial, completed, failed
+  status         String    @default("pending") // pending, running, partial, completed, failed, cancelled
   totalFindings  Int       @default(0)
   reviewedCount  Int       @default(0)
   falsePositives Int       @default(0)
@@ -376,11 +376,73 @@ model LlmJob {
   startedAt      DateTime?
   completedAt    DateTime?
 
+  contractVersion Int       @default(0)
+  projectId       String?
+  requestedBy     String?
+  provider        String    @default("")
+  model           String    @default("")
+  configDigest    String    @default("")
+  inputDigest     String    @default("")
+  inputCiphertext String?
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(3)
+  maxCalls        Int       @default(20)
+  callsStarted    Int       @default(0)
+  promptBytes     Int       @default(0)
+  outputTokensReserved Int  @default(0)
+  errorCount      Int       @default(0)
+  errorCode       String    @default("")
+  leaseToken      String?
+  workerId        String    @default("")
+  leaseExpiresAt  DateTime?
+  heartbeatAt     DateTime?
+  deadlineAt      DateTime?
+  cancelRequestedAt DateTime?
+
   scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  events LlmJobEvent[]
+  calls LlmCall[]
 
   @@index([status])
   @@index([scanId])
   @@index([createdAt])
+  @@index([projectId, status])
+  @@index([status, leaseExpiresAt])
+}
+
+model LlmJobEvent {
+  id        String   @id @default(cuid())
+  jobId     String
+  code      String
+  message   String
+  details   String   @default("{}")
+  createdAt DateTime @default(now())
+  job LlmJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@index([jobId, createdAt])
+}
+
+model LlmCall {
+  id             String   @id @default(cuid())
+  jobId          String
+  batchIndex     Int
+  leaseToken     String
+  status         String   @default("dispatched")
+  promptDigest   String
+  responseDigest String   @default("")
+  receipt        String   @default("{}")
+  errorCode      String   @default("")
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  job LlmJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@unique([jobId, batchIndex])
+  @@index([jobId, status])
+}
+
+model LlmWorker {
+  id         String   @id
+  version    String
+  lastSeenAt DateTime @default(now())
+  @@index([lastSeenAt])
 }
 
 model AgentRun {

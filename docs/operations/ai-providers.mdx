@@ -62,6 +62,27 @@ References: [OpenAI Responses](https://developers.openai.com/api/reference/cli/r
 [OpenRouter](https://openrouter.ai/docs/api_reference/overview), and
 [Groq compatibility](https://console.groq.com/docs/openai).
 
+## Durable dashboard review receipts
+
+Queued finding reviews use a separate [AI worker](/operations/self-hosted-workers).
+They require an explicit normal completion (`end_turn`, `STOP`, completed Responses
+messages, or Chat `stop`) and a bounded review schema. Unexpected tools, refusals,
+truncated output and missing completion signals fail the batch, with no automatic
+provider retry. This receipt contract applies to queued finding reviews; other
+direct connection/analysis paths retain their existing request interfaces.
+
+Call receipts retain response/request digests and allowlisted numeric usage
+counters, using the provider's native field names. Anthropic cache read/creation
+counters are separate from its `input_tokens`; OpenAI and Gemini counters have
+different inclusion rules. Missing counters and monetary cost remain unknown.
+Reservations are upper bounds, not billed usage. Live provider compatibility,
+pricing-version accounting and review-quality calibration remain separate checks.
+
+Completion and usage references: [Anthropic Messages](https://platform.claude.com/docs/en/api/messages/create),
+[Anthropic stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons),
+[OpenAI Responses](https://developers.openai.com/api/reference/cli/resources/responses/methods/create),
+and [Gemini generateContent](https://ai.google.dev/api/generate-content).
+
 ## Scanner agent adapters
 
 `aegify agent-run` has its own scanner-side OpenAI, Anthropic and CLI adapters.

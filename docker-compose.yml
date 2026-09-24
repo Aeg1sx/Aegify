@@ -84,5 +84,39 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,size=536870912
 
+  ai-worker:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile.worker
+    command: ["node", "scripts/llm-worker.mjs"]
+    init: true
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 15s
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    mem_limit: 1g
+    cpus: "1.0"
+    pids_limit: 64
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-file:/data/dev.db}
+      AUTH_SECRET: ${AUTH_SECRET:?Set the shared dashboard authentication secret}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?Set the shared dashboard encryption secret}
+      AUTH_ADMIN_EMAILS: ${AUTH_ADMIN_EMAILS:?Set exact workspace administrator emails}
+      AUTH_ALLOWED_EMAILS: ${AUTH_ALLOWED_EMAILS:-}
+      AUTH_ALLOWED_DOMAINS: ${AUTH_ALLOWED_DOMAINS:-}
+    volumes:
+      - dashboard-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,size=134217728
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('node:fs');process.exit(Date.now()-fs.statSync('/tmp/aegify-ai-worker-health').mtimeMs<45000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+
 volumes:
   dashboard-data:

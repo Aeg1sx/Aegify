@@ -17,5 +17,6 @@ test("recognizes every terminal AI review state", () => {
   assert.equal(isLlmJobTerminal("completed"), true);
   assert.equal(isLlmJobTerminal("partial"), true);
   assert.equal(isLlmJobTerminal("failed"), true);
+  assert.equal(isLlmJobTerminal("cancelled"), true);
   assert.equal(isLlmJobTerminal("running"), false);
 });
