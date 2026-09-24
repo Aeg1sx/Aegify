@@ -1262,7 +1262,7 @@ def agent_run(
         CommandBackendConfig,
         OpenAIResponsesBackend,
     )
-    from aegify.agents.models import AgentRunMode, CveCandidate
+    from aegify.agents.models import AgentRunMode, AgentRunStatus, CveCandidate
     from aegify.agents.pipeline import SecurityAgentPipeline
     from aegify.llm.budget import TokenBudget
     from aegify.llm.client import LLMClient
@@ -1348,6 +1348,10 @@ def agent_run(
         console.print(f"Artifact digest: {run.artifact_digest}")
     else:
         console.print_json(rendered)
+    if run.status in {AgentRunStatus.PARTIAL, AgentRunStatus.AWAITING_APPROVAL}:
+        raise typer.Exit(code=3)
+    if run.status != AgentRunStatus.COMPLETED:
+        raise typer.Exit(code=2)
 
 
 @app.command("scan-pr")

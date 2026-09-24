@@ -252,6 +252,7 @@ class AgentStageResult(BaseModel):
     narrative: AgentNarrative | None = None
     prompt_digest: str = ""
     error: str = ""
+    backend_error_code: str = ""
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
 
@@ -274,8 +275,19 @@ class SecurityAgentRun(BaseModel):
 
     @property
     def artifact_digest(self) -> str:
+        # Empty additive diagnostics did not exist in saved v1 artifacts. Keep
+        # their original digests, while binding any actual failure code.
+        excluded: dict[str, Any] = {
+            "completed_at": True,
+            "created_at": True,
+            "stages": {
+                index: {"backend_error_code"}
+                for index, stage in enumerate(self.stages)
+                if not stage.backend_error_code
+            },
+        }
         material = self.model_dump_json(
-            exclude={"completed_at", "created_at"},
+            exclude=excluded,
             exclude_none=True,
         )
         return "sha256:" + hashlib.sha256(material.encode()).hexdigest()

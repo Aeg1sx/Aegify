@@ -61,3 +61,61 @@ References: [OpenAI Responses](https://developers.openai.com/api/reference/cli/r
 [Azure OpenAI v1](https://learn.microsoft.com/en-us/rest/api/microsoft-foundry/azureopenai/chat),
 [OpenRouter](https://openrouter.ai/docs/api_reference/overview), and
 [Groq compatibility](https://console.groq.com/docs/openai).
+
+## Scanner agent adapters
+
+`aegify agent-run` has its own scanner-side OpenAI, Anthropic and CLI adapters.
+These are separate from the dashboard's provider settings and transport above.
+
+The OpenAI Responses adapter requests strict structured output with all four
+narrative fields required: `summary`, `claims`, `evidence_gaps`, and
+`recommendations`. Empty lists must be present. The Codex output schema uses the
+same contract. Local artifact models retain defaults so older saved narratives
+can still be read. New OpenAI, Codex and Claude Code responses must contain all
+four fields, without extra keys, duplicate keys, non-JSON numbers or Markdown
+wrappers. Pydantic's text/list limits remain enforced locally.
+
+OpenAI results need a completed response and one completed assistant message.
+Refusals, provider errors, incomplete output, unexpected tool calls, multiple
+messages and inconsistent status fields do not produce a narrative. Reasoning
+items are ignored, not used as answer text. Requests retain `store: false`, a
+4,096-token output limit and a 2,000,000-byte response cap. Redirects are rejected.
+HTTP/provider errors retain a bounded diagnostic without copying remote bodies.
+The socket timeout is not a durable job deadline or a provider-wide spend budget.
+
+Claude Code requires a successful result envelope, `is_error: false`, no API error,
+and an absent or completed stop reason. A refused or unfinished result is rejected
+even if its text happens to contain a complete JSON object. Codex must exit
+successfully and supply the complete message file; it does not yet provide a
+separate provider-status/usage receipt to Aegify.
+
+| `backend_error_code` | Meaning |
+| --- | --- |
+| `refused` | The provider declined the review |
+| `incomplete` | The provider did not finish its response |
+| `invalid_response` | The response shape, encoding or message file was invalid |
+| `response_limit` | Output exceeded the configured byte bound |
+| `provider_error` | The provider failed or returned an unsuccessful envelope |
+| `timeout` | API socket or CLI invocation timeout |
+| `process_error` | CLI launch, I/O or exit failure |
+| `unsupported_platform` | CLI process controls are unavailable on this platform |
+
+The new field defaults to an empty string for historical artifacts and failures
+outside these adapters. Failed model enrichment leaves static evidence intact.
+Empty failure codes are omitted from the artifact digest to preserve historical
+v1 digests; a nonempty failure code is included.
+`agent-run` writes the retained artifact before exiting: `0` means completed,
+`3` means partial or awaiting approval/evidence, and `2` means failed input,
+configuration or execution. Previously a partial review could exit `0`; CI
+consumers must handle `3` explicitly and must not equate it with a completed review.
+Offline tests cover strict schemas, refusal/incomplete/error envelopes, malformed
+JSON, output flooding, a blocked input pipe, deadlines, owned child cleanup and
+message-file limits. They invoke no provider and execute no analyzed source.
+POSIX process groups cannot contain a program that deliberately detaches; dedicated
+worker/container isolation, provider usage accounting, cancellation and durable
+job recovery remain required for a multi-tenant installation.
+
+Protocol references: [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
+[Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference),
+[Claude Code programmatic use](https://code.claude.com/docs/en/headless), and
+[Claude result messages](https://code.claude.com/docs/en/agent-sdk/typescript#sdkresultmessage).

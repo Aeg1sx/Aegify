@@ -67,19 +67,40 @@ aegify agent-run scan.json --provider codex --workspace ./repo
 aegify agent-run scan.json --provider claude --workspace ./repo
 ```
 
-Codex runs ephemerally in a read-only sandbox with a JSON output schema.
-Claude Code runs non-interactively in plan permission mode with one turn.
-Neither adapter invokes a shell, inherits the whole environment, or permits the
-model to mutate deterministic facts. Inputs, outputs, runtime, and byte counts
-are bounded. Secrets are redacted before model use and persistence.
+Codex receives a read-only sandbox, `approval_policy="never"`, ephemeral execution,
+and a strict JSON output schema. Claude Code receives non-interactive plan mode
+and a one-turn limit. Aegify launches either CLI without a shell and with an
+environment allowlist. On POSIX, it drains stdout and stderr while sending the
+prompt, caps their combined bytes, enforces a deadline, and terminates the process
+group on completion or failure. Codex's final message must be a bounded, regular
+UTF-8 file; oversized output is rejected rather than truncated into a valid prefix.
+Other platforms reject CLI execution until equivalent process controls exist.
+
+CLI flags do not isolate user/project configuration, hooks, plugins, integrations,
+or children that create a new session. Use a dedicated operator-controlled CLI
+installation and external filesystem, disk quota and egress controls. This adapter
+does not establish those isolation controls. No real-provider compatibility or
+model-quality result is implied by the offline contract tests.
+
+OpenAI and CLI adapters reject incomplete, refused, malformed or ambiguous results.
+Their stages retain a `backend_error_code` and no narrative on failure; deterministic
+facts remain available. A finished run with partial/failed stages is `partial`.
+An outstanding approval retains `awaiting_approval`. See the
+[scanner adapter contract](/operations/ai-providers#scanner-agent-adapters) for
+the strict response shape, stop codes and remaining execution boundaries.
 
 ## Tools and MCP boundary
 
-Agents may request only role-scoped read-only tools: workspace summary, attack
+The six-stage scanner pipeline collects role-scoped read-only tools: workspace summary, attack
 surface, finding context, bounded call path, and harness planning. Unknown or
 write-capable tools are rejected. The MCP bridge accepts results only from an
 operator-configured allowlist, normalizes and redacts them, and stores input and
 output digests. It does not let a model discover or open arbitrary MCP servers.
+
+This pipeline currently makes one narrative call per stage using precollected
+evidence. Model-selected source reads belong to the separate
+[bounded AI review path](/analysis/ai-sast-operations); durable dashboard execution
+and a shared cost/usage receipt across providers remain separate work.
 
 Prompts are versioned and hashed. Repository content, tool results, issue text,
 and CVE descriptions are explicitly treated as untrusted data rather than

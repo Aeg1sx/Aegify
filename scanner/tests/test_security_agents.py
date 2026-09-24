@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from aegify.agents.backends import AgentBackendError
 from aegify.agents.catalog import AGENT_CATALOG
 from aegify.agents.models import (
     AgentNarrative,
@@ -16,6 +17,7 @@ from aegify.agents.models import (
     DynamicValidationPlan,
     ReachabilityHop,
     ReachabilityTrace,
+    SecurityAgentRun,
 )
 from aegify.agents.pipeline import SecurityAgentPipeline
 from aegify.agents.tools import McpEvidenceBridge, McpToolDescriptor
@@ -375,6 +377,58 @@ def test_catalog_prompts_are_versioned_and_restrict_tooling() -> None:
             }
             for tool in spec.allowed_tools
         )
+
+
+def test_provider_failure_keeps_facts_and_marks_finished_run_partial() -> None:
+    class Backend:
+        provider_name = "openai_api"
+
+        def invoke(self, _spec: Any, _payload: Any) -> AgentNarrative:
+            raise AgentBackendError("refused", "OpenAI declined the review")
+
+    scan = _scan(runtime=True)
+    baseline = SecurityAgentPipeline().run(scan)
+    run = SecurityAgentPipeline(Backend()).run(scan)
+    assert run.status is AgentRunStatus.PARTIAL
+    assert run.completed_at is not None
+    assert all(stage.status is AgentStageStatus.PARTIAL for stage in run.stages)
+    assert all(
+        stage.narrative is None and stage.backend_error_code == "refused" for stage in run.stages
+    )
+    assert [stage.facts for stage in run.stages] == [stage.facts for stage in baseline.stages]
+    assert all(stage.backend_error_code == "" for stage in baseline.stages)
+
+
+def test_legacy_run_reads_without_new_error_code_and_keeps_original_digest() -> None:
+    legacy = {
+        "id": "legacy-run",
+        "scan_id": "owned-scan",
+        "status": "completed",
+        "created_at": "2026-09-23T00:00:00Z",
+        "completed_at": "2026-09-23T00:00:01Z",
+        "stages": [
+            {
+                "role": "static",
+                "agent_code": "maenun",
+                "agent_name": "Maenun",
+                "status": "completed",
+                "summary": "Saved static evidence",
+                "narrative": {"summary": "Saved review"},
+                "started_at": "2026-09-23T00:00:00Z",
+                "completed_at": "2026-09-23T00:00:01Z",
+            }
+        ],
+    }
+    run = SecurityAgentRun.model_validate(legacy)
+    assert run.stages[0].backend_error_code == ""
+    assert run.stages[0].narrative and run.stages[0].narrative.summary == "Saved review"
+    # Independently computed with pre-change main (3265929).
+    assert run.artifact_digest == (
+        "sha256:f32ea8f567df379e288da41f90b034370c3616ed053ac4061e6ca3d84483f3e8"
+    )
+    previous = run.artifact_digest
+    run.stages[0].backend_error_code = "refused"
+    assert run.artifact_digest != previous
 
 
 def test_mcp_bridge_requires_read_only_allowlist_and_redacts_results() -> None:
