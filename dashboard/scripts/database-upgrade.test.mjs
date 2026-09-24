@@ -55,7 +55,9 @@ async function fixture() {
 // An independent SQLite connection lets the test fully close statement handles
 // before Prisma deploys, matching the documented stopped-service upgrade.
 function openDatabase(url) {
-  const connection = new DatabaseSync(fileURLToPath(url));
+  // Give the owned reader a bounded wait for migration/rollback locks. A
+  // persistent lock still fails; every data and rollback assertion remains.
+  const connection = new DatabaseSync(fileURLToPath(url), { timeout: 5000 });
   let closed = false;
   return {
     async execute(input) {
