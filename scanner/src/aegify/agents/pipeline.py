@@ -7,7 +7,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
-from aegify.agents.backends import AgentBackend, AgentBackendError
+from aegify.agents.backends import AgentBackend, AgentBackendError, AnthropicAPIBackend
 from aegify.agents.catalog import AGENT_CATALOG, AgentSpec
 from aegify.agents.models import (
     AgentEvidence,
@@ -92,6 +92,8 @@ class SecurityAgentPipeline:
         for stage in stages:
             run.evidence.extend(self._attach_narrative(stage, tool_context))
             run.stages.append(stage)
+        if isinstance(self.backend, AnthropicAPIBackend):
+            run.token_usage = self.backend.client.budget.get_token_usage()
         if any(stage.status == AgentStageStatus.WAITING_APPROVAL for stage in stages):
             run.status = AgentRunStatus.AWAITING_APPROVAL
         elif any(

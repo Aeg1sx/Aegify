@@ -855,7 +855,7 @@ main CodeQL analyses have zero results. No alerts were manually dismissed.
 The live inventory was 693 open alerts: 688 Aegify candidates and five Scorecard
 observations. Repository protection rules remain active and unchanged.
 
-## Retained AI review evidence: 2026-09-24, in progress
+## Retained AI review evidence: 2026-09-24, merged via PR #57
 
 Each valid finding review now gets its own encrypted retained record, bound to
 its job, provider call, model, input/source/evidence digests and publication
@@ -893,8 +893,26 @@ reselection, mobile layout, cancellation and viewer controls. These checks use
 owned static inputs and scripted provider replies, with no live AI provider call.
 Documentation build, links and accessibility pass, with existing color
 recommendations. Supply-chain pinning verification passes.
-Exact-head CI, the Linux worker container and native SARIF processing remain the
-merge gate.
+Exact-head CI, the Linux worker container and native SARIF processing were
+required before merge.
+
+Remote acceptance completed on head `e40d4cede5e2c43634c5dc1c57b76d67db47cf7a`:
+CI `35958478062` and code scanning `35958478065` passed, including 731 scanner
+tests, 147 dashboard tests, the 59-test offline Linux worker suite with no skips,
+125 production HTTP checks and both CodeQL analyses. Native Aegify analysis
+`1830232474` processed 316 files without coverage gaps/errors and retained 731
+advisory candidates, with zero blocking results. Normalizing diagnostic-line
+movement against #56 left 43 additions and no removals. Source review found no
+actionable new defect at those added locations; no alerts were dismissed or
+rules disabled. This does not adjudicate the remaining candidate backlog.
+
+PR #57 merged at `2026-09-24T05:18:12Z` as verified signed commit
+`2fd66bd4d72312f02ceba93ce56be5a25faa16a2`; its tree matches the tested head.
+Main CI `35959343101` and code scanning `35959343074` passed. Main Aegify analysis
+`1830270337` retained 731 candidates without an error; CodeQL analyses
+`1830251023` and `1830250972` returned zero results. Open alerts at that checkpoint
+were 731 Aegify candidates plus five Scorecard findings. The root checkout was
+fast-forwarded cleanly. Merge and CI do not establish a production deployment.
 
 This closes historical finding-review storage and retrieval, not full agent
 integration or model-quality acceptance. Expired whole-job input cannot be
@@ -903,3 +921,62 @@ update protection is not independent immutable storage against an administrator.
 Live provider isolation, calibrated confidence, billing reconciliation, broader
 source-tool agent roles and independent application-level precision/recall
 evaluation remain open. The measured OWASP quality ceiling is unchanged.
+
+## Scanner AI response and cost accounting: 2026-09-24, in progress
+
+The ordinary scanner Anthropic path now reserves each call before dispatch and
+settles it once with explicit completion and usage states. The SDK has zero
+retries, redirects are rejected, and both successful and unsuccessful HTTP bodies
+are bounded before decoding or SDK error construction. Only a normal assistant
+completion with strict JSON produces review content. Native usage is validated
+before coercion; incomplete usage retains the unresolved reservation. Hard call,
+request-byte and requested-output caps also bound providers reporting zero usage.
+
+Per-call records retain request/complete-response digests, requested/returned model
+identities, phase, response ID, status, stop/error code, elapsed time and native
+usage. Raw source prompts, provider bodies and hidden reasoning are excluded from
+those records. SDK body-debug logs are suppressed. New attempted calls carry
+nullable unknown monetary cost; historical numeric costs are labeled unverified
+legacy estimates. No model-independent tariff is used as a billing claim.
+`httpx2` is now an explicit direct dependency, using the already locked 2.12.0;
+no transitive package versions changed.
+
+Ordinary and PR verification require explicit, unique, in-range finding indices.
+Missing/invalid review fields abstain and malformed bindings invalidate a batch.
+Model remediation remains inside `ai_review`, preserving original scanner guidance
+and finding workflow/evidence/severity/CI disposition. PR output says findings
+were retained instead of calling them confirmed. Both GitHub reporters, terminal,
+JSON and SARIF carry consistent usage uncertainty, including empty/failed reports.
+
+All scanner Anthropic callers use the shared limits and close their client.
+The six-role agent adapter validates every required narrative field, reports
+bounded errors, retains per-role usage in its artifact and binds it to the artifact
+digest. Legacy artifacts without usage preserve their original digest. Other
+providers retain null accounting, not a zero-cost claim. Scanner static exit codes
+remain separate from optional AI completion; failed agent enrichment returns partial.
+
+Local acceptance: 878 scanner tests passed with 84.14% coverage; the existing
+loopback test skipped by the local sandbox passed separately outside that sandbox.
+The actual installed SDK was exercised through in-memory scripted transports,
+including oversized error bodies, compressed replies, early closure, normal and
+abnormal completion, duplicate JSON keys, malformed native counters, timeouts,
+interrupts, concurrent admission, immutable snapshots and admission limits.
+CLI tests cover ordinary scan, PR scan, workspace source-tool review and all six
+Anthropic roles, including receipt persistence and client closure. No paid model
+or external test target was contacted.
+
+Strict mypy, Ruff lint/format, wheel build, dependency audit (64 packages, no known
+vulnerabilities/adverse statuses) and immutable-reference policy pass. Rule audit
+retains zero errors/warnings; the declared core corpus remains TP 9 / FP 0 / FN 0.
+Documentation build, links and accessibility pass with existing color advice.
+Exact-head CI, native SARIF, CodeQL and the offline Linux worker/container gate
+remain required before merge.
+
+This phase does not supply versioned provider tariffs, invoice reconciliation,
+durable CLI crash recovery, an OS/DNS kill deadline, calibrated model confidence,
+or independent application-level quality acceptance. The scanner still uses its
+operator-controlled endpoint/proxy configuration; dashboard egress controls are a
+separate implementation. Nonzero legacy `llm.max_retries` is now rejected and
+cost consumers must accept null plus its status. Source-tool loop integration
+across all agent roles/providers remains open. Existing external OWASP metrics
+are unchanged; local contract tests do not demonstrate improved detection quality.

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from aegify.llm.reporting import format_token_usage, has_model_activity
 from aegify.models import Finding, ScanResult, ScanStatus, Severity, TokenUsage
 
 
@@ -18,6 +19,34 @@ def _analysis_health(result: ScanResult) -> str:
     lines.extend(
         f"- `{gap.code}`: {gap.message} ({gap.affected_count})" for gap in result.analysis_gaps
     )
+    return "\n\n".join(lines) + "\n"
+
+
+def _usage_note(usage: TokenUsage) -> str:
+    return "\n\n---\n" + format_token_usage(usage) if has_model_activity(usage) else ""
+
+
+def _ai_suggestion(finding: Finding) -> str:
+    review = finding.ai_review
+    if review is None:
+        return f"**Legacy AI analysis**: {finding.llm_analysis}\n" if finding.llm_analysis else ""
+    lines = [
+        f"**AI review suggestion**: `{review.verdict.value}` (requires human review)",
+        review.reasoning,
+    ]
+    for label, items in (
+        ("Supporting evidence", review.evidence_for),
+        ("Contrary evidence", review.evidence_against),
+        ("Evidence gaps", review.evidence_gaps),
+    ):
+        if items:
+            lines.append(f"**{label}**: " + "; ".join(items))
+    if review.remediation_summary or review.fixed_code or review.remediation_steps:
+        lines.append("**AI remediation suggestion**:")
+        lines.append(review.remediation_summary)
+        if review.fixed_code:
+            lines.append(f"```\n{review.fixed_code}\n```")
+        lines.extend(f"- {step}" for step in review.remediation_steps)
     return "\n\n".join(lines) + "\n"
 
 
@@ -37,7 +66,9 @@ class GitHubReporter:
         findings = scan_result.findings
         if not findings:
             if health := _analysis_health(scan_result):
-                return "## Aegify analysis health\n\n" + health
+                return (
+                    "## Aegify analysis health\n\n" + health + _usage_note(scan_result.token_usage)
+                )
             return self._no_findings_comment(scan_result)
 
         lines: list[str] = []
@@ -64,6 +95,8 @@ class GitHubReporter:
             f"---\n*Scanned {scan_result.files_scanned} files "
             f"in {scan_result.duration_seconds:.1f}s*"
         )
+        if has_model_activity(scan_result.token_usage):
+            lines.append(format_token_usage(scan_result.token_usage))
         return "\n".join(lines)
 
     def generate_inline_annotations(self, findings: list[Finding]) -> list[dict[str, Any]]:
@@ -126,6 +159,9 @@ class GitHubReporter:
         if finding.remediation:
             lines.append(f"**Remediation**:\n{finding.remediation}\n")
 
+        if suggestion := _ai_suggestion(finding):
+            lines.append(suggestion)
+
         lines.append("</details>")
         return "\n".join(lines)
 
@@ -134,7 +170,7 @@ class GitHubReporter:
             "## ✅ Aegify Results\n\n"
             "No security findings detected.\n\n"
             f"*Scanned {scan_result.files_scanned} files in {scan_result.duration_seconds:.1f}s*"
-        )
+        ) + _usage_note(scan_result.token_usage)
 
 
 # PR comment marker for upsert logic in GitHub Actions
@@ -156,20 +192,21 @@ def generate_pr_comment(
     - Token usage footer
     """
     lines: list[str] = [PR_COMMENT_MARKER]
+    usage = token_usage or result.token_usage
 
     findings = result.findings
     if health := _analysis_health(result):
         lines.append("## Aegify analysis health\n")
         lines.append(health)
         if not findings:
-            return "\n".join(lines)
+            return "\n".join(lines) + _usage_note(usage)
     if not findings:
         lines.append("## :white_check_mark: Aegify — No Issues Found\n")
         lines.append(f"Scanned **{len(changed_files)}** changed files")
         if related_files:
             lines.append(f" + **{len(related_files)}** related files")
         lines.append(f" in {result.duration_seconds:.1f}s.\n")
-        return "\n".join(lines)
+        return "\n".join(lines) + _usage_note(usage)
 
     lines.append("## :lock: Aegify — PR Scan Results\n")
 
@@ -222,8 +259,8 @@ def generate_pr_comment(
             if finding.code_snippet:
                 lines.append(f"```\n{finding.code_snippet}\n```\n")
 
-            if finding.llm_analysis:
-                lines.append(f"**LLM Analysis**: {finding.llm_analysis}\n")
+            if suggestion := _ai_suggestion(finding):
+                lines.append(suggestion)
 
             if finding.remediation:
                 lines.append(f"**Remediation**:\n{finding.remediation}\n")
@@ -235,10 +272,8 @@ def generate_pr_comment(
     footer_parts = [
         f"Scanned {result.files_scanned} files in {result.duration_seconds:.1f}s",
     ]
-    usage = token_usage or result.token_usage
-    if usage.total_cost_usd > 0:
-        total_tokens = usage.input_tokens + usage.output_tokens
-        footer_parts.append(f"LLM: {total_tokens:,} tokens (${usage.total_cost_usd:.4f})")
+    if has_model_activity(usage):
+        footer_parts.append(format_token_usage(usage))
     lines.append(" | ".join(footer_parts))
 
     return "\n".join(lines)

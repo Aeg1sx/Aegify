@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Severity(StrEnum):
@@ -802,12 +802,140 @@ class ScanResult(BaseModel):
         return counts
 
 
-class TokenUsage(BaseModel):
-    """Token usage tracking for LLM calls."""
+ModelCallPhase = Literal[
+    "verification",
+    "remediation",
+    "additional_search",
+    "agent:surface",
+    "agent:static",
+    "agent:dynamic",
+    "agent:synthesis",
+    "agent:cve",
+    "agent:steward",
+]
+NATIVE_TOKEN_COUNTERS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+)
 
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_cost_usd: float = 0.0
+
+class ModelCallReceipt(BaseModel):
+    """Source-free call accounting; a provider report is not a billing invoice."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1, max_length=64)
+    provider: Literal["anthropic-messages"] = "anthropic-messages"
+    model: str = Field(min_length=1, max_length=256)
+    phase: ModelCallPhase
+    state: Literal["dispatched", "completed", "rejected", "unknown"] = "dispatched"
+    usage_status: Literal["reported", "partial", "unknown"] = "unknown"
+    reported_usage: dict[str, int] = Field(default_factory=dict)
+    estimated_input_tokens: int = Field(ge=0, le=1_000_000_000_000, strict=True)
+    requested_output_tokens: int = Field(ge=1, le=32_768, strict=True)
+    prompt_bytes: int = Field(ge=1, le=262_144, strict=True)
+    request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    response_digest: str = Field(default="", pattern=r"^(sha256:[0-9a-f]{64})?$")
+    response_model: str = Field(default="", max_length=256)
+    response_id: str = Field(default="", max_length=256)
+    stop_reason: str = Field(default="", max_length=80)
+    http_status: int | None = Field(default=None, ge=100, le=599, strict=True)
+    error_code: str = Field(default="", max_length=80)
+    elapsed_ms: int = Field(default=0, ge=0, strict=True)
+
+    @field_validator("reported_usage", mode="before")
+    @classmethod
+    def validate_native_counters(cls, value: Any) -> dict[str, int]:
+        if not isinstance(value, dict) or any(
+            key not in NATIVE_TOKEN_COUNTERS
+            or type(count) is not int
+            or not 0 <= count <= 1_000_000_000_000
+            for key, count in value.items()
+        ):
+            raise ValueError("invalid native token counters")
+        return value
+
+    @model_validator(mode="after")
+    def validate_usage_state(self) -> ModelCallReceipt:
+        if (
+            self.usage_status == "reported"
+            and not {"input_tokens", "output_tokens"} <= self.reported_usage.keys()
+        ):
+            raise ValueError("reported usage needs input and output counters")
+        if (self.usage_status == "unknown") != (not self.reported_usage):
+            raise ValueError("usage status must agree with available counters")
+        if self.state == "dispatched" and self.usage_status != "unknown":
+            raise ValueError("an unsettled call cannot have reported usage")
+        return self
+
+
+class TokenUsage(BaseModel):
+    """Reported counters, uncertain reservations and explicitly unverified costs."""
+
+    input_tokens: int = Field(default=0, ge=0, strict=True)
+    output_tokens: int = Field(default=0, ge=0, strict=True)
+    cache_creation_input_tokens: int = Field(default=0, ge=0, strict=True)
+    cache_read_input_tokens: int = Field(default=0, ge=0, strict=True)
+    total_cost_usd: float | None = Field(default=0.0, ge=0, allow_inf_nan=False, strict=True)
+    cost_status: Literal["not_used", "unavailable", "legacy_estimate"] = "not_used"
+    usage_status: Literal["not_used", "reported", "partial", "unknown", "legacy"] = "not_used"
+    calls_started: int = Field(default=0, ge=0, le=250, strict=True)
+    calls_rejected_before_dispatch: int = Field(default=0, ge=0, strict=True)
+    calls_with_unknown_usage: int = Field(default=0, ge=0, le=250, strict=True)
+    reserved_tokens: int = Field(default=0, ge=0, strict=True)
+    prompt_bytes: int = Field(default=0, ge=0, strict=True)
+    output_tokens_requested: int = Field(default=0, ge=0, strict=True)
+    last_error_code: str = Field(default="", max_length=80)
+    calls: list[ModelCallReceipt] = Field(default_factory=list, max_length=250)
+
+    @model_validator(mode="after")
+    def retain_legacy_estimate_without_treating_it_as_billing(self) -> TokenUsage:
+        active = bool(
+            self.reported_tokens
+            or self.calls_started
+            or self.calls
+            or self.reserved_tokens
+            or self.calls_with_unknown_usage
+            or self.prompt_bytes
+            or self.output_tokens_requested
+        )
+        legacy_activity = active or self.total_cost_usd is None or self.total_cost_usd > 0
+        if "usage_status" not in self.model_fields_set and legacy_activity:
+            self.usage_status = "legacy"
+        if "cost_status" not in self.model_fields_set:
+            if self.total_cost_usd is not None and self.total_cost_usd > 0:
+                self.cost_status = "legacy_estimate"
+            elif active or self.usage_status != "not_used":
+                self.cost_status = "unavailable"
+                self.total_cost_usd = None
+        if self.cost_status == "unavailable" and self.total_cost_usd is not None:
+            raise ValueError("unavailable cost must be null")
+        if self.cost_status == "legacy_estimate" and self.total_cost_usd is None:
+            raise ValueError("a legacy estimate needs its original numeric value")
+        if self.cost_status == "not_used" and (
+            active or self.usage_status != "not_used" or self.total_cost_usd != 0
+        ):
+            raise ValueError("an attempted model call cannot claim no model use")
+        if self.calls and (
+            self.calls_started != len(self.calls)
+            or self.calls_with_unknown_usage
+            != sum(call.usage_status != "reported" for call in self.calls)
+        ):
+            raise ValueError("call counts must agree with retained receipts")
+        return self
+
+    @property
+    def reported_tokens(self) -> int:
+        # These four Anthropic input/output categories do not overlap. Reasoning
+        # and cache-TTL subdivisions are intentionally not summed again.
+        return (
+            self.input_tokens
+            + self.output_tokens
+            + self.cache_creation_input_tokens
+            + self.cache_read_input_tokens
+        )
 
 
 class ScanProgress(BaseModel):
