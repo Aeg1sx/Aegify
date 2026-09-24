@@ -215,6 +215,16 @@ model FindingIdentity {
   triageReason       String    @default("")
   triageActor        String    @default("")
   triageExpiresAt    DateTime?
+  owner              String    @default("")
+  dueAt              DateTime?
+  priority           String    @default("")
+  tags               String    @default("[]")
+  ticketProvider     String    @default("")
+  ticketKey          String    @default("")
+  ticketUrl          String    @default("")
+  lastNotifiedAt     DateTime?
+  workflowRevision   Int       @default(0)
+  workflowNeedsReview Boolean  @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

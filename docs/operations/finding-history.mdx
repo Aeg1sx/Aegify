@@ -7,7 +7,8 @@ description: "Keep CI and worker triage attached to repository-qualified evidenc
 
 A scan stores observations. On a project's default branch, observations also
 refer to a persistent finding identity, which holds triage status, reason,
-expiry and decision history. A new CI runner or worker directory should not
+expiry, decision history, owner/team, due date, priority, tags and ticket metadata.
+A new CI runner or worker directory should not
 create a new decision for unchanged source evidence.
 
 The scanner emits `aegifyFingerprint/v2` alongside the historical
@@ -90,13 +91,95 @@ only for observations and identities without a repository ID. They cannot mark
 repository-qualified evidence absent or establish that an unknown new checkout
 is the same old scope.
 
+## Team assignment and triage
+
+The identity holds the current workflow. A successful default-branch scan copies
+that workflow into its new observations. Saving a decision or assignment updates
+the identity and all its current observations together, with an audit event in
+the same transaction. Assignment audit details retain the before/after values.
+Older observations retain their saved fields and source
+evidence. Opening an older observation displays the current issue's controls and
+labels the historical status and owner separately.
+
+Project triagers and higher roles can edit active projects. Viewers and archived
+projects are read only. Membership and account admission are checked again inside
+the write transaction. An unchanged rescan keeps the workflow version. Human
+changes, ticket linkage, an established absence or automatic reopening invalidate
+stale drafts; an outdated save returns `409` without changing stored data.
+
+False-positive and accepted-risk decisions require a rationale. Expired decisions
+reopen on the next observation and clear their active expiry, so later scans do
+not repeatedly expire the same decision. The prior decision remains in the event
+history. The importer does not run a wall-clock scheduler that expires decisions
+between scans.
+
+Findings without an identity, including feature-branch observations, have a local
+workflow only. Assignment and status updates affect that observation; they do not
+carry into another scan. Their decision rationale is retained in the audit event,
+and time-bounded triage is unavailable until there is a persistent identity.
+
+### API compatibility
+
+`GET /api/findings/:id` returns `workflow` and `permissions.canTriage` in addition
+to the saved observation. Use the workflow fields for current controls; the
+top-level fields may describe a historical observation.
+
+`PATCH /api/findings/:id` now requires the exact `workflow.version` returned by
+GET as `expectedVersion`. Existing API clients must fetch it before editing. For
+example, send an assignment update with this JSON body after replacing the version:
+
+```json
+{
+  "expectedVersion": "identity:YOUR_ID:CURRENT_REVISION",
+  "owner": "Payments team",
+  "priority": "p1",
+  "dueAt": "2026-12-01",
+  "tags": ["auth", "release-review"]
+}
+```
+
+Requests are bounded to 32 KiB. Owner/team names allow 200 characters; tags allow
+20 values of 50 characters each; rationales allow 4,000 characters. Dates accept
+`YYYY-MM-DD` or UTC ISO strings with milliseconds. Invalid fields, dates and
+missing versions return `400`. On `409`, review a fresh GET before resubmitting.
+The dashboard preserves the rejected draft; **Reload latest** explicitly replaces
+unsaved triage and assignment drafts.
+
+### Existing assignment data
+
+The additive workflow migration copies a unique, bounded nonempty assignment
+tuple from the identity's latest scan only when its logical source scope is
+known. Empty duplicate observations do not override a recorded assignment.
+Conflicting, malformed or unbound metadata stays in its original observations
+and sets `workflowNeedsReview`; it is not chosen automatically.
+
+The finding page shows the review notice. Review the historical records, choose
+the current assignment, and use **Save reviewed assignment**. The API equivalent
+is an assignment patch with `resolveWorkflowReview: true`. A routine assignment
+patch does not clear the notice. This review flag concerns assignment continuity;
+identity-attribution uncertainty still appears separately in scan health.
+
+### Ticket continuity and delivery limits
+
+A recorded Jira key and URL follow the identity across scans. A later ticket
+request returns the existing linkage. Successfully received ticket details are
+audited even when a concurrent linkage prevents attaching that receipt; the
+existing ticket is kept and `finding.ticket.link_review_required` records the
+other completed action.
+
+Remote issue creation and the local database transaction are separate. Concurrent
+requests that both start without a ticket can still create separate issues, and
+a timeout or database outage can leave a remote issue without a local receipt.
+There is no durable outbox or exactly-once delivery guarantee. Review Jira before
+retrying an uncertain result. Migrated ticket conflicts require operator review
+of the retained observations/audit data; choosing an assignment does not select
+or reconcile an ambiguous remote ticket. These remain follow-up integration work.
+
 ## Current scope
 
-This contract preserves identity-level triage. Assignment, due dates, tags and
-ticket metadata are still stored on individual observations; their authoritative
-identity-level workflow and continuity across scans remain follow-up work.
-Migration diagnostics appear in scan health and audit events. A dedicated
-conflict-resolution interface is not yet implemented.
+Migration diagnostics appear in scan health and audit events. A dedicated source
+identity conflict-resolution interface, driver-qualified multi-tool identities,
+and semantic invalidation when rule/model behavior changes remain follow-up work.
 
 These checks establish data continuity and isolation. Detection precision,
 recall and AI review quality require the separate
