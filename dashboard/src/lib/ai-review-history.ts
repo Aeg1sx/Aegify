@@ -3,6 +3,7 @@ import { AccessDenied, authorizeResource, type AccessPrincipal } from "./project
 import { decrypt, encryptMany } from "./crypto.ts";
 import { findingEvidenceDigest, parseReviewResults, reviewFindingSelect, type FrozenFinding, type ReviewResult } from "./ai-review-contract.ts";
 import { sha256 } from "./provider-receipt.ts";
+import { validateSavedSourceEvidence, type SavedSourceEvidence } from "./ai-source-review.ts";
 
 export const REVIEW_HISTORY_VERSION = 1;
 const MAX_RECORD_BYTES = 2 * 1024 * 1024;
@@ -28,6 +29,7 @@ export interface SavedReview {
   createdAt: string;
   finding: FrozenFinding;
   result: ReviewResult;
+  sourceEvidence?: SavedSourceEvidence;
 }
 
 function displayMetadata(finding: FrozenFinding) {
@@ -118,6 +120,11 @@ function verifiedPayload(row: LlmReview, job: Pick<LlmJob, "id" | "scanId" | "pr
     const metadata = displayMetadata(record.finding);
     if (Object.entries(metadata).some(([key, value]) => row[key as keyof LlmReview] !== value)) throw new Error();
     parseReviewResults(JSON.stringify([record.result]), [row.findingId]);
+    if ((record.mode === "source") !== Boolean(record.sourceEvidence)) throw new Error();
+    if (record.sourceEvidence) {
+      validateSavedSourceEvidence(record.sourceEvidence);
+      if (record.sourceEvidence.prompt_digest !== call.promptDigest || record.sourceEvidence.model !== job.model) throw new Error();
+    }
     return record;
   } catch {
     throw new AccessDenied(409, "Saved review could not be verified. Check the installation encryption key and retained record integrity.");

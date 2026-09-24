@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { isLlmJobTerminal } from "@/lib/llm-job-state";
 import { AiReviewJobCard, type AiReviewJob } from "@/components/ai-review-job-card";
 import { AiReviewHistory } from "@/components/ai-review-history";
+import { SourceReviewPicker } from "@/components/source-review-picker";
 import {
   Bot,
   Zap,
@@ -42,7 +43,8 @@ interface ScanOption {
 type LlmJob = AiReviewJob;
 
 export default function LLMScanPage() {
-  const [mode, setMode] = useState<"quick" | "deep">("quick");
+  const [mode, setMode] = useState<"quick" | "deep" | "source">("quick");
+  const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
   const [includeApiContracts, setIncludeApiContracts] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [scans, setScans] = useState<ScanOption[]>([]);
@@ -168,7 +170,7 @@ export default function LLMScanPage() {
       const res = await fetch("/api/llm-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scanId: selectedScanId, mode, includeApiContracts }),
+        body: JSON.stringify({ scanId: selectedScanId, mode, includeApiContracts, ...(mode === "source" ? { findingIds: selectedFindingIds } : {}) }),
       });
 
       const data = await res.json();
@@ -223,7 +225,7 @@ export default function LLMScanPage() {
       {workerReady === false && !activeJob && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">No AI worker is online. New reviews are stored with a 30 minute deadline.</p>}
 
       {/* Mode Selector */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
           onClick={() => setMode("quick")}
           className={`p-4 rounded-lg border text-left transition-colors ${
@@ -259,6 +261,10 @@ export default function LLMScanPage() {
             Uses call graph context to assess cross-function evidence and identify explicit evidence gaps.
           </p>
         </button>
+        <button onClick={() => setMode("source")} className={`p-4 rounded-lg border text-left transition-colors ${mode === "source" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30"}`}>
+          <div className="flex items-center gap-3 mb-2"><Bot className={`h-5 w-5 ${mode === "source" ? "text-primary" : "text-muted-foreground"}`} /><span className="font-medium">Source Investigation</span></div>
+          <p className="text-sm text-muted-foreground">An agent reads and searches the scan’s retained source, follows relevant context and cites the lines it used. Requires a connected repository scan with retained source.</p>
+        </button>
       </div>
 
       {/* Project + Scan Selector */}
@@ -288,6 +294,7 @@ export default function LLMScanPage() {
                   if (e.target.value === selectedProjectId) return;
                   setSelectedProjectId(e.target.value);
                   setSelectedScanId("");
+                  setSelectedFindingIds([]);
                   setScans([]);
                   setLoadingScans(true);
                 }}
@@ -310,7 +317,7 @@ export default function LLMScanPage() {
               <select
                 id="review-scan"
                 value={selectedScanId}
-                onChange={(e) => setSelectedScanId(e.target.value)}
+                onChange={(e) => { setSelectedScanId(e.target.value); setSelectedFindingIds([]); }}
                 className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                 disabled={loadingScans}
               >
@@ -326,15 +333,16 @@ export default function LLMScanPage() {
             </div>
           </div>
 
+          {mode === "source" && selectedScanId && <SourceReviewPicker key={selectedScanId} scanId={selectedScanId} selected={selectedFindingIds} onChange={setSelectedFindingIds} disabled={scanning} />}
           <label className="flex items-start gap-3 rounded-md border p-3 text-xs leading-6">
             <input type="checkbox" className="mt-1.5" checked={includeApiContracts} disabled={scanning} onChange={(event) => setIncludeApiContracts(event.target.checked)} />
             <span><span className="block font-medium">Include API contract context</span><span className="text-muted-foreground">Send bounded, matching OpenAPI/Swagger requirements to the configured AI provider for defensive review. Documentation does not prove enforcement or resolve findings automatically. Off by default.</span></span>
           </label>
-          <p className="text-xs text-muted-foreground">Each review sends a fixed snapshot to the configured provider: at most 20 calls and 1000 findings. Provider usage is recorded when available. Costs require provider billing confirmation. Starting another review can incur new charges.</p>
+          <p className="text-xs text-muted-foreground">Each review uses a fixed snapshot and at most 20 model calls. {mode === "source" ? "Source investigation supports 25 selected findings, four model turns and eight source requests per batch. Redacted source excerpts are sent to your configured provider and retained with the result. CI report uploads alone do not include full source." : "Excerpt reviews support up to 1000 findings."} Provider usage is recorded when available. Costs require provider billing confirmation. Starting another review can incur new charges.</p>
           <div className="flex items-center gap-3">
             <Button
               type="submit"
-              disabled={scanning || loadingScans || !selectedScanId || !canStart}
+              disabled={scanning || loadingScans || !selectedScanId || !canStart || (mode === "source" && !selectedFindingIds.length)}
               className="flex items-center gap-2"
             >
               {scanning ? (
@@ -345,7 +353,7 @@ export default function LLMScanPage() {
               ) : (
                 <>
                   <Bot className="h-4 w-4" />
-                  Start {mode === "quick" ? "Quick Review" : "Deep Analysis"}
+                  Start {mode === "quick" ? "Quick Review" : mode === "source" ? "Source Investigation" : "Deep Analysis"}
                 </>
               )}
             </Button>

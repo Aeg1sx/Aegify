@@ -39,7 +39,7 @@ This release connects contracts to the imported scan results for defensive revie
 
 ## Optional AI review context
 
-On **LLM Scan**, enable **Include API contract context** before starting a Quick Review or Deep Analysis. This option is off by default. When enabled, matching documented security requirements and input constraints are sent to the configured AI provider alongside the existing findings. Importing a specification alone never makes an AI request.
+On **LLM Scan**, enable **Include API contract context** before starting a Quick Review, Deep Analysis or Source Investigation. This option is off by default. When enabled, matching documented security requirements and input constraints are sent to the configured AI provider alongside the selected findings. Importing a specification alone never makes an AI request.
 
 Only same-scan/repository, overlapping-handler, exact-route references are included. Context is bounded to three references and 6,000 bytes per finding, with an overall prompt budget. Review provenance records the specification IDs, content hashes, source endpoint IDs, JSON pointers, and omitted context. Provider prompts explicitly separate declarations from enforcement and prohibit deriving runtime verification or dismissing a finding solely from its specification. Conflicting snapshots remain separate. This is defensive triage/remediation context, not request execution or payload generation. Real-provider precision improvements require a separate labeled evaluation.
 

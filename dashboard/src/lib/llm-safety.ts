@@ -41,15 +41,22 @@ export async function readBoundedLLMJson(response: Response): Promise<unknown> {
 
 export function sanitizeLLMText(value: unknown, limit = 20_000): string {
   if (typeof value !== "string") return "";
+  return redactText(value, false).slice(0, limit);
+}
+
+/** Source citations keep original line numbers even when a credential spans lines. */
+export function sanitizeLLMSourceText(value: string): string { return redactText(value, true); }
+
+function redactText(value: string, preserveLines: boolean): string {
+  const replacement = (match: string, marker: string) => marker + (preserveLines ? "\n".repeat((match.match(/\n/g) || []).length) : "");
   return value
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]")
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, "Bearer [REDACTED]")
-    .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED_AWS_KEY]")
-    .replace(/\b(?:sk-ant-|sk-proj-|sk-)[A-Za-z0-9_-]{16,}\b/g, "[REDACTED_API_KEY]")
-    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[REDACTED_GITHUB_TOKEN]")
-    .replace(/\bAIza[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_GOOGLE_KEY]")
-    .replace(/\b(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]")
-    .slice(0, limit);
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, (match) => replacement(match, "[REDACTED_PRIVATE_KEY]"))
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, (match) => replacement(match, "Bearer [REDACTED]"))
+    .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, (match) => replacement(match, "[REDACTED_AWS_KEY]"))
+    .replace(/\b(?:sk-ant-|sk-proj-|sk-)[A-Za-z0-9_-]{16,}\b/g, (match) => replacement(match, "[REDACTED_API_KEY]"))
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, (match) => replacement(match, "[REDACTED_GITHUB_TOKEN]"))
+    .replace(/\bAIza[A-Za-z0-9_-]{20,}\b/g, (match) => replacement(match, "[REDACTED_GOOGLE_KEY]"))
+    .replace(/\b(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+/gi, (match, key: string) => replacement(match, `${key}=[REDACTED]`));
 }
 
 export function sanitizeLLMStrings(value: unknown, limit = 100): string[] {
