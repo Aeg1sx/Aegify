@@ -1288,12 +1288,10 @@ class StructuredTaintAnalyzer:
             interpolated.extend(cls._ACCESS.findall(fragment))
         interpolated.extend(re.findall(r"\$(?!\{)([A-Za-z_$][\w$]*)", expression))
         scrubbed = scrub_quoted_strings(expression)
-        accesses: list[str] = [
-            value for value in interpolated if value not in cls._KEYWORDS and not value[0].isupper()
-        ]
+        accesses: list[str] = [value for value in interpolated if value not in cls._KEYWORDS]
         for match in cls._ACCESS.finditer(scrubbed):
             value = match.group(0)
-            if value in cls._KEYWORDS or value[0].isupper():
+            if value in cls._KEYWORDS:
                 continue
             suffix = scrubbed[match.end() :].lstrip()
             if suffix.startswith("("):

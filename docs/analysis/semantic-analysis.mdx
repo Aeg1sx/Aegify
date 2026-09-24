@@ -136,6 +136,17 @@ Sink models can select either a specific argument or the call receiver. This
 distinguishes an untrusted format program in `template.format(value)` from safe
 substitution data in `'value={}'.format(untrustedValue)`.
 
+Variable spelling does not determine trust: `value`, `Value`, and `VALUE` retain
+the same source evidence. Plain assignment still replaces the previous local
+value. Go statement-list wrappers are expanded into ordered operations, including
+when a comment precedes the list. Owned source-only controls cover Python,
+JavaScript/TypeScript, Java, Kotlin and Go, including field loads, a cross-file
+helper and safe overwrites.
+
+These contracts do not establish complete operator, container, branch, framework
+or sanitizer semantics. In particular, compound assignment and conditional
+validation need further models and paired accuracy evaluation.
+
 Python file-open sinks currently cover the exact calls `open`, `builtins.open`,
 and `io.open`, with the filename in argument zero. Unrelated `.open()` methods
 (including HTTP clients) are not classified as filesystem access by name alone.
