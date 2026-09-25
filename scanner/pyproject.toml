@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aegify-sast"
-version = "0.3.0"
+version = "0.3.0b1"
 description = "Next-gen SAST tool with Call Graph analysis, Dataflow tracking, and LLM-augmented verification"
 readme = "README.md"
 license = "MIT"

@@ -1,67 +1,81 @@
-# Aegify Open-Source Quality Assessment
+# Aegify quality and release assessment
 
-Assessment date: 2026-09-04
+Assessment updated: 2026-09-25. Proposed release: `v0.3.0-beta.1`.
 
-## Decision
+## Release decision
 
-The open-source alpha architecture and evidence-gating policy are implemented.
-Aegify has executable multi-repository and monorepo
-identity, cross-repository reachability, JVM and Spring semantic models,
-frontend/Gateway/backend/runtime attack-surface correlation, a normalized rule
-contract, external evidence adapters, and policy-controlled verification. Broad
-fallbacks are retained as candidate/advisory results. Taint and normalized
-structured evidence are the only default paths to a CI-blocking finding.
+Aegify is preparing a **team self-hosting beta** for one internal installation
+with project roles, CI uploads, durable source/AI finding workers, retained
+review evidence and human triage. The scanner CLI, dashboard and CI share the
+Python analysis engine. This scoped beta is not a general-availability or
+commercial-accuracy certification.
 
-This decision does not describe Aegify as a fully autonomous exploitation
-platform. Static candidates, graph reachability, runtime observations, and
-exploit impact proof are separate evidence states.
+The release remains unpublished until its reviewed commit passes CI and the
+signed-tag build publishes the wheel, SBOM, checksums and attestations. Check
+[GitHub Releases](https://github.com/Aeg1sx/Aegify/releases) for actual status and
+[the beta release contract](docs/releases/v0.3.0-beta.1.md) for installation limits.
 
-## Verified gates
+## Current implementation evidence
 
-| Area | Result | Evidence and boundary |
-|---|---:|---|
-| Scanner regression | Pass | 407 passed, 1 skipped; 79.78% measured line coverage |
-| Bundled-rule precision | Pass | 18 passed; fallback retention and evidence-only blocking are covered |
-| Owned precision corpus | Pass | `core-v1`; 5 scoped taint rules, 9 positive findings plus paired negative controls; TP 9, FP 0, FN 0; source and manifest SHA-256 recorded |
-| Python quality | Pass | Ruff and strict mypy across 79 source files |
-| Rules | Pass | 311 definitions; 303 enabled; 8 explicitly disabled; 980/980 enabled patterns executable; zero audit errors/warnings |
-| Packaging | Pass | v0.2.0 reproducible sdist-to-wheel build; 58 bundled rule files; isolated `aegify version` and rule-load smoke |
-| Dashboard | Pass | 25 tests, ESLint, TypeScript, and Next production build |
-| Dependencies | Pass | uv/OSV audit: 65 packages with zero known vulnerabilities; dashboard/docs npm high-severity audits: zero; registry signatures verified |
-| Documentation | Pass | Mintlify schema/build validation, anchors/links/redirects/snippets, accessibility, and locked dependency audit |
-| Containers | Pass | Scanner and dashboard images built; non-root users; read-only/cap-drop/no-new-privileges smoke; dashboard fail-closed without production secrets |
-| Cross-repo semantics | Implemented | Exact SCIP/package path, Maven/Gradle provider resolution, module classpath/bytecode, labeled coarse fallback |
-| Monorepo semantics | Implemented | Maven/Gradle module membership and dependencies; multiple SCIP indexes |
-| JVM semantics | Implemented | Descriptor-aware overloads, CHA/RTA, bounded bytecode import, lambda/method-reference evidence |
-| Spring semantics | Implemented | DI candidates, qualifiers, primary/name resolution, factories, conditional evidence, cross-module scope |
-| Attack surface | Implemented | Frontend calls, Gateway transformations, backend endpoints, findings, and runtime evidence |
-| Program Graph | Implemented | CFG/ICFG/SSA/DFG/data-state overlay with bounded context-balanced queries |
-| Data flow | Implemented | k=2 source points-to and bounded global taint with field/object/call context |
-| External evidence | Implemented | SARIF, Semgrep, Joern, SCIP, HTTP, browser, proxy, HAR, OTel |
-| Supply-chain CI | Pass | SHA-pinned Actions, least privilege, hardened runners, CodeQL, dependency review, Gitleaks, Scorecard, zizmor, SBOM and attestations |
-| Finding lifecycle | Implemented | Persistent scan history, stable fingerprints, current occurrence boundary, baseline state, expiring triage, audit events |
-| AI review boundary | Implemented | Structured suggestions, no implicit status mutation, allowlisted read-only tools, prompt-injection boundary, secret redaction, owned-fixture proof templates |
-| Precision gate | Implemented | Owned ground-truth precision/recall/F1 report with per-rule and unmatched evidence, threshold exit code |
-| Aegify self-scan | Pass | 356 medium-or-higher candidates retained as advisory; 53 critical, 179 high, 124 medium; benchmark fixtures excluded; 0 blocking; exit code 0 |
+These are recorded checks on the specified revisions, not a claim that every
+historical test or benchmark has been rerun on the release candidate.
 
-## Known precision limits
+| Area | Recorded evidence | Boundary |
+|---|---|---|
+| Scanner and source exploration | [PR #66](https://github.com/Aeg1sx/Aegify/pull/66), head `ea72b193181bc839b58d1ddcd9130fee375a2c6b`: 1,288 Linux tests passed, 84.51% coverage; strict types, lint, rule audit and wheel build passed | Regression coverage does not establish detector or model accuracy |
+| Rule surface | PR #66: 311 definitions, 303 executable rules, 986 executable patterns, zero audit errors/warnings | Disabled references and unmodeled semantics are not coverage |
+| Dashboard and workers | [PR #65](https://github.com/Aeg1sx/Aegify/pull/65): 171 dashboard tests passed; four Python-dependent checks covered separately; 83 offline Linux worker tests, 154 HTTP/CLI checks and three populated-upgrade checks passed | Scripted providers and owned inputs; no production deployment implied |
+| Source-tool agents | PR #66: all six CLI roles use bounded list/search/read requests, source hashes, executor-issued citations, round evidence and partial-result semantics | CLI writes at completion; dashboard finding review is a separate durable path |
+| Supply chain | PR #66 required checks, both CodeQL languages, container and documentation checks passed; merged as verified commit `fab40bde745f4e0f1e57c5d2488b3a466949a95f` | Signed release publication is a separate gate |
+| Owned core corpus | `core-v1`: five rules, nine positives, paired negatives; TP=9, FP=0, FN=0 | Exact owned corpus only |
 
-- Candidate results still require human or LLM review and are not proof of
-  reachability or exploitability.
-- The source and bytecode heaps are not yet one exhaustive points-to domain.
-- IFDS/IDE tabulation and exception-complete interprocedural modeling remain future work.
-- Active Spring profile/property/custom condition evaluation is conservative.
-- Compiler-precise SCIP evidence depends on an available language index; fallback
-  dependency edges are clearly labeled and lower fidelity.
-- Browser and proxy verification is loopback-oriented. Authenticated, TLS, and
-  multi-origin testing requires a future explicit policy tier.
-- A runtime observation is not automatically exploit impact proof.
-- AI confidence is not measured scanner precision and never authorizes status
-  changes or proof execution.
-- The `core-v1` 100% result applies only to its five declared rules and exact
-  digest-bound owned corpus. It is not a whole-product or real-world prevalence
-  estimate.
+The earlier 2026-09-04 assessment (407 scanner tests and 79.78% coverage) and
+[alpha completion audit](docs/project/alpha-completion-audit.mdx) are historical
+milestones. They are not current release acceptance totals.
 
-Detailed evidence is in [Alpha Completion Audit](docs/project/alpha-completion-audit.mdx),
-[Technical Architecture](docs/architecture/technical-architecture.mdx), and
-[Rule Authoring](docs/analysis/rule-authoring.mdx).
+## Detection quality
+
+The [retained SQL-expression evaluation](scanner/benchmarks/sql-expressions-v1/README.md)
+uses pinned OWASP Benchmark Python source/labels and records two matching runs.
+[PR #65](https://github.com/Aeg1sx/Aegify/pull/65) subsequently reproduced the same
+case outcomes. This is public diagnostic data, not a private or independent
+application-level holdout.
+
+| Scope | TP | FP | FN | TN | Precision | Recall |
+|---|---:|---:|---:|---:|---:|---:|
+| All candidates, 1,193 scored case/CWE labels | 214 | 99 | 220 | 660 | 68.37% | 49.31% |
+| Blocking disposition, same labels | 21 | 28 | 413 | 731 | 42.86% | 4.84% |
+
+All 1,236 Python files were analyzed, but 37 additional CWE-501 labels remain
+unscored. Evaluation therefore retains exit `3`; the full quality gate is unmet.
+Case/CWE matching does not adjudicate every emitted alert. Public templates are
+correlated and labels have not received independent maintainer adjudication.
+The five-positive SQL subset's 100% result must not be generalized.
+
+Pinned Juice Shop/DVWA source smoke checks report unsupported scope or other
+gaps and have no reviewed accuracy labels. Their accuracy remains unknown.
+No existing artifact establishes live AI model quality or calibrated confidence.
+
+## Work required beyond beta
+
+1. **Detection acceptance:** independently review labels and expand held-out
+   application data; prioritize false positives, missed flows and unsupported
+   CWE coverage using unchanged scoring contracts and paired controls.
+2. **Provider acceptance:** run bounded, separately recorded live API/Codex/Claude
+   checks, repeated quality evaluations and provider-specific isolation checks.
+   Account for unknown usage/cost instead of inferring free calls.
+3. **Agent reliability:** add durable per-turn checkpoints and controlled recovery
+   to the six-role CLI path; connect dashboard roles only with equivalent source,
+   permission and evidence contracts.
+4. **Operational acceptance:** measure latency, memory and recovery on fixed
+   hardware; record backup/restore outcomes and installation-specific RPO/RTO.
+   Project roles within one installation do not establish hosted tenant isolation.
+
+Source/bytecode heap modeling, exception-complete interprocedural analysis,
+reflection, dynamic routes and framework configuration remain bounded. See the
+[technical architecture](docs/architecture/technical-architecture.mdx).
+Static candidates, reachability, runtime observations and impact proof remain
+separate; AI output cannot promote their evidence state or authorize execution.
+
+The [commercial-readiness ledger](docs/project/commercial-readiness-plan.md)
+retains implementation history and the wider acceptance work.

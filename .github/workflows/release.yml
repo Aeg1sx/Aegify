@@ -60,6 +60,10 @@ jobs:
           version: "0.12.18"
           enable-cache: false
 
+      - name: Verify release versions and notes
+        id: metadata
+        run: python scripts/release_metadata.py "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Verify lockfile and build wheel
         working-directory: scanner
         run: |
@@ -76,7 +80,9 @@ jobs:
           upload-artifact: false
 
       - name: Generate release checksums
-        run: sha256sum scanner/dist/*.whl aegify-sbom.cdx.json > SHA256SUMS
+        run: |
+          cp scanner/dist/*.whl .
+          sha256sum ./*.whl aegify-sbom.cdx.json > SHA256SUMS
 
       - name: Attest release provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -89,10 +95,21 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          scanner/dist/*.whl
-          aegify-sbom.cdx.json
-          SHA256SUMS
-          --verify-tag
-          --generate-notes
+          RELEASE_NOTES: ${{ steps.metadata.outputs.notes }}
+          IS_PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+        run: |
+          releases="$(gh release list --limit 100 --json tagName,isDraft)"
+          draft="$(jq -r --arg tag "$GITHUB_REF_NAME" '.[] | select(.tagName == $tag) | .isDraft' <<<"$releases")"
+          case "$draft" in
+            "") gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+                  --title "Aegify $GITHUB_REF_NAME" --notes-file "$RELEASE_NOTES" ;;
+            true) ;; # Complete an existing reviewed draft for the signed tag.
+            *) echo "Refusing to replace an already published release" >&2; exit 1 ;;
+          esac
+          gh release upload "$GITHUB_REF_NAME" scanner/dist/*.whl \
+            aegify-sbom.cdx.json SHA256SUMS --clobber
+          latest=true
+          if [[ "$IS_PRERELEASE" == "true" ]]; then latest=false; fi
+          gh release edit "$GITHUB_REF_NAME" --draft=false --verify-tag \
+            --title "Aegify $GITHUB_REF_NAME" --notes-file "$RELEASE_NOTES" \
+            --prerelease="$IS_PRERELEASE" --latest="$latest"

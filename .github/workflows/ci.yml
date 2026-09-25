@@ -40,6 +40,7 @@ jobs:
         run: |
           python -m unittest discover -s scripts -p 'test_*.py'
           python scripts/verify_supply_chain.py
+          python scripts/release_metadata.py
 
   scanner:
     name: Scanner / Python 3.14

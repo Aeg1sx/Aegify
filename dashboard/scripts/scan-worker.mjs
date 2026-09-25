@@ -25,7 +25,7 @@ async function register() {
   if (registrationBusy) return;
   registrationBusy = true;
   try {
-    await prisma.scanWorker.upsert({ where: { id: workerId }, create: { id: workerId, version: "0.3.0", ruleFixturesVersion: 1 }, update: { lastSeenAt: new Date(), ruleFixturesVersion: 1 } });
+    await prisma.scanWorker.upsert({ where: { id: workerId }, create: { id: workerId, version: "0.3.0-beta.1", ruleFixturesVersion: 1 }, update: { lastSeenAt: new Date(), ruleFixturesVersion: 1 } });
     await writeFile("/tmp/aegify-worker-health", new Date().toISOString(), { mode: 0o600 });
   } finally { registrationBusy = false; }
 }

@@ -1,8 +1,8 @@
 # Contributing to Aegify
 
 Aegify welcomes focused fixes, language/framework models, rules, fixtures,
-documentation, and performance improvements. The project is alpha; changes
-should make uncertainty and evidence more visible rather than expanding claims.
+documentation, and performance improvements. The project is on the team self-hosting beta track; changes
+should preserve explicit uncertainty, reproducible evidence and the scoped release contract.
 
 ## Development checks
 

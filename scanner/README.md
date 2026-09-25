@@ -1,65 +1,50 @@
 # Aegify Scanner
 
-Alpha-stage white-box application security scanner with repository-aware
-program graphs, compiler-index integration, API/runtime attack-surface
-evidence, isolated verification, and optional LLM review.
+The Python analysis engine for Aegify's team self-hosting beta. Analyze source,
+retain call/data-flow evidence, export SARIF and optionally review findings with
+bounded AI source tools. The proposed first release is `v0.3.0-beta.1`
+(Python package `0.3.0b1`).
 
-## Quick Start
+## Install from source
+
+Requires Python 3.14+ and uv 0.12.18. From the repository root:
 
 ```bash
-pip install aegify-sast
-aegify scan ./src --severity high
+uv sync --locked --project scanner
+uv run --project scanner --locked aegify version
+uv run --project scanner --locked aegify scan /path/to/repository \
+  --no-llm --output json --output-file scan.json
+uv run --project scanner --locked aegify agent-run scan.json \
+  --mode deep --output-file agent-run.json
 ```
 
-## Features
+The scan and default agent command do not call a model. For a packaged wheel,
+use the verified assets from a published GitHub release. A GitHub release does
+not imply a package is available on PyPI.
 
-- Cross-file Call Graph analysis
-- Collision-safe multi-repository workspace scans
-- Cross-repository and cross-module reachability with fidelity-labeled SCIP,
-  exact Maven/Gradle artifact/provider-module, coarse build dependency, call,
-  data, framework, API, and runtime edges
-- Maven property/dependency-management and Gradle literal/default-version-catalog
-  dependency coordinates, promoted to exact selected versions by Gradle lockfiles,
-  with unresolved/ambiguous/version-conflict SARIF counters
-- Descriptor-safe Java/Kotlin overload resolution across local call graph,
-  CHA/RTA, Spring DI, and taint paths, including Kotlin defaults and varargs
-- Compiler-classpath bytecode call graph with opcode provenance, direct dispatch,
-  class/interface CHA candidates, inherited/default-method deduplication, and
-  allocation-aware RTA targets from `NEW` instructions, while preserving CHA
-  coverage; LambdaMetafactory/altMetafactory lambda and method-reference targets,
-  non-Lambda bootstrap evidence, and unresolved/ambiguous counters
-- Exact SCIP package/version ownership and cross-repository resolution with a
-  content-addressed persistent import cache and conflict/unresolved counters
-- Normalized program graph with branch/loop/switch/when and conservative
-  try/catch/finally CFG, call-site-preserving source-bounded call/return ICFG,
-  reaching-def DFG, SSA phi, data-state transformation, context-bounded JVM
-  source points-to/alias,
-  call, taint, and Spring overlays, with bounded callsite-balanced normal and
-  declared-exception return queries
-- Bounded global taint analysis with flow-sensitive locals, allocation-site
-  fields, k=2 call-string contexts, call argument/receiver/scalar-and-object-return
-  propagation, returned-object field identity, singleton heap strong updates,
-  category-scoped sanitizer state, and a versioned JVM library model pack
-- Spring/Kotlin component and `@Bean` DI with qualifier/primary/name/ambiguous
-  selection, profile/conditional evidence, exact module/provider-scoped
-  cross-repo dispatch, Security, transaction, coroutine/Reactor models, endpoint,
-  and Spring Cloud Gateway extraction
-- Frontend/Gateway/runtime HTTP call to backend endpoint correlation
-- CodeQL/SARIF, Semgrep JSON, and Joern JSONL/GraphSON evidence adapters
-- Browser/proxy HAR and OpenTelemetry trace evidence adapters
-- Active loopback intercepting proxy with method/path/query/header/body/JSON
-  mutation and value-redacted hash evidence
-- Digest-pinned isolated `scip-java index` and loopback HTTP verification plans
-- Approved no-network Maven/Gradle classpath exporter with deterministic bundle,
-  SHA/path/compression revalidation, safe materialization, and bytecode re-import
-- Executable YAML rule-schema auditing
-- Evidence-bound AI review suggestions that never auto-suppress findings
-- Allowlisted read-only AI tools and bounded multi-repository tool orchestration
-- Owned-corpus precision/recall/F1 benchmark gates
-- SARIF 2.1.0 output
-- GitHub PR integration
+## Analysis and review
 
-The alpha does not claim exhaustive source-and-bytecode heap points-to, IFDS/IDE
-tabulation, exception-complete interprocedural CFG, or autonomous browser
-exploit proof. Every fallback edge remains fidelity-labeled; see the
-repository-level readiness assessment before production use.
+- Python, JavaScript, TypeScript, Java, Kotlin, Go, Rust and Swift parsing.
+- Bounded taint, normalized program graphs, call paths and explicit analysis gaps.
+- Repository-qualified workspaces, SCIP import, JVM classpath/bytecode evidence
+  and Spring framework models.
+- JSON/SARIF output, stable evidence identity, executable YAML rule auditing and
+  reproducible case/fixture evaluation.
+- Six optional AI agent roles with bounded source list/search/read tools,
+  source-hash binding, citations, retained tool evidence and partial-result reporting.
+
+Candidate, reachable, runtime observed and impact proven are separate evidence
+states. AI review does not change human triage or establish exploit impact.
+The six-role CLI loop writes its artifact at completion; per-turn crash recovery
+and live-provider quality acceptance remain open.
+
+The latest retained public OWASP Python evaluation reports precision 68.37% and
+recall 49.31% over 1,193 scored case/CWE labels. Another 37 labels are unscored.
+It is a public diagnostic corpus, not an independent application holdout or an
+accuracy guarantee. Unmodeled frameworks, control flow, reflection and generated
+code remain coverage limits.
+
+See the [repository](https://github.com/Aeg1sx/Aegify),
+[quality assessment](https://github.com/Aeg1sx/Aegify/blob/main/QUALITY_ASSESSMENT.md),
+and [agent contract](https://github.com/Aeg1sx/Aegify/blob/main/docs/concepts/security-agents.mdx)
+for evidence, installation and operating boundaries.
