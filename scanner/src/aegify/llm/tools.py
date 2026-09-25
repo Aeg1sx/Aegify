@@ -277,7 +277,12 @@ def default_tool_registry() -> ToolRegistry:
             ToolSpec(
                 name="finding_context",
                 description="Return bounded code, taint, defense, and provenance evidence.",
-                input_schema={"type": "object", "required": ["finding_id"]},
+                input_schema={
+                    "type": "object",
+                    "properties": {"finding_id": {"type": "string"}},
+                    "required": ["finding_id"],
+                    "additionalProperties": False,
+                },
             ),
             _finding_context,
         ),
@@ -285,7 +290,12 @@ def default_tool_registry() -> ToolRegistry:
             ToolSpec(
                 name="call_path",
                 description="Return the static call chain attached to a finding.",
-                input_schema={"type": "object", "required": ["finding_id"]},
+                input_schema={
+                    "type": "object",
+                    "properties": {"finding_id": {"type": "string"}},
+                    "required": ["finding_id"],
+                    "additionalProperties": False,
+                },
             ),
             _call_path,
         ),
@@ -293,7 +303,7 @@ def default_tool_registry() -> ToolRegistry:
             ToolSpec(
                 name="attack_surface",
                 description="Return correlated endpoint, gateway, client, and runtime evidence.",
-                input_schema={"type": "object"},
+                input_schema={"type": "object", "properties": {}, "additionalProperties": False},
             ),
             _attack_surface,
         ),
@@ -301,7 +311,7 @@ def default_tool_registry() -> ToolRegistry:
             ToolSpec(
                 name="workspace_summary",
                 description="Return the multi-repository snapshot and semantic analysis summary.",
-                input_schema={"type": "object"},
+                input_schema={"type": "object", "properties": {}, "additionalProperties": False},
             ),
             _workspace_summary,
         ),
@@ -309,7 +319,12 @@ def default_tool_registry() -> ToolRegistry:
             ToolSpec(
                 name="harness_plan",
                 description="Create a non-executing, approval-gated validation plan.",
-                input_schema={"type": "object", "required": ["finding_id"]},
+                input_schema={
+                    "type": "object",
+                    "properties": {"finding_id": {"type": "string"}},
+                    "required": ["finding_id"],
+                    "additionalProperties": False,
+                },
             ),
             _harness_plan,
         ),

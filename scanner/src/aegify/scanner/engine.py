@@ -548,6 +548,8 @@ class ScanEngine:
                 module_path=ast.module_path
                 or self._relative_module_path(Path(ast.file_path), roots),
                 file_path=ast.file_path,
+                source_digest=ast.source_digest,
+                language=ast.language,
             )
             for ast in sorted(file_asts, key=lambda item: (item.repository_id, item.file_path))
         ]

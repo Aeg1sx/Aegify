@@ -100,10 +100,74 @@ write-capable tools are rejected. The MCP bridge accepts results only from an
 operator-configured allowlist, normalizes and redacts them, and stores input and
 output digests. It does not let a model discover or open arbitrary MCP servers.
 
-This pipeline currently makes one narrative call per stage using precollected
-evidence. Model-selected source reads belong to the separate
-[bounded AI review path](/analysis/ai-sast-operations); durable dashboard execution
-and a shared cost/usage receipt across all providers remain separate work.
+Without `--source-tools`, this pipeline makes one narrative call per stage using
+precollected evidence. With `--source-tools`, each role can select its next tool,
+inspect the result, and request more source before returning a narrative.
+
+### Source exploration from a saved scan
+
+Create the scan with a version that records per-file content hashes:
+
+```bash
+aegify scan ./repo --output json --output-file scan.json --no-llm
+aegify agent-run scan.json --provider openai-api --model gpt-5.5 \
+  --workspace ./repo --source-tools --max-agent-rounds 4 --max-agent-tools 12 \
+  --output-file agent-run.json
+```
+
+For a workspace scan, bind each repository ID from `analyzed_sources` explicitly.
+The checkout can move between scan and review jobs:
+
+```bash
+aegify agent-run workspace-scan.json --provider anthropic-api \
+  --source-tools --source-root api=./checkouts/api --source-root web=./checkouts/web \
+  --output-file agent-run.json
+```
+
+Single-repository scans use the `local` ID and default to `--workspace` as their
+source root. The scanner reads only admitted, repository-relative files whose
+language and content hash match the saved scan. Historical absolute paths never
+select reads. Symlinks, hidden paths, changed files, duplicate identities and
+unbound legacy records are unavailable. The retained catalog is immutable;
+subsequent tool calls use its redacted in-memory content. These hashes bind the
+contents of a trusted scan artifact; they do not authenticate its publisher.
+
+All six roles can request `source_list_files`, `source_search` and `source_read`,
+plus their existing role-scoped metadata tools. A search is literal, not executable
+code or a regular expression. Symbol indexes are not retained in saved scans, so
+this loop does not offer `source_symbols`. The broker runs no shell, network request
+or reviewed application. Dynamic and CVE roles can inspect source and existing
+evidence, but this loop cannot run their validation plans.
+
+Default limits per role are four model-call attempts, twelve tool requests
+(including cache hits), four requests per turn, 128 KiB of prompt material per
+call, 96 KiB of retained tool-result material and 64 KiB per structured reply.
+The final allowed round must return a narrative. Identical successful tool requests
+within a stage reuse evidence. The six-role maximum is therefore 24 model-call
+attempts by default; this is a call bound, not a token or monetary budget.
+Anthropic additionally enforces the configured shared token/call budget.
+
+Each stage's `exploration` retains the scan and source-manifest digests, source
+omission counts, configured limits, per-round input/output digests and duration,
+redacted tool arguments/results, cache use and selected source citations.
+Only citations issued by successful, untruncated reads/searches in that stage are
+accepted. Static and synthesis stages also report which finding locations are
+covered. Missing/forged citations, uncovered findings, catalog gaps and exhausted
+limits make the review partial. A valid citation identifies source that was read;
+it does not independently verify the model's claim or establish runtime impact.
+
+The API, Codex and Claude Code adapters carry the same iterative JSON contract.
+Native CLI configuration and isolation still require the controls described above:
+broker restrictions do not confine a CLI's inherited tools or integrations.
+Offline tests use scripted API transports and owned inert CLI programs, not live
+model services. Anthropic retains reported usage; other provider accounting and
+all monetary cost remain unverified.
+
+This flag currently applies to the scanner CLI. It does not replace the dashboard
+six-role worker or the separate [bounded finding review path](/analysis/ai-sast-operations).
+The CLI writes its artifact at the end and returns exit code `3` for partial review
+or pending approval. It does not provide durable per-turn checkpoints or automatic
+crash replay; retain the output as a CI artifact and inspect gaps before rerunning.
 
 Prompts are versioned and hashed. Repository content, tool results, issue text,
 and CVE descriptions are explicitly treated as untrusted data rather than

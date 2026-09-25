@@ -9,8 +9,10 @@ from typing import Any
 
 from aegify.agents.backends import AgentBackend, AgentBackendError, AnthropicAPIBackend
 from aegify.agents.catalog import AGENT_CATALOG, AgentSpec
+from aegify.agents.exploration import AgentSourceExplorer
 from aegify.agents.models import (
     AgentEvidence,
+    AgentExplorationLimits,
     AgentProvider,
     AgentRole,
     AgentRunMode,
@@ -29,7 +31,8 @@ from aegify.agents.models import (
 )
 from aegify.agents.tools import AgentToolCoordinator
 from aegify.evidence import MAX_CALL_PATH_STEPS, inspect_call_path
-from aegify.llm.tools import AnalysisToolContext, ToolRegistry
+from aegify.llm.sources import SourceCatalog
+from aegify.llm.tools import AnalysisToolContext, ToolRegistry, ToolResult
 from aegify.models import EndpointInfo, EvidenceState, Finding, ScanResult
 
 
@@ -41,9 +44,15 @@ class SecurityAgentPipeline:
         backend: AgentBackend | None = None,
         *,
         tool_registry: ToolRegistry | None = None,
+        source_tools: bool = False,
+        source_limits: AgentExplorationLimits | None = None,
     ) -> None:
+        if source_tools and backend is None:
+            raise ValueError("source tools require a model backend")
         self.backend = backend
         self.tools = AgentToolCoordinator(tool_registry)
+        self.source_tools = source_tools
+        self.source_limits = source_limits or AgentExplorationLimits()
 
     def run(
         self,
@@ -51,6 +60,7 @@ class SecurityAgentPipeline:
         *,
         mode: AgentRunMode = AgentRunMode.DEEP,
         cves: list[CveCandidate] | None = None,
+        sources: SourceCatalog | None = None,
     ) -> SecurityAgentRun:
         provider = self._provider()
         run = SecurityAgentRun(
@@ -62,6 +72,8 @@ class SecurityAgentPipeline:
         )
         evidence = self._evidence(scan)
         run.evidence = evidence
+        if self.source_tools and sources is not None:
+            sources = sources.bind_scan(scan)
         tool_context = AnalysisToolContext(
             findings={finding.id: finding for finding in scan.findings},
             workspace={
@@ -79,6 +91,7 @@ class SecurityAgentPipeline:
                     endpoint.model_dump(mode="json") for endpoint in scan.endpoints[:500]
                 ],
             },
+            sources=sources,
         )
         traces = [self._trace(finding, scan.endpoints, scan) for finding in scan.findings]
         stages = [
@@ -89,8 +102,9 @@ class SecurityAgentPipeline:
             self._synthesis(scan, traces),
             self._steward(scan, traces),
         ]
+        scan_digest = _digest(scan.model_dump_json()) if self.source_tools else ""
         for stage in stages:
-            run.evidence.extend(self._attach_narrative(stage, tool_context))
+            run.evidence.extend(self._attach_narrative(stage, tool_context, scan_digest))
             run.stages.append(stage)
         if isinstance(self.backend, AnthropicAPIBackend):
             run.token_usage = self.backend.client.budget.get_token_usage()
@@ -512,10 +526,18 @@ class SecurityAgentPipeline:
         self,
         stage: AgentStageResult,
         context: AnalysisToolContext,
+        scan_digest: str = "",
     ) -> list[AgentEvidence]:
         if self.backend is None:
             return []
         spec = AGENT_CATALOG[stage.role]
+        if self.source_tools:
+            tool_results = AgentSourceExplorer(self.tools.registry, self.source_limits).review(
+                self.backend, spec, stage, context, scan_digest
+            )
+            if stage.status != AgentStageStatus.WAITING_APPROVAL:
+                stage.completed_at = datetime.now(UTC)
+            return self._tool_evidence(tool_results)
         tool_results = self.tools.collect(spec, stage, context)
         payload = {
             "deterministic_summary": stage.summary,
@@ -532,12 +554,18 @@ class SecurityAgentPipeline:
                 stage.backend_error_code = error.code
             if stage.status == AgentStageStatus.COMPLETED:
                 stage.status = AgentStageStatus.PARTIAL
+        return self._tool_evidence(tool_results)
+
+    @staticmethod
+    def _tool_evidence(tool_results: list[ToolResult]) -> list[AgentEvidence]:
         return [
             AgentEvidence(
                 id=f"tool:{result.request_id}",
                 kind=EvidenceKind.TOOL,
                 producer=result.name,
-                summary=result.error or str(result.output.get("summary", "tool evidence")),
+                summary=(result.error or str(result.output.get("summary", "tool evidence")))[
+                    :4_000
+                ],
                 fidelity="read-only-tool",
                 source_ref=result.name,
                 digest=_digest(result.model_dump_json()),

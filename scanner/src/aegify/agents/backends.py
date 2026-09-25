@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,6 +52,13 @@ class AgentBackend(Protocol):
     def invoke(self, spec: AgentSpec, payload: Mapping[str, Any]) -> AgentNarrative: ...
 
 
+@runtime_checkable
+class AgentTurnBackend(Protocol):
+    def invoke_turn(
+        self, spec: AgentSpec, payload: Mapping[str, Any], schema: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+
 class AnthropicAPIBackend:
     provider_name = "anthropic_api"
 
@@ -59,9 +66,16 @@ class AnthropicAPIBackend:
         self.client = client
 
     def invoke(self, spec: AgentSpec, payload: Mapping[str, Any]) -> AgentNarrative:
+        return _validate_narrative(
+            self.invoke_turn(spec, payload, _narrative_schema()), require_all=True
+        )
+
+    def invoke_turn(
+        self, spec: AgentSpec, payload: Mapping[str, Any], schema: dict[str, Any]
+    ) -> dict[str, Any]:
         response = self.client.query(
             spec.system_prompt,
-            _prompt(payload),
+            _prompt(payload, schema),
             phase=f"agent:{spec.role.value}",
             max_tokens=4_096,
         )
@@ -70,7 +84,7 @@ class AnthropicAPIBackend:
                 self.client.budget.get_token_usage().last_error_code or "invalid_response",
                 "Model review is unavailable; inspect the call receipt for its outcome",
             )
-        return _validate_narrative(response, require_all=True)
+        return response
 
 
 class OpenAIResponsesBackend:
@@ -94,18 +108,27 @@ class OpenAIResponsesBackend:
         self.timeout_seconds = max(10, min(timeout_seconds, 300))
 
     def invoke(self, spec: AgentSpec, payload: Mapping[str, Any]) -> AgentNarrative:
+        return _validate_narrative(
+            self.invoke_turn(spec, payload, _narrative_schema()), require_all=True
+        )
+
+    def invoke_turn(
+        self, spec: AgentSpec, payload: Mapping[str, Any], schema: dict[str, Any]
+    ) -> dict[str, Any]:
         request_body = {
             "model": self.model,
             "instructions": spec.system_prompt,
-            "input": _prompt(payload),
+            "input": _prompt(payload, schema),
             "max_output_tokens": 4_096,
             "store": False,
             "text": {
                 "format": {
                     "type": "json_schema",
-                    "name": "aegify_agent_narrative",
+                    "name": "aegify_agent_turn"
+                    if "kind" in schema.get("properties", {})
+                    else "aegify_agent_narrative",
                     "strict": True,
-                    "schema": _narrative_schema(),
+                    "schema": schema,
                 }
             },
         }
@@ -137,7 +160,7 @@ class OpenAIResponsesBackend:
             raise AgentBackendError("provider_error", "OpenAI API unavailable") from None
         if len(raw) > 2_000_000:
             raise AgentBackendError("response_limit", "OpenAI API response exceeded byte limit")
-        return _openai_narrative(_json_object(raw))
+        return _openai_object(_json_object(raw))
 
 
 class CommandBackendConfig(BaseModel):
@@ -184,7 +207,14 @@ class CommandAgentBackend:
         self.provider_name = "codex_cli" if config.kind == "codex" else "claude_code"
 
     def invoke(self, spec: AgentSpec, payload: Mapping[str, Any]) -> AgentNarrative:
-        prompt = spec.system_prompt + "\n\nINPUT JSON:\n" + _prompt(payload)
+        return _validate_narrative(
+            self.invoke_turn(spec, payload, _narrative_schema()), require_all=True
+        )
+
+    def invoke_turn(
+        self, spec: AgentSpec, payload: Mapping[str, Any], schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        prompt = spec.system_prompt + "\n\nINPUT JSON:\n" + _prompt(payload, schema)
         environment = {
             key: os.environ[key] for key in self.config.inherit_environment if key in os.environ
         }
@@ -195,7 +225,7 @@ class CommandAgentBackend:
                 output_path = temp / "last-message.json"
                 schema_path = temp / "response.schema.json"
                 schema_path.write_text(
-                    json.dumps(_narrative_schema(), sort_keys=True),
+                    json.dumps(schema, sort_keys=True),
                     encoding="utf-8",
                 )
                 command = [
@@ -219,7 +249,7 @@ class CommandAgentBackend:
                 command.append("-")
                 self._run(command, prompt, environment, output_path=output_path)
                 message_bytes = _read_message_file(output_path, self.config.max_output_bytes)
-                return _validate_narrative(_json_object(message_bytes), require_all=True)
+                return _json_object(message_bytes)
             else:
                 command = [
                     self.executable,
@@ -252,7 +282,7 @@ class CommandAgentBackend:
                 raw = wrapper.get("result")
                 if not isinstance(raw, str):
                     raise AgentBackendError("invalid_response", "Claude Code result is not text")
-                return _validate_narrative(_json_object(raw), require_all=True)
+                return _json_object(raw)
 
     def _run(
         self,
@@ -396,6 +426,10 @@ def _validate_narrative(value: dict[str, Any], *, require_all: bool = False) -> 
 
 
 def _openai_narrative(envelope: dict[str, Any]) -> AgentNarrative:
+    return _validate_narrative(_openai_object(envelope), require_all=True)
+
+
+def _openai_object(envelope: dict[str, Any]) -> dict[str, Any]:
     status = envelope.get("status")
     if status == "incomplete":
         raise AgentBackendError("incomplete", "OpenAI response was incomplete")
@@ -432,7 +466,7 @@ def _openai_narrative(envelope: dict[str, Any]) -> AgentNarrative:
         raise AgentBackendError(
             "invalid_response", "OpenAI response needs one structured text part"
         )
-    return _validate_narrative(_json_object(content[0]["text"]), require_all=True)
+    return _json_object(content[0]["text"])
 
 
 def _check_message_file(path: Path, limit: int) -> None:
@@ -463,11 +497,11 @@ def _read_message_file(path: Path, limit: int) -> bytes:
     return raw
 
 
-def _prompt(payload: Mapping[str, Any]) -> str:
+def _prompt(payload: Mapping[str, Any], schema: dict[str, Any] | None = None) -> str:
     bounded = json.dumps(redact_sensitive(dict(payload)), sort_keys=True, default=str)
     if len(bounded.encode()) > 500_000:
         raise ValueError("agent input exceeds 500000 bytes")
-    schema = _narrative_schema()
+    schema = schema if schema is not None else _narrative_schema()
     return json.dumps(
         {"input": json.loads(bounded), "required_output_schema": schema},
         sort_keys=True,

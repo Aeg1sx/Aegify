@@ -9,12 +9,12 @@ import re
 import stat
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any
 
-from aegify.models import FileAST, Finding
+from aegify.models import FileAST, Finding, ScanResult
 
 MAX_SOURCE_FILES = 2_000
 MAX_FILE_BYTES = 512 * 1024
@@ -50,6 +50,7 @@ class SourceFile:
     symbols: tuple[SourceSymbol, ...]
     byte_count: int
     symbols_truncated: bool = False
+    symbols_available: bool = True
 
     def metadata(self) -> dict[str, Any]:
         return {
@@ -68,6 +69,99 @@ class SourceCatalog:
     files: Mapping[tuple[str, str], SourceFile]
     gap_counts: Mapping[str, int]
     manifest_digest: str
+
+    def bind_scan(self, scan: ScanResult) -> SourceCatalog:
+        """Check programmatic callers too; a catalog for a different scan is not evidence."""
+        identities = Counter(
+            (source.repository_id or "local", source.module_path)
+            for source in scan.analyzed_sources
+        )
+        expected = {
+            (source.repository_id or "local", source.module_path): source
+            for source in scan.analyzed_sources
+            if identities[(source.repository_id or "local", source.module_path)] == 1
+        }
+        entries = {}
+        gaps = Counter(self.gap_counts)
+        for identity, entry in self.files.items():
+            source = expected.get(identity)
+            if (
+                source is None
+                or source.language is None
+                or entry.source_digest != "sha256:" + source.source_digest
+                or entry.language != source.language.value
+            ):
+                gaps["source_scan_binding_mismatch"] += 1
+            else:
+                entries[identity] = replace(entry, scan_path=source.file_path)
+        missing = len(set(identities) - set(entries))
+        if missing:
+            gaps["source_manifest_files_unavailable"] = missing
+        if not expected:
+            gaps["source_manifest_unavailable"] = 1
+        digest = _digest(
+            json.dumps(
+                {"files": [entry.metadata() for entry in entries.values()], "gaps": gaps},
+                sort_keys=True,
+            )
+        )
+        return SourceCatalog(MappingProxyType(entries), MappingProxyType(dict(gaps)), digest)
+
+    @classmethod
+    def from_scan(cls, scan: ScanResult, roots: Mapping[str, Path]) -> SourceCatalog:
+        """Reopen only digest-bound parsed files, including relocated CI checkouts.
+
+        The scan artifact is trusted input. Its historical absolute paths never
+        select filesystem reads. Symbol declarations were not saved in that
+        artifact, so symbol queries report unavailable instead of an empty index.
+        """
+        identities = Counter(
+            (source.repository_id or "local", source.module_path)
+            for source in scan.analyzed_sources
+        )
+        gaps: Counter[str] = Counter()
+        asts: list[FileAST] = []
+        original_paths: dict[tuple[str, str], str] = {}
+        for source in scan.analyzed_sources:
+            repository = source.repository_id or "local"
+            identity = (repository, source.module_path)
+            root = roots.get(repository)
+            if identities[identity] != 1:
+                gaps["duplicate_source_identity"] += 1
+            elif (
+                root is None
+                or source.language is None
+                or not _SHA256.fullmatch(source.source_digest)
+            ):
+                gaps["unbound_source"] += 1
+            elif not _valid_path(source.module_path):
+                gaps["source_path_not_admitted"] += 1
+            else:
+                asts.append(
+                    FileAST(
+                        file_path=str(root.absolute() / source.module_path),
+                        language=source.language,
+                        repository_id=repository,
+                        module_path=source.module_path,
+                        source_digest=source.source_digest,
+                    )
+                )
+                original_paths[identity] = source.file_path
+        if not scan.analyzed_sources:
+            gaps["source_manifest_unavailable"] += 1
+        captured = cls.capture(asts, roots)
+        gaps.update(captured.gap_counts)
+        entries = {
+            identity: replace(entry, scan_path=original_paths[identity], symbols_available=False)
+            for identity, entry in captured.files.items()
+        }
+        digest = _digest(
+            json.dumps(
+                {"files": [entry.metadata() for entry in entries.values()], "gaps": gaps},
+                sort_keys=True,
+            )
+        )
+        return cls(MappingProxyType(entries), MappingProxyType(dict(gaps)), digest)
 
     @classmethod
     def capture(cls, asts: Sequence[FileAST], roots: Mapping[str, Path]) -> SourceCatalog:
@@ -281,6 +375,8 @@ class SourceCatalog:
 
     def symbols(self, arguments: dict[str, Any]) -> dict[str, Any]:
         selected = self._select(arguments)
+        if any(not entry.symbols_available for entry in selected):
+            raise ValueError("source_symbols_unavailable_for_restored_snapshot")
         query = _text(arguments, "query", 128)
         offset = _integer(arguments, "offset", 0, MAX_SOURCE_FILES * 200, default=0)
         page: list[dict[str, Any]] = []
@@ -304,6 +400,8 @@ def _valid_path(value: str) -> bool:
     path = PurePosixPath(value)
     return (
         0 < len(value) <= 1_024
+        and bool(path.parts)
+        and path.as_posix() == value
         and not path.is_absolute()
         and "\\" not in value
         and all(part not in ("", ".", "..") and not part.startswith(".") for part in path.parts)
