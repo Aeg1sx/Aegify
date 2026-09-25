@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from aegify import __version__
 from aegify.models import Finding, ScanResult, Severity
 
 # SARIF severity mapping
@@ -30,7 +31,7 @@ class SARIFReporter:
     SARIF_VERSION = "2.1.0"
     SCHEMA_URI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json"
     TOOL_NAME = "Aegify"
-    TOOL_VERSION = "0.3.0"
+    TOOL_VERSION = __version__
 
     def generate(
         self,

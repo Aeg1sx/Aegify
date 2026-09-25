@@ -206,7 +206,7 @@ export function Sidebar() {
       <div className="hidden p-3 border-t border-border space-y-1 md:block">
         <UserMenu />
         <ThemeToggle />
-        <p className="text-[10px] text-muted-foreground/50 px-3">v0.3.0</p>
+        <p className="text-[10px] text-muted-foreground/50 px-3">v0.3.0-beta.1</p>
       </div>
     </aside>
   );

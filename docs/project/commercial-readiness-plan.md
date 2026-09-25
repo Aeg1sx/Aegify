@@ -1,8 +1,11 @@
 # Commercial readiness workstream
 
 This is the implementation and acceptance ledger for the 2026-09-24 request.
-The product remains alpha until the evidence below supports a narrower, explicit
-release contract. Passing existing tests is not a commercial-readiness claim.
+The initial alpha work now supports a proposed, narrower team self-hosting beta
+contract; see [the current assessment](https://github.com/Aeg1sx/Aegify/blob/main/QUALITY_ASSESSMENT.md) and
+[beta release notes](../releases/v0.3.0-beta.1.md). Passing existing tests is not
+a commercial-readiness claim. Historical checkpoints below retain their original
+measurements and open items; later entries can supersede earlier implementation status.
 
 ## Release priority
 

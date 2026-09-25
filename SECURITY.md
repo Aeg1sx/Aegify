@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Aegify is currently alpha software. Security fixes are made on the latest
-release and the `main` branch; older releases are not guaranteed to receive
+Aegify is prerelease software on the team self-hosting beta track. Security fixes
+are made on the latest published prerelease/release and the `main` branch; older releases are not guaranteed to receive
 backports.
 
 ## Reporting a vulnerability
