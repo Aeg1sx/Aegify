@@ -71,13 +71,11 @@ jobs:
           uv audit --frozen
           uv build --wheel
 
-      - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
-        with:
-          path: scanner/dist
-          format: cyclonedx-json
-          output-file: aegify-sbom.cdx.json
-          upload-artifact: false
+      - name: Generate and verify complete locked CycloneDX SBOM
+        run: |
+          uv export --project scanner --locked --offline --format cyclonedx1.5 \
+            --all-extras --all-groups --output-file aegify-sbom.cdx.json --quiet
+          python scripts/verify_sbom.py aegify-sbom.cdx.json
 
       - name: Generate release checksums
         run: |
