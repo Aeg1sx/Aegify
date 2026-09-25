@@ -1,0 +1,139 @@
+name: Repair beta SBOM
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Replace the incomplete v0.3.0-beta.1 SBOM and checksums after verification
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-refs/tags/v0.3.0-beta.1
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: v0.3.0-beta.1
+      RELEASE_COMMIT: f8d544499dafee4ec0951c6912a4cf4348af030e
+      WHEEL: aegify_sast-0.3.0b1-py3-none-any.whl
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Check out reviewed correction tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out original release inputs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: f8d544499dafee4ec0951c6912a4cf4348af030e
+          path: original-source
+          persist-credentials: false
+
+      - name: Verify original tag and download published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          jq -e '.object.type == "tag"' <<<"$ref_json"
+          tag_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+          gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" \
+            | jq -e --arg commit "$RELEASE_COMMIT" \
+                '.verification.verified == true and .object.type == "commit" and .object.sha == $commit'
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease \
+            | jq -e '.isDraft == false and .isPrerelease == true'
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir original-assets \
+            --pattern "$WHEEL" --pattern aegify-sbom.cdx.json --pattern SHA256SUMS
+          gh attestation verify "original-assets/$WHEEL" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref "refs/tags/$RELEASE_TAG" --source-digest "$RELEASE_COMMIT" \
+            --deny-self-hosted-runners
+          cd original-assets
+          sha256sum -c SHA256SUMS
+          # Refuse to replace anything except the exact known incomplete asset set.
+          sha256sum -c <<'SUMS'
+          7d9095380830ac2e47e3c0d553126ac353d1cc84a5cfdec41186ee511a927b9f  aegify_sast-0.3.0b1-py3-none-any.whl
+          461eaa82f2d6c77dd52de990c35f0af21ec2ba97971d9fb2a429455fdaa5a117  aegify-sbom.cdx.json
+          455689afe170be7879706c584c5c5e89c70b59cdeaeef6ab4ff7108649419711  SHA256SUMS
+          SUMS
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.18"
+          enable-cache: false
+
+      - name: Generate and verify original release dependency inventory
+        run: |
+          mkdir corrected-assets
+          uv export --project original-source/scanner --locked --offline --format cyclonedx1.5 \
+            --all-extras --all-groups --output-file corrected-assets/aegify-sbom.cdx.json --quiet
+          python scripts/verify_sbom.py corrected-assets/aegify-sbom.cdx.json \
+            --project original-source/scanner
+          python scripts/prepare_sbom_correction.py
+          cp "original-assets/$WHEEL" corrected-assets/
+          cd corrected-assets
+          sha256sum "$WHEEL" aegify-sbom.cdx.json sbom-correction.json > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Retain original and corrected evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: beta-sbom-correction
+          path: |
+            original-assets/
+            corrected-assets/
+            corrected-release-notes.md
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attest corrected inventory and checksum manifest
+        if: inputs.publish
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            corrected-assets/aegify-sbom.cdx.json
+            corrected-assets/sbom-correction.json
+            corrected-assets/SHA256SUMS
+
+      - name: Publish and verify corrected assets
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            corrected-assets/aegify-sbom.cdx.json corrected-assets/sbom-correction.json \
+            corrected-assets/SHA256SUMS --clobber
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir verified-assets \
+            --pattern "$WHEEL" --pattern aegify-sbom.cdx.json --pattern sbom-correction.json \
+            --pattern SHA256SUMS
+          (cd verified-assets && sha256sum -c SHA256SUMS)
+          for asset in aegify-sbom.cdx.json sbom-correction.json SHA256SUMS; do
+            gh attestation verify "verified-assets/$asset" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/repair-beta-sbom.yml" \
+              --source-ref refs/heads/main --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --notes-file corrected-release-notes.md

@@ -42,6 +42,26 @@ jobs:
           python scripts/verify_supply_chain.py
           python scripts/release_metadata.py
 
+      - name: Set up uv for release inventory verification
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.18"
+          enable-cache: false
+
+      - name: Generate and verify complete locked CycloneDX SBOM
+        run: |
+          uv export --project scanner --locked --offline --format cyclonedx1.5 \
+            --all-extras --all-groups --output-file aegify-sbom.cdx.json --quiet
+          python scripts/verify_sbom.py aegify-sbom.cdx.json
+
+      - name: Upload verified release inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aegify-locked-sbom
+          path: aegify-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
   scanner:
     name: Scanner / Python 3.14
     runs-on: ubuntu-latest
