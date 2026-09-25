@@ -138,7 +138,14 @@ jobs:
           print("Two independent core benchmark processes agree on inputs, implementation and outcomes")
           PY
 
-      - name: Upload precision evidence
+      - name: Record fresh-process scanner performance
+        run: |
+          uv run python -m aegify.quality.performance --kind owned \
+            --target benchmarks/core-v1/sources \
+            --labels benchmarks/core-v1/ground-truth.json \
+            --repeats 2 --timeout 120 --output performance-report.json
+
+      - name: Upload precision and performance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -146,6 +153,7 @@ jobs:
           path: |
             scanner/benchmark-report.json
             scanner/benchmark-repeat.json
+            scanner/performance-report.json
           if-no-files-found: warn
           retention-days: 14
 

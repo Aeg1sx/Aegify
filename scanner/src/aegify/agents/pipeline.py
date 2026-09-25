@@ -9,6 +9,7 @@ from typing import Any
 
 from aegify.agents.backends import AgentBackend, AgentBackendError, AnthropicAPIBackend
 from aegify.agents.catalog import AGENT_CATALOG, AgentSpec
+from aegify.agents.checkpoint import CheckpointBackend
 from aegify.agents.exploration import AgentSourceExplorer
 from aegify.agents.models import (
     AgentEvidence,
@@ -108,6 +109,9 @@ class SecurityAgentPipeline:
             run.stages.append(stage)
         if isinstance(self.backend, AnthropicAPIBackend):
             run.token_usage = self.backend.client.budget.get_token_usage()
+        elif isinstance(self.backend, CheckpointBackend):
+            self.backend.finish()
+            run.token_usage = self.backend.token_usage()
         if any(stage.status == AgentStageStatus.WAITING_APPROVAL for stage in stages):
             run.status = AgentRunStatus.AWAITING_APPROVAL
         elif any(

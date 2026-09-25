@@ -9,26 +9,30 @@ from typing import Any
 
 from aegify.config import AegifyConfig
 from aegify.models import ScanStatus
-from aegify.quality.owasp import evaluate_cases, inventory_python_sources, read_labels
+from aegify.quality.owasp import evaluate_cases, inventory_sources, read_labels
 from aegify.quality.provenance import implementation_manifest, json_digest, peak_memory
 from aegify.scanner.engine import ScanEngine
 
 
 def run_owasp_python(root: Path, expected_results: Path) -> dict[str, Any]:
+    return run_owasp(root, expected_results, language="python")
+
+
+def run_owasp(root: Path, expected_results: Path, *, language: str) -> dict[str, Any]:
     """Run local source analysis without corpus configuration, code execution or AI."""
     started = time.monotonic()
-    sources, source_digest = inventory_python_sources(root)
+    sources, source_digest = inventory_sources(root, language=language)
     root = root.resolve()
     if expected_results.is_symlink() or not expected_results.is_file():
         raise ValueError("expected-results must be a regular file")
     if expected_results.stat().st_size > 4 * 1024 * 1024:
         raise ValueError("expected-results CSV exceeds 4 MiB")
     label_bytes = expected_results.read_bytes()
-    cases = read_labels(label_bytes)
+    cases = read_labels(label_bytes, language=language)
     # Construct trusted defaults without BaseSettings environment resolution.
     # Corpus .aegify.yml, custom rules, external storage and provider keys are unused.
     config = AegifyConfig.model_construct()
-    config.scan.languages = ["python"]
+    config.scan.languages = [language]
     # scan_files preserves repository-qualified ASTs and currently parses serially.
     config.scan.max_workers = 1
     config.scan.max_file_size_kb = 1024
@@ -40,7 +44,7 @@ def run_owasp_python(root: Path, expected_results: Path) -> dict[str, Any]:
     implementation = implementation_manifest(engine)
     result = engine.scan_files(root, [path.resolve() for path in sources])
     # Bind all source and auxiliary inputs, not just the parsed Python inventory.
-    if inventory_python_sources(root)[1] != source_digest:
+    if inventory_sources(root, language=language)[1] != source_digest:
         raise ValueError("benchmark corpus changed during analysis")
     if expected_results.read_bytes() != label_bytes:
         raise ValueError("benchmark labels changed during analysis")
@@ -62,9 +66,9 @@ def run_owasp_python(root: Path, expected_results: Path) -> dict[str, Any]:
         "config_digest": json_digest(config.model_dump(mode="json")),
         "implementation": implementation,
         "evaluated_rules": sorted(result.evaluated_rules),
-        "requested_python_files": len(sources),
-        "analyzed_python_files": result.files_scanned,
-        "python_parser_execution": "sequential_scan_files",
+        f"requested_{language}_files": len(sources),
+        f"analyzed_{language}_files": result.files_scanned,
+        f"{language}_parser_execution": "sequential_scan_files",
         "llm_enabled": False,
         "repository_code_executed": False,
     }

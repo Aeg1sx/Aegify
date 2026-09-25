@@ -1,0 +1,188 @@
+---
+title: "Beta quality acceptance"
+description: "Measured detection changes, external labels, live-provider conformance, recovery and scanner performance."
+---
+
+Updated 2026-09-26. `v0.3.0-beta.1` is published. The changes on this page are
+subsequent development work and are **not included in that release wheel**.
+They do not establish general availability or commercial accuracy.
+
+## Detection quality and external data
+
+Python taint extraction now uses bounded syntax parsing. Literal `{name}` and
+`$name` text does not read a variable; actual f-string fields do. Annotated
+assignments and `+=` preserve the assigned value and prior left-hand flow.
+The analyzed source is never evaluated or imported.
+
+The same 1,193 scored OWASP Python case/CWE labels give these results:
+
+| All-candidate scope | TP | FP | FN | TN | Precision | Recall |
+|---|---:|---:|---:|---:|---:|---:|
+| Main baseline | 214 | 99 | 220 | 660 | 68.37% | 49.31% |
+| Python syntax change | 215 | 94 | 219 | 665 | 69.58% | 49.54% |
+
+Two fresh processes produced identical candidate outcomes. Eight negative cases
+improve, three regress, and one missed positive is recovered. The new false
+positives are `BenchmarkTest00007`, `BenchmarkTest00073`, and
+`BenchmarkTest00520`: repaired `+=` propagation exposes guard semantics the
+solver does not model. The strict no-case-regressions check exits `1`.
+All 37 CWE-501 labels remain unscored, so the full evaluation also remains
+incomplete. Labels, scoring, rule thresholds and suppressions were unchanged.
+
+OWASP Java supplies a separately authored source and label set: 2,740 original
+labels, 2,766 Java files and the upstream license, pinned to
+`20cbf3d11123347e47ed89541e6942836def53f7`. Acquisition verifies the archive and
+every selected file. An optional deterministic subset takes ten cases per
+CWE/boolean-label group by case-name hash, retaining all helper Java sources.
+That gives 220 cases; it is a separate scope, not a full-corpus result.
+
+| Java all-candidate scope | Scored / labels | TP | FP | FN | TN | Precision | Recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Full acquired corpus | 2,614 / 2,740 | 282 | 60 | 1,050 | 1,222 | 82.46% | 21.17% |
+| Deterministic subset | 200 / 220 | 25 | 12 | 75 | 88 | 67.57% | 25.00% |
+
+Both scans completed without reported analysis gaps but retain exit `3` because
+126 full-corpus labels (20 subset labels) lack an executed rule for their CWE.
+The full run took 1,388.57 seconds including evaluation and peaked at 995.39 MiB
+RSS. It overlapped other diagnostic work, so this single observation is not a
+performance SLO. Java results are diagnostic only; no Java detector was tuned on
+this new corpus during this change.
+
+These are externally authored **public synthetic** datasets. They are not a
+private holdout or independent human adjudication. The next acceptance dataset
+needs application-level splits, provenance and license records, labels reviewed
+by someone who did not implement the detector, and recorded disagreements.
+Do not tune a detector on a set and subsequently call it unseen validation.
+
+The [retained evidence and reproduction instructions](https://github.com/Aeg1sx/Aegify/tree/main/scanner/benchmarks/beta-quality-v1)
+include per-case outcomes, unchanged labels' hashes, implementation identities,
+case regressions and measurement limitations. The prior records remain intact.
+
+## Live provider conformance
+
+Run the opt-in harness from a reviewed development checkout:
+
+```bash
+uv run --project scanner --locked python -m aegify.quality.provider_acceptance \
+  --provider codex --output /tmp/codex-acceptance.json
+
+# API checks require an explicit model ID and that provider's environment key.
+uv run --project scanner --locked python -m aegify.quality.provider_acceptance \
+  --provider openai-api --model MODEL_ID --output /tmp/openai-acceptance.json
+```
+
+The harness creates an owned three-line string-return fixture and adds a recorded
+conformance instruction to each role. Each role may make two model calls and one
+source read. Checks require a final structured reply, an executor-issued citation,
+unchanged deterministic facts and an explicit evidence gap. No reviewed application
+is run. The command is never invoked by ordinary CI.
+
+The retained Codex CLI `0.155.1` run passes all six roles with twelve calls in
+110.04 seconds. Manual inspection of the retained narratives confirms that the
+source comment requesting a false runtime-impact claim was treated as untrusted.
+This is one simple instruction-resistance observation, not a robustness rate.
+
+The provider-default model was not independently observed; native token usage
+and monetary cost are unavailable. The harness passes Codex `--ignore-user-config`
+while retaining authentication and execution rules, plus read-only sandbox,
+noninteractive approval, ephemeral-session and JSON-schema options. These flags
+do not by themselves prove filesystem or network isolation, or absence of native
+tool activity. See the [official CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
+
+Claude CLI was unavailable and API keys were absent in this environment. Their
+offline contracts remain tested; live acceptance is **not** claimed. The same
+harness supports `claude` and `anthropic-api` when configured. Detection quality,
+calibrated confidence, provider failure behavior and billing remain separate
+acceptance work.
+
+## Controlled agent recovery
+
+The development CLI supports a private provider-call checkpoint outside source
+roots. The parent directory must already exist; use a pinned, explicit model for
+CLI recovery:
+
+```bash
+uv run --project scanner --locked aegify agent-run /evidence/scan.json \
+  --provider codex --model MODEL_ID --ignore-user-config \
+  --workspace /work/repository --source-tools \
+  --checkpoint /evidence/review.checkpoint.json --output-file /evidence/review.json
+
+# Reissue the same command and inputs, adding --resume.
+uv run --project scanner --locked aegify agent-run /evidence/scan.json \
+  --provider codex --model MODEL_ID --ignore-user-config \
+  --workspace /work/repository --source-tools \
+  --checkpoint /evidence/review.checkpoint.json --resume \
+  --output-file /evidence/review.json
+```
+
+- Each dispatch is durably marked pending before contacting the provider. A
+  bounded, validated, redacted reply is saved atomically with `fsync` before use.
+- Resume replays saved replies without contacting the provider, and reconstructs
+  deterministic facts and allowlisted read-only tools from the scan. Full prompt
+  and tool-result digests must match. Replayed turns retain the same round/tool
+  limits. Anthropic's settled receipts and unknown reservations restore its budget.
+- Scan, CVE inputs, source manifest, selected model, Aegify configuration, limits,
+  implementation and CLI executable changes reject recovery. Native CLI config,
+  integrations, account identity and provider-side model revisions remain
+  operator-controlled; this is not a hermetic provider snapshot.
+- A pending dispatch means the request may already have been processed. Resume
+  refuses to retry it. Reconcile the provider outcome and retain that checkpoint;
+  a deliberate new run must use a new path and may incur duplicate usage.
+- A known provider stop is replayed as a stop, not retried. Corrupt files, changed
+  requests, persistence failures and incomplete replay prevent final publication.
+- The checkpoint and sibling lock require owner-only permissions, regular files
+  and a single hard link. A POSIX advisory lock excludes concurrent Aegify writers.
+  Treat the containing directory and its owner as trusted: the journal is not
+  encrypted, signed or safe to accept from another party. It may contain sensitive
+  model text despite redaction.
+
+Recovery rebuilds a new final artifact with new timestamps; it does not promise
+byte-identical run IDs, provider-side exactly-once execution, or dashboard worker
+parity. Retain checkpoint evidence privately, not as a public CI artifact.
+
+## Scanner performance
+
+The harness measures sequential, fresh-process scans with fixed input, labels,
+configuration, implementation and outcome identities:
+
+```bash
+uv run --project scanner --locked python -m aegify.quality.performance \
+  --kind owned --target scanner/benchmarks/core-v1/sources \
+  --labels scanner/benchmarks/core-v1/ground-truth.json \
+  --repeats 20 --timeout 120 --output /tmp/aegify-performance.json
+```
+
+`--kind owasp-python` and `--kind owasp-java` use the corresponding source/label
+contracts. Each worker has a process-group timeout. Any failed, partial, timed-out
+or changed sample invalidates the aggregate; failed samples are retained.
+CI records two core samples and uploads them alongside precision evidence.
+It gates completeness and repeatability, not a hardware-dependent latency target.
+
+On the recorded macOS arm64 host with twelve logical CPUs, twenty core runs had
+median end-to-end process time **1.198 s**, p95 **1.240 s**, median engine time
+**0.123 s** and maximum process RSS **73.19 MiB**. The files, labels, configuration,
+implementation and outcomes matched across all twenty runs. These figures cover
+the five-file owned fixture, not a normal application workload.
+
+Five sequential runs on the 246-file Java subset had median process time
+**28.686 s**, maximum/p95 **28.887 s**, median engine time **27.514 s**, and maximum
+RSS **154.70 MiB**. All five identities and outcome digests matched. The subset's
+twenty unscored labels remain a quality limitation even though performance samples
+are valid. Five samples cannot establish a reliable production tail percentile.
+
+Reports retain process wall time, engine scan time, process-lifetime peak RSS,
+median and nearest-rank p95. Below twenty samples, p95 is the maximum. Processes
+are fresh but the OS filesystem cache is not cleared. Core fixtures are tiny;
+their results do not describe large repositories or the complete deployed service.
+Queue latency, concurrent workers, database load, real provider tails, backup
+restore time and installation-specific RPO/RTO still need operational trials.
+
+## Next acceptance gates
+
+1. Model guard semantics conservatively and resolve the three new case regressions;
+   expand supported CWE coverage without changing labels or lowering thresholds.
+2. Independently adjudicate application labels and keep a frozen application holdout.
+3. Run configured API/Claude providers and repeated labeled AI review tasks with
+   observed model identities, usage receipts and provider-isolation evidence.
+4. Extend scanner measurements and recovery controls to realistic queue/database
+   load, concurrent workers, backup/restore and deployment-specific service targets.

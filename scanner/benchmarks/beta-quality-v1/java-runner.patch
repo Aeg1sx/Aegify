@@ -1,0 +1,219 @@
+--- a/scanner/src/aegify/cli.py
++++ b/scanner/src/aegify/cli.py
+@@ -336 +336 @@
+-    target: Annotated[Path, typer.Argument(help="Local OWASP Benchmark Python tree", exists=True)],
++    target: Annotated[Path, typer.Argument(help="Local OWASP Benchmark tree", exists=True)],
+@@ -347,0 +348 @@
++    language: Annotated[str, typer.Option("--language", help="python or java")] = "python",
+@@ -353 +354 @@
+-    from aegify.quality.owasp_runner import run_owasp_python
++    from aegify.quality.owasp_runner import run_owasp
+@@ -361 +362 @@
+-        report = run_owasp_python(target, expected_results)
++        report = run_owasp(target, expected_results, language=language)
+--- a/scanner/src/aegify/quality/owasp.py
++++ b/scanner/src/aegify/quality/owasp.py
+@@ -32,0 +33 @@
++    language: str = "python"
+@@ -35,0 +37,2 @@
++        if self.language == "java":
++            return f"src/main/java/org/owasp/benchmark/testcode/{self.name}.java"
+@@ -39,2 +42,4 @@
+-def read_labels(material: bytes) -> list[BenchmarkCase]:
+-    """Read strict upstream Python CSV labels without importing corpus code."""
++def read_labels(material: bytes, *, language: str = "python") -> list[BenchmarkCase]:
++    """Read strict upstream CSV labels without importing corpus code."""
++    if language not in {"python", "java"}:
++        raise ValueError("benchmark language must be python or java")
+@@ -61 +66 @@
+-        cases.append(BenchmarkCase(name, category, positive == "true", int(cwe)))
++        cases.append(BenchmarkCase(name, category, positive == "true", int(cwe), language))
+@@ -143,0 +149,4 @@
++    languages = {case.language for case in cases}
++    if len(languages) != 1 or not languages <= {"python", "java"}:
++        raise ValueError("benchmark cases must use one supported language")
++    language = next(iter(languages))
+@@ -234,2 +243,2 @@
+-        "evaluation": "owasp-python-exact-case-cwe-v1",
+-        "language": "python",
++        "evaluation": f"owasp-{language}-exact-case-cwe-v1",
++        "language": language,
+@@ -263,0 +273,8 @@
++    return inventory_sources(root, language="python")
++
++
++def inventory_sources(root: Path, *, language: str) -> tuple[list[Path], str]:
++    """Hash all corpus inputs and select one explicit source language."""
++    if language not in {"python", "java"}:
++        raise ValueError("benchmark language must be python or java")
++    suffix = ".py" if language == "python" else ".java"
+@@ -279 +296 @@
+-        size_limit = (1 if path.suffix == ".py" else 8) * 1024 * 1024
++        size_limit = (1 if path.suffix == suffix else 8) * 1024 * 1024
+@@ -291 +308 @@
+-        if path.suffix == ".py":
++        if path.suffix == suffix:
+@@ -294 +311 @@
+-        raise ValueError("benchmark corpus has no Python inputs")
++        raise ValueError(f"benchmark corpus has no {language.title()} inputs")
+--- a/scanner/src/aegify/quality/owasp_runner.py
++++ b/scanner/src/aegify/quality/owasp_runner.py
+@@ -12 +12 @@
+-from aegify.quality.owasp import evaluate_cases, inventory_python_sources, read_labels
++from aegify.quality.owasp import evaluate_cases, inventory_sources, read_labels
+@@ -17,0 +18,4 @@
++    return run_owasp(root, expected_results, language="python")
++
++
++def run_owasp(root: Path, expected_results: Path, *, language: str) -> dict[str, Any]:
+@@ -20 +24 @@
+-    sources, source_digest = inventory_python_sources(root)
++    sources, source_digest = inventory_sources(root, language=language)
+@@ -27 +31 @@
+-    cases = read_labels(label_bytes)
++    cases = read_labels(label_bytes, language=language)
+@@ -31 +35 @@
+-    config.scan.languages = ["python"]
++    config.scan.languages = [language]
+@@ -43 +47 @@
+-    if inventory_python_sources(root)[1] != source_digest:
++    if inventory_sources(root, language=language)[1] != source_digest:
+@@ -65,3 +69,3 @@
+-        "requested_python_files": len(sources),
+-        "analyzed_python_files": result.files_scanned,
+-        "python_parser_execution": "sequential_scan_files",
++        f"requested_{language}_files": len(sources),
++        f"analyzed_{language}_files": result.files_scanned,
++        f"{language}_parser_execution": "sequential_scan_files",
+--- /dev/null
++++ b/scanner/src/aegify/scanner/python_values.py
+@@ -0,0 +1,101 @@
++"""Bounded Python syntax inspection; no imports or source evaluation."""
++
++from __future__ import annotations
++
++import ast
++import textwrap
++from functools import lru_cache
++
++_MAX_TEXT = 16_384
++_MAX_NODES = 4_096
++
++
++def _name(node: ast.AST) -> str | None:
++    parts: list[str] = []
++    while isinstance(node, ast.Attribute):
++        parts.append(node.attr)
++        node = node.value
++    if isinstance(node, ast.Name):
++        return ".".join([node.id, *reversed(parts)])
++    return None
++
++
++@lru_cache(maxsize=512)
++def expression_accesses(expression: str) -> tuple[str, ...] | None:
++    """Return actual reads, including f-string fields but excluding literal text.
++
++    None leaves unsupported/oversized expressions to the conservative fallback.
++    A call's function name is not a value read; its receiver and arguments are.
++    """
++    if len(expression) > _MAX_TEXT:
++        return None
++    try:
++        try:
++            tree = ast.parse(expression.strip(), mode="eval")
++        except SyntaxError:
++            # Call argument excerpts may contain keyword or unpacking syntax.
++            tree = ast.parse(f"_({expression})", mode="eval")
++    except SyntaxError, ValueError, RecursionError:
++        return None
++    pending: list[ast.AST] = [tree]
++    reads: list[str] = []
++    visited = 0
++    while pending:
++        visited += 1
++        if visited > _MAX_NODES:
++            return None
++        node = pending.pop()
++        if isinstance(node, ast.Call):
++            if isinstance(node.func, ast.Attribute):
++                pending.append(node.func.value)
++            elif not isinstance(node.func, ast.Name):
++                pending.append(node.func)
++            pending.extend(node.args)
++            pending.extend(keyword.value for keyword in node.keywords)
++        elif isinstance(node, ast.Name | ast.Attribute):
++            name = _name(node)
++            if name is not None:
++                if name not in reads:
++                    reads.append(name)
++            else:
++                pending.extend(ast.iter_child_nodes(node))
++        else:
++            pending.extend(ast.iter_child_nodes(node))
++    return tuple(reads)
++
++
++@lru_cache(maxsize=512)
++def assignment(code: str) -> tuple[str, str] | None:
++    """Select the assigned value, not its annotation or an embedded '=' string.
++
++    This retains the solver's last-target convention for chained assignments.
++    Destructuring and control-flow joins need separate models.
++    """
++    if len(code) > _MAX_TEXT:
++        return None
++    source = textwrap.dedent(code).strip()
++    try:
++        tree = ast.parse(source)
++    except SyntaxError, ValueError, RecursionError:
++        return None
++    if len(tree.body) != 1:
++        return None
++    statement = tree.body[0]
++    if isinstance(statement, ast.Assign):
++        target = statement.targets[-1]
++        value: ast.expr | None = statement.value
++    elif isinstance(statement, ast.AnnAssign | ast.AugAssign):
++        target = statement.target
++        value = statement.value
++    else:
++        return None
++    name = _name(target)
++    if name is None or value is None:
++        return None
++    rhs = ast.get_source_segment(source, value)
++    if rhs is None:
++        return None
++    if isinstance(statement, ast.AugAssign):
++        # The read set includes the prior left-hand value for every augmented op.
++        rhs = f"({name}, {rhs})"
++    return name, rhs
+--- a/scanner/src/aegify/scanner/taint_v2.py
++++ b/scanner/src/aegify/scanner/taint_v2.py
+@@ -24,0 +25 @@
++    Language,
+@@ -31,0 +33,2 @@
++from aegify.scanner.python_values import assignment as python_assignment
++from aegify.scanner.python_values import expression_accesses as python_accesses
+@@ -532 +535 @@
+-            assignment = self._assignment(statement.code)
++            assignment = self._assignment(statement.code, context.ast.language)
+@@ -1012 +1015 @@
+-        for access in self._accesses(expression):
++        for access in self._accesses(expression, context.ast.language):
+@@ -1093 +1096 @@
+-        for access in self._accesses(expression):
++        for access in self._accesses(expression, context.ast.language):
+@@ -1257 +1260,3 @@
+-    def _assignment(cls, code: str) -> tuple[str, str] | None:
++    def _assignment(cls, code: str, language: Language | None = None) -> tuple[str, str] | None:
++        if language == Language.PYTHON:
++            return python_assignment(code)
+@@ -1285 +1290,5 @@
+-    def _accesses(cls, expression: str) -> list[str]:
++    def _accesses(cls, expression: str, language: Language | None = None) -> list[str]:
++        if language == Language.PYTHON:
++            parsed = python_accesses(expression)
++            if parsed is not None:
++                return list(parsed)

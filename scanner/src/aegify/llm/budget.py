@@ -260,3 +260,50 @@ class TokenBudget:
                 last_error_code=self._last_error,
                 calls=[call.model_copy(deep=True) for call in self._calls],
             )
+
+    def restore_usage(self, usage: TokenUsage) -> None:
+        """Restore settled native receipts into a fresh budget without replenishing it."""
+        with self._lock:
+            if self._calls or self.total_used or self._legacy_usage or self._pending:
+                raise ValueError("usage restoration requires an unused budget")
+            if (
+                usage.usage_status == "legacy"
+                or len(usage.calls) > self.max_calls
+                or len({call.id for call in usage.calls}) != len(usage.calls)
+                or any(call.state == "dispatched" for call in usage.calls)
+            ):
+                raise ValueError("usage restoration requires bounded settled native receipts")
+            candidate = TokenBudget(self.total_budget, self.max_calls)
+            candidate._calls = [call.model_copy(deep=True) for call in usage.calls]
+            for call in usage.calls:
+                counters = call.reported_usage
+                candidate.input_tokens_used += counters.get("input_tokens", 0)
+                candidate.output_tokens_used += counters.get("output_tokens", 0)
+                candidate._cache_creation += counters.get("cache_creation_input_tokens", 0)
+                candidate._cache_read += counters.get("cache_read_input_tokens", 0)
+                candidate._prompt_bytes += call.prompt_bytes
+                candidate._output_requested += call.requested_output_tokens
+                if call.usage_status != "reported":
+                    candidate._unknown_reservations += max(
+                        0,
+                        call.estimated_input_tokens
+                        + call.requested_output_tokens
+                        - sum(counters.values()),
+                    )
+            candidate._rejected = usage.calls_rejected_before_dispatch
+            candidate._last_error = usage.last_error_code
+            if candidate.get_token_usage() != usage:
+                raise ValueError("usage snapshot disagrees with native receipts")
+            for name in (
+                "input_tokens_used",
+                "output_tokens_used",
+                "_cache_creation",
+                "_cache_read",
+                "_unknown_reservations",
+                "_prompt_bytes",
+                "_output_requested",
+                "_rejected",
+                "_last_error",
+                "_calls",
+            ):
+                setattr(self, name, getattr(candidate, name))

@@ -1,7 +1,7 @@
 # Commercial readiness workstream
 
 This is the implementation and acceptance ledger for the 2026-09-24 request.
-The initial alpha work now supports a proposed, narrower team self-hosting beta
+The initial alpha work now supports a published, narrower team self-hosting beta
 contract; see [the current assessment](https://github.com/Aeg1sx/Aegify/blob/main/QUALITY_ASSESSMENT.md) and
 [beta release notes](../releases/v0.3.0-beta.1.md). Passing existing tests is not
 a commercial-readiness claim. Historical checkpoints below retain their original
@@ -1056,3 +1056,25 @@ Live Codex/Claude compatibility and configuration isolation, shared provider usa
 and prices, durable CLI recovery, dashboard six-role integration and independently
 labeled agent-quality evaluation remain open. The public-corpus quality gates
 are unchanged. This checkpoint does not establish commercial readiness.
+## 2026-09-26 development acceptance update
+
+The published `v0.3.0-beta.1` and corrected dependency-complete scanner SBOM are
+separate from the subsequent development changes below. The detailed current
+record is [beta quality acceptance](https://github.com/Aeg1sx/Aegify/blob/main/docs/project/beta-quality-acceptance.mdx); older checkpoints
+in this ledger retain their historical meaning.
+
+- Python syntax-aware taint fixes reduce public OWASP case false positives from
+  99 to 94 and false negatives from 220 to 219. Two frozen-source replays agree.
+  Three newly exposed guard-related false positives keep the strict per-case
+  non-regression gate red; 37 unscored CWE-501 labels still prevent full acceptance.
+- External data acquisition now pins all 2,740 original Java labels and 2,766 Java
+  sources, with archive and per-file hashes. Public synthetic data does not replace
+  independent adjudication or private application-level holdouts.
+- Actual Codex CLI conformance passes six roles and twelve calls on an inert owned
+  source fixture. API/Claude live acceptance, quality calibration and billing remain open.
+- CLI provider-call checkpoints support explicit replay, immutable input binding,
+  crash/disk-failure stops and restored Anthropic budget receipts. Pending calls
+  never retry automatically; dashboard role parity is not implied.
+- Fresh-process scanner latency/RSS measurement retains failures and checks
+  reproducibility. CI uploads two-run evidence without asserting a timing SLO.
+  Queue/database load, concurrent workers and deployment RPO/RTO remain open.

@@ -80,6 +80,25 @@ def _save(path: Path, report: dict) -> dict:
     return load_owasp_report(path)
 
 
+def test_java_replay_binds_language_paths_and_file_counts(tmp_path: Path) -> None:
+    report = _report(tmp_path, {0})
+    report.update(language="java", evaluation="owasp-java-exact-case-cwe-v1")
+    for case in report["cases"]:
+        case["file_path"] = f"src/main/java/org/owasp/benchmark/testcode/{case['case']}.java"
+    report["outcomes_digest"] = json_digest(report["cases"])
+    for key in ("requested_python_files", "analyzed_python_files", "python_parser_execution"):
+        report["provenance"][key.replace("python", "java")] = report["provenance"].pop(key)
+    saved = _save(tmp_path / "java.json", report)
+    compared = compare_owasp_reports(saved, saved, require_identical=True)
+    assert compared["identical_replay"] and compared["comparison"] == "owasp-java-paired-v1"
+    with pytest.raises(ValueError, match="different languages"):
+        compare_owasp_reports(saved, _save(tmp_path / "python.json", _report(tmp_path, {0})))
+    report["cases"][0]["file_path"] = "testcode/BenchmarkTest00000.py"
+    report["outcomes_digest"] = json_digest(report["cases"])
+    with pytest.raises(ValueError, match="report language"):
+        _save(tmp_path / "mixed.json", report)
+
+
 def test_paired_gate_catches_case_swaps_hidden_by_identical_aggregate_metrics(
     tmp_path: Path,
 ) -> None:
@@ -313,6 +332,38 @@ def test_committed_baselines_validate_without_rewriting_archived_evidence(
     report = load_owasp_report(corpus / json_name, corpus / csv_name)
     assert len(report["cases"]) == 1230
     assert compare_owasp_reports(report, report, require_identical=True)["exit_code"] == 3
+
+
+@pytest.mark.parametrize(
+    "name,count",
+    [
+        ("python-baseline", 1230),
+        ("python-candidate", 1230),
+        ("python-repeat", 1230),
+        ("java-full", 2740),
+        ("java-sample", 220),
+    ],
+)
+def test_new_acceptance_evidence_keeps_all_cases_and_partial_coverage(name: str, count: int):
+    corpus = Path(__file__).resolve().parents[1] / "benchmarks/beta-quality-v1"
+    report = load_owasp_report(corpus / f"{name}.json", corpus / f"{name}-cases.csv")
+    assert len(report["cases"]) == count
+    assert compare_owasp_reports(report, report, require_identical=True)["exit_code"] == 3
+
+
+def test_saved_python_improvement_does_not_hide_new_case_regressions():
+    corpus = Path(__file__).resolve().parents[1] / "benchmarks/beta-quality-v1"
+    reports = [
+        load_owasp_report(corpus / f"{name}.json", corpus / f"{name}-cases.csv")
+        for name in ("python-baseline", "python-candidate")
+    ]
+    comparison = compare_owasp_reports(*reports)
+    assert comparison["exit_code"] == 1 and not comparison["regression_free"]
+    assert comparison["channels"]["all_candidates"]["regressed_cases"] == [
+        "BenchmarkTest00007",
+        "BenchmarkTest00073",
+        "BenchmarkTest00520",
+    ]
 
 
 def test_cli_writes_changed_case_evidence_and_preserves_exit_codes(tmp_path: Path) -> None:

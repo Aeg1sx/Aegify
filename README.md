@@ -14,8 +14,9 @@ need source-grounded triage and remediation suggestions.
 [Releases](https://github.com/Aeg1sx/Aegify/releases) ·
 [Quality assessment](QUALITY_ASSESSMENT.md) · [Security policy](SECURITY.md)
 
-> **Release track: team self-hosting beta.** The proposed first release is
-> `v0.3.0-beta.1`. Use it for evaluated internal deployments with human review.
+> **Release track: team self-hosting beta.**
+> [v0.3.0-beta.1 is published](https://github.com/Aeg1sx/Aegify/releases/tag/v0.3.0-beta.1).
+> Use it for evaluated internal deployments with human review.
 > Detection coverage, live AI-provider behavior, and operational performance
 > still have acceptance gaps. The [release notes](docs/releases/v0.3.0-beta.1.md)
 > define the scope; the Releases page is authoritative for publication status.
@@ -36,8 +37,10 @@ need source-grounded triage and remediation suggestions.
 | **Operate an internal installation** | Containerized workers, encrypted retained AI evidence, database migrations, encrypted backups and restore controls |
 
 The dashboard's durable finding investigations and the six-role CLI source loop
-are separate workflows. The CLI loop does not yet checkpoint each turn or resume
-after a crash. See the [agent contract](docs/concepts/security-agents.mdx) and
+are separate workflows. The development checkout adds opt-in CLI call checkpoints
+and explicit recovery; these changes are not in the published beta. See the
+[acceptance record](docs/project/beta-quality-acceptance.mdx),
+[agent contract](docs/concepts/security-agents.mdx) and
 [AI review workflow](docs/analysis/ai-sast-operations.mdx).
 
 ## Run your first scan
@@ -140,11 +143,19 @@ leave gaps. See the [technical architecture](docs/architecture/technical-archite
 and [semantic analysis contract](docs/analysis/semantic-analysis.mdx).
 
 The latest retained public OWASP Benchmark Python measurement scored **1,193
-cases**: **68.37% precision**, **49.31% recall** (214 TP, 99 FP, 220 FN, 660 TN).
+cases**: **69.58% precision**, **49.54% recall** (215 TP, 94 FP, 219 FN, 665 TN).
 Another 37 CWE-501 cases are unscored, so the overall evaluation remains partial.
 This is a public synthetic case/CWE evaluation, not an independent application
 holdout or a precision estimate for every emitted finding.
-[Corpus, provenance and replay instructions](scanner/benchmarks/sql-expressions-v1/README.md).
+The change removes eight false-positive cases, introduces three, and recovers one
+missed case. The strict no-case-regressions gate remains unmet; aggregate gains
+are not a clean acceptance result.
+[Corpus, case changes and replay instructions](scanner/benchmarks/beta-quality-v1/README.md).
+
+The same acceptance record includes a separately authored Java corpus with 2,740
+upstream labels, a live Codex CLI conformance run (six roles, twelve calls), and
+fresh-process performance tooling. Public benchmarks are not private application
+holdouts, and provider conformance is not AI detection accuracy.
 
 The separate owned `core-v1` corpus has 9 TP, 0 FP and 0 FN across five scoped
 rules. Its passing gate does not generalize to whole-product accuracy. Current

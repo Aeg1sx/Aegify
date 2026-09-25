@@ -333,7 +333,7 @@ def rules() -> None:
 
 @app.command("benchmark-owasp")
 def benchmark_owasp(
-    target: Annotated[Path, typer.Argument(help="Local OWASP Benchmark Python tree", exists=True)],
+    target: Annotated[Path, typer.Argument(help="Local OWASP Benchmark tree", exists=True)],
     expected_results: Annotated[
         Path, typer.Option("--expected-results", help="Official case-label CSV", exists=True)
     ],
@@ -345,12 +345,13 @@ def benchmark_owasp(
     blocking_only: Annotated[
         bool, typer.Option("--blocking-only", help="Apply quality thresholds to blocking findings")
     ] = False,
+    language: Annotated[str, typer.Option("--language", help="python or java")] = "python",
 ) -> None:
     """Statically evaluate exact case/CWE labels; never run benchmark applications."""
     import csv
 
     from aegify.quality.artifacts import write_report
-    from aegify.quality.owasp_runner import run_owasp_python
+    from aegify.quality.owasp_runner import run_owasp
 
     try:
         if (
@@ -358,7 +359,7 @@ def benchmark_owasp(
             or output_file.resolve() == expected_results.resolve()
         ):
             raise ValueError("output report must be outside the benchmark corpus and label file")
-        report = run_owasp_python(target, expected_results)
+        report = run_owasp(target, expected_results, language=language)
         write_report(output_file, json.dumps(report, indent=2))
     except (OSError, UnicodeError, ValueError, csv.Error) as error:
         _benchmark_error("Invalid or changed benchmark input:", error)
@@ -1389,6 +1390,20 @@ def agent_run(
             "--max-agent-tools", min=0, max=30, help="Tool requests per role, including cache hits"
         ),
     ] = 12,
+    checkpoint: Annotated[
+        Path | None,
+        typer.Option("--checkpoint", help="Private durable call journal outside source roots"),
+    ] = None,
+    resume: Annotated[
+        bool, typer.Option("--resume", help="Replay a matching checkpoint before new calls")
+    ] = False,
+    ignore_user_config: Annotated[
+        bool,
+        typer.Option(
+            "--ignore-user-config",
+            help="Codex only: omit user config; keep authentication and rules",
+        ),
+    ] = False,
 ) -> None:
     """Run the six-agent pipeline from an immutable Aegify scan artifact."""
     from pydantic import TypeAdapter, ValidationError
@@ -1400,6 +1415,7 @@ def agent_run(
         CommandBackendConfig,
         OpenAIResponsesBackend,
     )
+    from aegify.agents.checkpoint import CheckpointBackend
     from aegify.agents.models import (
         AgentExplorationLimits,
         AgentRunMode,
@@ -1410,6 +1426,8 @@ def agent_run(
     from aegify.llm.budget import TokenBudget
     from aegify.llm.client import LLMClient
     from aegify.llm.sources import SourceCatalog
+    from aegify.quality.artifacts import write_report
+    from aegify.quality.provenance import _code_digest
 
     if mode not in {"lite", "deep"}:
         console.print("[red]--mode must be lite or deep[/red]")
@@ -1429,6 +1447,32 @@ def agent_run(
     if source_root and not source_tools:
         console.print("[red]--source-root requires --source-tools[/red]")
         raise typer.Exit(code=2)
+    if resume and checkpoint is None or checkpoint is not None and provider == "deterministic":
+        console.print(
+            "[red]--resume requires --checkpoint; checkpoint requires a model provider[/red]"
+        )
+        raise typer.Exit(code=2)
+    if ignore_user_config and provider != "codex":
+        console.print("[red]--ignore-user-config requires --provider codex[/red]")
+        raise typer.Exit(code=2)
+    if checkpoint is not None and provider in {"codex", "claude"} and not model:
+        console.print("[red]CLI checkpoint recovery requires an explicit --model[/red]")
+        raise typer.Exit(code=2)
+    if checkpoint is not None:
+        forbidden = [scan_result_file, cve_file, output_file]
+        checkpoint_paths = {checkpoint.resolve(), Path(str(checkpoint) + ".lock").resolve()}
+        source_directories = [workspace] + [
+            Path(value.partition("=")[2]) for value in source_root or []
+        ]
+        if any(
+            path is not None and path.resolve() in checkpoint_paths for path in forbidden
+        ) or any(
+            checkpoint.resolve().is_relative_to(path.resolve()) for path in source_directories
+        ):
+            console.print(
+                "[red]Checkpoint must be separate from inputs, output and source roots[/red]"
+            )
+            raise typer.Exit(code=2)
     try:
         if scan_result_file.stat().st_size > 100_000_000:
             raise ValueError("scan result exceeds 100 MB")
@@ -1505,6 +1549,7 @@ def agent_run(
                     kind=provider,
                     executable=provider,
                     model=model,
+                    ignore_user_config=ignore_user_config,
                 ),
                 workspace,
             )
@@ -1512,7 +1557,36 @@ def agent_run(
             console.print(f"[red]Agent provider unavailable: {error}[/red]")
             raise typer.Exit(code=2) from error
 
+    journal: CheckpointBackend | None = None
     try:
+        if checkpoint is not None:
+            assert backend is not None
+            executable_digest = None
+            if isinstance(backend, CommandAgentBackend):
+                import hashlib
+
+                with Path(backend.executable).open("rb") as executable_file:
+                    executable_digest = hashlib.file_digest(executable_file, "sha256").hexdigest()
+            identity = {
+                "scan": scan_result.model_dump(mode="json"),
+                "cves": [candidate.model_dump(mode="json") for candidate in candidates],
+                "provider": provider,
+                "model": getattr(backend, "model", model_client.model if model_client else model),
+                "command": backend.config.model_dump()
+                if isinstance(backend, CommandAgentBackend)
+                else None,
+                "executable_digest": executable_digest,
+                "workspace": str(workspace.resolve()),
+                "source_catalog": sources.summary() if sources else None,
+                "mode": mode,
+                "source_tools": source_tools,
+                "max_rounds": max_agent_rounds,
+                "max_tools": max_agent_tools,
+                "configuration": config.model_dump(mode="json", exclude={"anthropic_api_key"}),
+                "implementation": _code_digest(Path(__file__).parent, {".py", ".yaml", ".yml"}),
+            }
+            journal = CheckpointBackend(backend, checkpoint, identity=identity, resume=resume)
+            backend = journal
         run = SecurityAgentPipeline(
             backend,
             source_tools=source_tools,
@@ -1525,16 +1599,18 @@ def agent_run(
             cves=candidates,
             sources=sources,
         )
-    except (RuntimeError, ValueError, ValidationError) as error:
+    except (OSError, RuntimeError, ValueError, ValidationError) as error:
         console.print(f"[red]Agent run failed: {error}[/red]")
         raise typer.Exit(code=2) from error
     finally:
+        if journal is not None:
+            journal.close()
         if model_client is not None:
             model_client.close()
     rendered = run.model_dump_json(indent=2)
     if output_file is not None:
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(rendered + "\n", encoding="utf-8")
+        write_report(output_file, rendered)
         console.print(f"Agent evidence written to {output_file}")
         console.print(f"Artifact digest: {run.artifact_digest}")
     else:

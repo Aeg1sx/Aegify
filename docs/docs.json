@@ -99,6 +99,7 @@
                 "icon": "folder-git-2",
                 "pages": [
                   "community/contributing",
+                  "project/beta-quality-acceptance",
                   "project/alpha-completion-audit"
                 ]
               }

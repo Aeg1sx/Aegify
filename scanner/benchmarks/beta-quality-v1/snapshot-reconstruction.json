@@ -1,0 +1,24 @@
+[
+  {
+    "base_commit": "d4bd04e8779e767f0babce6bcdd5b4a6d3ee5922",
+    "patch": "python-detector.patch",
+    "apply_options": [
+      "--unidiff-zero"
+    ],
+    "patch_sha256": "50c37cd75018213dd3dfb61bb264f87bb0506db499627abf730b9f3bee5c7e57",
+    "report": "python-candidate.json",
+    "reconstructed_code_digest": "sha256:9fb7a83398ea9870e9ef7682d79ef96eef112ed172d0c20fec3717590e8ab22a",
+    "matches_report": true
+  },
+  {
+    "base_commit": "d4bd04e8779e767f0babce6bcdd5b4a6d3ee5922",
+    "patch": "java-runner.patch",
+    "apply_options": [
+      "--unidiff-zero"
+    ],
+    "patch_sha256": "bda821deb8ba9fb7a333c119afdc50a2f46c4fe9da8c1b06d2181870db33e419",
+    "report": "java-full.json",
+    "reconstructed_code_digest": "sha256:2e8be3c73f75d2c09f596d7819d6bf959059449efe23e62e3ff0cc80693d9439",
+    "matches_report": true
+  }
+]

@@ -458,7 +458,10 @@ def test_cli_invocation_accepts_complete_owned_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: str
 ) -> None:
     backend = CommandAgentBackend(
-        CommandBackendConfig(kind=kind, executable=sys.executable), tmp_path
+        CommandBackendConfig(
+            kind=kind, executable=sys.executable, ignore_user_config=kind == "codex"
+        ),
+        tmp_path,
     )
     monkeypatch.setenv("AEGIFY_PRIVATE_FIXTURE_SECRET", "never inherited")
 
@@ -468,6 +471,8 @@ def test_cli_invocation_accepts_complete_owned_result(
         assert "AEGIFY_PRIVATE_FIXTURE_SECRET" not in environment
         assert "Static review fixture" in prompt
         if kind == "codex":
+            assert "--ignore-user-config" in command
+            assert "--ignore-rules" not in command
             assert command[command.index("--sandbox") + 1] == "read-only"
             assert 'approval_policy="never"' in command
             schema = json.loads(Path(command[command.index("--output-schema") + 1]).read_text())

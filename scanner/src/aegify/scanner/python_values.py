@@ -1,0 +1,101 @@
+"""Bounded Python syntax inspection; no imports or source evaluation."""
+
+from __future__ import annotations
+
+import ast
+import textwrap
+from functools import lru_cache
+
+_MAX_TEXT = 16_384
+_MAX_NODES = 4_096
+
+
+def _name(node: ast.AST) -> str | None:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        return ".".join([node.id, *reversed(parts)])
+    return None
+
+
+@lru_cache(maxsize=512)
+def expression_accesses(expression: str) -> tuple[str, ...] | None:
+    """Return actual reads, including f-string fields but excluding literal text.
+
+    None leaves unsupported/oversized expressions to the conservative fallback.
+    A call's function name is not a value read; its receiver and arguments are.
+    """
+    if len(expression) > _MAX_TEXT:
+        return None
+    try:
+        try:
+            tree = ast.parse(expression.strip(), mode="eval")
+        except SyntaxError:
+            # Call argument excerpts may contain keyword or unpacking syntax.
+            tree = ast.parse(f"_({expression})", mode="eval")
+    except SyntaxError, ValueError, RecursionError:
+        return None
+    pending: list[ast.AST] = [tree]
+    reads: list[str] = []
+    visited = 0
+    while pending:
+        visited += 1
+        if visited > _MAX_NODES:
+            return None
+        node = pending.pop()
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                pending.append(node.func.value)
+            elif not isinstance(node.func, ast.Name):
+                pending.append(node.func)
+            pending.extend(node.args)
+            pending.extend(keyword.value for keyword in node.keywords)
+        elif isinstance(node, ast.Name | ast.Attribute):
+            name = _name(node)
+            if name is not None:
+                if name not in reads:
+                    reads.append(name)
+            else:
+                pending.extend(ast.iter_child_nodes(node))
+        else:
+            pending.extend(ast.iter_child_nodes(node))
+    return tuple(reads)
+
+
+@lru_cache(maxsize=512)
+def assignment(code: str) -> tuple[str, str] | None:
+    """Select the assigned value, not its annotation or an embedded '=' string.
+
+    This retains the solver's last-target convention for chained assignments.
+    Destructuring and control-flow joins need separate models.
+    """
+    if len(code) > _MAX_TEXT:
+        return None
+    source = textwrap.dedent(code).strip()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError, ValueError, RecursionError:
+        return None
+    if len(tree.body) != 1:
+        return None
+    statement = tree.body[0]
+    if isinstance(statement, ast.Assign):
+        target = statement.targets[-1]
+        value: ast.expr | None = statement.value
+    elif isinstance(statement, ast.AnnAssign | ast.AugAssign):
+        target = statement.target
+        value = statement.value
+    else:
+        return None
+    name = _name(target)
+    if name is None or value is None:
+        return None
+    rhs = ast.get_source_segment(source, value)
+    if rhs is None:
+        return None
+    if isinstance(statement, ast.AugAssign):
+        # The read set includes the prior left-hand value for every augmented op.
+        rhs = f"({name}, {rhs})"
+    return name, rhs

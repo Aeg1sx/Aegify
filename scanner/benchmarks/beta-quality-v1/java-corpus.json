@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/OWASP-Benchmark/BenchmarkJava",
+  "revision": "20cbf3d11123347e47ed89541e6942836def53f7",
+  "archive_sha256": "3751f0c4c2892573006ad3652ca9f73947c6bfb7522310fdc12cdc2a59b4702c",
+  "labels_sha256": "1809f6a690c6cf7dd6685df6ebe2eef8fe3ca93d19a7ca0ce45987ca4f5d78e1",
+  "label_cases": 2740,
+  "license": "GPL-2.0",
+  "selection_manifest": "java-selection.json",
+  "label_origin": "Unmodified upstream expectedresults-1.2.csv",
+  "independent_adjudication": false,
+  "private_holdout": false,
+  "corpus_digest": "sha256:7dd4f5bb83ccd913b4fec2ee6faa0fb93f3d1b1ee56cf2e24e91c08e49320b9c",
+  "source_files": 2766
+}
