@@ -752,6 +752,9 @@ class AnalyzedSource(BaseModel):
     repository_id: str = ""
     module_path: str
     file_path: str
+    # Empty on legacy artifacts; such files cannot be reopened as bound AI evidence.
+    source_digest: str = Field(default="", pattern=r"^(?:[a-f0-9]{64})?$")
+    language: Language | None = None
 
 
 class ScanResult(BaseModel):

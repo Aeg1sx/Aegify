@@ -1022,3 +1022,34 @@ quality gates remain open. The existing Project/Rule schema-default mismatch is
 tracked separately in PR #61; this change adds fixture tables without claiming
 that the earlier schema drift is resolved. Exact integration commits and test
 results are recorded in PR #60.
+
+## Scanner six-role source exploration: 2026-09-25
+
+The opt-in `agent-run --source-tools` path adds model-directed list, literal search
+and bounded read turns to every scanner role. API and native CLI adapters share
+the structured-turn contract. Each stage retains its bounded tool evidence,
+source citations, scan/catalog hashes, round digests, timing, call attempts,
+cache use and stop reason. Deterministic finding state, reachability, runtime
+facts and approval requirements remain authoritative.
+
+New scan artifacts retain the parser's per-file digest and language. Explicit
+repository roots allow relocation between CI jobs while keeping namespaces and
+content identity. Old manifests without those fields are not silently reopened.
+Changed, ambiguous, linked, hidden and unavailable files produce explicit gaps.
+Programmatic source catalogs are checked against the supplied scan as well.
+Missing or unearned citations, incomplete finding coverage and exhausted budgets
+cannot finish as a complete source review. The documented plain Anthropic key
+environment variable is now accepted alongside the existing Aegify configuration.
+
+Validation uses owned inert sources, scripted API transports through the installed
+adapters, and actual owned subprocesses implementing the Codex/Claude envelopes.
+It covers six-role iteration, model-selected files, multi-repository identity,
+relocated CI checkouts, immutable findings, citation rejection, role restrictions,
+bounds, caching and partial CI artifacts. Exact test results and merge state must
+be recorded with the implementation commit; these are contract tests, not evidence
+of improved detector precision/recall or live provider quality.
+
+Live Codex/Claude compatibility and configuration isolation, shared provider usage
+and prices, durable CLI recovery, dashboard six-role integration and independently
+labeled agent-quality evaluation remain open. The public-corpus quality gates
+are unchanged. This checkpoint does not establish commercial readiness.

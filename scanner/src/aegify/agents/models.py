@@ -7,11 +7,11 @@ import re
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from aegify.models import TokenUsage
+from aegify.models import AISourceCitation, AIToolEvidence, TokenUsage
 
 
 class AgentRole(StrEnum):
@@ -237,6 +237,48 @@ class ImprovementProposal(BaseModel):
         return self
 
 
+class AgentExplorationLimits(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_rounds: int = Field(default=4, ge=1, le=8)
+    max_tool_calls: int = Field(default=12, ge=0, le=30)
+    max_prompt_bytes: int = Field(default=131_072, ge=4_096, le=500_000)
+    max_evidence_bytes: int = Field(default=98_304, ge=1_024, le=262_144)
+    max_response_bytes: int = Field(default=65_536, ge=1_024, le=2_000_000)
+
+
+class AgentRoundTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    round: int = Field(ge=1, le=8)
+    input_digest: str
+    output_digest: str = ""
+    prompt_bytes: int = Field(ge=0)
+    duration_ms: float = Field(default=0, ge=0)
+    outcome: Literal["tools", "final", "error"] = "error"
+    error_code: str = ""
+
+
+class AgentExploration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol_version: int = 1
+    scan_digest: str
+    source_manifest: str = ""
+    source_gap_counts: dict[str, int] = Field(default_factory=dict)
+    limits: AgentExplorationLimits = Field(default_factory=AgentExplorationLimits)
+    model_calls: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    cached_calls: int = Field(default=0, ge=0)
+    prompt_bytes: int = Field(default=0, ge=0)
+    stop_reason: str = ""
+    gaps: list[str] = Field(default_factory=list)
+    rounds: list[AgentRoundTrace] = Field(default_factory=list)
+    tools: list[AIToolEvidence] = Field(default_factory=list)
+    citations: list[AISourceCitation] = Field(default_factory=list)
+    covered_finding_ids: list[str] = Field(default_factory=list)
+
+
 class AgentStageResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -252,6 +294,7 @@ class AgentStageResult(BaseModel):
     cve_assessments: list[CveAssessment] = Field(default_factory=list)
     improvement_proposals: list[ImprovementProposal] = Field(default_factory=list)
     narrative: AgentNarrative | None = None
+    exploration: AgentExploration | None = None
     prompt_digest: str = ""
     error: str = ""
     backend_error_code: str = ""

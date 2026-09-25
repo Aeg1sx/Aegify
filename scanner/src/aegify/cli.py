@@ -1367,6 +1367,28 @@ def agent_run(
             dir_okay=False,
         ),
     ] = None,
+    source_tools: Annotated[
+        bool,
+        typer.Option("--source-tools", help="Let agents request bounded source reads and searches"),
+    ] = False,
+    source_root: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--source-root", help="Bind a scanned repository ID to a checkout: ID=PATH; repeatable"
+        ),
+    ] = None,
+    max_agent_rounds: Annotated[
+        int,
+        typer.Option(
+            "--max-agent-rounds", min=1, max=8, help="Model calls per role with source tools"
+        ),
+    ] = 4,
+    max_agent_tools: Annotated[
+        int,
+        typer.Option(
+            "--max-agent-tools", min=0, max=30, help="Tool requests per role, including cache hits"
+        ),
+    ] = 12,
 ) -> None:
     """Run the six-agent pipeline from an immutable Aegify scan artifact."""
     from pydantic import TypeAdapter, ValidationError
@@ -1378,10 +1400,16 @@ def agent_run(
         CommandBackendConfig,
         OpenAIResponsesBackend,
     )
-    from aegify.agents.models import AgentRunMode, AgentRunStatus, CveCandidate
+    from aegify.agents.models import (
+        AgentExplorationLimits,
+        AgentRunMode,
+        AgentRunStatus,
+        CveCandidate,
+    )
     from aegify.agents.pipeline import SecurityAgentPipeline
     from aegify.llm.budget import TokenBudget
     from aegify.llm.client import LLMClient
+    from aegify.llm.sources import SourceCatalog
 
     if mode not in {"lite", "deep"}:
         console.print("[red]--mode must be lite or deep[/red]")
@@ -1394,6 +1422,12 @@ def agent_run(
         "claude",
     }:
         console.print("[red]Unsupported agent provider[/red]")
+        raise typer.Exit(code=2)
+    if source_tools and provider == "deterministic":
+        console.print("[red]--source-tools requires a model provider[/red]")
+        raise typer.Exit(code=2)
+    if source_root and not source_tools:
+        console.print("[red]--source-root requires --source-tools[/red]")
         raise typer.Exit(code=2)
     try:
         if scan_result_file.stat().st_size > 100_000_000:
@@ -1412,14 +1446,41 @@ def agent_run(
 
     backend: AgentBackend | None = None
     model_client: LLMClient | None = None
+    sources: SourceCatalog | None = None
+    if source_tools:
+        roots: dict[str, Path] = {}
+        repositories = {source.repository_id or "local" for source in scan_result.analyzed_sources}
+        try:
+            for value in source_root or []:
+                repository, separator, directory = value.partition("=")
+                if (
+                    not separator
+                    or not directory
+                    or repository not in repositories
+                    or repository in roots
+                ):
+                    raise ValueError(
+                        "source roots must bind unique scanned repository IDs as ID=PATH"
+                    )
+                root = Path(directory).absolute()
+                if not root.is_dir():
+                    raise ValueError("source root must be an existing directory")
+                roots[repository] = root
+            if not roots:
+                roots["local"] = workspace.absolute()
+            sources = SourceCatalog.from_scan(scan_result, roots)
+        except (OSError, ValueError) as error:
+            console.print(f"[red]Invalid source binding: {error}[/red]")
+            raise typer.Exit(code=2) from error
     config = AegifyConfig.load(workspace)
     if provider == "anthropic-api":
-        if not config.anthropic_api_key:
+        api_key = config.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
             console.print("[red]anthropic-api requires ANTHROPIC_API_KEY[/red]")
             raise typer.Exit(code=2)
         selected_model = model or config.llm.model
         model_client = LLMClient(
-            api_key=config.anthropic_api_key,
+            api_key=api_key,
             model=selected_model,
             budget=TokenBudget(
                 total_budget=config.llm.token_budget,
@@ -1452,10 +1513,17 @@ def agent_run(
             raise typer.Exit(code=2) from error
 
     try:
-        run = SecurityAgentPipeline(backend).run(
+        run = SecurityAgentPipeline(
+            backend,
+            source_tools=source_tools,
+            source_limits=AgentExplorationLimits(
+                max_rounds=max_agent_rounds, max_tool_calls=max_agent_tools
+            ),
+        ).run(
             scan_result,
             mode=AgentRunMode(mode),
             cves=candidates,
+            sources=sources,
         )
     except (RuntimeError, ValueError, ValidationError) as error:
         console.print(f"[red]Agent run failed: {error}[/red]")
