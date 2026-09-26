@@ -22,6 +22,7 @@ from aegify.models import (
     CallSite,
     FileAST,
     FunctionDef,
+    Language,
     TaintAnalysisSummary,
     TaintFlow,
     TaintPropagation,
@@ -29,6 +30,8 @@ from aegify.models import (
     TaintSource,
 )
 from aegify.scanner.import_bindings import declared_import_names
+from aegify.scanner.python_values import assignment as python_assignment
+from aegify.scanner.python_values import expression_accesses as python_accesses
 from aegify.text import scrub_quoted_strings
 
 _TraceMap = dict[str, "_Trace"]
@@ -529,7 +532,7 @@ class StructuredTaintAnalyzer:
         }
 
         for statement in context.statements:
-            assignment = self._assignment(statement.code)
+            assignment = self._assignment(statement.code, context.ast.language)
             lhs = assignment[0] if assignment else None
             rhs = assignment[1] if assignment else statement.code
             calls = calls_by_statement.get(statement.node_id, [])
@@ -1009,7 +1012,7 @@ class StructuredTaintAnalyzer:
         include_line_sources: bool,
     ) -> _TraceMap:
         traces: _TraceMap = {}
-        for access in self._accesses(expression):
+        for access in self._accesses(expression, context.ast.language):
             if "." in access:
                 base = access.split(".", 1)[0]
                 base_traces = self._append_step(
@@ -1090,7 +1093,7 @@ class StructuredTaintAnalyzer:
         call_string: _CallString,
     ) -> set[str]:
         points: set[str] = set()
-        for access in self._accesses(expression):
+        for access in self._accesses(expression, context.ast.language):
             if "." not in access:
                 points.update(local_points.get(access, set()))
                 continue
@@ -1254,7 +1257,9 @@ class StructuredTaintAnalyzer:
         )
 
     @classmethod
-    def _assignment(cls, code: str) -> tuple[str, str] | None:
+    def _assignment(cls, code: str, language: Language | None = None) -> tuple[str, str] | None:
+        if language == Language.PYTHON:
+            return python_assignment(code)
         match = cls._ASSIGNMENT.search(code)
         if match is None:
             return None
@@ -1282,7 +1287,11 @@ class StructuredTaintAnalyzer:
         return match.group("value").strip().rstrip(";") if match else None
 
     @classmethod
-    def _accesses(cls, expression: str) -> list[str]:
+    def _accesses(cls, expression: str, language: Language | None = None) -> list[str]:
+        if language == Language.PYTHON:
+            parsed = python_accesses(expression)
+            if parsed is not None:
+                return list(parsed)
         interpolated: list[str] = []
         for fragment in re.findall(r"\{([^{}]+)\}", expression):
             interpolated.extend(cls._ACCESS.findall(fragment))

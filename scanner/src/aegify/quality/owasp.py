@@ -30,14 +30,19 @@ class BenchmarkCase:
     category: str
     positive: bool
     cwe: int
+    language: str = "python"
 
     @property
     def file_path(self) -> str:
+        if self.language == "java":
+            return f"src/main/java/org/owasp/benchmark/testcode/{self.name}.java"
         return f"testcode/{self.name}.py"
 
 
-def read_labels(material: bytes) -> list[BenchmarkCase]:
-    """Read strict upstream Python CSV labels without importing corpus code."""
+def read_labels(material: bytes, *, language: str = "python") -> list[BenchmarkCase]:
+    """Read strict upstream CSV labels without importing corpus code."""
+    if language not in {"python", "java"}:
+        raise ValueError("benchmark language must be python or java")
     if len(material) > 4 * 1024 * 1024:
         raise ValueError("expected-results CSV exceeds 4 MiB")
     rows = csv.reader(io.StringIO(material.decode("utf-8-sig")), strict=True)
@@ -58,7 +63,7 @@ def read_labels(material: bytes) -> list[BenchmarkCase]:
         if positive not in {"true", "false"} or not re.fullmatch(r"[1-9][0-9]{0,4}", cwe):
             raise ValueError("labels require literal true/false and a positive CWE number")
         names.add(name)
-        cases.append(BenchmarkCase(name, category, positive == "true", int(cwe)))
+        cases.append(BenchmarkCase(name, category, positive == "true", int(cwe), language))
         if len(cases) > _MAX_LABELS:
             raise ValueError("expected-results CSV exceeds the case limit")
     if not cases:
@@ -141,6 +146,10 @@ def evaluate_cases(
     root = target_root.resolve()
     if len({case.name for case in cases}) != len(cases) or not cases:
         raise ValueError("case identities must be unique and nonempty")
+    languages = {case.language for case in cases}
+    if len(languages) != 1 or not languages <= {"python", "java"}:
+        raise ValueError("benchmark cases must use one supported language")
+    language = next(iter(languages))
     by_path = {case.file_path: case for case in cases}
     analyzed = {_relative_path(path, root) for path in result.analyzed_files}
     executed = {
@@ -231,8 +240,8 @@ def evaluate_cases(
     }
     return {
         "schema_version": 1,
-        "evaluation": "owasp-python-exact-case-cwe-v1",
-        "language": "python",
+        "evaluation": f"owasp-{language}-exact-case-cwe-v1",
+        "language": language,
         "matching": "Exact relative testcode path and exact CWE; at most one hit per case/channel",
         "label_cases": len(cases),
         "positive_labels": positive_count,
@@ -261,6 +270,14 @@ def evaluate_cases(
 
 def inventory_python_sources(root: Path) -> tuple[list[Path], str]:
     """Hash the whole corpus, including OpenAPI/config; select Python for parsing."""
+    return inventory_sources(root, language="python")
+
+
+def inventory_sources(root: Path, *, language: str) -> tuple[list[Path], str]:
+    """Hash all corpus inputs and select one explicit source language."""
+    if language not in {"python", "java"}:
+        raise ValueError("benchmark language must be python or java")
+    suffix = ".py" if language == "python" else ".java"
     if root.is_symlink() or not root.is_dir():
         raise ValueError("benchmark root must be a real directory")
     paths: list[Path] = []
@@ -276,7 +293,7 @@ def inventory_python_sources(root: Path) -> tuple[list[Path], str]:
             raise ValueError("benchmark corpus must not contain symbolic links")
         if path.is_dir():
             continue
-        size_limit = (1 if path.suffix == ".py" else 8) * 1024 * 1024
+        size_limit = (1 if path.suffix == suffix else 8) * 1024 * 1024
         if not path.is_file() or path.stat().st_size > size_limit:
             raise ValueError("corpus inputs must be bounded regular files")
         material = path.read_bytes()
@@ -288,8 +305,8 @@ def inventory_python_sources(root: Path) -> tuple[list[Path], str]:
         digest.update(relative)
         digest.update(len(material).to_bytes(8, "big"))
         digest.update(material)
-        if path.suffix == ".py":
+        if path.suffix == suffix:
             paths.append(path)
     if not paths:
-        raise ValueError("benchmark corpus has no Python inputs")
+        raise ValueError(f"benchmark corpus has no {language.title()} inputs")
     return paths, f"sha256:{digest.hexdigest()}"

@@ -171,6 +171,7 @@ class CommandBackendConfig(BaseModel):
     model: str = ""
     timeout_seconds: int = Field(default=300, ge=10, le=1_800)
     max_output_bytes: int = Field(default=1_000_000, ge=1_024, le=10_000_000)
+    ignore_user_config: bool = False
     inherit_environment: list[str] = Field(
         default_factory=lambda: [
             "PATH",
@@ -244,6 +245,8 @@ class CommandAgentBackend:
                     "--cd",
                     str(self.workspace),
                 ]
+                if self.config.ignore_user_config:
+                    command.append("--ignore-user-config")
                 if self.config.model:
                     command.extend(["--model", self.config.model])
                 command.append("-")

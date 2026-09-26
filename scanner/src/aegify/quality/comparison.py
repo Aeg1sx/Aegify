@@ -18,7 +18,6 @@ from aegify.quality.provenance import json_digest
 
 CHANNELS = ("all_candidates", "advisory", "blocking")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
-_EVALUATION = "owasp-python-exact-case-cwe-v1"
 _MATCHING = "Exact relative testcode path and exact CWE; at most one hit per case/channel"
 Outcome = Literal["tp", "fp", "fn", "tn", "unscored"]
 
@@ -48,7 +47,10 @@ class SavedCase(BaseModel):
 
     @model_validator(mode="after")
     def validate_identity_and_outcomes(self) -> SavedCase:
-        if self.file_path != f"testcode/{self.case}.py":
+        if self.file_path not in {
+            f"testcode/{self.case}.py",
+            f"src/main/java/org/owasp/benchmark/testcode/{self.case}.java",
+        }:
             raise ValueError("case path does not match its identity")
         if self.matched_rules != sorted(set(self.matched_rules)) or any(
             not re.fullmatch(r"AEG-[A-Z0-9-]+", rule) for rule in self.matched_rules
@@ -143,14 +145,15 @@ def load_owasp_report(path: Path, cases_csv: Path | None = None) -> dict[str, An
     """Verify internal consistency; digests do not authenticate an outside author."""
     material = read_regular_file(path, limit=32 * 1024 * 1024)
     report = parse_json_object(material)
+    language = report.get("language")
     if (
         type(report.get("schema_version")) is not int
         or report["schema_version"] != 1
-        or report.get("evaluation") != _EVALUATION
-        or report.get("language") != "python"
+        or language not in {"python", "java"}
+        or report.get("evaluation") != f"owasp-{language}-exact-case-cwe-v1"
         or report.get("matching") != _MATCHING
     ):
-        raise ValueError("comparison requires OWASP Python exact-case/CWE v1 reports")
+        raise ValueError("comparison requires OWASP Python or Java exact-case/CWE v1 reports")
     rows: Any
     if cases_csv:
         if "cases" in report:
@@ -161,6 +164,14 @@ def load_owasp_report(path: Path, cases_csv: Path | None = None) -> dict[str, An
     if not isinstance(rows, list) or not 1 <= len(rows) <= 50_000:
         raise ValueError("comparison requires 1–50000 complete case rows")
     cases = [SavedCase.model_validate(row).model_dump() for row in rows]
+    for case in cases:
+        expected_path = (
+            f"testcode/{case['case']}.py"
+            if language == "python"
+            else f"src/main/java/org/owasp/benchmark/testcode/{case['case']}.java"
+        )
+        if case["file_path"] != expected_path:
+            raise ValueError("case path does not match the report language")
     names = [case["case"] for case in cases]
     if names != sorted(set(names)):
         raise ValueError("case identities must be sorted and unique")
@@ -219,12 +230,12 @@ def load_owasp_report(path: Path, cases_csv: Path | None = None) -> dict[str, An
         or provenance.get("repository_code_executed") is not False
     ):
         raise ValueError("comparison requires source-only, non-LLM report provenance")
-    for key in ("requested_python_files", "analyzed_python_files"):
+    for key in (f"requested_{language}_files", f"analyzed_{language}_files"):
         if type(provenance.get(key)) is not int or not 0 <= provenance[key] <= 50_000:
-            raise ValueError("report Python file counts are invalid")
-    if provenance["analyzed_python_files"] > provenance["requested_python_files"]:
+            raise ValueError("report source file counts are invalid")
+    if provenance[f"analyzed_{language}_files"] > provenance[f"requested_{language}_files"]:
         raise ValueError("analyzed file count exceeds the requested count")
-    if provenance.get("python_parser_execution") != "sequential_scan_files":
+    if provenance.get(f"{language}_parser_execution") != "sequential_scan_files":
         raise ValueError("report parser execution contract is unsupported")
     if provenance.get("workspace_snapshot") != "" or not unhealthy:
         _digest(provenance.get("workspace_snapshot"), "workspace_snapshot")
@@ -319,6 +330,9 @@ def compare_owasp_reports(
 ) -> dict[str, Any]:
     """Separate paired outcome changes, coverage changes and implementation replay."""
     before, after = baseline["report"], candidate["report"]
+    if before["language"] != after["language"]:
+        raise ValueError("reports use different languages")
+    language = before["language"]
     left, right = before["provenance"], after["provenance"]
     mismatches = [
         key
@@ -400,9 +414,9 @@ def compare_owasp_reports(
         and all(
             left.get(key) == right.get(key)
             for key in (
-                "requested_python_files",
-                "analyzed_python_files",
-                "python_parser_execution",
+                f"requested_{language}_files",
+                f"analyzed_{language}_files",
+                f"{language}_parser_execution",
                 "workspace_snapshot",
             )
         )
@@ -428,7 +442,7 @@ def compare_owasp_reports(
     )
     return {
         "schema_version": 1,
-        "comparison": "owasp-python-paired-v1",
+        "comparison": f"owasp-{language}-paired-v1",
         "mode": "identical" if require_identical else "no_case_regressions",
         "baseline_artifact_digest": baseline["artifact_digest"],
         "candidate_artifact_digest": candidate["artifact_digest"],

@@ -159,15 +159,20 @@ it does not independently verify the model's claim or establish runtime impact.
 The API, Codex and Claude Code adapters carry the same iterative JSON contract.
 Native CLI configuration and isolation still require the controls described above:
 broker restrictions do not confine a CLI's inherited tools or integrations.
-Offline tests use scripted API transports and owned inert CLI programs, not live
-model services. Anthropic retains reported usage; other provider accounting and
-all monetary cost remain unverified.
+Offline tests use scripted API transports and owned inert CLI programs. A separate
+[live Codex acceptance run](/project/beta-quality-acceptance) covers six roles and
+twelve calls on an owned inert fixture. It validates protocol and citations, not
+review accuracy or isolation. Anthropic retains reported usage; other provider
+accounting and all monetary cost remain unverified.
 
 This flag currently applies to the scanner CLI. It does not replace the dashboard
 six-role worker or the separate [bounded finding review path](/analysis/ai-sast-operations).
-The CLI writes its artifact at the end and returns exit code `3` for partial review
-or pending approval. It does not provide durable per-turn checkpoints or automatic
-crash replay; retain the output as a CI artifact and inspect gaps before rerunning.
+The CLI publishes its final artifact atomically and returns exit code `3` for
+partial review or pending approval. In the development checkout, `--checkpoint`
+records each provider dispatch before calling and each validated reply before
+returning. `--resume` replays completed replies while rebuilding deterministic
+facts and read-only tool evidence. See the [recovery guide](/project/beta-quality-acceptance#controlled-agent-recovery).
+The published `v0.3.0-beta.1` does not include this checkpoint feature.
 
 Prompts are versioned and hashed. Repository content, tool results, issue text,
 and CVE descriptions are explicitly treated as untrusted data rather than
