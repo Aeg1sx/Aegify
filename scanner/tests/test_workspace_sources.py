@@ -97,6 +97,7 @@ def test_cli_mixed_source_snapshot(tmp_path, history, local_transport, monkeypat
                 "source": {"url": url, "revision": commit},
             }
         )
+    monkeypatch.delenv("AEGIFY_AZURE_REPOS_ENTRA_TOKEN", raising=False)
     for _, token_name, _ in sources.HOSTS.values():
         monkeypatch.setenv(token_name, token_name + "-secret")
     monkeypatch.setenv("GIT_TRACE", "1")
@@ -134,6 +135,70 @@ def test_cli_mixed_source_snapshot(tmp_path, history, local_transport, monkeypat
 @pytest.mark.parametrize(
     "url",
     [
+        "https://dev.azure.com/team/Invoice%20Tools/_git/Invoice%20API",
+        "https://TEAM@Dev.Azure.com/team/Invoice%20Tools/_git/Invoice%20API",
+        "https://team.visualstudio.com/Invoice%20Tools/_git/Invoice%20API",
+        "https://team.visualstudio.com/DefaultCollection/Invoice%20Tools/_git/Invoice%20API",
+    ],
+)
+def test_azure_clone_addresses_use_one_transport_and_receipt(
+    url, tmp_path, history, local_transport, monkeypatch
+):
+    _, commit, tree = history
+    bearer = "synthetic.enterprise.token"
+    monkeypatch.setenv("AEGIFY_AZURE_REPOS_ENTRA_TOKEN", bearer)
+    monkeypatch.setenv("AEGIFY_AZURE_REPOS_TOKEN", "unused-fixture-pat")
+    monkeypatch.delenv("AEGIFY_GITHUB_TOKEN", raising=False)
+    manifest = tmp_path / "sources.yml"
+    manifest.write_text(
+        yaml.safe_dump(
+            {
+                "repositories": [
+                    {"id": "azure", "source": {"url": url, "revision": commit}},
+                    {"id": "github", "source": {"url": URLS[0], "revision": commit}},
+                ]
+            }
+        )
+    )
+    output = tmp_path / "prepared"
+    result = CliRunner().invoke(app, ["prepare-workspace", str(manifest), "-o", str(output)])
+    assert result.exit_code == 0, result.output
+    (azure_url, azure_env), (_, github_env) = local_transport
+    expected = "https://dev.azure.com/team/Invoice%20Tools/_git/Invoice%20API"
+    assert azure_url == expected
+    assert azure_env["GIT_CONFIG_KEY_0"] == f"http.{expected}.extraHeader"
+    assert azure_env["GIT_CONFIG_VALUE_0"] == f"Authorization: Bearer {bearer}"
+    assert "GIT_CONFIG_VALUE_0" not in github_env
+    assert "AEGIFY_AZURE_REPOS_ENTRA_TOKEN" not in azure_env
+    receipt_data = (output / "sources.json").read_text()
+    record = json.loads(receipt_data)["repositories"][0]
+    assert (record["url"], record["commit"], record["tree"]) == (expected, commit, tree)
+    assert bearer not in receipt_data + result.output + (output / "workspace.yml").read_text()
+
+
+def test_invalid_azure_bearer_stops_before_fetch(tmp_path, history, local_transport, monkeypatch):
+    _, commit, _ = history
+    manifest = tmp_path / "sources.yml"
+    manifest.write_text(
+        yaml.safe_dump(
+            {
+                "repositories": [
+                    {"id": "one", "source": {"url": URLS[3], "revision": commit}},
+                ]
+            }
+        )
+    )
+    monkeypatch.setenv("AEGIFY_AZURE_REPOS_ENTRA_TOKEN", "fixture-token\r\nsecond-header")
+    output = tmp_path / "prepared"
+    result = CliRunner().invoke(app, ["prepare-workspace", str(manifest), "-o", str(output)])
+    assert result.exit_code == 2
+    assert "fixture-token" not in result.output
+    assert not local_transport and not output.exists()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
         "git@github.com:owner/repo",
         "http://github.com/owner/repo",
         "https://user:private-token@github.com/owner/repo",
@@ -142,6 +207,17 @@ def test_cli_mixed_source_snapshot(tmp_path, history, local_transport, monkeypat
         "https://gitlab.com/group/%2e%2e/repo",
         "https://bitbucket.org:8443/team/repo",
         "https://dev.azure.com/o/p/repo",
+        "https://other@dev.azure.com/team/p/_git/repo",
+        "https://team:private-token@dev.azure.com/team/p/_git/repo",
+        "https://private-token@team.visualstudio.com/p/_git/repo",
+        "https://team.visualstudio.com.evil.test/p/_git/repo",
+        "https://team.visualstudio.com:443/p/_git/repo",
+        "https://foo.bar.visualstudio.com/p/_git/repo",
+        "https://team@dev.azure.com:443/team/p/_git/repo",
+        "https://team@dev.azure.com@evil.test/team/p/_git/repo",
+        "https://team.visualstudio.com/DefaultCollection/../_git/repo",
+        "https://team.visualstudio.com/%2e%2e/_git/repo",
+        "https://team@dev.azure.com/team/p/_git/repo?access_token=private-token",
         "https://github.com.example.test/o/r",
         "https://github.com/o/r#ref",
         "https://github.com/o/r\n",

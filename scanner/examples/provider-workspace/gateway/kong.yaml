@@ -1,0 +1,8 @@
+_format_version: '3.0'
+services:
+- name: catalog
+  url: https://bitbucket.internal/
+  routes: [{name: catalog}]
+- name: wiki
+  url: https://azure.internal/
+  routes: [{name: wiki}]

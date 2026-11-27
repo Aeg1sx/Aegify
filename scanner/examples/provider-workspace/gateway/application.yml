@@ -1,0 +1,5 @@
+spring.cloud.gateway.routes:
+- id: accounts
+  uri: lb://github.internal
+- id: orders
+  uri: lb://gitlab.internal

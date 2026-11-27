@@ -79,7 +79,7 @@ counts, and counts of skipped symlinks and submodules.
 | GitHub.com | `github.com/OWNER/REPO.git` | `AEGIFY_GITHUB_TOKEN` for a token with repository contents read access |
 | GitLab.com | `gitlab.com/GROUP/SUBGROUP/REPO.git` | `AEGIFY_GITLAB_TOKEN` for a personal token with `read_repository` |
 | Bitbucket Cloud | `bitbucket.org/WORKSPACE/REPO.git` | `AEGIFY_BITBUCKET_TOKEN` for an API token with `read:repository:bitbucket` |
-| Azure Repos | `dev.azure.com/ORG/PROJECT/_git/REPO` | `AEGIFY_AZURE_REPOS_TOKEN` for a personal access token with Code Read |
+| Azure Repos | `dev.azure.com/ORG/PROJECT/_git/REPO` | `AEGIFY_AZURE_REPOS_TOKEN` for a personal access token with Code Read, or `AEGIFY_AZURE_REPOS_ENTRA_TOKEN` for a Microsoft Entra access token for Azure DevOps |
 
 Set private credentials in the calling process or CI secret store. The HTTPS
 transport receives a header scoped to the selected repository. Tokens are
@@ -88,14 +88,31 @@ requires a POSIX environment with system Git and a directly reachable canonical
 host. Interactive login, redirects, proxy environment variables and user Git
 configuration are disabled. For self-hosted forges, SSH-only repositories or
 enterprise authentication that requires a helper, use an existing local checkout.
-The example above was exercised against public GitHub. A second preparation
-fetched GitLab's nested `gitlab-org/project-templates/express` repository at
-`b5c899235f282774e2e5734fe5c1cd0bcb97adee` (11 files) and Bitbucket's
-`tutorials/splitpractice` at `e41307a8b2a8e93c700901ca6bbb3e7b79206aad`
-(13 files). Azure Repos and private credentials were exercised using local
-Git transport fixtures. An anonymous Git probe of the Azure dnceng public
-project requested credentials. A provider must allow
-fetching the named commit. A missing or inaccessible commit fails preparation.
+
+For Azure Repos, you can paste the HTTPS clone URL from the repository.
+Aegify accepts a matching `ORG@dev.azure.com/ORG` organization hint and the
+older `ORG.visualstudio.com/PROJECT/_git/REPO` address, including its
+`/DefaultCollection/PROJECT/_git/REPO` form. Git fetches from
+`dev.azure.com` and the receipt records that canonical URL. If both Azure
+tokens are set, Aegify uses the Entra access token. See
+[Microsoft's Azure Repos authentication guide](https://learn.microsoft.com/en-us/azure/devops/repos/git/auth-overview?view=azure-devops).
+
+To exercise all four public providers together, run the following command
+from the scanner source directory with a new output directory.
+
+```sh
+aegify scan-workspace examples/provider-workspace/workspace.yml \
+  --prepare-to ./prepared-providers -o json -f provider-review.json
+```
+
+The example fetches four pinned public Git trees and reads a local Spring
+Cloud Gateway and Kong configuration. In `provider-review.json`, the expected
+owners in `gateway_inventory.files[].routes[]` are GitHub for `accounts`,
+GitLab for `orders`, Bitbucket for `catalog` and Azure for `wiki`. The
+service names in this example are fixtures. Private authentication was tested
+with synthetic credentials and local transport fixtures. A provider must
+allow fetching the named commit. A missing or inaccessible commit fails
+preparation.
 
 The preparer reads raw Git blobs and never checks out a working tree. Executable
 bits are removed, Git LFS pointer files stay as pointers, and submodules and

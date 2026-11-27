@@ -1,6 +1,6 @@
 # Aegify quality and release assessment
 
-Assessment updated 2026-11-27. Published release `v0.3.0-beta.1`.
+Assessment updated 2026-11-28. Published release `v0.3.0-beta.1`.
 The new acceptance work below describes the development checkout, not a replacement release.
 
 ## Release decision
@@ -21,6 +21,8 @@ The wheel and signed tag were unchanged. See
 ## Current implementation evidence
 
 The scanner at commit `00f2365` passed 2,063 local tests. The sandbox skipped the loopback proxy test. A workspace containing a pinned GitHub commit and three local repositories scanned seven source files with zero analysis gaps and matched the Spring gateway declaration to the orders repository. A separate preparation verified the Git trees of public GitLab and Bitbucket repositories. Private hosted credentials and Azure Repos were exercised through local transport tests. [Workspace example](scanner/examples/workspace-sources.yml) · [Host coverage](scanner/README.md)
+
+An installed scanner wheel fetched four public Git trees in a single workspace, alongside a local gateway. The preceding wheel rejected the HTTPS clone URL returned by Azure DevOps for Microsoft’s `dotnet-public-wiki`. The new wheel fetched its pinned commit `af56d96fdbd7c26e9fc94336b6f50dcc6ceff484` and matched the tree reported by the Azure DevOps API. GitHub, GitLab, Bitbucket and Azure yielded 1, 17, 10 and 5 files respectively. All four Spring and Kong fixture routes resolved to their declared repositories. The scan analyzed six supported source files and recorded zero analysis gaps. Private Azure authentication was checked with synthetic Entra and PAT credentials through a local Git transport fixture. [Replay the public workspace](scanner/README.md#prepare-a-multi-repository-workspace)
 
 A subsequent review traced an incorrect command finding to a JavaScript regular expression, corrected the Python shell-mode classification and recovered two valid TypeScript tagged templates. Regression controls include real command sinks and malformed templates. Agent evidence retains CLI file operands and unresolved receiver-field origins for review. The DNS and HTTP sequence rule now evaluates function-scoped steps. The final integrated test and self-scan results are tracked on [PR #102](https://github.com/Aeg1sx/Aegify/pull/102).
 
