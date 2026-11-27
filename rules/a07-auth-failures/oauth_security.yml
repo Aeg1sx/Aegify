@@ -87,7 +87,10 @@ rules:
           - "response_type"
           - "token"
         note: "Implicit grant flow exposes tokens in URL fragment"
-      - callee_match: "fetch|axios|http\\.get|requests\\.get"
+      - callee: '(?:(?:globalThis|window|self)\.)?fetch'
+        callee_match_mode: full
+        fetch_query_keys: [access_token, refresh_token, token]
+      - callee_match: "axios|http\\.get|requests\\.get"
         args_match: "\\?.*access_token=|&access_token=|\\?.*token="
     defense_patterns:
       - "response_type.*code"

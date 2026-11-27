@@ -460,6 +460,7 @@ class CallSite(BaseModel):
     arguments: list[str] = Field(default_factory=list)
     argument_types: list[str] = Field(default_factory=list)
     structured_arguments: list[CallArgument] | None = None
+    fetch_query_keys: list[str] | None = None
     query_expression: QueryExpression | None = None
     xml_invocation: XMLInvocation | None = None
     python_file_access: PythonFileAccess | None = None

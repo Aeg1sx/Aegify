@@ -23,6 +23,7 @@ SUPPORTED_PATTERN_FIELDS = {
     "args_exclude",
     "args_match",
     "args_match_index",
+    "fetch_query_keys",
     "boolean_option",
     "assignment_match",
     "attribute_match",

@@ -1,9 +1,11 @@
-"""Literal boolean option facts from parser nodes, never application execution."""
+"""Bounded call argument facts from parser nodes, without executing application code."""
 
 from __future__ import annotations
 
 import ast as python_ast
+import re
 from typing import Literal
+from urllib.parse import unquote_plus
 
 from tree_sitter import Node
 
@@ -119,6 +121,66 @@ def _options(
     return options
 
 
+def _first_argument(args: Node | None) -> Node | None:
+    if args is None:
+        return None
+    return next((child for child in args.named_children if child.type != "comment"), None)
+
+
+def _fetch_url_text(node: Node | None, source: bytes, depth: int = 0) -> str:
+    # An opaque expression can supply a query value but never a literal key or delimiter.
+    unknown = "\x00"
+    if node is None or depth >= 24 or node.end_byte - node.start_byte > 32_768:
+        return unknown
+    node = _unwrap(node)
+    if node.type in {"string", "template_string"}:
+        return "".join(
+            _text(child, source) if child.type == "string_fragment" else unknown
+            for child in node.named_children
+        )
+    if node.type == "binary_expression":
+        operator = node.child_by_field_name("operator")
+        if operator is not None and operator.type == "+":
+            left = _fetch_url_text(node.child_by_field_name("left"), source, depth + 1)
+            right = _fetch_url_text(node.child_by_field_name("right"), source, depth + 1)
+            return left + right
+    if node.type == "member_expression":
+        field = node.child_by_field_name("property")
+        obj = node.child_by_field_name("object")
+        if obj is None or field is None:
+            return unknown
+        obj = _unwrap(obj)
+        constructor = obj.child_by_field_name("constructor")
+        if obj.type != "new_expression" or constructor is None:
+            return unknown
+        kind = _text(constructor, source).split(".")[-1]
+        if (kind, _text(field, source)) not in {("URL", "href"), ("Request", "url")}:
+            return unknown
+        return _fetch_url_text(obj, source, depth + 1)
+    if node.type == "new_expression":
+        constructor = node.child_by_field_name("constructor")
+        if constructor is not None and _text(constructor, source) in {
+            "Request", "URL", "globalThis.Request", "globalThis.URL",
+            "window.Request", "window.URL", "self.Request", "self.URL",
+        }:
+            first = _first_argument(node.child_by_field_name("arguments"))
+            return _fetch_url_text(first, source, depth + 1)
+    return unknown
+
+
+def _fetch_query_keys(args: Node, source: bytes) -> list[str]:
+    url = _fetch_url_text(_first_argument(args), source)
+    query = url.partition("#")[0].partition("?")[2]
+    keys = set()
+    for field in query.split("&"):
+        name, _, value = field.partition("=")
+        if value and len(name) <= 192:
+            decoded = unquote_plus(name)
+            if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", decoded):
+                keys.add(decoded.lower())
+    return sorted(keys)
+
+
 def annotate_call_arguments(ast: FileAST, root: Node, source: bytes) -> None:
     if ast.language not in SUPPORTED:
         return
@@ -133,6 +195,12 @@ def annotate_call_arguments(ast: FileAST, root: Node, source: bytes) -> None:
         args = node.child_by_field_name("arguments")
         if args is None or args.has_error:
             continue
+        if (
+            ast.language in {Language.JAVASCRIPT, Language.TYPESCRIPT}
+            and call.callee == "fetch"
+            and call.receiver in {None, "globalThis", "window", "self"}
+        ):
+            call.fetch_query_keys = _fetch_query_keys(args, source)
         facts: list[CallArgument] = []
         for child in args.named_children:
             if child.type == "comment":

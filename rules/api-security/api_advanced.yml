@@ -282,7 +282,11 @@ rules:
       - pattern: "(app|router)\\.(get|delete)\\s*\\(['\"]"
         args_match: "(/:token|/:api_key|/:password|/:secret|\\?.*token=|\\?.*key=|\\?.*password=|\\?.*secret=)"
         description: "Route definition with sensitive data in URL path or query"
-      - pattern: "(fetch|axios|http\\.get|requests\\.get|HttpClient|http\\.Get)\\s*\\("
+      - callee: '(?:(?:globalThis|window|self)\.)?fetch'
+        callee_match_mode: full
+        fetch_query_keys: [api_key, token, password, secret, access_token, session_id]
+        description: "Sensitive query parameter in the Fetch URL argument"
+      - pattern: "(axios|http\\.get|requests\\.get|HttpClient|http\\.Get)\\s*\\("
         args_match: "(\\?.*api_key=|\\?.*token=|\\?.*password=|\\?.*secret=|\\?.*access_token=|\\?.*session_id=)"
         description: "HTTP client sending sensitive data in URL query parameters"
       - pattern: "(redirect|location\\.href|window\\.location)\\s*[=\\(]"
