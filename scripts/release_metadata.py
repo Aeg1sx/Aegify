@@ -56,7 +56,7 @@ def release_metadata(root: Path, requested_tag: str | None = None) -> dict[str, 
             raise ValueError(f"{directory} package/lock versions must match {public_version}")
 
     sidebar = (root / "dashboard/src/components/sidebar.tsx").read_text()
-    worker = (root / "dashboard/scripts/scan-worker.mjs").read_text()
+    worker = (root / "dashboard/src/lib/worker-registry.ts").read_text()
     if f">v{public_version}</p>" not in sidebar or f'version: "{public_version}"' not in worker:
         raise ValueError("Dashboard display/worker version differs from package metadata")
 

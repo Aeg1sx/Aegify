@@ -39,7 +39,7 @@ class ReleaseMetadataTests(unittest.TestCase):
                 ),
             )
         self.write("dashboard/src/components/sidebar.tsx", f"<p>v{public_version}</p>")
-        self.write("dashboard/scripts/scan-worker.mjs", f'version: "{public_version}"')
+        self.write("dashboard/src/lib/worker-registry.ts", f'version: "{public_version}"')
         self.write(f"docs/releases/v{public_version}.md", "Reviewed release notes")
 
     def test_beta_remains_prerelease(self):
@@ -64,7 +64,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             "docs/package.json",
             "docs/package-lock.json",
             "dashboard/src/components/sidebar.tsx",
-            "dashboard/scripts/scan-worker.mjs",
+            "dashboard/src/lib/worker-registry.ts",
         ):
             with self.subTest(path=name):
                 path = self.root / name
