@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { replaceHistorySearch, useHistorySearch } from "@/lib/use-history-search";
 import { Archive, ArrowUpRight, Plus, RotateCcw, Search } from "lucide-react";
 import { repositoryName } from "@/lib/project-view";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ export default function ProjectsPage() {
 }
 
 function ProjectDirectory() {
-  const params = useSearchParams();
+  const params = useHistorySearch();
   const archived = params.get("archived") === "true";
   const query = params.get("q") || "";
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -87,7 +87,7 @@ function ProjectDirectory() {
     const url = new URL(window.location.href);
     if (value) url.searchParams.set(key, value);
     else url.searchParams.delete(key);
-    window.history.replaceState(null, "", url);
+    replaceHistorySearch(url);
   }
 
   function selectView(next: boolean) {

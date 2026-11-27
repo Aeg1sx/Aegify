@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { replaceHistorySearch, useHistorySearch } from "@/lib/use-history-search";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { ArrowRight, Plus, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ function RuleRow({ rule, catalogQuery }: { rule: Rule; catalogQuery: string }) {
 }
 
 function RuleCatalog() {
-  const search = useSearchParams();
+  const search = useHistorySearch();
   const query = search.get("q") || "";
   const severity = search.get("severity") || "";
   const [rules, setRules] = useState<Rule[] | null>(null);
@@ -123,7 +123,7 @@ function RuleCatalog() {
       if (value) url.searchParams.set(key, value);
       else url.searchParams.delete(key);
     }
-    window.history.replaceState(null, "", url);
+    replaceHistorySearch(url);
     if ("page" in changes) {
       countRef.current?.focus({ preventScroll: true });
       countRef.current?.scrollIntoView({ block: "start" });

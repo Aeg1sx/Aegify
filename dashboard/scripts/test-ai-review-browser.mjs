@@ -2124,7 +2124,8 @@ try {
           })); checks++;
           if (width === 390 && process.env.AEGIFY_UI_ARTIFACTS) await page.screenshot({ path: join(process.env.AEGIFY_UI_ARTIFACTS, "rules-mobile.png") });
         }
-        await page.type("#rule-query", "CWE-502");
+        await page.type("#rule-query", "CWE-502", { delay: 0 });
+        assert.equal(await page.$eval("#rule-query", el => el.value), "CWE-502"); checks++;
         await page.select("#rule-severity", "high");
         await waitText(page, "1 of " + summaries.length + " rules");
         assert.equal((await page.$$(ruleRows)).length, 1); checks++;
