@@ -8,9 +8,10 @@ import { SeverityBadge } from "@/components/severity-badge";
 import { StatusBadge } from "@/components/status-badge";
 import { EvidenceWorkbench, type FindingEvidenceView } from "@/components/finding/evidence-workbench";
 import { EVIDENCE_LABELS } from "@/lib/code-evidence";
-import { findingFilters, filterQuery, QUEUE_LABELS, type FindingFilters } from "@/lib/finding-view";
+import { findingFilters, filterQuery, invalidFindingScope, QUEUE_LABELS, type FindingFilters } from "@/lib/finding-view";
 
-interface Finding extends FindingEvidenceView { aiVerdict: string; createdAt: string; confidence: number }
+interface Finding extends FindingEvidenceView { scan: { projectId: string | null }; repositoryId: string; aiVerdict: string; createdAt: string; confidence: number }
+interface ReviewScan { id: string; repository: string; branch: string; commitSha: string; createdAt: string; status: string }
 interface SavedView { name: string; query: string }
 const presets = [
   { name: "All findings", values: {} },
@@ -21,10 +22,13 @@ const presets = [
 
 export default function FindingsPage() {
   const [filters, setFilters] = useState(findingFilters());
+  const [invalidScope, setInvalidScope] = useState(false);
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [reviewScan, setReviewScan] = useState<ReviewScan | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [fetching, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [advanced, setAdvanced] = useState(false);
@@ -44,12 +48,16 @@ export default function FindingsPage() {
   const rowButtons = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   useEffect(() => {
-    const restore = () => setFilters(findingFilters(new URLSearchParams(window.location.search)));
+    const restore = () => {
+      const params = new URLSearchParams(window.location.search);
+      setInvalidScope(invalidFindingScope(params));
+      setFilters(findingFilters(params));
+    };
     const frame = requestAnimationFrame(() => {
       restore();
       try {
         const parsed: unknown = JSON.parse(localStorage.getItem("aegify.findingViews.v1") || "[]");
-        if (Array.isArray(parsed)) setSaved(parsed.filter((v): v is SavedView => typeof v?.name === "string" && typeof v?.query === "string").slice(0, 12));
+        if (Array.isArray(parsed)) setSaved(parsed.filter((v): v is SavedView => typeof v?.name === "string" && typeof v?.query === "string" && !invalidFindingScope(new URLSearchParams(v.query))).slice(0, 12));
         setCompact(localStorage.getItem("aegify.tableDensity") !== "comfortable");
         setShowOwner(localStorage.getItem("aegify.findingOwner") !== "hidden");
       } catch { /* Storage may be unavailable. The workbench remains usable. */ }
@@ -74,7 +82,7 @@ export default function FindingsPage() {
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || invalidScope) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true); setError("");
@@ -90,22 +98,24 @@ export default function FindingsPage() {
             setFilters((previous) => ({ ...previous, page: String(lastPage) }));
             return;
           }
-          setFindings(data.findings); setTotal(data.total); setSelected(new Set());
+          setReviewScan(data.scan ?? null); setLoadedQuery(query); setFindings(data.findings); setTotal(data.total); setSelected(new Set());
           setInspectedId((id) => data.findings.some((f: Finding) => f.id === id) ? id : null);
         }
       } catch (e) {
-        if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : "Unable to load findings."); setFindings([]); setSelected(new Set()); setInspectedId(null); setTotal(0); }
+        if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : "Unable to load findings."); setReviewScan(null); setFindings([]); setSelected(new Set()); setInspectedId(null); setTotal(0); }
       } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 220);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [filters, ready, retry]);
+  }, [filters, ready, retry, invalidScope]);
 
   const change = (key: keyof FindingFilters, value: string) => setFilters((f) => ({ ...f, [key]: value, page: key === "page" ? value : "1" }));
   const closeInspector = useCallback(() => {
     returnToRow.current = inspectedId;
     setInspectedId(null);
   }, [inspectedId]);
-  const inspected = findings.find((finding) => finding.id === inspectedId);
+  const query = filterQuery(filters);
+  const loading = fetching || loadedQuery !== query;
+  const inspected = !loading && findings.find((finding) => finding.id === inspectedId);
   useEffect(() => {
     if (!inspectedId && returnToRow.current) {
       rowButtons.current.get(returnToRow.current)?.focus();
@@ -118,16 +128,19 @@ export default function FindingsPage() {
     }
   }, [inspectedId]);
   const page = Number(filters.page);
-  const query = filterQuery(filters);
   const detailQuery = query === filterQuery(findingFilters()) ? "" : "?" + query;
   const pages = Math.max(1, Math.ceil(total / 50));
+  const scoped = Boolean(filters.scanId || filters.repositoryId);
+  const defaults = { ...findingFilters(), scanId: filters.scanId, repositoryId: filters.repositoryId,
+    projectId: scoped ? filters.projectId : "" };
+  const scan = loadedQuery === query && reviewScan?.id === filters.scanId ? reviewScan : null;
   const views = [
-    ...presets.map((preset) => ({ name: preset.name, filters: { ...findingFilters(), ...preset.values } })),
+    ...presets.map((preset) => ({ name: preset.name, filters: { ...defaults, ...preset.values } })),
     ...saved.map((view) => ({ name: view.name, filters: findingFilters(new URLSearchParams(view.query)) })),
   ];
   const currentQuery = filterQuery({ ...filters, page: "1" });
   const viewIndex = views.findIndex((view) => filterQuery({ ...view.filters, page: "1" }) === currentQuery);
-  const filterCount = Object.entries(filters).filter(([key, value]) => value && !["page", "sort", "search", "queue"].includes(key)).length;
+  const filterCount = Object.entries(filters).filter(([key, value]) => value && !["page", "sort", "search", "queue", "scanId", "repositoryId"].includes(key)).length;
   const toggle = (id: string) => setSelected((previous) => {
     const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next;
   });
@@ -157,6 +170,14 @@ export default function FindingsPage() {
     </select>;
   }
 
+  if (invalidScope) return <section className="workbench-panel space-y-3 p-5">
+    <h1 className="workbench-title">Findings</h1>
+    <p role="alert">Invalid scan or repository filter.</p>
+    <button type="button" className="min-h-11 text-sm text-primary underline" onClick={() => {
+      setFilters(findingFilters()); setInvalidScope(false);
+    }}>Open all findings</button>
+  </section>;
+
   return <div className="finding-workspace space-y-5" data-detail-open={Boolean(inspected)}>
     <header className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="workbench-title">Findings</h1>
@@ -167,6 +188,32 @@ export default function FindingsPage() {
       </select>
       {filters.queue && <button type="button" className="hidden min-h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium sm:inline-flex" onClick={() => change("queue", "")} aria-label="Clear review queue filter">{QUEUE_LABELS[filters.queue as keyof typeof QUEUE_LABELS]}<X aria-hidden className="size-3.5" /></button>}
     </header>
+    {scoped && <section aria-label="Review scope" className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border bg-card px-4 py-2">
+      {filters.projectId && <div className="min-w-0">
+        <span className="block text-xs text-muted-foreground">Project</span>
+        <span className="break-all text-sm font-medium">{projects.find((p) => p.id === filters.projectId)?.name || filters.projectId}</span>
+      </div>}
+      {filters.scanId && <div className="min-w-0">
+        <span className="block text-xs text-muted-foreground">Scan</span>
+        {scan ? <>
+          <Link href={"/scans/" + encodeURIComponent(scan.id)} className="break-all text-sm font-semibold text-primary underline underline-offset-4">{scan.repository || "Scan record"}</Link>
+          <p className="break-words text-xs text-muted-foreground">
+            {[scan.branch, scan.commitSha.slice(0, 8), new Date(scan.createdAt).toLocaleString()].filter(Boolean).join(" · ")}
+          </p>
+        </> : <span className="break-all font-mono text-sm">{filters.scanId}</span>}
+      </div>}
+      {filters.repositoryId && <div className="min-w-0">
+        <span className="block text-xs text-muted-foreground">Repository</span>
+        <span className="break-all font-mono text-sm font-semibold">{filters.repositoryId}</span>
+      </div>}
+      {scan && scan.status !== "completed" && <span className="rounded-md border border-[var(--severity-medium)]/50 px-2 py-1 text-xs font-medium">
+        {scan.status === "partial" ? "Partial scan coverage" : "Scan status · " + scan.status}
+      </span>}
+      <button type="button" className="ml-auto min-h-11 text-sm text-primary hover:underline"
+        onClick={() => filters.repositoryId ? change("repositoryId", "") : setFilters(findingFilters())}>
+        {filters.repositoryId ? "Show all repositories" : "Leave scan view"}
+      </button>
+    </section>}
     <div aria-label="Finding views" role="group" className="hidden flex-wrap items-center gap-x-5 border-b sm:flex">
       {views.map((view, index) => <button key={index} type="button" aria-pressed={viewIndex === index} className="hidden min-h-11 border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground aria-pressed:border-primary aria-pressed:font-semibold aria-pressed:text-foreground sm:inline-flex sm:items-center" onClick={() => setFilters(view.filters)}>{view.name}</button>)}
     </div>
@@ -188,10 +235,10 @@ export default function FindingsPage() {
         {selectFilter("disposition", "All gates", [["blocking", "Blocking"], ["advisory", "Advisory"]])}
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-3 text-sm">
-          <label className="inline-flex min-h-10 items-center gap-2"><input type="checkbox" checked={filters.history === "true"} onChange={(e) => change("history", e.target.checked ? "true" : "")} />Include history</label>
+          {!filters.scanId && <label className="inline-flex min-h-10 items-center gap-2"><input type="checkbox" checked={filters.history === "true"} onChange={(e) => change("history", e.target.checked ? "true" : "")} />Include history</label>}
           <label className="inline-flex min-h-10 items-center gap-2"><input type="checkbox" checked={showOwner} onChange={(e) => { setShowOwner(e.target.checked); try { localStorage.setItem("aegify.findingOwner", e.target.checked ? "visible" : "hidden"); } catch {} }} />Show owners</label>
           <select className="workbench-select" aria-label="Table density" value={compact ? "compact" : "comfortable"} onChange={(e) => { setCompact(e.target.value === "compact"); try { localStorage.setItem("aegify.tableDensity", e.target.value); } catch {} }}><option value="compact">Compact rows</option><option value="comfortable">Comfortable rows</option></select>
-          <button type="button" className="min-h-10 text-sm text-primary hover:underline" onClick={() => setFilters(findingFilters())}>Reset filters</button>
+          <button type="button" className="min-h-10 text-sm text-primary hover:underline" onClick={() => setFilters(defaults)}>Reset filters</button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
         <input aria-label="Saved view name" placeholder="Name this view" maxLength={40} value={saveName} onChange={(e) => setSaveName(e.target.value)} className="workbench-select w-44" />
@@ -209,8 +256,8 @@ export default function FindingsPage() {
     {!error && <div className={"grid items-start gap-4 " + (inspected ? "2xl:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_420px]" : "")}>
       <section aria-label="Finding results" className="finding-results workbench-panel">
         <div className="workbench-heading">
-          <h2 className="text-sm font-semibold">{filters.history === "true" ? "All recorded occurrences" : "Current occurrences"} <span className="ml-2 font-mono font-normal tabular-nums text-muted-foreground">{loading ? "…" : total.toLocaleString()}</span></h2>
-          {selected.size > 0 && <Button size="sm" className="min-h-10" disabled={batchRunning || loading} onClick={batchAnalyze}>{batchRunning ? <Loader2 aria-hidden className="animate-spin" /> : <ListChecks aria-hidden />}Review selected ({selected.size})</Button>}
+          <h2 className="text-sm font-semibold">{filters.scanId ? "Occurrences in this scan" : filters.history === "true" ? "All recorded occurrences" : "Current occurrences"} <span className="ml-2 font-mono font-normal tabular-nums text-muted-foreground">{loading ? "…" : total.toLocaleString()}</span></h2>
+          {!loading && selected.size > 0 && <Button size="sm" className="min-h-10" disabled={batchRunning || loading} onClick={batchAnalyze}>{batchRunning ? <Loader2 aria-hidden className="animate-spin" /> : <ListChecks aria-hidden />}Review selected ({selected.size})</Button>}
         </div>
         <div className="finding-scroll" aria-busy={loading}>
           <table className={"data-table finding-table " + (compact ? "compact" : "")}>
@@ -219,8 +266,8 @@ export default function FindingsPage() {
               <th scope="col" className="finding-check"><label><input aria-label="Select all visible findings" type="checkbox" disabled={loading || !findings.length} checked={findings.length > 0 && selected.size === findings.length} ref={(input) => { if (input) input.indeterminate = selected.size > 0 && selected.size < findings.length; }} onChange={() => setSelected(selected.size === findings.length ? new Set() : new Set(findings.map((f) => f.id)))} /></label></th>
               <th scope="col" className="finding-column">Severity</th><th scope="col">Finding / source</th><th scope="col" className="finding-column">Evidence</th><th scope="col" className="finding-column">Status</th>{showOwner && <th scope="col" className="finding-column">Owner</th>}<th scope="col" className="finding-details"><span className="sr-only">Details</span></th>
             </tr></thead>
-            <tbody>{loading ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground"><Loader2 aria-hidden className="mx-auto mb-2 size-5 animate-spin" />Loading findings…</td></tr> : findings.length === 0 ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground">{filterCount || filters.search || filters.queue ? <>No findings match this view. <button type="button" className="min-h-11 text-primary hover:underline" onClick={() => setFilters(findingFilters())}>Clear filters</button></> : "No findings recorded."}</td></tr> : findings.map((finding, index) => <tr key={finding.id} data-inspected={inspectedId === finding.id}>
-              <td className="finding-check"><label><input aria-label={"Select " + finding.ruleName + " at " + finding.filePath} type="checkbox" checked={selected.has(finding.id)} onChange={() => toggle(finding.id)} /></label></td>
+            <tbody>{loading ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground"><Loader2 aria-hidden className="mx-auto mb-2 size-5 animate-spin" />Loading findings…</td></tr> : findings.length === 0 ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground">{filterCount || filters.search || filters.queue ? <>No findings match this view. <button type="button" className="min-h-11 text-primary hover:underline" onClick={() => setFilters(defaults)}>Clear filters</button></> : scoped ? "No findings recorded in this scope." : "No findings recorded."}</td></tr> : findings.map((finding, index) => <tr key={finding.id} data-inspected={inspectedId === finding.id}>
+              <td className="finding-check"><label><input aria-label={"Select " + finding.ruleName + " at " + [finding.repositoryId, finding.modulePath || finding.filePath].filter(Boolean).join(" · ")} type="checkbox" checked={selected.has(finding.id)} onChange={() => toggle(finding.id)} /></label></td>
               <td className="finding-column"><SeverityBadge severity={finding.severity} /></td>
               <td className="finding-summary">
                 <button type="button" aria-expanded={inspectedId === finding.id} aria-controls={inspectedId === finding.id ? "finding-inspector" : undefined} ref={(el) => { if (el) rowButtons.current.set(finding.id, el); else rowButtons.current.delete(finding.id); }} className="max-w-full break-words text-left text-sm font-semibold leading-snug hover:text-primary hover:underline" onClick={() => setInspectedId((current) => current === finding.id ? null : finding.id)} onKeyDown={(event) => {
@@ -228,7 +275,9 @@ export default function FindingsPage() {
                 if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
                 event.preventDefault(); const next = findings[index + (event.key === "ArrowDown" ? 1 : -1)];
                 if (next) { setInspectedId(next.id); rowButtons.current.get(next.id)?.focus(); }
-              }}>{finding.ruleName}</button><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{finding.filePath}:{finding.lineStart}</p>
+              }}>{finding.ruleName}</button><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{finding.repositoryId && (filters.repositoryId ? <span className="font-semibold">{finding.repositoryId} · </span> : <>
+                  <button type="button" aria-label={`View findings for ${finding.repositoryId} in this scan`} className="font-semibold text-primary underline underline-offset-4"
+                    onClick={() => setFilters({ ...defaults, projectId: finding.scan.projectId ?? filters.projectId, scanId: finding.scanId, repositoryId: finding.repositoryId, page: "1" })}>{finding.repositoryId}</button> · </>)}{finding.modulePath || finding.filePath}:{finding.lineStart}</p>
                 <div className="finding-narrow mt-2 flex-wrap items-center gap-x-2 gap-y-1"><SeverityBadge severity={finding.severity} /><StatusBadge status={finding.status} /></div>
                 <div className="finding-narrow mt-2 flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground"><span>{EVIDENCE_LABELS[finding.evidenceState] || "Unclassified"}</span>{showOwner && <span>· {finding.owner || "Unassigned"}</span>}{finding.aiVerdict && <span>· AI suggestion available</span>}</div>
                 {finding.baselineState === "regressed" && <span className="text-xs text-destructive">Reopened</span>}

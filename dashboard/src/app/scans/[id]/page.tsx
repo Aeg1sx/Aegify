@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { SeverityChart } from "@/components/severity-chart";
 import { ScanJobPanel } from "@/components/scan-job-panel";
 import { GatewayInventoryPanel } from "@/components/gateway-inventory-panel";
+import { scanFindingsHref } from "@/lib/finding-view";
 import type { GatewayReview } from "@/lib/gateway-inventory";
 import { EVIDENCE_LABELS } from "@/lib/code-evidence";
 
@@ -19,6 +20,8 @@ interface Finding {
   severity: string;
   evidenceState: string;
   status: string;
+  repositoryId: string;
+  modulePath: string;
   filePath: string;
   lineStart: number;
   message: string;
@@ -142,7 +145,7 @@ function ScanRecord({ id }: { id: string }) {
         (!severity || item.severity === severity) &&
         (!ruleId || item.ruleId === ruleId) &&
         (!query ||
-          [item.message, item.filePath, item.ruleId, item.ruleName].some((value) =>
+          [item.message, item.filePath, item.repositoryId, item.modulePath, item.ruleId, item.ruleName].some((value) =>
             value.toLowerCase().includes(query),
           )),
     )
@@ -263,7 +266,7 @@ function ScanRecord({ id }: { id: string }) {
         </div>
       )}
       {scan.hasSourceJob && <ScanJobPanel scanId={id} onFinished={refresh} />}
-      {scan.gatewayInventory && <GatewayInventoryPanel key={id} review={scan.gatewayInventory} />}
+      {scan.gatewayInventory && <GatewayInventoryPanel key={id} scanId={id} review={scan.gatewayInventory} />}
 
       {awaitingFindings ? (
         <section aria-labelledby="scan-findings" className="border-t pt-4">
@@ -281,6 +284,9 @@ function ScanRecord({ id }: { id: string }) {
               <h2 id="scan-findings" className="text-lg font-semibold">
                 Findings
               </h2>
+              <Link href={scanFindingsHref(id)} className="ml-auto inline-flex min-h-10 items-center gap-1 text-sm text-primary hover:underline">
+                Review scan findings <ArrowUpRight aria-hidden className="size-4" />
+              </Link>
               <span role="status" className="text-sm tabular-nums text-muted-foreground">
                 {filtering ? filtered.length.toLocaleString() + " of " : ""}
                 {scan.findings.length.toLocaleString()} {scan.findings.length === 1 ? "record" : "records"}
@@ -334,7 +340,7 @@ function ScanRecord({ id }: { id: string }) {
                 {filtered.map((item) => (
                   <li key={item.id}>
                     <Link
-                      href={"/findings/" + item.id}
+                      href={{ pathname: "/findings/" + item.id, query: { scanId: id } }}
                       className="group grid gap-1 px-4 py-3.5 hover:bg-accent/60 focus-visible:outline-offset-[-3px] sm:px-5"
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -347,7 +353,7 @@ function ScanRecord({ id }: { id: string }) {
                         />
                       </div>
                       <span className="break-all font-mono text-xs text-muted-foreground">
-                        {item.filePath}:{item.lineStart}
+                        {item.repositoryId && <span className="font-semibold">{item.repositoryId} · </span>}{item.modulePath || item.filePath}:{item.lineStart}
                       </span>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                         <SeverityBadge severity={item.severity} />

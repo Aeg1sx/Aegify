@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { scanFindingsHref } from "@/lib/finding-view";
 import { Button } from "@/components/ui/button";
 import type { GatewayFileReview, GatewayReview, GatewayRouteReview } from "@/lib/gateway-inventory";
 
@@ -34,7 +36,26 @@ const filters = [
   ["resolved", "Resolved"],
 ] as const;
 
-export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
+function RouteOwners({ route, scanId }: { route: GatewayRouteReview; scanId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!route.owners.length) return null;
+  const ownerLink = (owner: string) => (
+    <Link key={owner} prefetch={false} href={scanFindingsHref(scanId, owner)}
+      aria-label={`View findings for ${owner} in this scan`}
+      className="inline-flex min-h-8 items-center gap-1 break-all rounded-sm font-mono text-xs text-primary underline underline-offset-4">
+      {owner}
+    </Link>
+  );
+  if (route.status === "resolved") return ownerLink(route.owners[0]);
+  return <details className="mt-1" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+    <summary className="w-fit cursor-pointer py-1.5 text-xs font-medium">{route.owners.length} candidate repositories</summary>
+    {expanded && <ul className="grid max-h-48 overflow-y-auto border-l pl-3">
+      {route.owners.map((owner) => <li key={owner}>{ownerLink(owner)}</li>)}
+    </ul>}
+  </details>;
+}
+
+export function GatewayInventoryPanel({ review, scanId }: { review: GatewayReview; scanId: string }) {
   const id = useId();
   const section = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -46,12 +67,15 @@ export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
   }, []);
   const [fileIndex, setFileIndex] = useState(-1);
   const [status, setStatus] = useState("all");
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const ownerQuery = ownerSearch.trim().toLowerCase();
   const [page, setPage] = useState(0);
   const selected = review.files[fileIndex];
   const files = useMemo(() => selected ? [selected] : review.files, [review.files, selected]);
   const matches = useMemo(() => files.flatMap((file) => file.routes
-    .filter((route) => status === "all" || route.status === status)
-    .map((route) => ({ route, file }))), [files, status]);
+    .map((route, routeIndex) => ({ route, file, routeIndex }))
+    .filter(({ route }) => (status === "all" || route.status === status)
+      && (!ownerQuery || route.owners.some((owner) => owner.toLowerCase().includes(ownerQuery))))), [files, status, ownerQuery]);
   const pages = Math.ceil(matches.length / pageSize);
   const start = Math.min(page, Math.max(0, pages - 1)) * pageSize;
   const selectClass = "min-h-11 w-full min-w-0 rounded-md border bg-background px-3 text-sm";
@@ -71,7 +95,7 @@ export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
         <p className="text-sm">Omitted by scanner limits · {review.omittedFiles} files · {review.omittedRoutes} declarations</p>
       )}
       {review.files.length > 0 && (
-        <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <label className="grid min-w-0 gap-1 text-xs font-medium">
             Configuration file
             <select className={selectClass} value={fileIndex} onChange={(event) => { setFileIndex(Number(event.target.value)); setPage(0); }}>
@@ -85,6 +109,11 @@ export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
               {filters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
+          <label className="grid min-w-0 gap-1 text-xs font-medium">
+            Destination repository
+            <input type="search" className={selectClass} value={ownerSearch} placeholder="Filter by owner…"
+              onChange={(event) => { setOwnerSearch(event.target.value); setPage(0); }} />
+          </label>
         </div>
       )}
       {files.filter((file) => file.diagnostics.length > 0).map((file) => (
@@ -95,12 +124,12 @@ export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
       ))}
       <p aria-live="polite" className="text-xs text-muted-foreground">
         {matches.length ? `Showing ${start + 1}–${Math.min(start + pageSize, matches.length)} of ${matches.length} declarations`
-          : status === "all" ? "No route declarations recorded." : "No declarations match this ownership status."}
+          : ownerQuery ? "No declarations match this destination repository." : status === "all" ? "No route declarations recorded." : "No declarations match this ownership status."}
       </p>
       {matches.length > 0 && (
         <ul aria-label="Gateway route declarations" className="divide-y rounded-lg border">
-          {matches.slice(start, start + pageSize).map(({ route, file }, index) => (
-            <li key={start + index} className="grid gap-2 px-4 py-3 sm:grid-cols-2 sm:gap-4">
+          {matches.slice(start, start + pageSize).map(({ route, file, routeIndex }) => (
+            <li key={JSON.stringify([file.repositoryId, file.path, routeIndex])} className="grid gap-2 px-4 py-3 sm:grid-cols-2 sm:gap-4">
               <div className="min-w-0">
                 <span className="block break-all text-sm font-semibold">{route.name || "Unnamed declaration"}</span>
                 <span className="block break-all text-xs text-muted-foreground">{fileLabel(file)}</span>
@@ -108,8 +137,8 @@ export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
               </div>
               <div className="min-w-0 text-sm">
                 <span className="font-medium capitalize">{route.status}</span>
-                {route.owners.length > 0 && <span className="break-all"> · {route.owners.join(", ")}</span>}
                 <p className="text-xs text-muted-foreground">{explanations[route.reason]}</p>
+                <RouteOwners route={route} scanId={scanId} />
               </div>
             </li>
           ))}

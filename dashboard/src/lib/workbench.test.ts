@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { codeLanguage, codePreview, describeFlowMessage, parseEvidenceSteps, snippetStart } from "./code-evidence.ts";
-import { boundedInteger, filterQuery, findingFilters } from "./finding-view.ts";
+import { boundedInteger, filterQuery, findingFilters, invalidFindingScope, scanFindingsHref } from "./finding-view.ts";
 import { entryPath, graphSymbolName } from "./graph-path.ts";
 import { buildFindingReport, fencedCode } from "./finding-report.ts";
 import { flowLineExcerpt } from "./sarif-evidence.ts";
@@ -44,6 +44,19 @@ test("flow excerpts retain only a line with a recorded offset", () => {
   assert.equal(flowLineExcerpt({ region: { ...region, snippet: { text: "ambiguous\ncontext" } } }), undefined);
   assert.equal(flowLineExcerpt({ region, contextRegion: { ...contextRegion, startLine: 20 } }), undefined);
   assert.equal(flowLineExcerpt({ region: { ...region, snippet: { text: "a".repeat(4097) } } }), undefined);
+});
+
+test("scan and repository scope round trip without splitting or truncating an owner ID", () => {
+  const repositoryId = "org/" + "x".repeat(500) + "&team=service+one";
+  const params = new URL(scanFindingsHref("scan-A", repositoryId), "https://example.test").searchParams;
+  assert.equal(invalidFindingScope(params), false);
+  const filters = findingFilters(params);
+  assert.equal(filters.scanId, "scan-A");
+  assert.equal(filters.repositoryId, repositoryId);
+  assert.deepEqual(findingFilters(new URLSearchParams(filterQuery(filters))), filters);
+  for (const invalid of ["scanId=", "repositoryId=%00", "scanId=a&scanId=b", "repositoryId=a&repositoryId="]) {
+    assert.equal(invalidFindingScope(new URLSearchParams(invalid)), true);
+  }
 });
 
 test("table filters round trip, discard unknown parameters, and bound pagination", () => {

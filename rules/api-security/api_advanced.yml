@@ -229,11 +229,14 @@ rules:
     cwe_id: 770
     owasp_category: "API4:2023-Unrestricted Resource Consumption"
     patterns:
-      - pattern: "(findAll|find\\(\\)|find\\(\\{\\}\\)|Objects\\.all|select\\s*\\*|collection\\.find\\(\\)|Model\\.findAll|getAll|listAll|fetchAll)"
+      - callee_match: '(?:^|\.)(?:\w*(?:repository|store|dao|model|table|collection)|db)(?:\.\w+)?\.getAll$'
+        missing_context: '\b(?:limit|offset|page|cursor|paginate|skip|take|page_size|maxResults|Pageable)\b'
+        description: "Unbounded data access through a repository or collection"
+      - pattern: "(findAll|find\\(\\)|find\\(\\{\\}\\)|Objects\\.all|select\\s*\\*|collection\\.find\\(\\)|Model\\.findAll|getAll\\s*\\(\\s*\\)|listAll|fetchAll)"
         missing_check: "(limit|offset|page|cursor|paginate|pagination|skip|take|per_page|page_size|maxResults|setMaxResults|Pageable|PageRequest)"
         description: "Database query returning all records without pagination"
       - pattern: "(res\\.json|jsonify|ResponseEntity\\.ok|json\\.NewEncoder|JSON\\.stringify)\\s*\\("
-        args_match: "(findAll|find\\(\\)|Objects\\.all|getAll|listAll|fetchAll|\\.all\\(\\))"
+        args_match: "(findAll|find\\(\\)|Objects\\.all|getAll\\s*\\(\\s*\\)|listAll|fetchAll|\\.all\\(\\))"
         description: "API response returning all database records"
       - pattern: "(app|router)\\.(get)\\(['\"].*/(list|all|users|items|products|orders|records|entries|data)/?['\"]"
         missing_check: "(limit|page|cursor|paginate|pagination|per_page|page_size)"

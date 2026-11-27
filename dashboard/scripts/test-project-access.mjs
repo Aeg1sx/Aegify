@@ -262,6 +262,28 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await db.scan.findUniqueOrThrow({ where: { id: uploaded.scanId } })).projectId, a.id);
     assert.equal((await db.scan.findUniqueOrThrow({ where: { id: uploaded.scanId } })).status, "partial");
     assert.equal((await db.rule.findUniqueOrThrow({ where: { id: "SHARED" } })).yamlContent, "original-rule");
+    // Three snapshots and the same module path must remain distinguishable by repository, scan and membership.
+    const ownerRows = [
+      [uploaded.scanId, "orders-east", false], [uploaded.scanId, "orders-east-v2", true],
+      [uploaded.scanId, "Orders-East", true], [uploaded.scanId, "", true],
+      [sa.id, "orders-east", true], [sb.id, "orders-east", true],
+    ].map(([scanId, repositoryId, isCurrent], i) => ({ ...finding, id: "scope-control-" + i, scanId,
+      repositoryId, isCurrent, filePath: "src/app.py", modulePath: "src/app.py" }));
+    await db.finding.createMany({ data: ownerRows });
+    try {
+      const path = `/api/findings?scanId=${uploaded.scanId}&repositoryId=orders-east`;
+      const visible = await call(path, { user: "bob" });
+      assert.equal(visible.findings[0].scan.projectId, a.id); assert.equal(visible.scan.id, uploaded.scanId); assert.equal(visible.scan.status, "partial");
+      assert.equal(visible.total, 1); assert.deepEqual(visible.findings.map((row) => row.id), [ownerRows[0].id]);
+      assert.deepEqual((await call("/api/findings?repositoryId=orders-east", { user: "alice" })).findings.map((row) => row.id), [ownerRows[4].id]);
+      for (const hidden of [await call(path + "&projectId=" + b.id), await call(path, { user: "outside" })]) {
+        assert.equal(hidden.total, 0); assert.equal(hidden.scan, null);
+      }
+      assert.equal((await call(path.replace("orders-east", "orders"))).total, 0);
+      await call(path + "&repositoryId=orders-east-v2", { status: 400 });
+      await call("/api/findings?repositoryId=", { status: 400 });
+      await call(path, { user: null, status: 401 });
+    } finally { await db.finding.deleteMany({ where: { id: { in: ownerRows.map((row) => row.id) } } }); }
     // Import preserves bounded producer evidence without converting an AI suggestion into triage.
     const digest = (value) => "sha256:" + createHash("sha256").update(value).digest("hex");
     const excerpt = "    return name";

@@ -1,12 +1,15 @@
-import { requireAccess, findingScope } from "@/lib/access";
+import { requireAccess, findingScope, scanScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { boundedInteger, queueConditions } from "@/lib/finding-view";
+import { boundedInteger, invalidFindingScope, queueConditions } from "@/lib/finding-view";
 
 export async function GET(request: NextRequest) {
   const access = await requireAccess(request);
   if (access instanceof Response) return access;
   const url = new URL(request.url);
+  if (invalidFindingScope(url.searchParams)) {
+    return NextResponse.json({ error: "Invalid scan or repository filter." }, { status: 400 });
+  }
   const page = boundedInteger(url.searchParams.get("page"), 1, 100_000);
   const limit = boundedInteger(url.searchParams.get("limit"), 50, 100);
   const skip = (page - 1) * limit;
@@ -40,6 +43,8 @@ export async function GET(request: NextRequest) {
 
   const where: Record<string, unknown> = {};
   if (scanId) where.scanId = scanId;
+  const repositoryId = url.searchParams.get("repositoryId");
+  if (repositoryId) where.repositoryId = repositoryId;
   if (!scanId && !history) where.isCurrent = true;
   if (severity) where.severity = severity;
   if (status) where.status = status;
@@ -74,9 +79,10 @@ export async function GET(request: NextRequest) {
   }
 
   const scoped = { AND: [where, findingScope(access), queueConditions(url.searchParams.get("queue"))] };
-  const [findings, total] = await Promise.all([
+  const [findings, total, scan] = await Promise.all([
     prisma.finding.findMany({
       where: scoped,
+      include: { scan: { select: { projectId: true } } },
       orderBy: url.searchParams.get("sort") === "file" ? [{ filePath: "asc" }, { lineStart: "asc" }, { id: "asc" }]
         : url.searchParams.get("sort") === "rule" ? [{ ruleName: "asc" }, { id: "asc" }]
         : [{ createdAt: url.searchParams.get("sort") === "oldest" ? "asc" : "desc" }, { id: "asc" }],
@@ -84,7 +90,11 @@ export async function GET(request: NextRequest) {
       take: limit,
     }),
     prisma.finding.count({ where: scoped }),
+    scanId ? prisma.scan.findFirst({
+      where: { id: scanId, ...(projectId && { projectId }), ...scanScope(access) },
+      select: { id: true, repository: true, branch: true, commitSha: true, createdAt: true, status: true },
+    }) : null,
   ]);
 
-  return NextResponse.json({ findings, total, page, limit });
+  return NextResponse.json({ findings, total, page, limit, ...(scanId && { scan }) });
 }

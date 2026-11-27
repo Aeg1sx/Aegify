@@ -60,8 +60,8 @@ rules:
     patterns:
       - callee_match: "redirect|url_for|href|navigate"
         args_match: "session_id|sessionid|JSESSIONID|PHPSESSID|sid="
-      - assignment_match: "url|link|href|redirect"
-        value_match: "\\?.*session|&.*session_id|\\?.*sid=|;jsessionid="
+      - regex_match: >-
+          \b(?:[a-z_]\w*(?:Url|Link|Href)|url|link|href|redirect)\s*[:=]\s*[^;\n]*?(?:[?&](?:session(?:_?id)?|sid|PHPSESSID)=|;jsessionid=)
       - callee_match: "res\\.redirect|redirect_to|sendRedirect"
         args_match: "session_id|token=|sid="
       - config_match: "use_cookies"
