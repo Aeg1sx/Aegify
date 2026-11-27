@@ -36,3 +36,17 @@ encoding of that same buffer. In the scalar case an earlier variable with the
 same name has already gone out of scope. The new scanner matches all 218
 positives and retains all 275 negatives in this category. All additions are
 advisories. The general Java evaluation still includes 126 unscored labels.
+
+## Parsing a method with many credential writes
+
+A local Python 3.14 check used a Java method containing 100, 500 and 1,000
+independent session writes. Each write allocated a fresh byte array, filled
+it, encoded it with JDK Base64 and stored it in a servlet session. Alternating
+`Random` and `SecureRandom` gave 50, 250 and 500 expected generator locations.
+The parser returned the exact location set at all three sizes.
+
+On one Mac, parsing the 500-write file took 48.49 seconds after the source
+coordinate fix and 0.12 seconds after indexing declarations. The 1,000-write
+file took 0.27 seconds with the index. These timings measure one generated
+Java file through `ASTParser.parse_file`. Repository acquisition, rule
+evaluation, AI providers and CI runtime are outside this measurement.

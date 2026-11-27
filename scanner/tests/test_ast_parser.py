@@ -56,6 +56,34 @@ class TestASTParser:
         assert "ping" in func_names
         assert "render" in func_names
 
+    def test_java_call_types_across_field_local_and_nested_methods(self, parser, tmp_path):
+        path = tmp_path / "Service.java"
+        path.write_text(
+            """class Service {
+    Catalog store;
+    void route(Account input) {
+        store.read(input);
+        Archive store = new Archive();
+        store.save(input);
+        class Nested {
+            void report(Receipt input) { audit(input); }
+        }
+        store.finish(input);
+    }
+    void next(Invoice input) { store.send(input); }
+}
+"""
+        )
+        ast = parser.parse_file(path)
+        assert ast is not None
+        assert [(c.callee, c.receiver_type, c.argument_types) for c in ast.calls] == [
+            ("read", "Catalog", ["Account"]),
+            ("save", "Archive", ["Account"]),
+            ("audit", "", ["Receipt"]),
+            ("finish", "Archive", ["Account"]),
+            ("send", "Catalog", ["Invoice"]),
+        ]
+
     def test_parse_safe_python(self, parser):
         result = parser.parse_file(FIXTURES / "safe_app.py")
         assert result is not None
