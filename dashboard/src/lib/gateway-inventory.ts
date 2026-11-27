@@ -14,6 +14,11 @@ export interface GatewaySummary {
   omittedRoutes: number;
 }
 
+const maxGatewayRoutes = 4096;
+// Each route can refer to every repository in a prepared 32-repository workspace.
+const maxOwnerReferences = maxGatewayRoutes * 32;
+const maxDetailBytes = 8 * 1024 * 1024;
+
 const schemas = [
   "spring.cloud.gateway.routes", "spring.cloud.gateway.mvc.routes",
   "spring.cloud.gateway.server.webflux.routes", "spring.cloud.gateway.server.webmvc.routes",
@@ -115,6 +120,7 @@ export function parseGatewayInventory(value: unknown): GatewayReview | null {
   const seenFiles = new Set<string>();
   let routeCount = 0;
   let ownerReferences = 0;
+  let ownerCharacters = 0;
   const files = array(input.files, 128).map((value): GatewayFileReview => {
     const file = record(value);
     requireValue(file.repository_id === "" || validRepo(file.repository_id));
@@ -130,13 +136,16 @@ export function parseGatewayInventory(value: unknown): GatewayReview | null {
       requireValue(known);
       return known;
     });
-    const rows = array(file.routes, 4096 - routeCount);
+    const rows = array(file.routes, maxGatewayRoutes - routeCount);
     routeCount += rows.length;
     requireValue(file.sha256 !== null || (rows.length === 0 && issues.includes("unreadable_or_size_limit")));
     const routes = rows.map((value) => {
       const review = route(value);
       ownerReferences += review.owners.length;
-      requireValue(ownerReferences <= 65_536);
+      requireValue(ownerReferences <= maxOwnerReferences);
+      // Repository IDs are ASCII. Their text alone must fit the stored detail budget.
+      for (const owner of review.owners) ownerCharacters += owner.length;
+      requireValue(ownerCharacters <= maxDetailBytes);
       summary[review.status]++;
       return review;
     });
@@ -152,7 +161,7 @@ export function parseGatewayInventory(value: unknown): GatewayReview | null {
 export function gatewayStorage(review: GatewayReview) {
   const { files, digest, ...summary } = review;
   const details = JSON.stringify({ digest, files });
-  requireValue(new TextEncoder().encode(details).length <= 8 * 1024 * 1024);
+  requireValue(new TextEncoder().encode(details).length <= maxDetailBytes);
   return { summary, data: { ...summary, details } };
 }
 
