@@ -370,3 +370,41 @@ def test_java_unresolved_servlet_api_keeps_both_reviews(tmp_path, receiver, cons
     for rule in RULES.values():
         findings = rule.evaluate([tree], nx.DiGraph(), [])
         assert len(findings) == 1 and "option state: unknown" in findings[0].message
+
+
+@pytest.mark.parametrize(
+    ("filename", "source", "expected"),
+    [
+        (
+            "reader.py",
+            "servlet_cookies.servlet_types(root, imports)\n"
+            "servlet_cookies.cookie_arguments(node, method, types)\n"
+            "response.set_cookie('session', token)",
+            [3],
+        ),
+        (
+            "writer.js",
+            "formatCookie('session');\nres.cookie('session', token);\n"
+            "window.localStorage.setItem('auth', token);\n"
+            "window.localStorage.getItem('auth');\nres.cookies.set('sid', token);",
+            [2, 3, 5],
+        ),
+        ("http.go", "package api\nfunc f(){http.SetCookie(w, cookie)}", [2]),
+        ("store.ts", "response.cookie('sid', token);\nresponse.cookieOptions(token);", [1]),
+        (
+            "Servlet.java",
+            "import jakarta.servlet.http.HttpServletResponse;\n"
+            "class App { void send(HttpServletResponse r) {\n"
+            'jakarta.servlet.http.Cookie c = new jakarta.servlet.http.Cookie("sid","v");\n'
+            "c.setSecure(true); c.setHttpOnly(true); r.addCookie(c);\n"
+            'jakarta.servlet.http.Cookie other = new jakarta.servlet.http.Cookie("sid","v");\n'
+            "other.setSecure(true); other.setHttpOnly(false); r.addCookie(other); } }",
+            [6],
+        ),
+    ],
+)
+def test_session_storage_review_matches_cookie_publication(tmp_path, filename, source, expected):
+    rule_path = RULE_FILE.parents[1] / "asvs-extras/asvs.yml"
+    rule = next(r for r in load_yaml_rules(rule_path) if r.definition.id == "AEG-ASVS-004")
+    findings = rule.evaluate([parse(tmp_path, filename, source)], nx.DiGraph(), [])
+    assert sorted({f.line_start for f in findings}) == expected
