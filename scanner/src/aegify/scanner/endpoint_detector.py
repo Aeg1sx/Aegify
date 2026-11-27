@@ -10,10 +10,12 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field, replace
+from reprlib import Repr
 
 from aegify.models import FileAST, FunctionDef, Language
 
 logger = logging.getLogger(__name__)
+_LOG_PATH_REPR = Repr(maxstring=256)
 
 
 # The endpoint detector's tested support contract.  "100% endpoint language
@@ -574,7 +576,9 @@ class EndpointDetector:
                 elif decision == "permitAll":
                     rules.append(("/**", False))
 
-            logger.info("Parsed %d security rules from %s", len(rules), config_path)
+            logger.info(
+                "Parsed %d security rules from %s", len(rules), _LOG_PATH_REPR.repr(config_path)
+            )
 
         return rules
 

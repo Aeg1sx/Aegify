@@ -1,8 +1,12 @@
 """Tests for JVM endpoint and frontend/gateway attack-surface correlation."""
 
+import logging
 from pathlib import Path
+from unittest.mock import mock_open, patch
 
-from aegify.models import EndpointInfo, EndpointParam
+import pytest
+
+from aegify.models import EndpointInfo, EndpointParam, FileAST, Language
 from aegify.scanner.ast_parser import ASTParser
 from aegify.scanner.attack_surface import AttackSurfaceAnalyzer
 from aegify.scanner.endpoint_detector import EndpointDetector
@@ -24,6 +28,35 @@ def _endpoint_info(endpoint):
         ],
         repository_id=endpoint.repository_id,
     )
+
+
+@pytest.mark.parametrize("long_path", [False, True])
+def test_spring_security_log_path_is_one_bounded_line(caplog, long_path):
+    directory = Path("테스트\nline\r\t\x1b\x85\u2028\u202e")
+    if long_path:
+        directory = directory / ("a" * 144) / ("b" * 144)
+    path = str(directory / "SecurityConfig.java")
+    config = FileAST(file_path=path, language=Language.JAVA)
+    source = "http.authorizeHttpRequests().anyRequest().authenticated();"
+
+    with (
+        patch("builtins.open", mock_open(read_data=source)),
+        caplog.at_level(logging.INFO, logger="aegify.scanner.endpoint_detector"),
+    ):
+        EndpointDetector().detect([config])
+
+    (message,) = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("Parsed 1 security rules from ")
+    ]
+    display_path = message.removeprefix("Parsed 1 security rules from ")
+    assert display_path.isprintable() and len(display_path) <= 256
+    assert display_path.endswith("SecurityConfig.java'")
+    if long_path:
+        assert "..." in display_path
+    else:
+        assert display_path == repr(path)
 
 
 def test_spring_class_prefix_and_frontend_gateway_links(tmp_path: Path):
