@@ -12,10 +12,12 @@ export function queueConditions(queue: string | null, now = new Date()): Prisma.
     ...(queue === "overdue" && { dueAt: { lt: now } }),
   };
 }
-export const FILTER_KEYS = ["search", "severity", "status", "ruleId", "language", "projectId", "source", "disposition", "evidenceState", "baselineState", "queue", "history", "sort", "page"] as const;
+export const FILTER_KEYS = ["search", "severity", "status", "ruleId", "language", "projectId", "scanId", "repositoryId", "source", "disposition", "evidenceState", "baselineState", "queue", "history", "sort", "page"] as const;
 export type FindingFilters = Record<typeof FILTER_KEYS[number], string>;
 export function findingFilters(params = new URLSearchParams()): FindingFilters {
-  const result = Object.fromEntries(FILTER_KEYS.map((key) => [key, (params.get(key) || "").slice(0, 500)])) as FindingFilters;
+  const result = Object.fromEntries(FILTER_KEYS.map((key) => [
+    key, key === "scanId" || key === "repositoryId" ? params.get(key) || "" : (params.get(key) || "").slice(0, 500),
+  ])) as FindingFilters;
   result.page = String(boundedInteger(result.page, 1, 100_000));
   result.sort = ["newest", "oldest", "file", "rule"].includes(result.sort) ? result.sort : "newest";
   result.history = result.history === "true" ? "true" : "";
@@ -28,4 +30,17 @@ export function boundedInteger(value: string | null, fallback: number, maximum: 
 }
 export function filterQuery(filters: FindingFilters): string {
   return new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== "")).toString();
+}
+
+export function invalidFindingScope(params: URLSearchParams): boolean {
+  return ["scanId", "repositoryId"].some((key) => {
+    const values = params.getAll(key);
+    return values.length > 1 || (values.length === 1 && (!values[0].trim() || /[\x00-\x1f\x7f]/.test(values[0])));
+  });
+}
+
+export function scanFindingsHref(scanId: string, repositoryId?: string): string {
+  const params = new URLSearchParams({ scanId });
+  if (repositoryId) params.set("repositoryId", repositoryId);
+  return "/findings?" + params.toString();
 }

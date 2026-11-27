@@ -13,6 +13,7 @@ export interface FindingEvidenceView {
   id: string; scanId: string; ruleId: string; ruleName: string; severity: string;
   evidenceState: string; status: string; filePath: string; lineStart: number; lineEnd: number;
   codeSnippet: string; message: string; provenance?: string; taintFlow?: string | null;
+  repositoryId?: string; modulePath?: string;
   remediation?: string | null; owner?: string; baselineState?: string; disposition?: string;
 }
 
@@ -71,6 +72,7 @@ export function EvidenceWorkbench({ finding, onClose, detailQuery = "" }: { find
     {onClose && <div className="space-y-3 p-5">
       <div className="flex flex-wrap items-center gap-2"><SeverityBadge severity={finding.severity} /><span className="text-xs text-muted-foreground">{EVIDENCE_LABELS[finding.evidenceState] || "Unclassified evidence"}</span></div>
       <h2 className="text-lg font-semibold tracking-tight">{finding.ruleName}</h2>
+      {finding.repositoryId && <p className="break-all font-mono text-xs text-muted-foreground">{finding.repositoryId} · {finding.modulePath || finding.filePath}:{finding.lineStart}</p>}
       <p className="text-sm leading-6 text-muted-foreground">{finding.message}</p>
       <div className="flex flex-wrap gap-2 text-xs"><Link className="font-mono text-primary" href={`/rules/${encodeURIComponent(finding.ruleId)}`}>{finding.ruleId}</Link><span className="text-muted-foreground">· {finding.owner || "Unassigned"}</span></div>
     </div>}

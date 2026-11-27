@@ -30,7 +30,7 @@ await runAccessIntegration({ async verifyBrowser({ origin, cookies, projectId, g
     assert.match(text, /catalog-service/);
     assert.match(text, /Document 1 · Line 9/);
     assert.match(text, /Kong Upstream pool membership needs review/);
-    const routeNames = () => panel.$$eval("li", (rows) => rows.map((row) => row.querySelector("span").textContent));
+    const routeNames = () => panel.$$eval('ul[aria-label="Gateway route declarations"] > li', (rows) => rows.map((row) => row.querySelector("span").textContent));
     const [file, status] = await panel.$$("select");
     await status.select("ambiguous");
     await page.waitForFunction((element) => element.querySelector("[aria-live]").textContent.includes("of 26 declarations"), {}, panel);
@@ -47,7 +47,46 @@ await runAccessIntegration({ async verifyBrowser({ origin, cookies, projectId, g
     assert.match(await panel.evaluate((element) => element.innerText), /Configuration SHA-256/);
     await page.setViewport({ width: 390, height: 844 });
     assert.ok(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1));
-    log("Verified cross-repository gateway filters, pagination, source evidence and mobile width in Chromium.");
+    assert.equal(await panel.$('li a[href^="/findings?"]'), null);
+    // Two service trees use the same source location. Keep the historical row visible when reviewing this scan.
+    const shared = { scanId: gatewayScanId, ruleId: "SHARED", ruleName: "Workspace review", severity: "low",
+      message: "Review the service configuration.", modulePath: "src/app.py", filePath: "src/app.py", lineStart: 1, lineEnd: 1 };
+    const east = await db.finding.create({ data: { ...shared, repositoryId: "orders-east", isCurrent: false } });
+    await db.finding.create({ data: { ...shared, repositoryId: "orders-west" } });
+    await file.select("-1");
+    await status.select("all");
+    await (await panel.$('input[type="search"]')).type("WEST");
+    await page.waitForFunction((element) => element.querySelector("[aria-live]").textContent.includes("of 26 declarations"), {}, panel);
+    const firstRoute = await panel.waitForSelector('ul[aria-label] > li');
+    assert.equal(await firstRoute.$("a"), null);
+    await (await firstRoute.$("summary")).click();
+    const candidate = await firstRoute.waitForSelector('[aria-label="View findings for orders-east in this scan"]');
+    await candidate.focus();
+    await page.keyboard.press("Enter");
+    const scope = await page.waitForSelector('[aria-label="Review scope"]');
+    assert.match(await scope.evaluate((node) => node.innerText), /orders-east/);
+    const details = await page.waitForSelector('a[aria-label="Full details for Workspace review"]');
+    const detailUrl = new URL(await details.evaluate((node) => node.href));
+    assert.equal(detailUrl.pathname, "/findings/" + east.id);
+    assert.equal(detailUrl.searchParams.get("scanId"), gatewayScanId);
+    assert.equal(detailUrl.searchParams.get("repositoryId"), "orders-east");
+    for (const width of [1440, 820, 390, 320]) {
+      await page.setViewport({ width, height: 900 });
+      assert.ok(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth));
+    }
+    await details.click();
+    await page.locator('a[aria-label="Back to findings"]').click();
+    await page.waitForSelector('a[aria-label="Full details for Workspace review"]');
+    await page.locator('select[aria-label="Finding view"]').fill("1");
+    await page.waitForFunction(() => globalThis.document.body.innerText.includes("No findings match this view."));
+    assert.equal(new URL(page.url()).searchParams.get("repositoryId"), "orders-east");
+    await page.locator('::-p-aria(Clear filters[role="button"])').click();
+    await page.waitForSelector('a[aria-label="Full details for Workspace review"]');
+    await page.locator('::-p-aria(Show all repositories[role="button"])').click();
+    await page.waitForFunction(() => globalThis.document.querySelectorAll('a[aria-label="Full details for Workspace review"]').length === 2);
+    assert.equal(new URL(page.url()).searchParams.get("scanId"), gatewayScanId);
+    assert.equal(new URL(page.url()).searchParams.has("repositoryId"), false);
+    log("Verified gateway pagination, candidate navigation, historical findings, scoped presets and four viewport widths in Chromium.");
   } finally {
     await browser.close();
   }

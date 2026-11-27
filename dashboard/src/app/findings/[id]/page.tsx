@@ -700,7 +700,8 @@ function FindingDetailRecord({ id }: { id: string }) {
     []
   );
 
-  if (loadError || (!loading && !finding)) return <div className="workbench-panel space-y-4 p-6"><p role="alert">{loadError || "Finding not found."}</p><Link href="/findings" className="text-sm text-primary">Back to findings →</Link></div>;
+  const listQuery = search.size ? "?" + filterQuery(findingFilters(new URLSearchParams(search.toString()))) : "";
+  if (loadError || (!loading && !finding)) return <div className="workbench-panel space-y-4 p-6"><p role="alert">{loadError || "Finding not found."}</p><Link href={"/findings" + listQuery} className="text-sm text-primary">Back to findings →</Link></div>;
   if (loading || !finding) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -722,7 +723,6 @@ function FindingDetailRecord({ id }: { id: string }) {
   const reasonRequired = triageStatus === "false_positive" || triageStatus === "accepted_risk";
   const mayTriage = Boolean(finding.permissions?.canTriage);
   const canEditTriage = mayTriage && !updating;
-  const listQuery = search.size ? "?" + filterQuery(findingFilters(new URLSearchParams(search.toString()))) : "";
   const assignment = finding.workflow ?? finding;
   const savedTags = assignmentTags(assignment.tags);
   const reloadWorkflow = async () => {

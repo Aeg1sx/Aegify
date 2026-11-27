@@ -1,12 +1,15 @@
 import { requireAccess, findingScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { boundedInteger, queueConditions } from "@/lib/finding-view";
+import { boundedInteger, invalidFindingScope, queueConditions } from "@/lib/finding-view";
 
 export async function GET(request: NextRequest) {
   const access = await requireAccess(request);
   if (access instanceof Response) return access;
   const url = new URL(request.url);
+  if (invalidFindingScope(url.searchParams)) {
+    return NextResponse.json({ error: "Invalid scan or repository filter." }, { status: 400 });
+  }
   const page = boundedInteger(url.searchParams.get("page"), 1, 100_000);
   const limit = boundedInteger(url.searchParams.get("limit"), 50, 100);
   const skip = (page - 1) * limit;
@@ -40,6 +43,8 @@ export async function GET(request: NextRequest) {
 
   const where: Record<string, unknown> = {};
   if (scanId) where.scanId = scanId;
+  const repositoryId = url.searchParams.get("repositoryId");
+  if (repositoryId) where.repositoryId = repositoryId;
   if (!scanId && !history) where.isCurrent = true;
   if (severity) where.severity = severity;
   if (status) where.status = status;
