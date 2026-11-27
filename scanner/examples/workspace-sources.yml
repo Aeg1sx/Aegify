@@ -10,6 +10,7 @@ repositories:
   - id: orders
     path: ../tests/fixtures/workspace_golden/orders
     role: service
+    service_names: [orders]
   - id: hello-world
     source:
       url: https://github.com/octocat/Hello-World.git
