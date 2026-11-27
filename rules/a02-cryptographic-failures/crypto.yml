@@ -95,7 +95,7 @@ rules:
       kind: credential_randomness
     patterns:
       - callee_match: "(Math\\.random|java\\.util\\.Random|rand\\.Intn|rand\\.Int|arc4random)"
-        languages: [javascript, typescript, java, go, kotlin, swift]
+        languages: [javascript, typescript, go, kotlin, swift]
     message: >
       Insecure random number generator used in security context at line
       {sink_line}. Use a cryptographically secure PRNG: secrets (Python),

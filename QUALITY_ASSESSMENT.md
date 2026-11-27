@@ -153,6 +153,18 @@ gaps and have no reviewed accuracy labels. Their accuracy remains unknown.
 A separately authored OWASP Java corpus adds 2,740 unchanged upstream labels,
 with a pinned archive and per-file acquisition manifest. It is public synthetic
 data; independent label adjudication and private application holdouts remain open.
+Java credential review now follows scalar JDK PRNG results into servlet session
+keys. Each advisory cites the generator and write. A dynamic credential prefix
+also requires a cookie comparison controlling a branch on the same session
+slot. Byte-array generation, custom encoders and cross-method flows remain
+outside this rule. Against main at `b4c321a`, 199 of 218 CWE-330 positives
+were recovered with zero false positives on 275 category negatives. Overall
+Java precision rose from 90.68% to 94.31% and recall from 21.17% to 36.11%
+on 2,614 scored labels. The 126 unscored labels and all 1,230 Python case
+outcomes stayed unchanged. [Paired evaluation](https://github.com/Aeg1sx/Aegify/pull/105)
+
+The scan detail page can filter Spring and Kong declarations
+by ownership status across repositories and retains their file and line.
 The live Codex CLI check passes the six-role source protocol on a three-line
 owned fixture. It does not establish live AI model quality or calibrated confidence.
 
