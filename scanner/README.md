@@ -7,7 +7,7 @@ bounded AI source tools. The proposed first release is `v0.3.0-beta.1`
 
 ## Install from source
 
-Requires Python 3.14+ and uv 0.12.18. From the repository root:
+Requires Python 3.14+ and uv 0.13.9. From the repository root:
 
 ```bash
 uv sync --locked --project scanner

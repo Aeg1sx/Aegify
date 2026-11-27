@@ -45,7 +45,7 @@ and explicit recovery; these changes are not in the published beta. See the
 
 ## Run your first scan
 
-Requires **Python 3.14+** and **uv 0.12.18**. From a reviewed checkout:
+Requires **Python 3.14+** and **uv 0.13.9**. From a reviewed checkout:
 
 ```bash
 git clone https://github.com/Aeg1sx/Aegify.git
