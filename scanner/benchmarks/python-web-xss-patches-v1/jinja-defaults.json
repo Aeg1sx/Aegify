@@ -352,6 +352,38 @@
           }
         }
       ]
+    },
+    "owasp_python": {
+      "revision": "f1291485808b66e20ddb6b01b10dc71b3df8c8ba",
+      "corpus_digest": "sha256:19f1fab3f5ba12d14f2f59cbdebafb930e32f55d2d9c959079798c23a3ddc3c8",
+      "ground_truth_digest": "sha256:6396f37c97cfd0c018db3d8750095ce6c678a083f83620cfb3e88fe27a46bb0c",
+      "configuration_digest": "sha256:14a4dd88d1b04d08bc96224da6fc18e58a5f2ee3b69e1fc0290995c6d4aae1d6",
+      "outcomes_digest": "sha256:7a34619c43d6b0354325cd5e7f8f34988836d5efcabd24bea91c86e1af3ab09f",
+      "identical_case_records": 1230,
+      "metrics": {
+        "true_positives": 452,
+        "false_positives": 53,
+        "false_negatives": 0,
+        "true_negatives": 725,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8950495049504951,
+        "recall": 1.0,
+        "f1": 0.9446185997910136,
+        "accuracy": 0.9569105691056911,
+        "false_positive_rate": 0.06812339331619537,
+        "balanced_accuracy": 0.9659383033419023,
+        "mcc": 0.9132774471579195,
+        "precision_wilson_95": [
+          0.8652705364702672,
+          0.9188636827121363
+        ],
+        "recall_wilson_95": [
+          0.9915728182543282,
+          1.0
+        ],
+        "recall_over_all_positive_labels": 1.0
+      }
     }
   }
 }

@@ -10,3 +10,29 @@ The GitHub Advisory Database returned 17 reviewed PyPI advisories for Apache Air
 | CVE-2018-20244, published in the index on 2019-03-06 | Included. Apache confirmed the stored XSS, and the advisory links two commits applying the same patch. The first listed commit is the selected repair. [Apache notice](https://lists.apache.org/thread.html/f656fddf9c49293b3ec450437c46709eb01a12d1645136b2f1b8573b%40%3Cdev.airflow.apache.org%3E) · [Advisory](https://github.com/advisories/GHSA-99cv-8cvv-666c) · [Apache patch](https://github.com/apache/airflow/commit/27a4a888e946728d9bb33b78ec604e08d4a93f89) |
 
 The first eligible production Python file in lexical order was `airflow/www/views.py`. Its first changed HTML expression built the DAG run link at original line 134. The repair escapes the display value and builds the link at lines 134–135. The manifest fixes the full module bytes, both revisions and these inclusive ranges. Selection stopped with this product. [Pre-scan labels](cases.json)
+
+## Results
+
+The frozen wheel missed the original label at line 134. It also produced zero warnings at the repaired label on lines 134–135. Both hash-verified module scans completed with all four Python CWE-79 rules evaluated. Each module produced five advisory findings elsewhere, outside the selected patch. Those findings have no labels here. This is one preselected source comparison in one additional product. The same team selected and scored the case. [Raw report](result.json)
+
+## Replay
+
+From the Aegify repository root, use the interpreter containing the wheel under test. This calls the same evaluator as the four-site product check. It downloads only the two pinned modules on first use, verifies their hashes, and scans them as source with AI disabled. The cache and result go under the operating system's temporary directory.
+
+```sh
+python -I - <<'PY'
+import json
+import tempfile
+from pathlib import Path
+from runpy import run_path
+
+benchmarks = Path("scanner/benchmarks")
+cases = benchmarks / "python-web-xss-postfreeze-v1" / "cases.json"
+evaluate = run_path(str(benchmarks / "transport-verification-v1" / "evaluate.py"))["evaluate"]
+cache = Path(tempfile.gettempdir()) / "aegify-airflow-patch-cache"
+report = evaluate(cache, "all", True, cases)
+output = cache.parent / "aegify-airflow-patch-result.json"
+output.write_text(json.dumps(report, indent=2) + "\n")
+print(output, report["counts"])
+PY
+```
