@@ -194,18 +194,22 @@ def _parse_typed_templates(parser: Parser, tree: Tree, source: bytes) -> Tree:
         node = pending.pop()
         if node.has_error:
             pending.extend(
-                child for child in node.named_children
+                child
+                for child in node.named_children
                 if child.has_error or child.type == "instantiation_expression"
             )
         elif node.type == "instantiation_expression":
             args = node.child_by_field_name("type_arguments")
-            if (args is None or args.end_byte != node.end_byte
-                    or not _TEMPLATE_AFTER_TYPES.match(source, args.end_byte)):
+            if (
+                args is None
+                or args.end_byte != node.end_byte
+                or not _TEMPLATE_AFTER_TYPES.match(source, args.end_byte)
+            ):
                 continue
             if stripped is None:
                 stripped = bytearray(source)
-            stripped[args.start_byte:args.end_byte] = re.sub(
-                rb"[^\r\n]", b" ", source[args.start_byte:args.end_byte]
+            stripped[args.start_byte : args.end_byte] = re.sub(
+                rb"[^\r\n]", b" ", source[args.start_byte : args.end_byte]
             )
     return parser.parse(bytes(stripped)) if stripped is not None else tree
 

@@ -116,20 +116,23 @@ class TestASTParser:
         ast = parser.parse_file(path)
         assert ast is not None and ast.parse_error_count == 0
         assert {(call.callee, call.line) for call in ast.calls} >= {
-            ("records", 2), ("label", 3), ("format", 4)
+            ("records", 2),
+            ("label", 3),
+            ("format", 4),
         }
         assert ast.source_digest == hashlib.sha256(path.read_bytes()).hexdigest()
 
-    @pytest.mark.parametrize("broken", [
-        "const value = ;",
-        "const value = tag<Row[> `x`;",
-        "const value = tag<Row[]> `unfinished",
-    ])
+    @pytest.mark.parametrize(
+        "broken",
+        [
+            "const value = ;",
+            "const value = tag<Row[> `x`;",
+            "const value = tag<Row[]> `unfinished",
+        ],
+    )
     def test_typed_tag_keeps_syntax_errors(self, parser, tmp_path, broken):
         source = tmp_path / "tags.ts"
-        source.write_text(
-            "function read() { return tag<{ name: string }[]>`ok`; }\n" + broken
-        )
+        source.write_text("function read() { return tag<{ name: string }[]>`ok`; }\n" + broken)
         ast = parser.parse_file(source)
         assert ast is not None and ast.parse_diagnostics
         assert all(gap.line_start == 2 for gap in ast.parse_diagnostics)
