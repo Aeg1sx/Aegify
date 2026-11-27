@@ -101,6 +101,8 @@ class YAMLRule(SecurityRule):
             "python_http_verify_option",
         }:
             return self._eval_tls(file_asts, http_only=semantic.kind == "python_http_verify_option")
+        if semantic is not None and semantic.kind == "python_jinja_autoescape":
+            return self._eval_jinja_autoescape(file_asts)
         if semantic is not None and semantic.kind == "python_jwt_signing_key":
             return self._eval_signing_keys(file_asts)
         if semantic is not None and semantic.kind == "credential_randomness":
@@ -250,6 +252,45 @@ class YAMLRule(SecurityRule):
                         disposition=FindingDisposition.ADVISORY,
                     )
                 )
+                count += 1
+        return findings
+
+    def _eval_jinja_autoescape(self, files: list[FileAST]) -> list[Finding]:
+        modules = PythonModules(files)
+        findings = []
+        for file in files:
+            if (
+                file.language != Language.PYTHON
+                or (self.definition.languages and file.language not in self.definition.languages)
+                or not modules.external(file, "jinja2")
+            ):
+                continue
+            count = 0
+            for fact in file.jinja_environments:
+                if fact.use == "web_settings":
+                    if not modules.external(file, "tornado"):
+                        continue
+                    context = "supplies the template environment in the web application's settings"
+                else:
+                    context = "loads an HTML template"
+                if count >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
+                    break
+                condition = " when the caller omits its options" if fact.optional_options else ""
+                finding = self._create_finding(
+                    file.file_path,
+                    fact.line,
+                    fact.line,
+                    "",
+                    f"This Jinja environment leaves automatic HTML escaping off{condition} and "
+                    f"{context} on line {fact.use_line}. Check how template values are supplied.",
+                    evidence_state=EvidenceState.CANDIDATE,
+                    disposition=FindingDisposition.ADVISORY,
+                )
+                finding.remediation = (
+                    "Use select_autoescape or autoescape=True when rendering HTML templates."
+                )
+                findings.append(finding)
                 count += 1
         return findings
 
@@ -1318,6 +1359,7 @@ class SemanticSpec:
         "python_http_verify_option",
         "credential_randomness",
         "python_jwt_signing_key",
+        "python_jinja_autoescape",
         "python_xml_configuration",
         "python_yaml_loader",
         "python_pickle_input",

@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "corpus": "python-web-xss-patches-v1",
+  "split": "all",
+  "cwe": 79,
+  "manifest_sha256": "16bcac4e88f15b093bb06ab33668385d8928d90e0315a1b6c8157e0733d5c95b",
+  "evaluator_sha256": "ca69fe1b65bbcd811f323a808ab2bf1b26d58d0274d463c8d1cce3b782e694d9",
+  "configuration_digest": "sha256:137c327fad5797282181beccdf993833548d193776f3a5f0da35fc18b59ff4ed",
+  "scored_rules": [
+    "AEG-FLASK-XSS-001",
+    "AEG-XSS-002",
+    "AEG-XSS-005",
+    "AEG-XSS-007"
+  ],
+  "implementation": {
+    "scanner_version": "0.3.0b1",
+    "scanner_code_and_modelpacks_digest": "sha256:48e9cd999ebb39656c89dc7b5188c969d1172ad6a894e3588f05e765fcccba7e",
+    "bundled_rules_digest": "sha256:70e809390f4263373221bcc1a943524f2257c286a44077cab77d97af88354cd3",
+    "rule_definitions_digest": "sha256:14127135e22e1eefe283d35bc595af9cc8793c498259eb9fb780a9b8106fb257",
+    "parser_fingerprint": "7eeed6cb3c07185480c130ded55ad329db8e4403a71cc4aa2d03596f31e1d6d9",
+    "python": "3.14.7"
+  },
+  "counts": {
+    "evaluation": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 3,
+      "tn": 4,
+      "unscored": 0
+    }
+  },
+  "cases": [
+    {
+      "site": "cloud-deploy-error",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        131,
+        135
+      ],
+      "source_sha256": "76adc583a099aa6ec0feac4e461debb07c97c22823d218e2f7aa8a5496e57ad0",
+      "hits": [],
+      "outcome": "fn"
+    },
+    {
+      "site": "cloud-update-error",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        234,
+        236
+      ],
+      "source_sha256": "76adc583a099aa6ec0feac4e461debb07c97c22823d218e2f7aa8a5496e57ad0",
+      "hits": [],
+      "outcome": "fn"
+    },
+    {
+      "site": "cloud-deploy-error",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        132,
+        136
+      ],
+      "source_sha256": "c53289c2fb289ed1264cb1536d699252e3d34232663b02eb65c9debe9e2134f6",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "cloud-update-error",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        235,
+        237
+      ],
+      "source_sha256": "c53289c2fb289ed1264cb1536d699252e3d34232663b02eb65c9debe9e2134f6",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "notebook-template-default",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        162,
+        163
+      ],
+      "source_sha256": "9f9fc0b832d3e9cd437a1bdf1c23f24c5763b4e87a81eb0e0c5194270303af55",
+      "hits": [
+        {
+          "line": 163,
+          "rule": "AEG-XSS-005",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ],
+      "outcome": "tp"
+    },
+    {
+      "site": "notebook-template-default",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        162,
+        165
+      ],
+      "source_sha256": "a72c8a416d07eea9aa5c8cad140bb8a86a8d60af208d95cff0e4b7a645bf491f",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "admin-url-normalization",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        135,
+        139
+      ],
+      "source_sha256": "e805b1b024d536184b461d9b72e2cccf182e156049b3bb1da4cdae4a19c8d3a9",
+      "hits": [],
+      "outcome": "fn"
+    },
+    {
+      "site": "admin-url-normalization",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        141,
+        145
+      ],
+      "source_sha256": "76648d602cbb5176d130b82f6084114e55c4f48a8c2febaf6ddb4e291cc015af",
+      "hits": [],
+      "outcome": "tn"
+    }
+  ],
+  "modules": [
+    {
+      "repository": "pgadmin-org/pgadmin4",
+      "path": "web/pgadmin/misc/cloud/__init__.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "pgadmin-org/pgadmin4",
+      "path": "web/pgadmin/misc/cloud/__init__.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "jupyter-server/jupyter_server",
+      "path": "notebook/notebookapp.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "jupyter-server/jupyter_server",
+      "path": "notebook/notebookapp.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "pallets-eco/flask-admin",
+      "path": "flask_admin/helpers.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "pallets-eco/flask-admin",
+      "path": "flask_admin/helpers.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    }
+  ],
+  "verification": {
+    "wheel_sha256": "e889e17c3284cbc087b2b35bb133791e93fad4b9bd3b1b02f81f307cef769228",
+    "xbow_original_and_repaired": {
+      "revision": "9c114481b130b8755d6a56ff5a9c26c7567ded4e",
+      "cases_digest": "sha256:692f2e55a16039ebfcb302cebf28a2f8d2b5c5d7da5f5c9dc82b2ae47ecddba8",
+      "matched": {
+        "aegify": 12,
+        "zeropath": 9
+      },
+      "scored": 33,
+      "labels": 43,
+      "identical_case_records_and_repair_pairs": true,
+      "repaired_controls": [
+        {
+          "case": "XBEN-005",
+          "path": "app/main.py",
+          "rule": "AEG-A02-001",
+          "benchmarks": {
+            "line": 14,
+            "reported": true,
+            "rule_lines": [
+              14
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 17,
+            "reported": false,
+            "rule_lines": []
+          }
+        },
+        {
+          "case": "XBEN-009",
+          "path": "vulnerable-app/ssti_demo/views.py",
+          "rule": "AEG-TMPL-001",
+          "benchmarks": {
+            "line": 8,
+            "reported": true,
+            "rule_lines": [
+              8
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 10,
+            "reported": false,
+            "rule_lines": []
+          }
+        },
+        {
+          "case": "XBEN-024",
+          "path": "app/app.py",
+          "rule": "AEG-SSRF-001",
+          "benchmarks": {
+            "line": 97,
+            "reported": true,
+            "rule_lines": [
+              97
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 101,
+            "reported": true,
+            "rule_lines": [
+              101
+            ]
+          }
+        },
+        {
+          "case": "XBEN-004",
+          "path": "src/app.py",
+          "rule": "AEG-FLASK-XSS-001",
+          "benchmarks": {
+            "line": 79,
+            "reported": false,
+            "rule_lines": [
+              77
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 80,
+            "reported": false,
+            "rule_lines": [
+              78
+            ]
+          }
+        },
+        {
+          "case": "XBEN-008",
+          "path": "src/app.py",
+          "rule": "AEG-FLASK-XSS-001",
+          "benchmarks": {
+            "line": 80,
+            "reported": false,
+            "rule_lines": [
+              78
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 80,
+            "reported": false,
+            "rule_lines": [
+              78
+            ]
+          }
+        },
+        {
+          "case": "XBEN-010",
+          "path": "src/app.py",
+          "rule": "AEG-FLASK-XSS-001",
+          "benchmarks": {
+            "line": 81,
+            "reported": false,
+            "rule_lines": [
+              73,
+              79
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 81,
+            "reported": false,
+            "rule_lines": [
+              73,
+              79
+            ]
+          }
+        },
+        {
+          "case": "XBEN-012",
+          "path": "src/app.py",
+          "rule": "AEG-FLASK-XSS-001",
+          "benchmarks": {
+            "line": 71,
+            "reported": true,
+            "rule_lines": [
+              71
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 73,
+            "reported": true,
+            "rule_lines": [
+              73
+            ]
+          }
+        },
+        {
+          "case": "XBEN-013",
+          "path": "src/app.py",
+          "rule": "AEG-FLASK-XSS-001",
+          "benchmarks": {
+            "line": 77,
+            "reported": false,
+            "rule_lines": [
+              75
+            ]
+          },
+          "benchmarks_patched": {
+            "line": 79,
+            "reported": false,
+            "rule_lines": []
+          }
+        }
+      ]
+    }
+  }
+}

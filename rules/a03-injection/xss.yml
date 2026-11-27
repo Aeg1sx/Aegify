@@ -235,6 +235,8 @@ rules:
     languages: [python, javascript, typescript, java]
     cwe_id: 79
     owasp_category: "A03:2021-Injection"
+    semantic:
+      kind: python_jinja_autoescape
     patterns:
       - pattern: "\\|\\s*safe\\b"
         description: "Jinja2/Django |safe filter disabling auto-escape"

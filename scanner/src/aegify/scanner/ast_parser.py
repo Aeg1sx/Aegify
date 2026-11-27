@@ -42,6 +42,7 @@ from aegify.scanner import (
     python_deserialization,
     python_files,
     python_hosts,
+    python_jinja,
     python_ldap,
     python_literals,
     python_process,
@@ -103,6 +104,7 @@ def parser_fingerprint() -> str:
         "sql_queries": hashlib.sha256(Path(sql_queries.__file__).read_bytes()).hexdigest(),
         "flask_sessions": hashlib.sha256(Path(flask_sessions.__file__).read_bytes()).hexdigest(),
         "flask_responses": hashlib.sha256(Path(flask_responses.__file__).read_bytes()).hexdigest(),
+        "python_jinja": hashlib.sha256(Path(python_jinja.__file__).read_bytes()).hexdigest(),
         "python_signing_keys": hashlib.sha256(
             Path(python_signing_keys.__file__).read_bytes()
         ).hexdigest(),
@@ -523,6 +525,7 @@ class _PythonExtractor(_BaseExtractor):
             session_writes=flask_sessions.session_writes(source),
             flask_routers=routers,
             flask_responses=responses,
+            jinja_environments=python_jinja.environments(source),
             python_signing_keys=python_signing_keys.signing_keys(source),
             credential_randomness=credential_randomness.credential_uses(source),
             tls_settings=python_tls.tls_settings(source),

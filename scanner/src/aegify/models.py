@@ -214,6 +214,13 @@ class PythonDirectoryCheck(BaseModel):
     comparison_line: int
 
 
+class JinjaEnvironment(BaseModel):
+    line: int
+    use_line: int
+    use: Literal["html_template", "web_settings"]
+    optional_options: bool = False
+
+
 class PythonReadLimit(BaseModel):
     method: str
     line: int
@@ -244,6 +251,7 @@ class FileAST(BaseModel):
     session_writes: list[SessionWrite] = Field(default_factory=list)
     flask_routers: list[str] = Field(default_factory=list)
     flask_responses: list[FlaskResponse] = Field(default_factory=list)
+    jinja_environments: list[JinjaEnvironment] = Field(default_factory=list)
     python_signing_keys: list[PythonSigningKey] = Field(default_factory=list)
     credential_randomness: list[CredentialRandomness] = Field(default_factory=list)
     tls_settings: list[PythonTLSSetting] = Field(default_factory=list)
