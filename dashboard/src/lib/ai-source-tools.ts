@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { sanitizeLLMSourceText } from "./llm-safety.ts";
-import { isWranglerManifest } from "./repo-fetcher.ts";
+import { withholdSourceFromModel } from "./configuration-evidence.ts";
 import { sourceDigest, type SourceSnapshot } from "./source-snapshot.ts";
 
 export const SOURCE_TOOL_LIMITS = {
@@ -117,7 +117,7 @@ export function captureReviewSources(raw: unknown, expected: { repository: strin
   let selectedBytes = 0;
   let unverifiedSigningKeyFiles = 0;
   for (const file of files) {
-    if (isWranglerManifest(file.path)) continue;
+    if (withholdSourceFromModel(file.path)) continue;
     const checked = mayContainSigningKey(file.path, file.content);
     const reviewText = checked ? signingKeyReviewText(file.content, file.sha256, signingKeyMasks) : file.content;
     if (reviewText === null) { unverifiedSigningKeyFiles += 1; continue; }
@@ -148,7 +148,7 @@ export function validateReviewSources(value: ReviewSourceCatalog): ReviewSourceC
   for (const file of value.files) {
     object(file);
     safePath(file.path);
-    if (isWranglerManifest(file.path)) throw new SourceToolError("Wrangler manifest values are withheld from source tools");
+    if (withholdSourceFromModel(file.path)) throw new SourceToolError("Configuration values are withheld from source tools");
     if (file.signingKeyReview !== undefined && file.signingKeyReview !== 1) throw new SourceToolError("Invalid signing-key review version");
     if (typeof file.content === "string" && mayContainSigningKey(file.path, file.content) && file.signingKeyReview !== 1) {
       throw new SourceToolError("This saved source review predates signing-key redaction. Start a new source review.");

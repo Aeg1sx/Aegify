@@ -4,7 +4,7 @@ import { flowLineExcerpt, normalizeFindingClassification, normalizeFindingEviden
 import { classifyFindingBaseline, findingIdentityScope, findingMessageDigest, legacyFindingFingerprint, relativeIdentityPath, stableFindingFingerprint } from "./finding-lifecycle.ts";
 import { migrateFindingIdentities, readFindingIdentities } from "./finding-identity-import.ts";
 import { findingManagement } from "./finding-workflow.ts";
-import { isWranglerManifest } from "./configuration-evidence.ts";
+import { isGatewayConfiguration, withholdSourceFromModel } from "./configuration-evidence.ts";
 import { publishScanImport } from "./scan-reconciliation.ts";
 import { writeTransaction } from "./database-runtime.ts";
 
@@ -377,6 +377,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         "medium";
       const evidence = normalizeFindingEvidence(result.properties);
       const sourceSnippet = normalizeSourceSnippet(loc);
+      const gatewayConfig = isGatewayConfiguration(filePath) || isGatewayConfiguration(evidence.modulePath);
       const classification = normalizeFindingClassification(result.properties);
       const admittedSource = analyzedSourceByPath.get(filePath);
       if (admittedSource && ((evidence.repositoryId && evidence.repositoryId !== admittedSource.repositoryId)
@@ -419,8 +420,9 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
           result.codeFlows[0].threadFlows[0].locations.map(({ location }, index) => {
             const file = artifactSourcePath(location.physicalLocation?.artifactLocation?.uri, run.properties?.artifactPathEncoding);
             return {
-              file, line: location.physicalLocation?.region?.startLine || 0, message: location.message?.text || "",
-              snippet: index < 200 && file && !isWranglerManifest(file) && result.properties?.provenance?.analysis_kind !== "configuration"
+              file, line: location.physicalLocation?.region?.startLine || 0,
+              message: isGatewayConfiguration(file) ? "" : location.message?.text || "",
+              snippet: index < 200 && file && !withholdSourceFromModel(file) && result.properties?.provenance?.analysis_kind !== "configuration"
                 ? flowLineExcerpt(location.physicalLocation) : undefined,
             };
           })
@@ -440,7 +442,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         filePath,
         lineStart: loc?.region?.startLine || 0,
         lineEnd: loc?.region?.endLine || loc?.region?.startLine || 0,
-        codeSnippet: sourceSnippet.codeSnippet,
+        codeSnippet: gatewayConfig ? "" : sourceSnippet.codeSnippet,
         message: result.message.text,
         cweId,
         owaspCategory,
@@ -449,14 +451,15 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         llmAnalysis: result.properties?.aiReview
           ? JSON.stringify(result.properties.aiReview)
           : result.properties?.llmAnalysis || null,
-        callChain: result.properties?.callChain
-          ? JSON.stringify(result.properties.callChain) : null,
+        callChain: Array.isArray(result.properties?.callChain)
+          ? JSON.stringify(result.properties.callChain.map((step) => typeof step?.filePath === "string" && isGatewayConfiguration(step.filePath)
+            ? { filePath: step.filePath, line: step.line } : step)) : null,
         defenseContext: result.properties?.defenseContext
           ? JSON.stringify(result.properties.defenseContext) : null,
         evidenceId: evidence.evidenceId,
         repositoryId: identityScope.repositoryId,
         modulePath: identityScope.modulePath,
-        provenance: JSON.stringify({ ...JSON.parse(evidence.provenance), snippet_start_line: sourceSnippet.snippetStartLine }),
+        provenance: JSON.stringify({ ...JSON.parse(evidence.provenance), snippet_start_line: gatewayConfig ? null : sourceSnippet.snippetStartLine }),
         fingerprint,
         baselineState: "new",
         identityId: "",

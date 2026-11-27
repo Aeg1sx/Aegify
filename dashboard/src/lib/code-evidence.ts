@@ -1,4 +1,4 @@
-import { isWranglerManifest } from "./configuration-evidence.ts";
+import { withholdSourceFromModel } from "./configuration-evidence.ts";
 
 /** Presentation only: never upgrades evidence or guesses a context offset. */
 export function parseRecord(value: unknown): Record<string, unknown> {
@@ -65,7 +65,7 @@ export function parseEvidenceSteps(value: unknown): { steps: EvidenceStep[]; war
       const line = sourceLine(item.line);
       if (typeof item.file !== "string" || line === null || typeof item.message !== "string") continue;
       const snippet = item.snippet;
-      const located = item.file !== "" && !isWranglerManifest(item.file) && typeof snippet === "string"
+      const located = item.file !== "" && !withholdSourceFromModel(item.file) && typeof snippet === "string"
         && snippet.length <= 4096 && snippet.trim().length > 0 && !/[\r\n]/.test(snippet);
       steps.push({ file: item.file, line, message: item.message, ...(located ? { snippet } : {}) });
     }

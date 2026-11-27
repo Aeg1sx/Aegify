@@ -141,7 +141,7 @@ export async function scanRepoCode(
       ownerSlug: project.ownerSlug,
       providerRepoId: project.providerRepoId,
       ref,
-      withholdWranglerFromModel: true,
+      withholdConfigFromModel: true,
     });
     const workspaceSnapshot = `sha256:${sha256(
       [provider, project.ownerSlug, bundle.ref].join("\0"),

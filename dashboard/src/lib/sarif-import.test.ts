@@ -466,3 +466,22 @@ test("real Python source reports retain one identity through fresh checkout root
     assert.equal(current.filePath, join(directory, "checkout-b", "src", sourceName));
   } finally { await rm(directory, { recursive: true, force: true }); }
 }));
+
+test("gateway configuration excerpts remain outside saved finding snippets and traces", async () => identityDatabase(async (db) => {
+  const project = await db.project.create({ data: { name: "Gateway evidence" } });
+  const marker = "owned-test-gateway-config-value";
+  const path = "service/application-prod.properties";
+  const location = { physicalLocation: { artifactLocation: { uri: path }, region: { startLine: 3, snippet: { text: marker } } } };
+  const sarif = report();
+  const item = { ...sarif.runs[0].results[0], locations: [location],
+    codeFlows: [{ threadFlows: [{ locations: [{ location: { ...location, message: { text: marker } } }] }] }],
+    properties: { callChain: [{ function: "config", filePath: path, line: 3, snippet: marker }] },
+  };
+  const receipt = await importSarif(db, { ...sarif, runs: [{ ...sarif.runs[0], results: [item] }] }, importContext(project.id));
+  const saved = await db.finding.findFirstOrThrow({ where: { scanId: receipt.scanId } });
+  assert.equal(saved.filePath, path);
+  assert.equal(saved.codeSnippet, "");
+  assert.ok(!saved.taintFlow?.includes(marker));
+  assert.ok(!saved.callChain?.includes(marker));
+  assert.deepEqual(JSON.parse(saved.callChain!), [{ filePath: path, line: 3 }]);
+}));

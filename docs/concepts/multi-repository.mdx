@@ -71,13 +71,19 @@ result with a reason.
 
 | Configuration | Declarations reviewed |
 | --- | --- |
-| Spring Cloud Gateway YAML | `spring.cloud.gateway.routes`, `spring.cloud.gateway.mvc.routes` and `spring.cloud.gateway.server.{webflux,webmvc}.routes`. Dotted and nested keys and multi-document YAML are supported. |
+| Spring Cloud Gateway YAML and indexed Java properties | `spring.cloud.gateway.routes`, `spring.cloud.gateway.mvc.routes` and `spring.cloud.gateway.server.{webflux,webmvc}.routes`. YAML accepts dotted or nested keys. In properties files use indexed keys such as `spring.cloud.gateway.routes[0].uri`. Both formats retain logical document numbers. |
 | Kong declarative YAML and JSON | Formats `1.1` and `3.0`. Routes can be nested under a Service or refer to a Service in the same document by name or ID. A named Upstream pool is recorded as unresolved. |
 
-Aegify discovers `application.yaml`, `bootstrap.yaml`, their profile variants,
-`kong.yaml`, the corresponding `.yml` names and `kong.json` in each selected
-tree. Add repository-relative YAML or JSON paths to `gateway_configs` for custom
-file names. Workspace excludes also apply to those paths.
+Aegify discovers `application` and `bootstrap` configuration in YAML and
+properties format, including `application-prod.properties` and other hyphenated
+profile names. Kong defaults are `kong.yaml`, `kong.yml` and `kong.json`.
+Add repository-relative YAML, JSON or properties paths to `gateway_configs` for
+custom file names. Workspace excludes also apply to those paths.
+
+Connected static scans can retain the encrypted input snapshot for retries.
+Model-only fetches skip conventional Spring and Kong configurations. AI review
+source catalogs exclude those files and properties files, including older saved
+catalog entries.
 
 Read `gateway_inventory` in scan JSON or `runs[0].properties.gatewayInventory`
 in SARIF. Each route records its configuration file, SHA-256, document number
@@ -106,6 +112,7 @@ retains its inventory and reports the existing coverage gap for source code.
 
 See the [Spring legacy configuration properties](https://docs.spring.io/spring-cloud-gateway/reference/4.1/configprops.html),
 [current Spring properties](https://docs.spring.io/spring-cloud-gateway/reference/configprops.html),
+[Spring Boot file and list syntax](https://docs.spring.io/spring-boot/reference/features/external-config.html),
 [Kong Service schema](https://developer.konghq.com/gateway/entities/service/) and
 [Kong format history](https://developer.konghq.com/deck/reference/3.0-upgrade/).
 

@@ -2,6 +2,19 @@ export function isWranglerManifest(path: string): boolean {
   return /(?:^|[\\/])wrangler\.(?:jsonc?|toml)$/.test(path);
 }
 
+export function isSpringProperties(path: string): boolean {
+  return /(?:^|[\\/])(?:application|bootstrap)(?:-[\w.-]+)?\.properties$/i.test(path);
+}
+
+export function isGatewayConfiguration(path: string): boolean {
+  return /\.properties$/i.test(path)
+    || /(?:^|[\\/])(?:(?:application|bootstrap)(?:-[\w.-]+)?\.ya?ml|kong\.(?:ya?ml|json))$/i.test(path);
+}
+
+export function withholdSourceFromModel(path: string): boolean {
+  return isWranglerManifest(path) || isGatewayConfiguration(path);
+}
+
 const scope = String.raw`(?:default|env\.[A-Za-z0-9_.-]{1,80}|environment at line [1-9]\d{0,8})`;
 const location = String.raw`[1-9]\d{0,8}`;
 const fields = {

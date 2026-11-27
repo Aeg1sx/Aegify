@@ -110,9 +110,11 @@ class WorkspaceRepository(BaseModel):
                 or {"..", ".git"} & set(path.parts)
                 or "\\" in value
                 or not value.isprintable()
-                or path.suffix.lower() not in {".yml", ".yaml", ".json"}
+                or path.suffix.lower() not in {".yml", ".yaml", ".json", ".properties"}
             ):
-                raise ValueError("gateway config must be a repository-relative YAML or JSON file")
+                raise ValueError(
+                    "gateway config must be a repository-relative YAML, JSON or properties file"
+                )
         return sorted({Path(value).as_posix() for value in values})
 
     @field_validator("id")

@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from aegify.models import GatewayConfigReview, GatewayInventory, GatewayOwnership
+from aegify.scanner.spring_properties import property_entries
 from aegify.source_files import read_regular_source
 
 MAX_FILES = 128
@@ -28,7 +29,7 @@ SPRING_SCHEMAS = (
     "spring.cloud.gateway.server.webmvc.routes",
 )
 _CONFIG = re.compile(
-    r"(?:(?:application|bootstrap)(?:-[\w.-]+)?\.ya?ml|kong\.(?:ya?ml|json))", re.I
+    r"(?:(?:application|bootstrap)(?:-[\w.-]+)?\.(?:ya?ml|properties)|kong\.(?:ya?ml|json))", re.I
 )
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
 _ROUTE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", re.ASCII)
@@ -186,6 +187,24 @@ class _Reviewer:
                 return
             self.kong(data, document, "kong." + version)
 
+    def spring_properties(self, raw: bytes) -> None:
+        declarations: dict[tuple[int, str, int], _Mapping] = {}
+        for document, line, key, value in property_entries(raw):
+            match = re.fullmatch(r"(spring\.cloud\.gateway\.[a-z.]+)\[([0-9]{1,9})\]\.(.+)", key)
+            if not match or match[1] not in SPRING_SCHEMAS:
+                continue
+            self.recognized = True
+            identity = (document, match[1], int(match[2]))
+            route = declarations.setdefault(identity, _Mapping(line))
+            field = match[3]
+            if field in {"id", "uri"}:
+                route[field] = value
+                if field == "uri":
+                    route.line = line
+        for (document, schema, _), route in declarations.items():
+            host = _uri_host(route.get("uri"), {"lb", "http", "https", "ws", "wss"})
+            self.route(route, schema, document, "id", host)
+
     def kong(self, data: _Mapping, document: int, schema: str) -> None:
         pools = {canonical_host(item.get("name")) for item in _entities(data, "upstreams")}
         by_ref: dict[tuple[str, str], list[_Mapping]] = defaultdict(list)
@@ -290,11 +309,14 @@ def review_gateway_configs(
             remaining_bytes -= len(raw)
             file.sha256 = hashlib.sha256(raw).hexdigest()
             try:
-                if path.suffix.lower() == ".json":
-                    json.loads(raw)  # JSON input must also meet JSON syntax.
-                for document, data in enumerate(config_documents(raw), 1):
-                    if isinstance(data, _Mapping):
-                        reviewer.review(data, document)
+                if path.suffix.lower() == ".properties":
+                    reviewer.spring_properties(raw)
+                else:
+                    if path.suffix.lower() == ".json":
+                        json.loads(raw)  # JSON input must also meet JSON syntax.
+                    for document, data in enumerate(config_documents(raw), 1):
+                        if isinstance(data, _Mapping):
+                            reviewer.review(data, document)
             except ValueError, yaml.YAMLError, RecursionError:
                 file.routes.clear()
                 file.diagnostics.append("invalid_or_unsupported_configuration")

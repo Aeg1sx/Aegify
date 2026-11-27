@@ -20,17 +20,44 @@ function snapshot(): ReviewSnapshot {
 }
 const result: ReviewResult = { findingId: "finding", verdict: "likely_false_positive", confidence: 0.8, reasoning: "Owned static fixture.", remediation: "Review caller constraints.", adjustedSeverity: "low", evidenceFor: [], evidenceAgainst: ["A static guard was read."], evidenceGaps: [] };
 
-test("Wrangler manifests stay out of model source tools and restored catalogs", () => {
+test("Gateway and Wrangler configurations stay out of saved model source tools and restored catalogs", () => {
   const { sources } = catalog({
     "wrangler.json": "owned-config-marker", "apps/api/wrangler.jsonc": "owned-config-marker",
-    "work/wrangler.toml": "owned-config-marker", "main.py": "value = 2",
+    "work/wrangler.toml": "owned-config-marker", "config/application.properties": "owned-config-marker",
+    "edge/kong.yaml": "owned-config-marker", "bootstrap-local.yml": "owned-config-marker", "main.py": "value = 2",
   });
   assert.deepEqual(sources.files.map((file) => file.path), ["main.py"]);
-  assert.equal(sources.omittedFiles, 3);
+  assert.equal(sources.omittedFiles, 6);
   assert.equal(sources.truncated, true);
   assert.ok(!JSON.stringify(sources).includes("owned-config-marker"));
   assert.equal(validateReviewSources(sources), sources);
   assert.throws(() => validateReviewSources({ ...sources, files: [{ ...sources.files[0], path: "old/wrangler.toml" }] }), /withheld/);
+  assert.throws(() => validateReviewSources({ ...sources, files: [{ ...sources.files[0], path: "old/application-prod.properties" }] }), /withheld/);
+});
+
+test("gateway finding snapshots omit raw source, messages and context across review modes", () => {
+  const review = snapshot();
+  const marker = "owned-gateway-fixture-value";
+  for (const path of ["service/application.properties", "edge/application.yml", "deploy/kong.json"]) {
+    const finding = { ...review.findings[0], data: { filePath: path, ruleId: "external",
+      codeSnippet: marker, message: marker, defenseContext: marker }, apiContractContext: marker };
+    for (const mode of ["quick", "deep", "source"] as const) {
+      const prompt = batchPrompt({ ...review, mode, findings: [finding], graphContext: { data: marker, omitted: 0 } }, [finding.id]);
+      assert.ok(!prompt.includes(marker));
+      assert.ok(prompt.includes(path));
+    }
+  }
+});
+
+test("code findings with legacy gateway trace excerpts only preserve the configuration location", () => {
+  const review = snapshot();
+  const marker = "owned-gateway-fixture-value";
+  const finding = { ...review.findings[0], data: { filePath: "src/app.py", codeSnippet: "return result",
+    callChain: JSON.stringify([{ filePath: "app/application.properties", line: 9, snippet: marker }]),
+    taintFlow: JSON.stringify([{ file: "config/kong.json", line: 8, message: marker, snippet: marker }]) } };
+  const prompt = batchPrompt({ ...review, findings: [finding] }, [finding.id]);
+  assert.ok(!prompt.includes(marker));
+  assert.ok(prompt.includes("application.properties") && prompt.includes("return result"));
 });
 
 test("quick, deep and source prompts withhold raw configuration in older finding records", () => {

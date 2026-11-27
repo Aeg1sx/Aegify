@@ -1,7 +1,6 @@
-import { parseConfigurationSettings } from "./configuration-evidence.ts";
+import { isGatewayConfiguration, isWranglerManifest, parseConfigurationSettings, withholdSourceFromModel } from "./configuration-evidence.ts";
 import type { Finding, Scan } from "@prisma/client";
 import { sanitizeLLMText } from "./llm-safety.ts";
-import { isWranglerManifest } from "./repo-fetcher.ts";
 import { sha256 } from "./provider-receipt.ts";
 import { CONTRACT_REVIEW_RULES } from "./openapi-context.ts";
 import { SOURCE_TOOL_LIMITS, SOURCE_TOOL_SPECS, sourceCatalogSummary, sourceLocation, validateReviewSources, type ReviewSourceCatalog } from "./ai-source-tools.ts";
@@ -62,16 +61,44 @@ export interface ReviewResult {
 
 const configMetadata = new Set(["id", "scanId", "ruleId", "severity", "confidence", "evidenceState", "disposition", "filePath", "modulePath", "lineStart", "lineEnd", "cweId"]);
 export function isConfigFinding(data: { filePath?: unknown; modulePath?: unknown }): boolean {
-  return [data.filePath, data.modulePath].some((path) => typeof path === "string" && isWranglerManifest(path));
+  return [data.filePath, data.modulePath].some((path) => typeof path === "string" && withholdSourceFromModel(path));
 }
 
 export function redactManifestFinding(finding: FrozenFinding): FrozenFinding {
-  if (!isConfigFinding(finding.data)) return finding;
+  if (!isConfigFinding(finding.data)) {
+    // Historical snapshots can include a configuration excerpt in a code finding's trace.
+    const data = { ...finding.data };
+    const omitted = new Set(finding.omittedFields);
+    for (const [field, pathKey] of [["taintFlow", "file"], ["callChain", "filePath"]] as const) {
+      if (typeof data[field] !== "string") continue;
+      try {
+        const steps: unknown = JSON.parse(data[field]);
+        if (!Array.isArray(steps)) throw new Error();
+        let withheld = false;
+        const projected = steps.map((step) => {
+          const path = step?.[pathKey];
+          if (typeof path !== "string" || !isGatewayConfiguration(path)) return step;
+          withheld = true;
+          return { [pathKey]: path, line: Number.isSafeInteger(step.line) ? step.line : null };
+        });
+        if (withheld) {
+          data[field] = JSON.stringify(projected);
+          omitted.add(field + " configuration excerpts");
+        }
+      } catch {
+        delete data[field];
+        omitted.add(field);
+      }
+    }
+    return { ...finding, data, omittedFields: [...omitted] };
+  }
   const data: FrozenFinding["data"] = {};
   const omitted = new Set(finding.omittedFields);
   for (const [key, value] of Object.entries(finding.data)) {
     if (configMetadata.has(key)) data[key] = value;
-    else if (key === "codeSnippet" && typeof value === "string" && parseConfigurationSettings(value)) {
+    else if (key === "codeSnippet" && typeof value === "string"
+      && [finding.data.filePath, finding.data.modulePath].some((path) => typeof path === "string" && isWranglerManifest(path))
+      && parseConfigurationSettings(value)) {
       data.codeSnippet = value;
     } else omitted.add(key);
   }

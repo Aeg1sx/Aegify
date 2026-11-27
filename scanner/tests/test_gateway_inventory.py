@@ -300,3 +300,78 @@ def test_conflicting_service_references_never_pick_the_first_match(tmp_path: Pat
         "ambiguous_service_ref",
         [],
     )
+
+
+def test_spring_indexed_properties_preserve_documents_and_final_uri_lines(tmp_path: Path) -> None:
+    edge = tmp_path / "edge"
+    edge.mkdir()
+    (tmp_path / "orders").mkdir()
+    path = edge / "application-prod.properties"
+    path.write_bytes(
+        b"unrelated.secret=password-marker\r\n"
+        b"spring.cloud.gateway.routes[0].id : legacy\r\n"
+        b"spring.cloud.gateway.routes[0].uri=lb://stale\r\n"
+        b"spring.cloud.gateway.routes[0].uri = lb\\://ord\\\r\n"
+        b"    ers\r\n"
+        b"#---\r\n"
+        b"spring.cloud.gateway.mvc.routes[0].id old-mvc\r\n"
+        b"spring.cloud.gateway.mvc.routes[0].uri=lb://orders\r\n"
+        b"spring.cloud.gateway.server.webflux.routes[0].id=flux\r\n"
+        b"spring.cloud.gateway.server.webflux.routes[0].uri=http://orders/path?secret=hidden-marker\r\n"
+        b"spring.cloud.gateway.server.webmvc.routes[0].id=mvc\r\n"
+        b"spring.cloud.gateway.server.webmvc.routes[0].uri=lb://\x24{unknown}\r\n"
+    )
+    custom = edge / "platform.properties"
+    custom.write_text(
+        "# heading\n#---\n"
+        "spring.cloud.gateway.routes\\u005b0\\u005d.id=custom\n"
+        "spring.cloud.gateway.routes[0].uri=lb://orders\n"
+        "other=wrapped\\\n"
+        "spring.cloud.gateway.routes[1].uri=lb://unintended\n"
+    )
+    manifest = tmp_path / "workspace.yml"
+    manifest.write_text(
+        "repositories:\n"
+        "  - {id: edge, path: edge, gateway_configs: [platform.properties]}\n"
+        "  - {id: orders, path: orders, service_names: [orders]}\n"
+    )
+    report = ScanEngine().scan_workspace(manifest).gateway_inventory
+    assert report and report.input_status == "processed"
+    assert len(report.files) == 2
+    routes = {row.route_name: row for file in report.files for row in file.routes}
+    assert set(routes) == {"legacy", "old-mvc", "flux", "mvc", "custom"}
+    for name in ("legacy", "old-mvc", "flux", "custom"):
+        assert routes[name].repository_ids == ["orders"]
+    assert (routes["legacy"].document, routes["legacy"].line) == (1, 4)
+    assert (routes["old-mvc"].document, routes["old-mvc"].line) == (2, 8)
+    assert routes["custom"].document == 1
+    assert routes["mvc"].reason == "dynamic_or_unsupported_destination"
+    assert all(
+        secret not in report.model_dump_json() for secret in ("password-marker", "hidden-marker")
+    )
+
+
+def test_malformed_spring_properties_do_not_keep_earlier_bindings(tmp_path: Path) -> None:
+    path = tmp_path / "bootstrap.properties"
+    path.write_bytes(b"spring.cloud.gateway.routes[0].uri=lb://ok\nx=\\uinvalid\n")
+    report = ScanEngine().scan(path).gateway_inventory
+    assert report and report.input_status == "partial"
+    assert report.files[0].routes == []
+    assert report.files[0].diagnostics == ["invalid_or_unsupported_configuration"]
+
+
+def test_workspace_ai_catalog_only_admits_code_sources(tmp_path: Path) -> None:
+    manifest = _workspace(tmp_path)
+    (tmp_path / "edge" / "application.properties").write_text(
+        "spring.cloud.gateway.routes[0].uri=lb://catalog.svc\n"
+        "arbitrary.setting=owned-private-config-marker\n"
+    )
+    engine = ScanEngine(capture_ai_source=True)
+    result = engine.scan_workspace(manifest)
+    assert result.gateway_inventory and engine.source_catalog
+    assert ("catalog", "app.py") in engine.source_catalog.files
+    assert not any(
+        path.endswith((".properties", ".yaml", ".yml", ".json"))
+        for _, path in engine.source_catalog.files
+    )
+    assert "owned-private-config-marker" not in result.model_dump_json()
