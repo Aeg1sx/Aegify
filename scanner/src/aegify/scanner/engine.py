@@ -1141,25 +1141,29 @@ class ScanEngine:
                 file_path=attributes.get("file_path", ""),
             )
 
+        statements: dict[str, list[tuple[int, int, int, str]]] = {}
+        for node, data in program_graph.nodes(data=True):
+            owner = data.get("function")
+            if data.get("kind") == "statement" and isinstance(owner, str):
+                start = int(data.get("line_start", 0) or 0)
+                end = int(data.get("line_end", start) or start)
+                statements.setdefault(owner, []).append(
+                    (start, end, len(str(data.get("code", ""))), str(node))
+                )
+
         def statement_for(function: str, line: int) -> str | None:
             if line <= 0:
                 return None
-            candidates: list[tuple[int, int, int, str]] = []
-            for node, data in program_graph.nodes(data=True):
-                if data.get("kind") != "statement" or data.get("function") != function:
-                    continue
-                start = int(data.get("line_start", 0) or 0)
-                end = int(data.get("line_end", start) or start)
-                if start <= line <= end:
-                    candidates.append(
-                        (
-                            end - start,
-                            abs(line - start),
-                            len(str(data.get("code", ""))),
-                            str(node),
-                        )
-                    )
-            return min(candidates)[-1] if candidates else None
+            # Preserve the narrowest-range, nearest-start, shortest-code tie break.
+            best = min(
+                (
+                    (end - start, line - start, size, node)
+                    for start, end, size, node in statements.get(function, [])
+                    if start <= line <= end
+                ),
+                default=None,
+            )
+            return best[-1] if best else None
 
         def normal_continuations(statement: str) -> list[str]:
             exceptional_kinds = {

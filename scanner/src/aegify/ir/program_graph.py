@@ -888,6 +888,16 @@ class ProgramGraphBuilder:
         functions = [
             node for node, data in graph.nodes(data=True) if data.get("kind") == "function"
         ]
+        cfg_nodes: dict[str, set[str]] = defaultdict(set)
+        for node, data in graph.nodes(data=True):
+            owner = data.get("function")
+            if isinstance(owner, str) and data.get("kind") in {
+                "control-join",
+                "entry",
+                "statement",
+                "exit",
+            }:
+                cfg_nodes[owner].add(node)
         for function in functions:
             members = {
                 target
@@ -897,22 +907,18 @@ class ProgramGraphBuilder:
             entries = [node for node in members if graph.nodes[node].get("kind") == "entry"]
             if not entries:
                 continue
-            nodes = {
-                node
-                for node, data in graph.nodes(data=True)
-                if data.get("function") == function
-                and data.get("kind") in {"control-join", "entry", "statement", "exit"}
-            }
+            nodes = cfg_nodes[function]
             predecessors: dict[str, set[str]] = defaultdict(set)
-            for source, target, data in graph.edges(data=True):
-                if source in nodes and target in nodes and data.get("overlay") == "cfg":
+            for source, target, data in graph.out_edges(nodes, data=True):
+                if target in nodes and data.get("overlay") == "cfg":
                     predecessors[target].add(source)
 
             in_defs: dict[str, dict[str, set[str]]] = {node: {} for node in nodes}
             out_defs: dict[str, dict[str, set[str]]] = {node: {} for node in nodes}
+            ordered_nodes = sorted(nodes)
             for _ in range(max(len(nodes) * 2, 1)):
                 changed = False
-                for node in sorted(nodes):
+                for node in ordered_nodes:
                     merged: dict[str, set[str]] = defaultdict(set)
                     for predecessor in predecessors.get(node, set()):
                         for variable, definitions in out_defs[predecessor].items():
