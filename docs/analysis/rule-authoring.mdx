@@ -346,6 +346,23 @@ fall outside the rule. The development catalog retires the old
 [Python random module](https://docs.python.org/3/library/random.html)
 and [cryptographic random bytes](https://docs.python.org/3/library/os.html#os.urandom).
 
+## Java session token randomness
+
+The same detector tracks `java.util.Random` and `Math.random()` into a servlet
+session credential. For a byte token it records the `nextBytes` call, the
+encoding line and the session write. Supported encoders include JDK Base64,
+JDK HexFormat and ESAPI Base64. The buffer must be freshly allocated with one
+unconditional fill before encoding. An intervening mutation, alias or unknown
+call leaves the byte origin unresolved.
+
+For a custom session registry, a finding requires a typed private map and a
+method that looks up its session record by a string parameter. Another method
+must store a new record under the generated ID, pass that same ID to the
+record constructor, and return it immediately after registration. A literal
+prefix or clock reading can be part of the ID. An unknown source contributing
+to the ID prevents attribution to the weak generator. Both rule packs report
+the source and registration lines for human review.
+
 ## Python XML and XPath
 
 For `parseString`, the scanner can evaluate a small set of literal documents selected through local branches or indexed containers. Each possible value must consist of plain text without declarations, entity syntax or an encoding switch. An unknown branch or a mutable input keeps the parser configuration visible for review. A filename passed to `parse` still refers to the contents of a file. [Python DOM reader](https://docs.python.org/3.14/library/xml.dom.minidom.html) · [SAX parser features](https://docs.python.org/3.14/library/xml.sax.handler.html)

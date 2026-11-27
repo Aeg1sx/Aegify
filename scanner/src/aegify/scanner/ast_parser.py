@@ -1146,9 +1146,9 @@ class _JavaExtractor(_BaseExtractor):
                 )
             )
 
-        check_randomness = b"setAttribute" in source and (
-            b"Random" in source or b"random" in source
-        )
+        check_randomness = (
+            b"setAttribute" in source or (b"Session" in source and b"put" in source)
+        ) and (b"Random" in source or b"random" in source)
         known_types = (
             java_types.known_types(root, imports)
             if b"addCookie" in source or check_randomness

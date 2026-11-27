@@ -153,6 +153,7 @@ class CredentialRandomness(BaseModel):
     use: str
     use_line: int
     comparison_line: int | None = None
+    encoding_line: int | None = None
 
 
 type WranglerStorageCollection = Literal["kv_namespaces", "d1_databases", "r2_buckets"]

@@ -158,12 +158,17 @@ data; independent label adjudication and private application holdouts remain ope
 Java credential review now follows scalar JDK PRNG results into servlet session
 keys. Each advisory cites the generator and write. A dynamic credential prefix
 also requires a cookie comparison controlling a branch on the same session
-slot. Byte-array generation, custom encoders and cross-method flows remain
-outside this rule. Against main at `b4c321a`, 199 of 218 CWE-330 positives
+slot. That version handled scalar generation. Against main at `b4c321a`, 199 of 218 CWE-330 positives
 were recovered with zero false positives on 275 category negatives. Overall
 Java precision rose from 90.68% to 94.31% and recall from 21.17% to 36.11%
 on 2,614 scored labels. The 126 unscored labels and all 1,230 Python case
 outcomes stayed unchanged. [Paired evaluation](https://github.com/Aeg1sx/Aegify/pull/105)
+
+Java session review now follows bytes filled by `Random.nextBytes` through
+supported encoders and can link a returned session identifier to the map used
+to look it up. The OrientDB development patch gained an advisory at the
+original registration and had none after the repair. The separate Jetty
+patch remained missed. [Java session patch evaluation](scanner/benchmarks/credential-randomness-v1/java-sessions.md)
 
 Typed JDBC query review adds three advisory detections on the same Java corpus.
 CWE-89 moves from 21 to 24 detected positives out of 272, with 12 false

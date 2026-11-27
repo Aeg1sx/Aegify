@@ -1,0 +1,57 @@
+{
+  "orientdb": {
+    "advisory": "GHSA-v6wr-fch2-vm5w",
+    "repo": "orientechnologies/orientdb",
+    "base": "41fd20ab022e22bce32d62372dbe279693322086",
+    "fix": "668ece96be210e742a4e2820a3085b215cf55104",
+    "files": {
+      "server/src/main/java/com/orientechnologies/orient/server/network/protocol/http/OHttpSessionManager.java": {
+        "base": "2c1bba8051f1c7bea26dac68a291e790d7986110090bd332449df8f826231c16",
+        "fix": "98ba92a0755e580454b373806a03d4bd401ca90db27c3c5196d27c491adf854e"
+      }
+    },
+    "role": "development case",
+    "expected_original_site": {
+      "path": "server/src/main/java/com/orientechnologies/orient/server/network/protocol/http/OHttpSessionManager.java",
+      "generator_line": 111
+    },
+    "base_reported_sites": [
+      {
+        "path": "server/src/main/java/com/orientechnologies/orient/server/network/protocol/http/OHttpSessionManager.java",
+        "line": 112,
+        "rules": [
+          "AEG-A02-004",
+          "AEG-CRYPTO-002"
+        ]
+      }
+    ],
+    "fix_reported_sites": []
+  },
+  "jetty": {
+    "advisory": "GHSA-jg2x-r643-w2ch",
+    "repo": "jetty-project/codehaus-jetty6",
+    "base": "2275f76eba4d07741da6a3d734742d74218d5861",
+    "fix": "36f81d2e7058b012f6718bc2f1e2786694a8a4a1",
+    "files": {
+      "extras/cometd/src/main/java/org/mortbay/cometd/Bayeux.java": {
+        "base": "f48ff5780e3313682f949a6ea26ced0b73e8f53202a946f0f32c9f35010a635a",
+        "fix": "f3452f922838753796a17f71854241e684e81f612b317056d4c69a90bcf7d153"
+      },
+      "extras/cometd/src/main/java/org/mortbay/cometd/Channel.java": {
+        "base": "5164b009c20237cd876f578ac1c600173cb35e140624c743772b26911af66a0d",
+        "fix": "0438cb7a42e5cd85d9feecb08faffea4a36719e92fc337bc03b01d268b45668f"
+      },
+      "modules/jetty/src/main/java/org/mortbay/jetty/servlet/HashSessionIdManager.java": {
+        "base": "2f3c1d62b7b2228afd2fbbbd6aeb929a5cd5cd56c94e4f49fb47a75a66b40801",
+        "fix": "d656cfe89077dbee0a1f5c6db0b56b0951b1a75b6f97e5e3bd772254a1e42f42"
+      }
+    },
+    "role": "held-out patch",
+    "expected_original_site": {
+      "path": "modules/jetty/src/main/java/org/mortbay/jetty/servlet/HashSessionIdManager.java",
+      "generator_line": 78
+    },
+    "base_reported_sites": [],
+    "fix_reported_sites": []
+  }
+}
