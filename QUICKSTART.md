@@ -149,8 +149,8 @@ docker compose -f docker-compose.defectdojo.yml down -v
 From a source checkout, prepare the bundled multi-repository example and scan it.
 
 ```sh
-aegify prepare-workspace scanner/examples/workspace-sources.yml --output ./prepared-example
-aegify scan-workspace ./prepared-example/workspace.yml --output json --output-file workspace-report.json
+aegify scan-workspace scanner/examples/workspace-sources.yml --prepare-to ./prepared-example \
+  --output json --output-file workspace-report.json
 ```
 
 Use a repository's local path or a hosted HTTPS URL and full commit SHA.

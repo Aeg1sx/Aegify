@@ -59,6 +59,11 @@ aegify prepare-workspace examples/workspace-sources.yml --output ./prepared-exam
 aegify scan-workspace ./prepared-example/workspace.yml
 ```
 
+To prepare and scan in one invocation, run
+`aegify scan-workspace examples/workspace-sources.yml --prepare-to ./prepared-example`.
+This reads scan settings beside the original manifest. A later scan of the
+prepared manifest can supply the same settings file with `--config`.
+
 In each repository entry, use `path` for a local directory or `source: {url,
 revision}` for a hosted repository. Supply the full 40-character Git commit
 SHA. The output directory must be new. Preparation publishes `workspace.yml`

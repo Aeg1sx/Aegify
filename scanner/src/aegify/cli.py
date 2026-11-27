@@ -550,12 +550,16 @@ def prepare_workspace_command(
     output: Annotated[Path, typer.Option("--output", "-o", help="New workspace directory")],
 ) -> None:
     """Prepare commit-pinned Git sources and local paths for scan-workspace."""
+    console.print(str(_prepare_sources(manifest, output)), markup=False, highlight=False)
+
+
+def _prepare_sources(manifest: Path, output: Path) -> Path:
     import subprocess
 
     from aegify.scanner.workspace_sources import prepare_workspace
 
     try:
-        prepared = prepare_workspace(manifest, output)
+        return prepare_workspace(manifest, output)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         # Git diagnostics can contain credentials or remote-controlled terminal content.
         if isinstance(error, ValueError):
@@ -563,7 +567,6 @@ def prepare_workspace_command(
         else:
             console.print("Workspace preparation failed during file or Git transport access.")
         raise typer.Exit(code=2) from None
-    console.print(str(prepared), markup=False, highlight=False)
 
 
 @app.command("scan-workspace")
@@ -617,11 +620,23 @@ def scan_workspace(
             help="Write the complete CFG/DFG/SSA/security graph as JSONL",
         ),
     ] = None,
+    prepare_to: Annotated[
+        Path | None,
+        typer.Option(
+            "--prepare-to", help="Fetch pinned sources into a new directory before scanning"
+        ),
+    ] = None,
+    config_path: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", exists=True, dir_okay=False, help="Scan configuration file"),
+    ] = None,
 ) -> None:
     """Scan a multi-repository workspace with stable cross-repo identities."""
     from aegify.scanner.engine import ScanEngine
 
-    cfg = AegifyConfig.load(manifest.parent)
+    cfg = AegifyConfig.from_yaml(config_path) if config_path else AegifyConfig.load(manifest.parent)
+    if prepare_to is not None:
+        manifest = _prepare_sources(manifest, prepare_to)
     cfg.rules.severity_threshold = severity
     cfg.llm.enabled = ai_tools
     cfg.llm.model = model

@@ -184,3 +184,41 @@ def test_pin_and_output_are_fail_closed(tmp_path, history, local_transport, monk
     (out / "preserve").write_text("existing")
     assert prepare(commit).exit_code == 2
     assert (out / "preserve").read_text() == "existing"
+
+
+def test_scan_workspace_prepares_hosted_sources_and_uses_original_config(
+    tmp_path, history, local_transport
+):
+    _, commit, _ = history
+    manifest = tmp_path / "workspace.yml"
+    manifest.write_text(
+        yaml.safe_dump(
+            {
+                "repositories": [
+                    {"id": "remote", "source": {"url": URLS[0], "revision": commit}},
+                ]
+            }
+        )
+    )
+    (tmp_path / ".aegify.yml").write_text("scan:\n  exclude: ['**/service.py', 'service.py']\n")
+    report = tmp_path / "scan.json"
+    output = tmp_path / "frozen"
+    outcome = CliRunner().invoke(
+        app,
+        [
+            "scan-workspace",
+            str(manifest),
+            "--prepare-to",
+            str(output),
+            "-o",
+            "json",
+            "-f",
+            str(report),
+        ],
+    )
+    assert outcome.exit_code in {0, 3}, outcome.output
+    result = json.loads(report.read_text())
+    assert all("service.py" not in file for file in result["analyzed_files"])
+    assert json.loads((output / "sources.json").read_text())["repositories"][0]["commit"] == commit
+    again = CliRunner().invoke(app, ["scan-workspace", str(manifest), "--prepare-to", str(output)])
+    assert again.exit_code == 2
