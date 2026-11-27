@@ -980,8 +980,13 @@ class PatternSpec:
         keys = data.get("fetch_query_keys")
         self.fetch_query_keys: frozenset[str] | None = None
         if "fetch_query_keys" in data:
-            if not isinstance(keys, list) or not 1 <= len(keys) <= 128 or not all(
-                isinstance(key, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", key) for key in keys
+            if (
+                not isinstance(keys, list)
+                or not 1 <= len(keys) <= 128
+                or not all(
+                    isinstance(key, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", key)
+                    for key in keys
+                )
             ):
                 raise ValueError("fetch_query_keys requires a bounded list of parameter names")
             self.fetch_query_keys = frozenset(key.lower() for key in keys)

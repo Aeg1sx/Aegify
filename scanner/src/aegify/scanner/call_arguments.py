@@ -160,8 +160,14 @@ def _fetch_url_text(node: Node | None, source: bytes, depth: int = 0) -> str:
     if node.type == "new_expression":
         constructor = node.child_by_field_name("constructor")
         if constructor is not None and _text(constructor, source) in {
-            "Request", "URL", "globalThis.Request", "globalThis.URL",
-            "window.Request", "window.URL", "self.Request", "self.URL",
+            "Request",
+            "URL",
+            "globalThis.Request",
+            "globalThis.URL",
+            "window.Request",
+            "window.URL",
+            "self.Request",
+            "self.URL",
         }:
             first = _first_argument(node.child_by_field_name("arguments"))
             return _fetch_url_text(first, source, depth + 1)

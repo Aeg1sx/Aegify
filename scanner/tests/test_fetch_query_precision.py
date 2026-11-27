@@ -22,7 +22,7 @@ def test_fetch_credentials_follow_the_url_query_at_the_call_site(tmp_path: Path,
     examples = [
         (
             'globalThis.fetch(base + "/audit?format=jsonl", '
-            '{headers: {cookie: `authjs.session-token=${value}`}});',
+            "{headers: {cookie: `authjs.session-token=${value}`}});",
             set(),
         ),
         (
@@ -37,7 +37,7 @@ def test_fetch_credentials_follow_the_url_query_at_the_call_site(tmp_path: Path,
             set(CASES),
         ),
         ('fetch(new Request(base, {headers: {url: "/test?token=fixture"}}));', set()),
-        ('fetch(new URL(`/audit?access%5Ftoken=${value}`, base).href);', set(CASES)),
+        ("fetch(new URL(`/audit?access%5Ftoken=${value}`, base).href);", set(CASES)),
         ('fetch(base + "#section?token=fixture");', set()),
         ('fetch(base + "?q=value?token=fixture");', set()),
         ('fetch(`/file/${format("?token=fixture")}`);', set()),
