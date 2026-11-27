@@ -204,6 +204,10 @@ def test_older_snapshots_bind_real_flags():
     assert process_input(call, file, modules).shell is True
     call.arguments = ["['printf', 'shell=True']"]
     assert process_input(call, file, modules).shell is False
+    call.arguments = ["raw", "shell=choice"]
+    assert process_input(call, file, modules).shell is None
+    call.arguments = ["raw", "**options"]
+    assert process_input(call, file, modules).shell is None
 
 
 def test_saved_value_has_an_actual_source_write_and_process_trace(tmp_path):
@@ -222,3 +226,32 @@ def test_saved_value_has_an_actual_source_write_and_process_trace(tmp_path):
     assert (6, "command-argument") in [
         (step.line, step.propagation_type) for step in finding.taint_flow.path
     ]
+
+
+@pytest.mark.parametrize(
+    ("expression", "expects_shell"),
+    [
+        ("sp.run(raw, shell=True)", True),
+        ("sp.run(args=raw, shell=option)", True),
+        ("sp.run(raw, **options)", True),
+        ("sp.run(['sh', '-c', raw])", True),
+        ("sp.run(raw)", False),
+        ("sp.run(['sample', raw], shell=False)", False),
+        ("sp.run(raw, shell=False, **options)", False),
+        ("sp.run(raw); sp.run(raw, shell=True)", True),
+    ],
+)
+def test_shell_command_rule_uses_effective_interpretation(tmp_path, expression, expects_shell):
+    path = tmp_path / "sample.py"
+    path.write_text(
+        "import subprocess as sp\nfrom flask import request\ndef review(option, options):\n"
+        "    raw = request.args.get('label')\n    " + expression + "\n"
+    )
+    result = ScanEngine(
+        config=AegifyConfig.model_validate(
+            {"storage": {"backend": "memory"}, "llm": {"enabled": False}}
+        )
+    ).scan_files(tmp_path, [path])
+    hits = {(f.rule_id, f.line_start) for f in result.findings}
+    assert (("AEG-RCE-PY-003", 5) in hits) is expects_shell
+    assert ("AEG-CMD-001", 5) in hits

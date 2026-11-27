@@ -273,10 +273,18 @@ def process_input(
         return PythonProcessInput(api=api, argument_index=0)
     if not isinstance(parsed, ast.Call):
         return None
-    operand = call_argument(parsed, 0, "args")
-    flag = call_argument(parsed, 8, "shell")
+    operand = _parameter(parsed, 0, "args")
+    flag = _parameter(parsed, 8, "shell")
+    shell: bool | None = None
+    if flag:
+        if isinstance(flag[1], ast.Constant) and type(flag[1].value) is bool:
+            shell = flag[1].value
+    elif not any(isinstance(arg, ast.Starred) for arg in parsed.args) and all(
+        kw.arg is not None for kw in parsed.keywords
+    ):
+        shell = False
     return PythonProcessInput(
         api=api,
         argument_index=operand[0] if operand else 0,
-        shell=bool(flag and isinstance(flag[1], ast.Constant) and flag[1].value is True),
+        shell=shell,
     )

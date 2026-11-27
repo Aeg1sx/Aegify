@@ -367,6 +367,14 @@ class SinkPattern:
     python_template: bool = False
     python_download: bool = False
 
+    def accepts_receiver(self, call: CallSite, language: Language) -> bool:
+        return not (
+            self.sink_type == "os_command"
+            and self.pattern == "exec"
+            and language in (Language.JAVASCRIPT, Language.TYPESCRIPT)
+            and call.receiver_type == "RegExp"
+        )
+
     @property
     def has_python_operand(self) -> bool:
         return (
@@ -508,6 +516,8 @@ class DataflowAnalyzer:
         for call in ast.calls:
             call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
             for pattern in patterns:
+                if not pattern.accepts_receiver(call, ast.language):
+                    continue
                 if pattern.has_python_operand:
                     selected = pattern.select_operand(call, ast, modules, ldap)
                     if selected:

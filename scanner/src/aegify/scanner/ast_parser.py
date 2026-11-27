@@ -988,6 +988,7 @@ class _JavaScriptExtractor(_BaseExtractor):
 
             callee = self._node_text(func_node, source)
             receiver: str | None = None
+            receiver_type = ""
 
             if func_node.type == "member_expression":
                 obj_node = func_node.child_by_field_name("object")
@@ -995,6 +996,13 @@ class _JavaScriptExtractor(_BaseExtractor):
                 if obj_node and prop_node:
                     receiver = self._node_text(obj_node, source)
                     callee = self._node_text(prop_node, source)
+                    while (
+                        obj_node.type == "parenthesized_expression"
+                        and len(obj_node.named_children) == 1
+                    ):
+                        obj_node = obj_node.named_children[0]
+                    if obj_node.type == "regex":
+                        receiver_type = "RegExp"
 
             args: list[str] = []
             args_node = node.child_by_field_name("arguments")
@@ -1015,6 +1023,7 @@ class _JavaScriptExtractor(_BaseExtractor):
                     column=node.start_point[1],
                     arguments=args,
                     receiver=receiver,
+                    receiver_type=receiver_type,
                     in_function=enclosing,
                 )
             )

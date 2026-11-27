@@ -23,6 +23,7 @@ from aegify.models import (
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
 from aegify.rules.call_options import BooleanOptionSpec
 from aegify.scanner.python_deserialization import extended_loaders, reader
+from aegify.scanner.python_process import process_input
 from aegify.scanner.python_scope import PythonModules
 from aegify.scanner.python_signing_keys import REDACTED_SIGNING_KEY, protected_lines
 
@@ -461,6 +462,18 @@ class YAMLRule(SecurityRule):
         if not taint:
             return findings
 
+        shell_states: dict[tuple[str, int, str], set[bool | None]] = {}
+        if taint.subprocess_shell:
+            modules = PythonModules(file_asts)
+            for file in file_asts:
+                if file.language == Language.PYTHON:
+                    for call in file.calls:
+                        if fact := process_input(call, file, modules):
+                            key = (file.file_path, call.line, fact.api)
+                            # An explicit interpreter can consume command text with shell=False.
+                            mode = True if fact.command_parts else fact.shell
+                            shell_states.setdefault(key, set()).add(mode)
+
         # Build file_path -> FileAST index for O(1) lookup (replaces O(n) linear scan)
         fp_index: dict[str, FileAST] = {a.file_path: a for a in file_asts}
 
@@ -494,6 +507,12 @@ class YAMLRule(SecurityRule):
             if taint._sink_pattern_re:
                 if not taint._sink_pattern_re.search(flow.sink.function):
                     continue
+
+            # Only suppress when every matching invocation on this line proves shell=False.
+            if taint.subprocess_shell and shell_states.get(
+                (flow.sink.file_path, flow.sink.line, flow.sink.function)
+            ) == {False}:
+                continue
 
             # Check source pattern (pre-compiled regex)
             if taint._source_pattern_re:
@@ -1282,6 +1301,7 @@ class TaintSpec:
         self.source_types: list[str] = data.get("source_types", [])
         self.sink_pattern: str | None = data.get("sink_pattern")
         self.source_pattern: str | None = data.get("source_pattern")
+        self.subprocess_shell: bool = data.get("subprocess_shell", False)
         self.ignore_sanitizers: bool = data.get("ignore_sanitizers", False)
         self.disposition = FindingDisposition(data.get("disposition", "blocking"))
         # Pre-compile regex patterns for performance
@@ -1305,6 +1325,7 @@ class TaintSpec:
             "sink_pattern",
             "source_pattern",
             "ignore_sanitizers",
+            "subprocess_shell",
             "disposition",
         }
         errors = []
@@ -1342,6 +1363,8 @@ class TaintSpec:
                 errors.append(f"{key} is not a valid regular expression")
             else:
                 selectors = True
+        if "subprocess_shell" in data and type(data["subprocess_shell"]) is not bool:
+            errors.append("subprocess_shell must be a boolean")
         if "ignore_sanitizers" in data and type(data["ignore_sanitizers"]) is not bool:
             errors.append("ignore_sanitizers must be a YAML boolean")
         if data.get("disposition", "blocking") not in ("blocking", "advisory"):

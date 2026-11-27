@@ -591,6 +591,8 @@ class StructuredTaintAnalyzer:
                 selections: list[tuple[str, int]] = []
                 function = call_text
                 for pattern in sink_patterns:
+                    if not pattern.accepts_receiver(call, context.ast.language):
+                        continue
                     if pattern.has_python_operand:
                         if operand := pattern.select_operand(call, context.ast, modules, ldap):
                             function, index = operand

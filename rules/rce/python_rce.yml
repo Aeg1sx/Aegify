@@ -105,7 +105,7 @@ rules:
       - "https://cwe.mitre.org/data/definitions/95.html"
 
   - id: "AEG-RCE-PY-003"
-    name: "subprocess with shell=True and user input"
+    name: "Untrusted subprocess input with possible shell interpretation"
     description: >
       Using subprocess functions (Popen, call, check_output, check_call, run) with
       shell=True passes the command string through the system shell (/bin/sh on Unix).
@@ -127,6 +127,7 @@ rules:
       - pattern: "subprocess\\.(Popen|call|check_output|check_call|run)\\s*\\(.*%s.*shell\\s*=\\s*True"
         description: "subprocess with shell=True and percent-format command"
     taint:
+      subprocess_shell: true
       source_types: [http_param, http_body, http_header, environment_variable, file_read]
       sink_types: [os_command]
       sink_pattern: "subprocess\\.(Popen|call|check_output|check_call|run)"
@@ -150,7 +151,7 @@ rules:
       subprocess.run(["cmd", arg1, arg2]) instead of subprocess.run(f"cmd {arg1} {arg2}", shell=True).
       If shell=True is absolutely required, sanitize all user input with shlex.quote()
       and validate against a strict allowlist of permitted characters.
-    message: "subprocess called with shell=True and potentially user-controlled arguments at line {line}. Shell injection allows arbitrary command execution via metacharacters."
+    message: "Potentially untrusted arguments reach subprocess at line {line}. Check the effective shell setting and the origin of the command."
     references:
       - "https://docs.python.org/3/library/subprocess.html#security-considerations"
       - "https://cwe.mitre.org/data/definitions/78.html"
