@@ -165,6 +165,12 @@ Java precision rose from 90.68% to 94.31% and recall from 21.17% to 36.11%
 on 2,614 scored labels. The 126 unscored labels and all 1,230 Python case
 outcomes stayed unchanged. [Paired evaluation](https://github.com/Aeg1sx/Aegify/pull/105)
 
+Typed JDBC query review adds three advisory detections on the same Java corpus.
+CWE-89 moves from 21 to 24 detected positives out of 272, with 12 false
+positives in both versions. On the GeoTools patch pair both scanners miss the
+patched code. The new rule reports one unchanged site on both sides.
+[JDBC evaluation](scanner/benchmarks/sql-expressions-v1/java-jdbc.md)
+
 The scan detail page can filter Spring and Kong declarations
 by ownership status across repositories and retains their file and line.
 The live Codex CLI check passes the six-role source protocol on a three-line

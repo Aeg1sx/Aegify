@@ -15,8 +15,9 @@ from dataclasses import dataclass, field, replace
 from tree_sitter import Node
 
 from aegify.models import CallSite, FileAST, Language, QueryExpression
+from aegify.scanner import java_sql
 
-SUPPORTED = {Language.PYTHON, Language.JAVASCRIPT, Language.TYPESCRIPT}
+SUPPORTED = {Language.PYTHON, Language.JAVASCRIPT, Language.TYPESCRIPT, Language.JAVA}
 QUERY_METHODS = frozenset(
     {
         "execute",
@@ -839,6 +840,9 @@ class _Analyzer:
 
 
 def annotate_sql_queries(ast: FileAST, root: Node, source: bytes) -> None:
+    if ast.language == Language.JAVA:
+        java_sql.annotate(ast, root)
+        return
     if ast.language not in SUPPORTED:
         return
     analyzer = _Analyzer(ast, source)

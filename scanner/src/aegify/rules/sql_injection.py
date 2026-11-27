@@ -13,6 +13,7 @@ from aegify.models import (
     TaintFlow,
 )
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
+from aegify.scanner.java_sql import JDBC_METHODS
 from aegify.scanner.sql_queries import QUERY_METHODS, SUPPORTED
 
 
@@ -96,7 +97,7 @@ class SQLStringConcatRule(SecurityRule):
         ),
         severity=Severity.HIGH,
         default_confidence=0.7,
-        languages=[Language.PYTHON, Language.JAVASCRIPT, Language.TYPESCRIPT],
+        languages=[Language.PYTHON, Language.JAVASCRIPT, Language.TYPESCRIPT, Language.JAVA],
         cwe_id=89,
         owasp_category="A03:2021-Injection",
         requires_taint_path=False,
@@ -109,6 +110,7 @@ class SQLStringConcatRule(SecurityRule):
             "contract_version": 1,
             "patterns": {
                 "callee_match": sorted(QUERY_METHODS),
+                "typed_jdbc_methods": sorted(JDBC_METHODS),
                 "callee_match_mode": "full_leaf_name",
                 "query_selection": [
                     "first_positional",
