@@ -1,8 +1,10 @@
-"""Local Java PRNG flows into servlet session credentials."""
+"""Trace JDK PRNG values into servlet credentials and returned session registry keys."""
 
 from __future__ import annotations
 
-from collections import Counter
+from bisect import bisect_left
+from collections import Counter, defaultdict
+from dataclasses import dataclass
 
 from tree_sitter import Node
 
@@ -65,10 +67,103 @@ def _controls_branch(call: Node) -> bool:
     return False
 
 
+@dataclass(frozen=True)
+class _Origin:
+    api: str
+    line: int
+    encoding_line: int | None = None
+
+
+_MAPS = {
+    "java.util.Map",
+    "java.util.HashMap",
+    "java.util.LinkedHashMap",
+    "java.util.concurrent.ConcurrentMap",
+    "java.util.concurrent.ConcurrentHashMap",
+}
+
+
+def _allocation(expr: Node | None, types: dict[str, str]) -> str:
+    if expr is None or expr.type != "object_creation_expression" or expr.children[0].type != "new":
+        return ""
+    if any(child.type == "class_body" for child in expr.named_children):
+        return ""
+    return types.get(_text(expr.child_by_field_name("type")).split("<", 1)[0], "")
+
+
+@dataclass
+class _Fields:
+    generators: set[str]
+    stores: dict[str, str]
+    names: set[str]
+
+    @classmethod
+    def read(cls, body: Node, types: dict[str, str]) -> _Fields:
+        fields = cls(set(), {}, set())
+        for decl in body.named_children:
+            if decl.type != "field_declaration":
+                continue
+            typ = decl.child_by_field_name("type")
+            bindings = [
+                child for child in decl.named_children if child.type == "variable_declarator"
+            ]
+            fields.names.update(_name(binding) for binding in bindings)
+            modifiers = next(
+                (child for child in decl.named_children if child.type == "modifiers"), None
+            )
+            if (
+                typ is None
+                or modifiers is None
+                or not any(c.type == "private" for c in modifiers.children)
+            ):
+                continue
+            for binding in bindings:
+                name = _name(binding)
+                allocation = _allocation(binding.child_by_field_name("value"), types)
+                if types.get(_text(typ)) == allocation == "java.util.Random":
+                    fields.generators.add(name)
+                if typ.type != "generic_type" or allocation not in _MAPS:
+                    continue
+                base = typ.named_child(0)
+                args = next(
+                    (child for child in typ.named_children if child.type == "type_arguments"), None
+                )
+                if (
+                    types.get(_text(base)) not in _MAPS
+                    or args is None
+                    or args.named_child_count != 2
+                ):
+                    continue
+                value_type = _text(args.named_child(1))
+                if types.get(
+                    _text(args.named_child(0))
+                ) == "java.lang.String" and value_type.endswith("Session"):
+                    fields.stores[name] = value_type
+        if fields.generators or fields.stores:
+            # A private field may be assigned in any initializer, method or inner class.
+            # Discard ambiguous assignments even when a same-named local might be the target.
+            pending = [body]
+            while pending:
+                n = pending.pop()
+                if n.type == "assignment_expression":
+                    left = n.child_by_field_name("left")
+                    field = left.child_by_field_name("field") if left is not None else None
+                    name = _text(field if field is not None else left)
+                    fields.generators.discard(name)
+                    fields.stores.pop(name, None)
+                pending.extend(n.named_children)
+        return fields
+
+
 class _Method:
-    def __init__(self, method: Node, types: dict[str, str]) -> None:
+    def __init__(self, method: Node, types: dict[str, str], fields: _Fields) -> None:
         self.types = types
-        self.locals: dict[str, Node] = {}
+        self.fields = fields
+        self.method = method
+        self.returns: list[Node] = []
+        self._buffer_refs: dict[str, list[Node]] | None = None
+        self.locals: dict[tuple[str, Node], Node | None] = {}
+        self.declarations: Counter[str] = Counter()
         self.params: dict[str, str] = {}
         self.writes: Counter[str] = Counter()
         self.calls: list[Node] = []
@@ -86,8 +181,19 @@ class _Method:
             if n.type in _BOUNDARIES:
                 continue
             if n.type == "variable_declarator":
-                self.locals[_name(n)] = n
-                self.writes[_name(n)] += 1
+                name = _name(n)
+                self.writes[name] += 1
+                declaration = n.parent
+                block = declaration.parent if declaration else None
+                if (
+                    declaration
+                    and declaration.type == "local_variable_declaration"
+                    and block
+                    and block.type == "block"
+                ):
+                    key = (name, block)
+                    self.locals[key] = None if key in self.locals else n
+                    self.declarations[name] += 1
             elif n.type in {
                 "catch_formal_parameter",
                 "enhanced_for_statement",
@@ -101,63 +207,219 @@ class _Method:
             elif n.type == "update_expression":
                 for operand in n.named_children:
                     self.writes[_text(operand)] += 1
+            elif n.type == "return_statement" and n.named_child_count == 1:
+                self.returns.append(n.named_children[0])
             elif n.type == "method_invocation":
                 self.calls.append(n)
             pending.extend(reversed(n.named_children))
 
-    def value(self, ref: Node) -> Node | None:
+    def binding(self, ref: Node) -> Node | None:
         if ref.type != "identifier":
             return None
         name = _text(ref)
-        definition = self.locals.get(name)
-        if definition is None or self.writes[name] != 1 or definition.end_byte > ref.start_byte:
+        if not self.declarations[name] or self.writes[name] != self.declarations[name]:
             return None
-        declaration = definition.parent
-        block = declaration.parent if declaration is not None else None
-        if (
-            block is None
-            or block.type != "block"
-            or ref.end_byte > block.end_byte
-            or declaration is None
-            or declaration.type != "local_variable_declaration"
-        ):
-            return None
-        return definition.child_by_field_name("value")
+        scope = ref.parent
+        while scope is not None and scope.type not in _BOUNDARIES:
+            if scope.type == "block" and (name, scope) in self.locals:
+                definition = self.locals[(name, scope)]
+                if definition is not None and definition.end_byte <= ref.start_byte:
+                    return definition
+                return None
+            scope = scope.parent
+        return None
+
+    def value(self, ref: Node) -> Node | None:
+        definition = self.binding(ref)
+        return definition.child_by_field_name("value") if definition is not None else None
 
     def parameter(self, ref: Node | None, allowed: set[str]) -> str:
         name = _text(ref)
         return name if self.writes[name] == 1 and self.params.get(name) in allowed else ""
 
-    def origin(self, expr: Node | None, depth: int = 0) -> tuple[str, int] | None:
+    def owner(self, expr: Node | None) -> str | None:
+        name = _text(expr)
+        first = name.split(".")[0]
+        return None if self.writes[first] or first in self.fields.names else self.types.get(name)
+
+    def field(self, obj: Node | None) -> str:
+        if (
+            obj is not None
+            and obj.type == "field_access"
+            and _text(obj.child_by_field_name("object")) == "this"
+        ):
+            return _text(obj.child_by_field_name("field"))
+        name = _text(obj)
+        return name if not self.writes[name] else ""
+
+    def weak_receiver(self, obj: Node) -> bool:
+        if self.field(obj) in self.fields.generators:
+            return True
+        allocated = self.value(obj) if obj.type == "identifier" else obj
+        return _allocation(allocated, self.types) == "java.util.Random"
+
+    def predictable_part(self, expr: Node | None, depth: int) -> bool:
+        if expr is None or depth > 12:
+            return False
+        if expr.type in {"string_literal", "decimal_integer_literal", "character_literal"}:
+            return True
+        if expr.type == "identifier":
+            return self.predictable_part(self.value(expr), depth + 1)
+        if expr.type == "binary_expression" and _text(expr.child_by_field_name("operator")) == "+":
+            return all(
+                self.predictable_part(expr.child_by_field_name(side), depth + 1)
+                for side in ("left", "right")
+            )
+        return (
+            expr.type == "method_invocation"
+            and self.owner(expr.child_by_field_name("object")) == "java.lang.System"
+            and _name(expr) in {"currentTimeMillis", "nanoTime"}
+            and not _args(expr)
+        )
+
+    def buffer_refs(self) -> dict[str, list[Node]]:
+        if self._buffer_refs is not None:
+            return self._buffer_refs
+        indexed: dict[str, list[Node]] = {
+            name: []
+            for (name, _), definition in self.locals.items()
+            if definition is not None
+            and (value := definition.child_by_field_name("value")) is not None
+            and value.type == "array_creation_expression"
+        }
+        # Include references captured by lambdas and nested classes. A second
+        # traversal indexes only array uses, once per method, in source order.
+        pending = [self.method]
+        steps = 0
+        while pending:
+            node = pending.pop()
+            steps += 1
+            if steps > 100_000:
+                indexed.clear()
+                break
+            if node.type == "identifier" and (name := _text(node)) in indexed:
+                indexed[name].append(node)
+            pending.extend(reversed(node.named_children))
+        self._buffer_refs = indexed
+        return indexed
+
+    def byte_origin(self, ref: Node, encoder: Node) -> _Origin | None:
+        definition = self.binding(ref)
+        if definition is None:
+            return None
+        initial = definition.child_by_field_name("value")
+        if (
+            initial is None
+            or initial.type != "array_creation_expression"
+            or _text(initial.child_by_field_name("type")) != "byte"
+        ):
+            return None
+        dimensions = initial.children_by_field_name("dimensions")
+        if len(dimensions) != 1:
+            return None
+        size = next(iter(dimensions[0].named_children), None)
+        items = initial.child_by_field_name("value")
+        if (items is not None and items.named_child_count == 0) or (
+            size is not None and size.type == "decimal_integer_literal" and _text(size) == "0"
+        ):
+            return None
+        declaration = definition.parent
+        block = declaration.parent if declaration is not None else None
+        if block is None or declaration is None:
+            return None
+        # Allocation, fill and encoding must execute in order on the same pass.
+        statement = encoder
+        while statement.parent is not None and statement.parent != block:
+            statement = statement.parent
+        if statement.parent != block or statement.type not in {
+            "local_variable_declaration",
+            "expression_statement",
+            "return_statement",
+        }:
+            return None
+        references = self.buffer_refs().get(_text(ref), [])
+        start = bisect_left(references, definition.end_byte, key=lambda n: n.start_byte)
+        stop = bisect_left(references, ref.start_byte, key=lambda n: n.start_byte)
+        if stop - start != 1:
+            # Any other reference could expose or overwrite the array.
+            return None
+        operand = references[start]
+        args = operand.parent
+        fill = args.parent if args is not None and args.type == "argument_list" else None
+        if fill is None or fill.type != "method_invocation" or _name(fill) != "nextBytes":
+            return None
+        parent = fill.parent
+        receiver = fill.child_by_field_name("object")
+        if (
+            _args(fill) != [operand]
+            or parent is None
+            or parent.type != "expression_statement"
+            or parent.parent != block
+            or receiver is None
+            or not self.weak_receiver(receiver)
+        ):
+            return None
+        return _Origin(
+            "java.util.Random.nextBytes", fill.start_point[0] + 1, encoder.start_point[0] + 1
+        )
+
+    def known_encoder(self, expr: Node, receiver: Node, args: list[Node]) -> bool:
+        if receiver.type != "method_invocation":
+            return False
+        factory = receiver
+        if _name(factory) == "withoutPadding" and not _args(factory):
+            inner = factory.child_by_field_name("object")
+            if inner is None or inner.type != "method_invocation":
+                return False
+            factory = inner
+        owner = self.owner(factory.child_by_field_name("object"))
+        if _args(factory):
+            return False
+        factory_name, name = _name(factory), _name(expr)
+        if owner == "java.util.Base64":
+            return (
+                factory_name in {"getEncoder", "getUrlEncoder", "getMimeEncoder"}
+                and name == "encodeToString"
+                and len(args) == 1
+            )
+        if receiver != factory:
+            return False
+        if owner == "java.util.HexFormat":
+            return factory_name == "of" and name == "formatHex" and len(args) == 1
+        return (
+            owner == "org.owasp.esapi.ESAPI"
+            and factory_name == "encoder"
+            and name == "encodeForBase64"
+            and len(args) == 2
+            and args[1].type in {"true", "false"}
+        )
+
+    def origin(self, expr: Node | None, depth: int = 0) -> _Origin | None:
         if expr is None or depth > 12:
             return None
         if expr.type == "identifier":
             return self.origin(self.value(expr), depth + 1)
         if expr.type == "parenthesized_expression" and expr.named_child_count == 1:
             return self.origin(expr.named_child(0), depth + 1)
+        if expr.type == "binary_expression" and _text(expr.child_by_field_name("operator")) == "+":
+            left, right = expr.child_by_field_name("left"), expr.child_by_field_name("right")
+            if self.predictable_part(left, depth + 1):
+                return self.origin(right, depth + 1)
+            if self.predictable_part(right, depth + 1):
+                return self.origin(left, depth + 1)
         if expr.type != "method_invocation":
             return None
         receiver = expr.child_by_field_name("object")
         if receiver is None:
             return None
         name, args = _name(expr), _args(expr)
-        receiver_name = _text(receiver)
-        owner = (
-            self.types.get(receiver_name) if not self.writes[receiver_name.split(".")[0]] else None
-        )
+        owner = self.owner(receiver)
         if owner == "java.lang.Math" and name == "random" and not args:
-            return "java.lang.Math.random", expr.start_point.row + 1
-        if name in _GENERATORS:
-            allocated = self.value(receiver) if receiver.type == "identifier" else receiver
-            if (
-                allocated is not None
-                and allocated.type == "object_creation_expression"
-                and allocated.children[0].type == "new"
-                and self.types.get(_text(allocated.child_by_field_name("type")))
-                == "java.util.Random"
-                and not any(n.type == "class_body" for n in allocated.named_children)
-            ):
-                return f"java.util.Random.{name}", expr.start_point.row + 1
+            return _Origin("java.lang.Math.random", expr.start_point[0] + 1)
+        if name in _GENERATORS and self.weak_receiver(receiver):
+            return _Origin(f"java.util.Random.{name}", expr.start_point[0] + 1)
+        if args and self.known_encoder(expr, receiver, args):
+            return self.byte_origin(args[0], expr)
         if len(args) == 1 and (
             (owner in _NUMERIC and name == "toString")
             or (owner == "java.lang.String" and name == "valueOf")
@@ -193,10 +455,13 @@ class _Method:
         owner = call.child_by_field_name("object")
         if self.parameter(owner, _COOKIES):
             return True
-        value = self.value(owner) if owner is not None else None
-        if value is None or value.type != "array_access" or owner is None:
+        definition = self.binding(owner) if owner is not None else None
+        if definition is None:
             return False
-        declaration = self.locals[_text(owner)].parent
+        value = definition.child_by_field_name("value")
+        if value is None or value.type != "array_access":
+            return False
+        declaration = definition.parent
         if (
             declaration is None
             or self.types.get(_text(declaration.child_by_field_name("type"))) not in _COOKIES
@@ -241,7 +506,7 @@ class _Method:
                     and len(keys := _args(read)) == 1
                     and (slot := self.slot(read, keys[0]))
                 ):
-                    checked[slot] = call.start_point.row + 1
+                    checked[slot] = call.start_point[0] + 1
         facts = []
         for call, slot, value in pending:
             compare_line = checked.get(slot) if changes[slot] == 1 else None
@@ -255,22 +520,104 @@ class _Method:
             if origin := self.origin(value):
                 facts.append(
                     CredentialRandomness(
-                        generator=origin[0],
-                        generator_line=origin[1],
+                        generator=origin.api,
+                        generator_line=origin.line,
+                        encoding_line=origin.encoding_line,
                         use="servlet session value compared with a cookie"
                         if compare_line
                         else "servlet session credential field",
-                        use_line=call.start_point.row + 1,
+                        use_line=call.start_point[0] + 1,
                         comparison_line=compare_line,
+                    )
+                )
+        return facts
+
+    def looked_up_stores(self) -> set[str]:
+        result = set()
+        for returned in self.returns:
+            read = self.value(returned) if returned.type == "identifier" else returned
+            if read is None or read.type != "method_invocation" or _name(read) != "get":
+                continue
+            field = self.field(read.child_by_field_name("object"))
+            args = _args(read)
+            if (
+                field in self.fields.stores
+                and self.fields.stores[field] == _text(self.method.child_by_field_name("type"))
+                and len(args) == 1
+                and self.parameter(args[0], {"java.lang.String"})
+            ):
+                result.add(field)
+        return result
+
+    def registered_sessions(self, stores: set[str]) -> list[CredentialRandomness]:
+        if (
+            not stores
+            or self.types.get(_text(self.method.child_by_field_name("type"))) != "java.lang.String"
+        ):
+            return []
+        facts = []
+        for call in self.calls:
+            field = self.field(call.child_by_field_name("object"))
+            args = _args(call)
+            if field not in stores or _name(call) != "put" or len(args) != 2:
+                continue
+            key, record = args
+            statement = call.parent
+            if (
+                key.type != "identifier"
+                or record.type != "object_creation_expression"
+                or _text(record.child_by_field_name("type")) != self.fields.stores[field]
+                or not _args(record)
+                or _text(_args(record)[0]) != _text(key)
+                or statement is None
+                or statement.type != "expression_statement"
+            ):
+                continue
+            following = statement.next_named_sibling
+            while following is not None and following.type in {"line_comment", "block_comment"}:
+                following = following.next_named_sibling
+            if (
+                following is None
+                or following.type != "return_statement"
+                or not any(
+                    value.type == "identifier" and _text(value) == _text(key)
+                    for value in following.named_children
+                )
+            ):
+                continue
+            if origin := self.origin(key):
+                facts.append(
+                    CredentialRandomness(
+                        generator=origin.api,
+                        generator_line=origin.line,
+                        encoding_line=origin.encoding_line,
+                        use="session registry key returned to the caller",
+                        use_line=call.start_point[0] + 1,
                     )
                 )
         return facts
 
 
 def credential_uses(methods: list[Node], types: dict[str, str]) -> list[CredentialRandomness]:
-    return [
-        fact
-        for method in methods
-        if not method.has_error and b"setAttribute" in (method.text or b"")
-        for fact in _Method(method, types).facts()
-    ]
+    by_class: dict[Node, list[Node]] = defaultdict(list)
+    for method in methods:
+        if method.parent is not None and not method.has_error:
+            by_class[method.parent].append(method)
+    facts = []
+    for body, declarations in by_class.items():
+        fields = _Fields.read(body, types)
+        analyzed = [
+            _Method(method, types, fields)
+            for method in declarations
+            if fields.stores or b"setAttribute" in (method.text or b"")
+        ]
+        stores = (
+            {store for method in analyzed for store in method.looked_up_stores()}
+            if fields.stores
+            else set()
+        )
+        for review in analyzed:
+            facts.extend(review.facts())
+            if stores:
+                facts.extend(review.registered_sessions(stores))
+    return facts

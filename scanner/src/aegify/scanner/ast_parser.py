@@ -6,7 +6,8 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Iterator
 from functools import lru_cache
 from importlib.metadata import version
 from pathlib import Path
@@ -1146,15 +1147,15 @@ class _JavaExtractor(_BaseExtractor):
                 )
             )
 
-        check_randomness = b"setAttribute" in source and (
-            b"Random" in source or b"random" in source
-        )
+        check_randomness = (
+            b"setAttribute" in source or (b"Session" in source and b"put" in source)
+        ) and (b"Random" in source or b"random" in source)
         known_types = (
             java_types.known_types(root, imports)
             if b"addCookie" in source or check_randomness
             else {}
         )
-        for node in self._find_nodes(root, "method_invocation"):
+        for node, enclosing_node, scope_types in self._java_call_scopes(root, source):
             name_node = node.child_by_field_name("name")
             if not name_node:
                 continue
@@ -1168,9 +1169,8 @@ class _JavaExtractor(_BaseExtractor):
                 for child in args_node.named_children:
                     args.append(self._node_text(child, source))
 
-            enclosing_node = self._find_enclosing_node(node, ("method_declaration",))
-            enclosing = self._find_enclosing_function(node, source, ("method_declaration",))
-            scope_types = self._java_scope_types(enclosing_node, node, source)
+            name = enclosing_node.child_by_field_name("name") if enclosing_node else None
+            enclosing = self._node_text(name, source) if name else None
             receiver_type = scope_types.get(receiver or "", "")
             argument_types = [
                 self._infer_expression_type(argument, scope_types, kotlin=False)
@@ -1235,40 +1235,53 @@ class _JavaExtractor(_BaseExtractor):
                     variadic = variadic or child.type == "spread_parameter"
         return params, types, defaults, variadic
 
-    def _java_scope_types(
-        self,
-        method: Node | None,
-        call: Node,
-        source: bytes,
-    ) -> dict[str, str]:
-        if method is None:
-            return {}
-        names, types, _, _ = self._extract_java_param_details(method, source)
-        scope = dict(zip(names, types, strict=True))
-        for declaration in self._find_nodes(method, "local_variable_declaration"):
-            if declaration.start_byte > call.start_byte:
+    def _java_declared_types(self, declaration: Node, source: bytes) -> Iterator[tuple[str, str]]:
+        type_node = declaration.child_by_field_name("type")
+        if type_node is None or not (declared_type := self._node_text(type_node, source)):
+            return
+        for variable in self._find_nodes(declaration, "variable_declarator"):
+            name = variable.child_by_field_name("name")
+            if name is not None:
+                yield self._node_text(name, source), declared_type
+
+    def _java_call_scopes(
+        self, root: Node, source: bytes
+    ) -> Iterator[tuple[Node, Node | None, dict[str, str]]]:
+        # Calls arrive in source order. Advance each method's declaration cursor
+        # once, keeping its receiver and argument types available for this call.
+        fields: dict[Node, dict[str, str]] = {}
+        active: list[tuple[Node, dict[str, str], deque[tuple[int, str, str]]]] = []
+        for call in self._find_nodes(root, "method_invocation"):
+            while active and active[-1][0].end_byte <= call.start_byte:
+                active.pop()
+            method = self._find_enclosing_node(call, ("method_declaration",))
+            if method is None:
+                yield call, None, {}
                 continue
-            type_node = declaration.child_by_field_name("type")
-            declared_type = self._node_text(type_node, source) if type_node else ""
-            for variable in self._find_nodes(declaration, "variable_declarator"):
-                name_node = variable.child_by_field_name("name")
-                if name_node and declared_type:
-                    scope[self._node_text(name_node, source)] = declared_type
-        current = method.parent
-        while current is not None and current.type not in {
-            "class_declaration",
-            "interface_declaration",
-        }:
-            current = current.parent
-        if current is not None:
-            for declaration in self._find_nodes(current, "field_declaration"):
-                type_node = declaration.child_by_field_name("type")
-                declared_type = self._node_text(type_node, source) if type_node else ""
-                for variable in self._find_nodes(declaration, "variable_declarator"):
-                    name_node = variable.child_by_field_name("name")
-                    if name_node and declared_type:
-                        scope.setdefault(self._node_text(name_node, source), declared_type)
-        return scope
+            if not active or active[-1][0] != method:
+                owner = self._find_enclosing_node(
+                    method, ("class_declaration", "interface_declaration")
+                )
+                if owner is not None and owner not in fields:
+                    class_fields: dict[str, str] = {}
+                    for declaration in self._find_nodes(owner, "field_declaration"):
+                        for name, typ in self._java_declared_types(declaration, source):
+                            class_fields.setdefault(name, typ)
+                    fields[owner] = class_fields
+                types = fields[owner].copy() if owner is not None else {}
+                names, param_types, _, _ = self._extract_java_param_details(method, source)
+                types.update(zip(names, param_types, strict=True))
+                locals_in_order = deque(
+                    (declaration.start_byte, name, typ)
+                    for declaration in self._find_nodes(method, "local_variable_declaration")
+                    for name, typ in self._java_declared_types(declaration, source)
+                )
+                active.append((method, types, locals_in_order))
+            _, types, locals_in_order = active[-1]
+            while locals_in_order and locals_in_order[0][0] <= call.start_byte:
+                _offset, name, typ = locals_in_order.popleft()
+                types[name] = typ
+            yield call, method, types
 
     def _extract_java_annotations(self, node: Node, source: bytes) -> list[str]:
         """Extract Java annotations (e.g., @GetMapping, @PreAuthorize)."""

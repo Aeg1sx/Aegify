@@ -13,12 +13,23 @@ def known_types(root: Node, imports: list[ImportInfo]) -> dict[str, str]:
         for package in ("javax.servlet.http", "jakarta.servlet.http")
         for name in ("Cookie", "HttpServletResponse", "HttpServletRequest", "HttpSession")
     }
-    java_lang = ("Integer", "Long", "Float", "Double", "String", "Math")
+    java_lang = ("Integer", "Long", "Float", "Double", "String", "Math", "System")
     types.update({f"java.lang.{name}": f"java.lang.{name}" for name in java_lang})
     for name in ("Connection", "Statement"):
         types[f"java.sql.{name}"] = f"java.sql.{name}"
     types["javax.sql.DataSource"] = "javax.sql.DataSource"
-    types["java.util.Random"] = "java.util.Random"
+    for qualified in (
+        "java.util.Random",
+        "java.util.Base64",
+        "java.util.HexFormat",
+        "org.owasp.esapi.ESAPI",
+        "java.util.Map",
+        "java.util.HashMap",
+        "java.util.LinkedHashMap",
+        "java.util.concurrent.ConcurrentMap",
+        "java.util.concurrent.ConcurrentHashMap",
+    ):
+        types[qualified] = qualified
     # An explicit import can be shadowed by a nested or generic type.
     short = {name: {f"java.lang.{name}"} for name in java_lang}
     for item in imports:

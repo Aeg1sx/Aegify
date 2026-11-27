@@ -452,7 +452,12 @@ class YAMLRule(SecurityRule):
                         message=(
                             f"{fact.generator} on line {fact.generator_line} supplies the "
                             f"{fact.use} on line {fact.use_line}.{comparison} "
-                            f"Use {generator_api} for credential values."
+                            + (
+                                f"The byte array is encoded on line {fact.encoding_line}. "
+                                if fact.encoding_line
+                                else ""
+                            )
+                            + f"Use {generator_api} for credential values."
                         ),
                         evidence_state=EvidenceState.REACHABLE,
                         disposition=FindingDisposition.ADVISORY,
