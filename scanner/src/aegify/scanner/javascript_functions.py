@@ -66,6 +66,8 @@ def dynamic_calls(root: Node, source: bytes) -> set[Node]:
         name = None
         if node.type == "call_expression":
             callee = node.child_by_field_name("function")
+            if callee and callee.type == "member_expression":
+                callee = callee.child_by_field_name("object")
             if callee and callee.type == "identifier":
                 calls.append((node, source[callee.start_byte : callee.end_byte]))
         elif node.type == "variable_declarator":

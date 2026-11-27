@@ -132,3 +132,54 @@ def test_shared_url_preserves_request_provenance_for_each_handler(tmp_path: Path
         if f.rule_id == "AEG-A03-011"
     } == {("one.js", 2), ("two.js", 2)}
     assert [e.path for e in result.endpoints] == ["/lookup"]
+
+
+def test_module_and_receiver_boundaries_preserve_visible_imports(tmp_path: Path):
+    (tmp_path / "library.ts").write_text(
+        "export function remote(v) { return v; }\nexport function hidden(v) { return v; }\n"
+    )
+    (tmp_path / "routes.ts").write_text(
+        "import { remote } from './library';\n"
+        "import * as lib from './library';\n"
+        "function local(v) { return v; }\n"
+        "function owner(client) {\n"
+        "  const callback = () => {\n"
+        "    local(1); remote(2); lib.remote(3);\n"
+        "    hidden(4); client.local(5); client.remote(6);\n"
+        "    function masked(lib) { lib.remote(7); }\n"
+        "  };\n"
+        "}\n"
+    )
+    asts = ASTParser().parse_directory(tmp_path)
+    graph = CallGraphBuilder().build(asts)
+    owner = next(f for ast in asts for f in ast.functions if f.name == "callback")
+    masked = next(f for ast in asts for f in ast.functions if f.name == "masked")
+    assert not list(graph.successors(masked.symbol_id))
+    edges = [
+        (site.line, site.receiver, site.callee)
+        for _, _, data in graph.out_edges(owner.symbol_id, data=True)
+        if (site := data.get("call_site"))
+    ]
+    assert sorted(edges, key=str) == sorted(
+        [(6, None, "local"), (6, None, "remote"), (6, "lib", "remote")], key=str
+    )
+
+
+def test_couchdb_pattern_requires_a_database_call(tmp_path: Path):
+    (tmp_path / "results.tsx").write_text(
+        "function Row({label, index}) {\n"
+        "  return <li key={index} tabIndex={-1} "
+        'data-endpoint={label === "Source" ? label.toLowerCase() : undefined} />;\n'
+        "}\n"
+        "function search(req, couch) { return couch.find({selector: req.body.selector}); }\n"
+        "function render(req) { const key = req.query.id; return <p>{key}</p>; }\n"
+    )
+    config = AegifyConfig()
+    config.llm.enabled = False
+    config.rules.custom_rules = str(
+        Path(__file__).resolve().parents[2] / "rules/a03-injection/nosql_injection.yml"
+    )
+    findings = ScanEngine(config=config).scan(tmp_path).findings
+    assert [
+        (f.line_start, f.disposition.value) for f in findings if f.rule_id == "AEG-NOSQL-003"
+    ] == [(4, "advisory")]

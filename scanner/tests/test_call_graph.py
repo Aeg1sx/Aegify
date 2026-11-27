@@ -119,6 +119,11 @@ def test_same_named_functions_must_share_a_runtime(tmp_path: Path):
     parser = ASTParser()
     assert CallGraphBuilder().build(parser.parse_directory(tmp_path)).number_of_edges() == 0
     (tmp_path / "labels.js").write_text("export function label(value) { return value; }\n")
+    assert CallGraphBuilder().build(parser.parse_directory(tmp_path)).number_of_edges() == 0
+    (tmp_path / "caller.ts").write_text(
+        'import { label } from "./labels.js";\n'
+        "export function home(value) { return label(value); }\n"
+    )
     graph = CallGraphBuilder().build(parser.parse_directory(tmp_path))
     ((_, callee),) = graph.edges()
     assert graph.nodes[callee]["data"].file_path.endswith("labels.js")

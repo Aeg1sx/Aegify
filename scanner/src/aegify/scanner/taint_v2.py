@@ -1724,7 +1724,11 @@ class StructuredTaintAnalyzer:
             and shares_call_runtime(context.ast.language, self._contexts[target].ast.language)
         ]
         if context.ast.language in {Language.JAVASCRIPT, Language.TYPESCRIPT}:
-            visible = javascript_targets(call, [self._contexts[c].definition for c in candidates])
+            visible = javascript_targets(
+                call,
+                [self._contexts[c].definition for c in candidates],
+                caller_class=context.definition.class_name,
+            )
             candidates = [c for c in candidates if self._contexts[c].definition in visible]
         return candidates if len(candidates) == 1 else []
 

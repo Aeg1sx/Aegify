@@ -534,6 +534,14 @@ class CallGraphBuilder:
         candidate_tiers: list[list[str]] = []
         imported = self._import_map.get((call.file_path, callee_full), [])
         if imported:
+            if self._file_languages[call.file_path] in {Language.JAVASCRIPT, Language.TYPESCRIPT}:
+                local = self._file_function_index.get((call.file_path, call.callee), [])
+                shadow = [
+                    target for target in local if self._function_index[target].javascript_scope
+                ]
+                if resolved := self._select_overload(call, shadow):
+                    return resolved
+                return self._select_overload(call, imported, imported=True)
             candidate_tiers.append(imported)
         binding = (call.receiver or call.callee).split(".", 1)[0]
         if (call.file_path, binding) in self._declared_imports and not imported:
@@ -564,7 +572,9 @@ class CallGraphBuilder:
                 return None
         return None
 
-    def _select_overload(self, call: CallSite, candidates: list[str]) -> str | None:
+    def _select_overload(
+        self, call: CallSite, candidates: list[str], *, imported: bool = False
+    ) -> str | None:
         unique = list(dict.fromkeys(candidates))
         repository_id = call.repository_id
         caller_function = self._caller_function(call)
@@ -580,7 +590,12 @@ class CallGraphBuilder:
             )
         ]
         if language in {Language.JAVASCRIPT, Language.TYPESCRIPT}:
-            functions = javascript_targets(call, functions)
+            functions = javascript_targets(
+                call,
+                functions,
+                imported=imported,
+                caller_class=caller_function.class_name if caller_function else None,
+            )
         if repository_id:
             local = [function for function in functions if function.repository_id == repository_id]
             if local or language not in {Language.JAVA, Language.KOTLIN} or not call.receiver_type:
