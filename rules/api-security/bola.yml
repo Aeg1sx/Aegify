@@ -116,14 +116,18 @@ rules:
       which reveal the type system and relationship structure.
     severity: critical
     confidence: 0.80
-    languages: [python, javascript, java, ruby]
+    languages: [python, javascript, typescript, java, ruby]
     cwe_id: 639
     owasp_category: "A01:2021-Broken Access Control"
     patterns:
       - pattern_type: "negative_check"
-        description: "GraphQL resolver without authorization"
-        match: "(resolve|resolver|Query|Mutation)\\b.*\\b(node|get\\w+|fetch\\w+|find\\w+|\\w+ById)\\b"
+        description: "GraphQL resolver performing an object lookup by identifier"
+        match: '\bdef\s+(?:resolve_\w+|get_node)\s*\([^)]{0,220}\binfo\b|\bresolve\s*(?:\(|:\s*(?:async\s+)?(?:function\s*)?\()[^)]{0,220}\bargs\b|\b(?:Query|Mutation)\s*:\s*\{\s*\w+\s*(?::\s*(?:async\s+)?)?\(|@(?:[\w.]+\.)?(?:QueryMapping|MutationMapping|SchemaMapping)\b'
+        context_match:
+          - '\b(?:(?:findById|findByPk|getById|loadById)\s*\(\s*[A-Za-z_$]|(?:findUnique|findFirst|findOne|objects\s*\.\s*(?:get|filter))\s*\([^)]{0,240}\b(?:id|pk|(?:node|object|global|user|account)_?id)\b)'
+          - '\b(?:id|pk|(?:node|object|global|user|account)_?id)\b'
         must_contain: "(authorize|permission|can_access|check_access|has_permission|@auth|@login_required|guard|policy|viewer_can)"
+        exclude_match: '\b(?:owner|user|tenant)(?:_id)?\s*(?:=|:)\s*(?:info\.context|ctx|context)\.(?:user|current_user|currentUser|tenant)\b'
         scope: "function"
       - pattern_type: "regex"
         match: "def\\s+resolve_node\\(.*\\).*:\\s*\\n\\s*return\\s+\\w+\\.objects\\.(get|filter)\\("
@@ -143,7 +147,7 @@ rules:
       - "viewer_pattern_authorization"
       - "field_level_permissions"
       - "dataloader_with_auth_check"
-    message: "GraphQL resolver retrieves objects by ID without authorization checks. Implement per-node authorization in all resolvers using the viewer pattern or authorization middleware. Ensure every node query verifies the requesting user has permission to access the specific object."
+    message: "Review object-level authorization for this GraphQL object lookup. Check whether the resolver, its data service or middleware scopes access to the current viewer."
 
   - id: "AEG-BOLA-005"
     name: "Nested resource access without parent authorization"
