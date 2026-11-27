@@ -17,9 +17,11 @@ import { Button } from "@/components/ui/button";
 import { SeverityChart } from "@/components/severity-chart";
 import { ProjectAccessPanel } from "@/components/project-access-panel";
 import { RepoConnector, type RepositoryChoice } from "@/components/repo-connector";
+import type { GatewaySummary } from "@/lib/gateway-inventory";
 import { repositoryLink, repositoryName } from "@/lib/project-view";
 
 interface Scan {
+  gatewayInventory?: GatewaySummary | null;
   id: string;
   repository: string;
   branch: string;
@@ -100,6 +102,14 @@ function ScanRow({ scan, repository }: { scan: Scan; repository: string }) {
           {measures.length > 0 && <span>{measures.join(" · ")}</span>}
         </div>
       </Link>
+      {scan.gatewayInventory && (
+        <Link href={"/scans/" + encodeURIComponent(scan.id) + "#gateway-inventory"}
+          className="inline-block min-h-11 py-2 text-sm text-primary underline-offset-4 hover:underline">
+          Gateway ownership · {scan.gatewayInventory.resolved} resolved · {scan.gatewayInventory.ambiguous} ambiguous
+          {" · "}{scan.gatewayInventory.unresolved} unresolved
+          {scan.gatewayInventory.inputStatus === "partial" && " · Partial input"}
+        </Link>
+      )}
     </li>
   );
 }

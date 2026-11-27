@@ -1,3 +1,4 @@
+import { gatewaySummarySelect } from "@/lib/gateway-inventory";
 import { accessError, projectScope, requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       where: { projectId: id },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       ...(limit && { take: limit, skip: (page - 1) * limit, omit: { workspaceSnapshot: true } }),
-      include: { _count: { select: { findings: true } } },
+      include: { gatewayInventory: { select: gatewaySummarySelect }, _count: { select: { findings: true } } },
     });
     const groups = await tx.finding.groupBy({
       by: ["severity"],

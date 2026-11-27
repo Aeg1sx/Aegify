@@ -41,7 +41,13 @@ test("SARIF artifact publication rolls back every artifact and baseline on late 
     const graphs = await db.callGraphNode.count();
     const audits = await db.auditEvent.count();
     await sql.executeMultiple('CREATE TRIGGER fail_late BEFORE INSERT ON Endpoint BEGIN SELECT RAISE(ABORT, \'injected late artifact failure\'); END;');
-    await assert.rejects(importSarif(db, report("Changed evidence"), context));
+    const interrupted = report("Changed evidence");
+    Object.assign(interrupted.runs[0].properties, { gatewayInventory: {
+      version: 1, digest: "a".repeat(64), input_status: "partial", omitted_files: 1,
+      omitted_routes: 0, files: [],
+    } });
+    await assert.rejects(importSarif(db, interrupted, context));
+    assert.equal(await db.scanGatewayInventory.count(), 0);
     assert.equal(await db.scan.count(), scans);
     assert.equal(await db.callGraphNode.count(), graphs);
     assert.equal(await db.auditEvent.count(), audits);

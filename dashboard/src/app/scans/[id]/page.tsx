@@ -8,6 +8,8 @@ import { SeverityBadge } from "@/components/severity-badge";
 import { StatusBadge } from "@/components/status-badge";
 import { SeverityChart } from "@/components/severity-chart";
 import { ScanJobPanel } from "@/components/scan-job-panel";
+import { GatewayInventoryPanel } from "@/components/gateway-inventory-panel";
+import type { GatewayReview } from "@/lib/gateway-inventory";
 import { EVIDENCE_LABELS } from "@/lib/code-evidence";
 
 interface Finding {
@@ -24,6 +26,7 @@ interface Finding {
 }
 
 interface ScanDetail {
+  gatewayInventory?: GatewayReview | null;
   id: string;
   repository: string;
   branch: string;
@@ -260,6 +263,7 @@ function ScanRecord({ id }: { id: string }) {
         </div>
       )}
       {scan.hasSourceJob && <ScanJobPanel scanId={id} onFinished={refresh} />}
+      {scan.gatewayInventory && <GatewayInventoryPanel review={scan.gatewayInventory} />}
 
       {awaitingFindings ? (
         <section aria-labelledby="scan-findings" className="border-t pt-4">

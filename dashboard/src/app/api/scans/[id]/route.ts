@@ -1,4 +1,5 @@
-import { requireResource } from "@/lib/access";
+import { storedGatewayReview } from "@/lib/gateway-inventory";
+import { requireResource, scanScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -10,9 +11,10 @@ export async function GET(
   const access = await requireResource(request, "scan", id, "viewer");
   if (access instanceof Response) return access;
 
-  const scan = await prisma.scan.findUnique({
-    where: { id },
+  const scan = await prisma.scan.findFirst({
+    where: { AND: [{ id }, scanScope(access)] },
     include: {
+      gatewayInventory: true,
       scanJob: { select: { id: true } },
       findings: {
         orderBy: [
@@ -75,6 +77,7 @@ export async function GET(
     filesScanned: scan.filesScanned,
     duration: scan.duration,
     createdAt: scan.createdAt,
+    gatewayInventory: storedGatewayReview(scan.gatewayInventory),
     findings: scan.findings || [],
     severities: severityMap,
     statuses: statusMap,
@@ -85,5 +88,5 @@ export async function GET(
     })),
     hasCallGraph: graphNodeCount > 0,
     callGraphNodeCount: graphNodeCount,
-  });
+  }, { headers: { "Cache-Control": "no-store" } });
 }
