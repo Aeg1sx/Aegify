@@ -58,7 +58,7 @@ class TaintConfig:
                     SourcePattern("os.environ", "environment_variable"),
                     SourcePattern("os.getenv", "environment_variable"),
                     SourcePattern("builtins.input", "stdin", resolved_only=True),
-                    SourcePattern("open(", "file_read"),
+                    SourcePattern("python.file_open", "file_read", resolved_only=True),
                     SourcePattern(".read(", "file_read"),
                     SourcePattern("cursor.fetchone", "database_result"),
                     SourcePattern("cursor.fetchall", "database_result"),
@@ -352,6 +352,22 @@ class SourcePattern:
     resolved_only: bool = False
 
     def resolved_call(self, call: CallSite, file: FileAST) -> bool:
+        if self.pattern == "python.file_open":
+            if call.python_file_access:
+                return call.python_file_access.api in {
+                    "open",
+                    "builtins.open",
+                    "io.open",
+                    "codecs.open",
+                    "os.open",
+                    "pathlib.Path.open",
+                }
+            # Older snapshots can still identify a real call to a named standard API.
+            return (
+                not file.python_file_access_resolved
+                and call.callee == "open"
+                and (call.receiver in (None, "builtins", "io", "codecs", "os"))
+            )
         if self.pattern == "builtins.input" and not file.python_stdin_resolved:
             # Pre-binding ASTs still identify an actual call, never a word in a literal.
             return call.callee == "input" and call.receiver in (None, "builtins")

@@ -5,6 +5,7 @@ from textwrap import dedent
 
 from aegify.config import AegifyConfig
 from aegify.scanner.ast_parser import ASTParser
+from aegify.scanner.dataflow import DataflowAnalyzer
 from aegify.scanner.engine import ScanEngine
 
 
@@ -44,6 +45,31 @@ def test_stdin_requires_a_bound_call_and_ignores_literal_words(tmp_path: Path):
     assert [
         (call.callee, call.line) for call in ast.calls if call.resolved_source == "builtins.input"
     ] == [("ask", 8)]
+
+
+def test_python_file_open_source_requires_a_real_bound_call(tmp_path):
+    path = tmp_path / "selection.py"
+    path.write_text(
+        "from io import open as load\nfrom pathlib import Path\n"
+        "def choose(flag):\n    return 'unused' if flag else 'open'\n"
+        "def nested(consumer):\n    return consumer('open(example)')\n"
+        "def actual():\n    return load('labels.txt')\n"
+        "def local(open):\n    return open('ignored')\n"
+        "def method(custom):\n    return custom.open('ignored')\n"
+        "def filesystem():\n    return Path('labels.txt').open()\n"
+        "def flow():\n    return open(choose(True))\n"
+    )
+    file = ASTParser().parse_file(path)
+    assert file is not None
+    sources = DataflowAnalyzer()._find_sources(file)
+    assert [
+        (source.line, source.variable) for source in sources if source.source_type == "file_read"
+    ] == [(8, "load"), (14, "Path('labels.txt').open"), (16, "open")]
+    config = AegifyConfig.model_validate(
+        {"llm": {"enabled": False}, "storage": {"backend": "memory"}}
+    )
+    scan = ScanEngine(config=config).scan_files(tmp_path, [path])
+    assert not [f for f in scan.findings if f.rule_id == "AEG-PATH-001" and f.line_start == 16]
 
 
 def test_only_direct_cli_path_or_fixed_sibling_is_annotated(tmp_path: Path):
