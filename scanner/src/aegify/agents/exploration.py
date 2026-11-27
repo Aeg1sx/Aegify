@@ -19,6 +19,7 @@ from aegify.agents.backends import (
     public_backend_code,
 )
 from aegify.agents.catalog import AgentSpec
+from aegify.agents.handoff import provider_facts
 from aegify.agents.models import (
     AgentExploration,
     AgentExplorationLimits,
@@ -153,7 +154,7 @@ class AgentSourceExplorer:
             payload = redact_sensitive(
                 {
                     "deterministic_summary": stage.summary,
-                    "facts": stage.facts,
+                    "facts": provider_facts(stage),
                     "evidence_ids": stage.evidence_ids,
                     "required_evidence": spec.required_evidence,
                     "source_catalog": sources.summary(),

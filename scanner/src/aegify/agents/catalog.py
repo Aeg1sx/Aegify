@@ -64,7 +64,8 @@ AGENT_CATALOG: dict[AgentRole, AgentSpec] = {
         role=AgentRole.STATIC,
         mission=(
             "Perform lite or deep static review, trace source-to-sink paths, "
-            "and reduce false positives."
+            "and reduce false positives. Read reviewHandoff for upstream evidence and unresolved "
+            "assumptions. Check the finding location and contrary evidence before a verdict."
         ),
         allowed_tools=["finding_context", "call_path", "attack_surface", "workspace_summary"],
         required_evidence=["finding provenance", "source-to-sink trace", "defense context"],
@@ -92,7 +93,9 @@ AGENT_CATALOG: dict[AgentRole, AgentSpec] = {
         role=AgentRole.SYNTHESIS,
         mission=(
             "Reconcile static and runtime evidence into an honest risk and remediation "
-            "decision record."
+            "decision record. Use reviewHandoff to identify the preceding reviews and their gaps. "
+            "Distinguish source-supported facts, missing evidence and proposed code changes. "
+            "State when the prompt covers a subset of the recorded findings."
         ),
         allowed_tools=["finding_context", "call_path", "attack_surface"],
         required_evidence=["claim-evidence mapping", "attack preconditions", "missing proof"],

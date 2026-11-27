@@ -160,3 +160,22 @@ test("harness evidence requires execution, image pinning, and output digests", (
     /approval_scope_sha256/,
   );
 });
+
+test("handoffs keep bounded references to the current workspace and disclose missing source paths", () => {
+  const input = scan();
+  input.endpoints = Array.from({ length: 18 }, (_, i) => ({ ...input.endpoints[0], repositoryId: `repo-${i}` }));
+  input.findings[0].callChain = null;
+  const result = buildAgentBlueprint(input, "lite");
+  const [surface, review, , , synthesis] = result.stages;
+  const refs = surface.evidenceIds.slice(0, 16);
+  assert.equal(new Set(refs).size, 16);
+  assert.deepEqual(review.facts.reviewHandoff, {
+    version: 1,
+    inputs: [{ role: "surface", status: "completed", evidenceIds: refs, omittedEvidence: 2, sourceCitationIds: [], omittedCitations: 0 }],
+    gaps: ["Authentication enforcement is unresolved for some endpoints."],
+  });
+  const received = synthesis.facts.reviewHandoff as { inputs: {role: string}[]; gaps: string[] };
+  assert.deepEqual(received.inputs.map(item => item.role), ["surface", "static"]);
+  assert.ok(received.gaps.includes("Some findings lack a complete source path."));
+  assert.ok(result.stages.filter(s => !["static", "synthesis"].includes(s.role)).every(s => !s.facts.reviewHandoff));
+});

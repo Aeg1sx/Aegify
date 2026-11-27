@@ -15,6 +15,7 @@ from aegify.agents.backends import (
 from aegify.agents.catalog import AGENT_CATALOG, AgentSpec
 from aegify.agents.checkpoint import CheckpointBackend
 from aegify.agents.exploration import AgentSourceExplorer
+from aegify.agents.handoff import provider_facts, review_handoff
 from aegify.agents.models import (
     AgentEvidence,
     AgentExplorationLimits,
@@ -108,7 +109,10 @@ class SecurityAgentPipeline:
             self._steward(scan, traces),
         ]
         scan_digest = _digest(scan.model_dump_json()) if self.source_tools else ""
+        available_evidence = {item.id for item in evidence}
         for stage in stages:
+            if handoff := review_handoff(stage.role, run.stages, available_evidence):
+                stage.facts["reviewHandoff"] = handoff
             run.evidence.extend(self._attach_narrative(stage, tool_context, scan_digest))
             run.stages.append(stage)
         if isinstance(self.backend, AnthropicAPIBackend):
@@ -549,7 +553,7 @@ class SecurityAgentPipeline:
         tool_results = self.tools.collect(spec, stage, context)
         payload = {
             "deterministic_summary": stage.summary,
-            "facts": stage.facts,
+            "facts": provider_facts(stage),
             "evidence_ids": stage.evidence_ids,
             "required_evidence": spec.required_evidence,
             "tools": [result.model_dump(mode="json") for result in tool_results],

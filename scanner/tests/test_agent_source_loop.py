@@ -165,7 +165,16 @@ def test_model_selects_files_then_reads_and_cites_across_all_six_roles(tmp_path:
     assert len(backend.calls) == 18
     assert run.status == baseline.status
     assert scan.model_dump_json() == before
-    assert [stage.facts for stage in run.stages] == [stage.facts for stage in baseline.stages]
+    for current, original in zip(run.stages, baseline.stages, strict=True):
+        assert {k: v for k, v in current.facts.items() if k != "reviewHandoff"} == {
+            k: v for k, v in original.facts.items() if k != "reviewHandoff"
+        }
+        for received in current.facts.get("reviewHandoff", {}).get("inputs", []):
+            preceding = next(stage for stage in run.stages if stage.role.value == received["role"])
+            assert preceding.exploration
+            assert received["sourceCitationIds"] == [
+                item.citation_id for item in preceding.exploration.citations
+            ]
     for stage in run.stages:
         trace = stage.exploration
         assert trace and trace.stop_reason == "final" and not trace.gaps
