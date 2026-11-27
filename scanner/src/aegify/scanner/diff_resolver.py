@@ -154,21 +154,35 @@ class DiffResolver:
 
     def _git_diff_files(self, base_ref: str) -> list[Path]:
         """Get changed files from git diff against base ref."""
+        if base_ref.startswith("-") or any(ord(char) < 32 or ord(char) == 127 for char in base_ref):
+            logger.warning("Invalid Git base ref")
+            return []
         try:
             result = subprocess.run(
-                ["git", "diff", "--name-only", "-z", "--diff-filter=ACMR", base_ref, "HEAD"],
+                [
+                    "git",
+                    "diff",
+                    "--name-only",
+                    "-z",
+                    "--diff-filter=ACMR",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    base_ref,
+                    "HEAD",
+                    "--",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=30,
                 cwd=self.repo_root,
             )
             if result.returncode != 0:
-                logger.warning("git diff failed: %s", result.stderr.strip())
+                logger.warning("git diff failed with exit code %d", result.returncode)
                 return []
 
             files = self._resolve_explicit(result.stdout.split("\0"))
 
-            logger.info("Git diff found %d changed files (base=%s)", len(files), base_ref[:12])
+            logger.info("Git diff found %d changed files", len(files))
             return files
 
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
