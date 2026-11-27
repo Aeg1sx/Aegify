@@ -1,0 +1,26 @@
+version: 1
+name: four-forges
+repositories:
+  - id: gateway
+    path: gateway
+    role: gateway
+  - id: github
+    source:
+      url: https://github.com/octocat/Hello-World.git
+      revision: 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d
+    service_names: [github.internal]
+  - id: gitlab
+    source:
+      url: https://gitlab.com/gitlab-examples/nodejs.git
+      revision: 892a1f16725e56cc3a2cb0d677be42935c8fc262
+    service_names: [gitlab.internal]
+  - id: bitbucket
+    source:
+      url: https://bitbucket.org/atlassian_tutorial/helloworld.git
+      revision: 65d938f39f364da3f90767e008022ffe45c562af
+    service_names: [bitbucket.internal]
+  - id: azure
+    source:
+      url: https://dnceng-public@dev.azure.com/dnceng-public/public/_git/dotnet-public-wiki
+      revision: af56d96fdbd7c26e9fc94336b6f50dcc6ceff484
+    service_names: [azure.internal]

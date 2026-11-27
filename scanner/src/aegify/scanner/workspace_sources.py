@@ -40,10 +40,24 @@ def _source(value: Any) -> tuple[str, str, str]:
     if not isinstance(url, str) or not re.fullmatch(r"[!-~]{1,2048}", url):
         raise ValueError("source requires a canonical hosted Git HTTPS URL")
     parsed = urlsplit(url)
-    host = parsed.netloc.lower()
-    if parsed.scheme != "https" or host not in HOSTS or "?" in url or "#" in url:
+    if parsed.scheme != "https" or "?" in url or "#" in url:
         raise ValueError("expected a hosted Git HTTPS URL without credentials or options")
     parts = parsed.path.removeprefix("/").removesuffix("/").split("/")
+    host = parsed.netloc.lower()
+    # Azure includes the organization as userinfo in its advertised Git URL.
+    # Strip only that specific hint and send Git to the canonical provider host.
+    if re.fullmatch(r"[a-z0-9][a-z0-9-]*@dev\.azure\.com", host):
+        organization, _, host = host.partition("@")
+        if organization != parts[0].lower():
+            raise ValueError("Azure clone URL organization does not match its path")
+    legacy = re.fullmatch(r"([a-z0-9][a-z0-9-]*)\.visualstudio\.com", host)
+    if legacy:
+        if parts[0].lower() == "defaultcollection" and len(parts) == 4:
+            parts = parts[1:]
+        parts.insert(0, legacy[1])
+        host = "dev.azure.com"
+    if host not in HOSTS:
+        raise ValueError("expected a hosted Git HTTPS URL without credentials or options")
     if host == "dev.azure.com":
         valid = len(parts) in {3, 4} and parts[-2] == "_git"
     elif host == "gitlab.com":
@@ -143,12 +157,21 @@ def _materialize(
     provider, token_name, username = HOSTS[host]
     transport = dict(env)
     token = os.environ.get(token_name)
-    if token:
+    bearer = os.environ.get("AEGIFY_AZURE_REPOS_ENTRA_TOKEN") if provider == "azure" else None
+    if bearer:
+        if not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", bearer):
+            raise ValueError("invalid Azure Repos bearer token")
+        authorization = f"Bearer {bearer}"
+    elif token:
         credential = base64.b64encode(f"{username}:{token}".encode()).decode("ascii")
+        authorization = f"Basic {credential}"
+    else:
+        authorization = ""
+    if authorization:
         transport.update(
             GIT_CONFIG_COUNT="1",
             GIT_CONFIG_KEY_0=f"http.{url}.extraHeader",
-            GIT_CONFIG_VALUE_0=f"Authorization: Basic {credential}",
+            GIT_CONFIG_VALUE_0=f"Authorization: {authorization}",
         )
     _git(
         bare,
