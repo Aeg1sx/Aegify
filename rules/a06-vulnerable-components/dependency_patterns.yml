@@ -42,8 +42,12 @@ rules:
     cwe_id: 79
     owasp_category: "A06:2021-Vulnerable and Outdated Components"
     patterns:
-      - callee_match: "\\$\\(|jQuery\\("
-        args_match: "location\\.|document\\.|window\\.|req\\.|request\\.|params|input|hash|search"
+      - callee_match: '(?:(?:window|globalThis)\.)?(?:\$|jQuery)'
+        callee_match_mode: full
+        args_match_index: 0
+        args_match: 'location\.|document\.|window\.|req\.|request\.|params|input|hash|search'
+        args_exclude: |-
+          ^\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`$]*`)\s*$
         note: "jQuery selector with user-controlled string can create DOM elements with scripts"
       - callee_match: "\\.html\\(|\\.append\\(|\\.prepend\\(|\\.after\\(|\\.before\\("
         taint_source: "location|document\\.URL|document\\.referrer|window\\.name|\\$\\.param|user|input"

@@ -87,6 +87,16 @@ await runAccessIntegration({ async verifyBrowser({ origin, cookies, projectId, g
     await page.waitForFunction(() => globalThis.document.querySelectorAll('a[aria-label="Full details for Workspace review"]').length === 2);
     assert.equal(new URL(page.url()).searchParams.get("scanId"), gatewayScanId);
     assert.equal(new URL(page.url()).searchParams.has("repositoryId"), false);
+    await page.locator('button[aria-label="View findings for orders-east in this scan"]').click();
+    await page.waitForFunction((project) => new URL(globalThis.location.href).searchParams.get("projectId") === project, {}, projectId);
+    assert.equal(new URL(page.url()).searchParams.get("scanId"), gatewayScanId);
+    assert.equal(new URL(page.url()).searchParams.get("repositoryId"), "orders-east");
+    await page.locator('select[aria-label="Finding view"]').fill("1");
+    await page.waitForFunction(() => globalThis.document.body.innerText.includes("No findings match this view."));
+    await page.locator('::-p-aria(Clear filters[role="button"])').click();
+    await page.waitForSelector('a[aria-label="Full details for Workspace review"]');
+    assert.equal(new URL(page.url()).searchParams.get("projectId"), projectId);
+    await page.locator('::-p-aria(Show all repositories[role="button"])').click();
     await page.locator('::-p-aria(Leave scan view[role="button"])').click();
     await page.waitForFunction(() => !new URL(globalThis.location.href).searchParams.has("scanId")
       && !globalThis.document.querySelector('[aria-label="Review scope"]'));

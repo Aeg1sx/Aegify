@@ -768,3 +768,46 @@ def test_race_advisory_uses_storage_operations_in_one_function(tmp_path, source,
     rule_file = RULES_DIR / "a04-insecure-design" / "race_conditions.yml"
     findings = _scan_findings(tmp_path, rule_file, source, "storage.py")
     assert ("AEG-RACE-003" in _advisory_ids(findings)) is expected
+
+
+@pytest.mark.parametrize(("pack", "rule", "code", "expected"), [
+    ("a04-insecure-design/business_logic.yml", "AEG-LOGIC-001",
+     "function checkout(req) { return charge(req.body.price); }", True),
+    ("a04-insecure-design/business_logic.yml", "AEG-LOGIC-001",
+     "function checkout(request) { return request.getParameter('discount'); }", True),
+    ("a04-insecure-design/business_logic.yml", "AEG-LOGIC-001",
+     "function orders(params) { const total = rows.length; return params.get('scanId'); }", False),
+    ("a04-insecure-design/business_logic.yml", "AEG-LOGIC-004",
+     "function edit(req, account) { account.role = req.body.role; return account.save(); }", True),
+    ("a04-insecure-design/business_logic.yml", "AEG-LOGIC-004",
+     "function edit(params, user) { const role = params['role']; user.update({role}); }", True),
+    ("a04-insecure-design/business_logic.yml", "AEG-LOGIC-004",
+     'function render(params) { setFilters(params); return <p role="alert">Review</p>; }', False),
+    ("a06-vulnerable-components/dependency_patterns.yml", "AEG-DEP-002",
+     "function render() { return $(location.hash); }", True),
+    ("a06-vulnerable-components/dependency_patterns.yml", "AEG-DEP-002",
+     "function render(userInput) { return $(userInput); }", True),
+    ("a06-vulnerable-components/dependency_patterns.yml", "AEG-DEP-002",
+     "function render() { return window.jQuery(location.search); }", True),
+    ("a06-vulnerable-components/dependency_patterns.yml", "AEG-DEP-002",
+     """function row(panel) { return panel.$('li a[href^="/findings?"]'); }""", False),
+    ("a06-vulnerable-components/dependency_patterns.yml", "AEG-DEP-002",
+     "function row() { return $('#search-input'); }", False),
+    ("api-security/api_advanced.yml", "AEG-API-014",
+     "function records(store) { return store.getAll(); }", True),
+    ("api-security/api_advanced.yml", "AEG-API-014",
+     "function records(store, tenant) { return store.getAll(tenant); }", True),
+    ("api-security/api_advanced.yml", "AEG-API-014",
+     "function filters(params, key) { return params.getAll(key); }", False),
+    ("a07-auth-failures/session_management.yml", "AEG-SESS-003",
+     """function linkFor(session) { const url = "/view?sid=" + session.id; return url; }""", True),
+    ("a07-auth-failures/session_management.yml", "AEG-SESS-003",
+     """function next(session_id) { return redirect("/done?sid=" + session_id); }""", True),
+    ("a07-auth-failures/session_management.yml", "AEG-SESS-003",
+     """import { scanFindingsHref } from "./views";
+function openView(scope) { return new URL(scanFindingsHref("scan-A", scope)).searchParams; }
+function label() { return "How is the session?"; }""", False),
+])
+def test_review_rules_bind_the_reported_operation(tmp_path, pack, rule, code, expected):
+    findings = _scan_rule(tmp_path, RULES_DIR / pack, code, "review.tsx")
+    assert (rule in findings) is expected

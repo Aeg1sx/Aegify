@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
   const [findings, total, scan] = await Promise.all([
     prisma.finding.findMany({
       where: scoped,
+      include: { scan: { select: { projectId: true } } },
       orderBy: url.searchParams.get("sort") === "file" ? [{ filePath: "asc" }, { lineStart: "asc" }, { id: "asc" }]
         : url.searchParams.get("sort") === "rule" ? [{ ruleName: "asc" }, { id: "asc" }]
         : [{ createdAt: url.searchParams.get("sort") === "oldest" ? "asc" : "desc" }, { id: "asc" }],

@@ -12,12 +12,12 @@ rules:
     cwe_id: 472
     owasp_category: "A04:2021-Insecure Design"
     patterns:
-      - multi_match:
-          - "req\\.body|request\\.POST|request\\.data|params|getParameter"
-          - "price|amount|total|cost|discount|subtotal|unit_price"
+      - regex_match: >-
+          \b(?:req\.(?:body|query|params)|request\.(?:POST|GET|data|args|form)|params|\$_(?:POST|GET|REQUEST))(?:\.get\s*\(\s*["']|\[\s*(?:["']|:)|\.)(?:price|amount|total|cost|discount|subtotal|unit_price)\b|\b(?:getParameter|FormValue)\s*\(\s*["'](?:price|amount|total|cost|discount|subtotal|unit_price)["']
         context: "order|checkout|payment|cart|purchase|invoice"
-      - assignment_match: "total|price|amount|cost"
-        value_match: "req\\.body|request\\.(POST|data|GET)|params\\[|getParameter"
+        scope: function
+      - regex_match: >-
+          \b(?:total|price|amount|cost|discount|subtotal|unit_price)\s*[:=]\s*(?:req\.(?:body|query|params)|request\.(?:POST|GET|data|args|form)|params\[|(?:\w+\.)?getParameter\s*\()
       - callee_match: "create_order|process_payment|charge|checkout"
         args_match: "price|amount|total|cost"
         taint_source: "request|req\\.body|params"
@@ -115,16 +115,16 @@ rules:
     cwe_id: 269
     owasp_category: "A04:2021-Insecure Design"
     patterns:
-      - multi_match:
-          - "role|permission|is_admin|is_staff|group|privilege|access_level"
-          - "req\\.body|request\\.POST|request\\.data|params|getParameter"
-          - "update|save|set|assign|put"
+      - regex_match: >-
+          \b(?:req\.(?:body|query|params)|request\.(?:POST|data|form)|params|\$_(?:POST|GET|REQUEST))(?:\.get\s*\(\s*["']|\[\s*(?:["']|:)|\.)(?:role|permissions?|is_admin|is_staff|groups?|privilege|access_level)\b|\bgetParameter\s*\(\s*["'](?:role|permissions?|is_admin|is_staff|groups?|privilege|access_level)["']
+        context: >-
+          \b(?:update(?:_profile|_user)?|save(?:_settings)?|assign|put|set(?:Role|Permission)|grant)\s*\(|\b(?:user|member|account)\.\w+\s*=
+        scope: function
       - callee_match: "update_profile|update_user|save_settings"
         args_match: "role|permission|is_admin|is_staff|group|privilege"
         taint_source: "request|req\\.body|params"
-      - multi_match:
-          - "user\\.(role|is_admin|is_staff|permission|access_level)"
-          - "=\\s*(req\\.body|request\\.(POST|data)|params)"
+      - regex_match: >-
+          \b(?:user|account|member)\.(?:role|is_admin|is_staff|permissions?|access_level)\s*=\s*(?:req\.(?:body|query|params)|request\.(?:POST|data|form)|params\[)
     defense_patterns:
       - "is_admin|is_superuser|has_permission"
       - "@admin_required|@permission_required"

@@ -10,7 +10,7 @@ import { EvidenceWorkbench, type FindingEvidenceView } from "@/components/findin
 import { EVIDENCE_LABELS } from "@/lib/code-evidence";
 import { findingFilters, filterQuery, invalidFindingScope, QUEUE_LABELS, type FindingFilters } from "@/lib/finding-view";
 
-interface Finding extends FindingEvidenceView { repositoryId: string; aiVerdict: string; createdAt: string; confidence: number }
+interface Finding extends FindingEvidenceView { scan: { projectId: string | null }; repositoryId: string; aiVerdict: string; createdAt: string; confidence: number }
 interface ReviewScan { id: string; repository: string; branch: string; commitSha: string; createdAt: string; status: string }
 interface SavedView { name: string; query: string }
 const presets = [
@@ -132,7 +132,7 @@ export default function FindingsPage() {
   const pages = Math.max(1, Math.ceil(total / 50));
   const scoped = Boolean(filters.scanId || filters.repositoryId);
   const defaults = { ...findingFilters(), scanId: filters.scanId, repositoryId: filters.repositoryId,
-    projectId: filters.repositoryId && !filters.scanId ? filters.projectId : "" };
+    projectId: scoped ? filters.projectId : "" };
   const scan = loadedQuery === query && reviewScan?.id === filters.scanId ? reviewScan : null;
   const views = [
     ...presets.map((preset) => ({ name: preset.name, filters: { ...defaults, ...preset.values } })),
@@ -189,6 +189,10 @@ export default function FindingsPage() {
       {filters.queue && <button type="button" className="hidden min-h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium sm:inline-flex" onClick={() => change("queue", "")} aria-label="Clear review queue filter">{QUEUE_LABELS[filters.queue as keyof typeof QUEUE_LABELS]}<X aria-hidden className="size-3.5" /></button>}
     </header>
     {scoped && <section aria-label="Review scope" className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border bg-card px-4 py-2">
+      {filters.projectId && <div className="min-w-0">
+        <span className="block text-xs text-muted-foreground">Project</span>
+        <span className="break-all text-sm font-medium">{projects.find((p) => p.id === filters.projectId)?.name || filters.projectId}</span>
+      </div>}
       {filters.scanId && <div className="min-w-0">
         <span className="block text-xs text-muted-foreground">Scan</span>
         {scan ? <>
@@ -273,7 +277,7 @@ export default function FindingsPage() {
                 if (next) { setInspectedId(next.id); rowButtons.current.get(next.id)?.focus(); }
               }}>{finding.ruleName}</button><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{finding.repositoryId && (filters.repositoryId ? <span className="font-semibold">{finding.repositoryId} · </span> : <>
                   <button type="button" aria-label={`View findings for ${finding.repositoryId} in this scan`} className="font-semibold text-primary underline underline-offset-4"
-                    onClick={() => setFilters({ ...defaults, scanId: finding.scanId, repositoryId: finding.repositoryId, page: "1" })}>{finding.repositoryId}</button> · </>)}{finding.modulePath || finding.filePath}:{finding.lineStart}</p>
+                    onClick={() => setFilters({ ...defaults, projectId: finding.scan.projectId ?? filters.projectId, scanId: finding.scanId, repositoryId: finding.repositoryId, page: "1" })}>{finding.repositoryId}</button> · </>)}{finding.modulePath || finding.filePath}:{finding.lineStart}</p>
                 <div className="finding-narrow mt-2 flex-wrap items-center gap-x-2 gap-y-1"><SeverityBadge severity={finding.severity} /><StatusBadge status={finding.status} /></div>
                 <div className="finding-narrow mt-2 flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground"><span>{EVIDENCE_LABELS[finding.evidenceState] || "Unclassified"}</span>{showOwner && <span>· {finding.owner || "Unassigned"}</span>}{finding.aiVerdict && <span>· AI suggestion available</span>}</div>
                 {finding.baselineState === "regressed" && <span className="text-xs text-destructive">Reopened</span>}
