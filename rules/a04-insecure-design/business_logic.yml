@@ -76,17 +76,23 @@ rules:
     cwe_id: 841
     owasp_category: "A04:2021-Insecure Design"
     patterns:
-      - multi_match:
-          - "(@(Get|Post|Put|Patch|Request)Mapping|(@app|@blueprint)\\.route|\\b(app|router)\\.(get|post|put|patch)|HandleFunc|Route)"
-          - "['\"][^'\"]*(step-?[2-9]|stage-?[2-9]|complete|finalize|confirm)[^'\"]*['\"]"
-        missing_match:
-          - "previous_step|check_step|validate_step|step_completed|validate_prerequisite|workflow_guard"
-      - callee_match: "route|get|post"
-        args_match: "/step-?[2-9]|/stage-?[2-9]|/complete|/finalize|/confirm"
-        missing_context: "middleware|guard|check_previous|validate_prerequisite"
-      - sequence_match:
-          - "(def|function|fun|public|private|protected).*\\b(step_?[2-9]|stage_?[2-9]|complete|finalize|confirm)\\w*\\s*\\("
-        missing_pattern: "step.*1.*completed|previous.*validated|prerequisite|workflow_guard"
+      - regex_match: |-
+          (?x)
+          (?:
+            @(?:[a-z_]\w*\.)+(?:route|get|post|put|patch)
+            | @(?:Get|Post|Put|Patch|Request)Mapping
+            | \b(?:app|router|server|blueprint|bp|api)\.(?:route|get|post|put|patch)
+            | \b(?:http\.)?HandleFunc
+            | \bRoute::(?:get|post|put|patch)
+          )
+          \s*\(\s*(?:(?:value|path)\s*=\s*)?
+          ["'`]/(?:[^/"'`\s]+/)*
+          (?:(?:step|stage)-?(?:[2-9]|[1-9]\d+)|complete|finalize|confirm)(?=[/"'`_.-])
+        missing_match: "previous_step|check_step|validate_step|step_completed|check_previous|validate_prerequisite|workflow_guard"
+      - callee_match: "(?:^|\\.)(?:app|router|server|blueprint|bp|api)\\.(?:route|get|post|put|patch)$|(?:^|\\.)HandleFunc$"
+        args_match_index: 0
+        args_match: "^\\s*[\"'`]/(?:[^/\"'`\\s]+/)*(?:(?:step|stage)-?(?:[2-9]|[1-9]\\d+)|complete|finalize|confirm)(?=[/\"'`_.-])"
+        missing_context: "previous_step|check_step|validate_step|step_completed|check_previous|validate_prerequisite|workflow_guard|middleware|guard"
     defense_patterns:
       - "check_previous_step"
       - "validate_workflow_state"
