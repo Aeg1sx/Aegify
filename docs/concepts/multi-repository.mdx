@@ -92,9 +92,14 @@ The inventory marks its input status as `partial` when a file diagnostic or an
 omitted count indicates a coverage gap. The defaults cover 128 candidate files, 512 KiB per file, 8 MiB total
 and 4,096 emitted routes. YAML aliases and merge keys produce a file diagnostic.
 
-Upload the workspace SARIF to its dashboard project. Each scan in project history
-shows the resolved, ambiguous and unresolved counts. Open **Gateway ownership**
-to inspect a configuration file, its SHA-256, route declarations, logical
+On **Import scan**, choose **Workspace** in the CLI instructions to generate
+the workspace SARIF, then select a project and import the file. When the report
+includes gateway declarations, the receipt shows resolved, ambiguous and
+unresolved route counts. **Review gateway routes** opens the recorded
+configuration files and moves keyboard focus to **Gateway ownership**.
+
+You can also open **Gateway ownership** from the scan in project history.
+Inspect each configuration file, its SHA-256, route declarations, logical
 documents, source lines, candidate owners and review reasons. An incomplete
 inventory displays its partial input status and any omitted counts.
 

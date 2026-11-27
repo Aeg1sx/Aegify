@@ -1302,6 +1302,16 @@ async function checkScanImport(page, db, projectId, reportPath, simulateMissingR
   const picker = 'input[type="file"]';
   const result = '[aria-label="Import result"]';
   const destination = await page.$eval("#import-project", (select) => select.selectedOptions[0].text);
+  const tabList = '[role="tablist"][aria-label="Scan source"]';
+  const panel = '[role="tabpanel"]:not([hidden])';
+  await (await elementWithText(page, tabList + ' [role="tab"]', "Repository")).focus();
+  await page.keyboard.press("ArrowRight");
+  await waitText(page, "View example manifest");
+  assert.match(await page.$eval(panel + " code", (el) => el.textContent), /aegify scan-workspace workspace\.yml[\s\S]*--prepare-to[\s\S]*results\.sarif/); checks++;
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForFunction(() => globalThis.document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Repository");
+  assert.match(await page.$eval(panel + " code", (el) => el.textContent), /aegify scan \.\/src/); checks++;
+  await (await elementWithText(page, tabList + ' [role="tab"]', "Workspace")).click();
   const writes = [];
   const countWrite = (request) => {
     if (request.method() === "POST" && new URL(request.url()).pathname === "/api/upload") writes.push(request.url());
@@ -1326,21 +1336,40 @@ async function checkScanImport(page, db, projectId, reportPath, simulateMissingR
     assert.equal(await page.$eval(result + " a", (link) => link.getAttribute("href")), "/scans"); checks++;
     assert.equal(await page.$(result + " dl"), null); checks++;
 
-    const receiptResponse = page.waitForResponse((res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/upload");
+    const waitForUpload = () => page.waitForResponse((res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/upload");
+    const source = JSON.parse(await readFile(reportPath, "utf8"));
+    const legacy = globalThis.structuredClone(source);
+    delete legacy.runs[0].properties.gatewayInventory;
+    const legacyPath = join(dirname(reportPath), "legacy.sarif");
+    await writeFile(legacyPath, JSON.stringify(legacy));
+    const legacyResponse = waitForUpload();
+    await (await page.$(picker)).uploadFile(legacyPath);
+    const legacyReceipt = await (await legacyResponse).json();
+    await waitText(page, "Report imported");
+    assert.equal(await page.$(result + ' [aria-label="Gateway routes"]'), null); checks++;
+    await db.scan.delete({ where: { id: legacyReceipt.scanId } });
+
+    source.runs[0].properties.gatewayInventory.input_status = "partial";
+    source.runs[0].properties.gatewayInventory.omitted_routes = 1;
+    const receiptResponse = waitForUpload();
     const filename = "billing-pipeline.sarif";
     const report = join(dirname(reportPath), filename);
-    await writeFile(report, await readFile(reportPath));
+    await writeFile(report, JSON.stringify(source));
     await (await page.$(picker)).uploadFile(report);
     const response = await receiptResponse;
     assert.equal(response.status(), 200); checks++;
     const receipt = await response.json();
-    await waitText(page, "Report imported");
+    await waitText(page, "Partial gateway input");
     assert.match(await page.$eval(result, (node) => node.innerText), /billing-pipeline\.sarif/); checks++;
     const fields = await page.$$eval(result + " dt", (labels) => Object.fromEntries(labels.map((label) => [label.textContent, label.nextElementSibling.textContent])));
     assert.deepEqual(fields, { Project: destination, "Scan status": "Partial coverage", Findings: "0" }); checks++;
     assert.deepEqual(await db.scan.findUnique({ where: { id: receipt.scanId }, select: { projectId: true, status: true } }), { projectId, status: "partial" }); checks++;
-    assert.equal(writes.length, 2); checks++;
-    const contrast = '#workspace dt, #workspace dd, #workspace summary, #import-project, #workspace label[for="import-project"], #workspace [aria-label="Import result"] a';
+    assert.equal(writes.length, 3); checks++;
+    const routes = result + ' [aria-label="Gateway routes"]';
+    assert.deepEqual(await page.$$eval(routes + " li", (items) => items.map((el) => el.innerText.trim().split(/\s+/))), [["1", "Resolved"], ["26", "Ambiguous"], ["1", "Unresolved"]]); checks++;
+    const routesLink = await page.$(routes + " a");
+    assert.equal(await routesLink.evaluate((el) => el.getAttribute("href")), "/scans/" + receipt.scanId + "#gateway-inventory"); checks++;
+    const contrast = '#workspace dt, #workspace dd, #workspace summary, #workspace [role="tab"], #workspace [aria-label="Gateway routes"] li span, #import-project, #workspace label[for="import-project"], #workspace [aria-label="Import result"] a';
     for (const width of [1440, 820, 390, 320]) {
       await page.setViewport({ width, height: width >= 820 ? 1000 : 844 });
       await page.waitForFunction(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth);
@@ -1355,11 +1384,13 @@ async function checkScanImport(page, db, projectId, reportPath, simulateMissingR
     await checkRenderedContrast(page, contrast);
     if (process.env.AEGIFY_UI_ARTIFACTS) await page.screenshot({ path: join(process.env.AEGIFY_UI_ARTIFACTS, "import-dark.png") });
     await (await elementWithText(page, "aside.app-sidebar button", "Light mode")).click();
-    const link = await page.$(result + " a");
+    const link = await elementWithText(page, result + " a", "Open scan");
     assert.equal(await link.evaluate((node) => node.getAttribute("href")), "/scans/" + receipt.scanId); checks++;
-    await link.focus();
+    await routesLink.focus();
     await page.keyboard.press("Enter");
-    await page.waitForFunction((id) => globalThis.location.pathname === "/scans/" + id, {}, receipt.scanId); checks++;
+    await page.waitForFunction((id) => globalThis.location.pathname === "/scans/" + id && globalThis.location.hash === "#gateway-inventory", {}, receipt.scanId); checks++;
+    await page.waitForFunction(() => globalThis.document.activeElement?.id === "gateway-inventory"
+      && globalThis.document.activeElement.getBoundingClientRect().top < globalThis.innerHeight / 2); checks++;
     await waitText(page, "Partial");
     await db.scan.delete({ where: { id: receipt.scanId } });
   } finally {
