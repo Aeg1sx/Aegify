@@ -544,6 +544,28 @@ def benchmark(
         raise typer.Exit(code=1)
 
 
+@app.command("prepare-workspace")
+def prepare_workspace_command(
+    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    output: Annotated[Path, typer.Option("--output", "-o", help="New workspace directory")],
+) -> None:
+    """Prepare commit-pinned Git sources and local paths for scan-workspace."""
+    import subprocess
+
+    from aegify.scanner.workspace_sources import prepare_workspace
+
+    try:
+        prepared = prepare_workspace(manifest, output)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        # Git diagnostics can contain credentials or remote-controlled terminal content.
+        if isinstance(error, ValueError):
+            _benchmark_error("Workspace preparation failed", error)
+        else:
+            console.print("Workspace preparation failed during file or Git transport access.")
+        raise typer.Exit(code=2) from None
+    console.print(str(prepared), markup=False, highlight=False)
+
+
 @app.command("scan-workspace")
 def scan_workspace(
     manifest: Annotated[
