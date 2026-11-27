@@ -73,9 +73,9 @@ export function GatewayInventoryPanel({ review, scanId }: { review: GatewayRevie
   const selected = review.files[fileIndex];
   const files = useMemo(() => selected ? [selected] : review.files, [review.files, selected]);
   const matches = useMemo(() => files.flatMap((file) => file.routes
-    .filter((route) => (status === "all" || route.status === status)
-      && (!ownerQuery || route.owners.some((owner) => owner.toLowerCase().includes(ownerQuery))))
-    .map((route) => ({ route, file }))), [files, status, ownerQuery]);
+    .map((route, routeIndex) => ({ route, file, routeIndex }))
+    .filter(({ route }) => (status === "all" || route.status === status)
+      && (!ownerQuery || route.owners.some((owner) => owner.toLowerCase().includes(ownerQuery))))), [files, status, ownerQuery]);
   const pages = Math.ceil(matches.length / pageSize);
   const start = Math.min(page, Math.max(0, pages - 1)) * pageSize;
   const selectClass = "min-h-11 w-full min-w-0 rounded-md border bg-background px-3 text-sm";
@@ -128,8 +128,8 @@ export function GatewayInventoryPanel({ review, scanId }: { review: GatewayRevie
       </p>
       {matches.length > 0 && (
         <ul aria-label="Gateway route declarations" className="divide-y rounded-lg border">
-          {matches.slice(start, start + pageSize).map(({ route, file }, index) => (
-            <li key={start + index} className="grid gap-2 px-4 py-3 sm:grid-cols-2 sm:gap-4">
+          {matches.slice(start, start + pageSize).map(({ route, file, routeIndex }) => (
+            <li key={JSON.stringify([file.repositoryId, file.path, routeIndex])} className="grid gap-2 px-4 py-3 sm:grid-cols-2 sm:gap-4">
               <div className="min-w-0">
                 <span className="block break-all text-sm font-semibold">{route.name || "Unnamed declaration"}</span>
                 <span className="block break-all text-xs text-muted-foreground">{fileLabel(file)}</span>

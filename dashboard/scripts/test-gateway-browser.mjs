@@ -66,6 +66,7 @@ await runAccessIntegration({ async verifyBrowser({ origin, cookies, projectId, g
     const scope = await page.waitForSelector('[aria-label="Review scope"]');
     assert.match(await scope.evaluate((node) => node.innerText), /orders-east/);
     const details = await page.waitForSelector('a[aria-label="Full details for Workspace review"]');
+    assert.match(await scope.evaluate((node) => node.innerText), /Partial scan coverage/);
     const detailUrl = new URL(await details.evaluate((node) => node.href));
     assert.equal(detailUrl.pathname, "/findings/" + east.id);
     assert.equal(detailUrl.searchParams.get("scanId"), gatewayScanId);
@@ -86,6 +87,9 @@ await runAccessIntegration({ async verifyBrowser({ origin, cookies, projectId, g
     await page.waitForFunction(() => globalThis.document.querySelectorAll('a[aria-label="Full details for Workspace review"]').length === 2);
     assert.equal(new URL(page.url()).searchParams.get("scanId"), gatewayScanId);
     assert.equal(new URL(page.url()).searchParams.has("repositoryId"), false);
+    await page.locator('::-p-aria(Leave scan view[role="button"])').click();
+    await page.waitForFunction(() => !new URL(globalThis.location.href).searchParams.has("scanId")
+      && !globalThis.document.querySelector('[aria-label="Review scope"]'));
     log("Verified gateway pagination, candidate navigation, historical findings, scoped presets and four viewport widths in Chromium.");
   } finally {
     await browser.close();

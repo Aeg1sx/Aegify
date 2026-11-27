@@ -273,10 +273,12 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     try {
       const path = `/api/findings?scanId=${uploaded.scanId}&repositoryId=orders-east`;
       const visible = await call(path, { user: "bob" });
+      assert.equal(visible.scan.id, uploaded.scanId); assert.equal(visible.scan.status, "partial");
       assert.equal(visible.total, 1); assert.deepEqual(visible.findings.map((row) => row.id), [ownerRows[0].id]);
       assert.deepEqual((await call("/api/findings?repositoryId=orders-east", { user: "alice" })).findings.map((row) => row.id), [ownerRows[4].id]);
-      assert.equal((await call(path + "&projectId=" + b.id)).total, 0);
-      assert.equal((await call(path, { user: "outside" })).total, 0);
+      for (const hidden of [await call(path + "&projectId=" + b.id), await call(path, { user: "outside" })]) {
+        assert.equal(hidden.total, 0); assert.equal(hidden.scan, null);
+      }
       assert.equal((await call(path.replace("orders-east", "orders"))).total, 0);
       await call(path + "&repositoryId=orders-east-v2", { status: 400 });
       await call("/api/findings?repositoryId=", { status: 400 });

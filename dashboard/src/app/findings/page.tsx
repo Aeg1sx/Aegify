@@ -11,6 +11,7 @@ import { EVIDENCE_LABELS } from "@/lib/code-evidence";
 import { findingFilters, filterQuery, invalidFindingScope, QUEUE_LABELS, type FindingFilters } from "@/lib/finding-view";
 
 interface Finding extends FindingEvidenceView { repositoryId: string; aiVerdict: string; createdAt: string; confidence: number }
+interface ReviewScan { id: string; repository: string; branch: string; commitSha: string; createdAt: string; status: string }
 interface SavedView { name: string; query: string }
 const presets = [
   { name: "All findings", values: {} },
@@ -24,6 +25,7 @@ export default function FindingsPage() {
   const [invalidScope, setInvalidScope] = useState(false);
   const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [reviewScan, setReviewScan] = useState<ReviewScan | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [total, setTotal] = useState(0);
   const [fetching, setLoading] = useState(true);
@@ -96,11 +98,11 @@ export default function FindingsPage() {
             setFilters((previous) => ({ ...previous, page: String(lastPage) }));
             return;
           }
-          setLoadedQuery(query); setFindings(data.findings); setTotal(data.total); setSelected(new Set());
+          setReviewScan(data.scan ?? null); setLoadedQuery(query); setFindings(data.findings); setTotal(data.total); setSelected(new Set());
           setInspectedId((id) => data.findings.some((f: Finding) => f.id === id) ? id : null);
         }
       } catch (e) {
-        if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : "Unable to load findings."); setFindings([]); setSelected(new Set()); setInspectedId(null); setTotal(0); }
+        if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : "Unable to load findings."); setReviewScan(null); setFindings([]); setSelected(new Set()); setInspectedId(null); setTotal(0); }
       } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 220);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -130,7 +132,8 @@ export default function FindingsPage() {
   const pages = Math.max(1, Math.ceil(total / 50));
   const scoped = Boolean(filters.scanId || filters.repositoryId);
   const defaults = { ...findingFilters(), scanId: filters.scanId, repositoryId: filters.repositoryId,
-    projectId: scoped ? filters.projectId : "" };
+    projectId: filters.repositoryId && !filters.scanId ? filters.projectId : "" };
+  const scan = loadedQuery === query && reviewScan?.id === filters.scanId ? reviewScan : null;
   const views = [
     ...presets.map((preset) => ({ name: preset.name, filters: { ...defaults, ...preset.values } })),
     ...saved.map((view) => ({ name: view.name, filters: findingFilters(new URLSearchParams(view.query)) })),
@@ -188,13 +191,24 @@ export default function FindingsPage() {
     {scoped && <section aria-label="Review scope" className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border bg-card px-4 py-2">
       {filters.scanId && <div className="min-w-0">
         <span className="block text-xs text-muted-foreground">Scan</span>
-        <Link href={"/scans/" + encodeURIComponent(filters.scanId)} className="break-all font-mono text-sm text-primary underline underline-offset-4">{filters.scanId}</Link>
+        {scan ? <>
+          <Link href={"/scans/" + encodeURIComponent(scan.id)} className="break-all text-sm font-semibold text-primary underline underline-offset-4">{scan.repository || "Scan record"}</Link>
+          <p className="break-words text-xs text-muted-foreground">
+            {[scan.branch, scan.commitSha.slice(0, 8), new Date(scan.createdAt).toLocaleString()].filter(Boolean).join(" · ")}
+          </p>
+        </> : <span className="break-all font-mono text-sm">{filters.scanId}</span>}
       </div>}
       {filters.repositoryId && <div className="min-w-0">
         <span className="block text-xs text-muted-foreground">Repository</span>
         <span className="break-all font-mono text-sm font-semibold">{filters.repositoryId}</span>
       </div>}
-      {filters.repositoryId && <button type="button" onClick={() => change("repositoryId", "")} className="ml-auto min-h-11 text-sm text-primary hover:underline">Show all repositories</button>}
+      {scan && scan.status !== "completed" && <span className="rounded-md border border-[var(--severity-medium)]/50 px-2 py-1 text-xs font-medium">
+        {scan.status === "partial" ? "Partial scan coverage" : "Scan status · " + scan.status}
+      </span>}
+      <button type="button" className="ml-auto min-h-11 text-sm text-primary hover:underline"
+        onClick={() => filters.repositoryId ? change("repositoryId", "") : setFilters(findingFilters())}>
+        {filters.repositoryId ? "Show all repositories" : "Leave scan view"}
+      </button>
     </section>}
     <div aria-label="Finding views" role="group" className="hidden flex-wrap items-center gap-x-5 border-b sm:flex">
       {views.map((view, index) => <button key={index} type="button" aria-pressed={viewIndex === index} className="hidden min-h-11 border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground aria-pressed:border-primary aria-pressed:font-semibold aria-pressed:text-foreground sm:inline-flex sm:items-center" onClick={() => setFilters(view.filters)}>{view.name}</button>)}
@@ -249,7 +263,7 @@ export default function FindingsPage() {
               <th scope="col" className="finding-column">Severity</th><th scope="col">Finding / source</th><th scope="col" className="finding-column">Evidence</th><th scope="col" className="finding-column">Status</th>{showOwner && <th scope="col" className="finding-column">Owner</th>}<th scope="col" className="finding-details"><span className="sr-only">Details</span></th>
             </tr></thead>
             <tbody>{loading ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground"><Loader2 aria-hidden className="mx-auto mb-2 size-5 animate-spin" />Loading findings…</td></tr> : findings.length === 0 ? <tr><td colSpan={showOwner ? 7 : 6} className="h-40 text-center text-muted-foreground">{filterCount || filters.search || filters.queue ? <>No findings match this view. <button type="button" className="min-h-11 text-primary hover:underline" onClick={() => setFilters(defaults)}>Clear filters</button></> : scoped ? "No findings recorded in this scope." : "No findings recorded."}</td></tr> : findings.map((finding, index) => <tr key={finding.id} data-inspected={inspectedId === finding.id}>
-              <td className="finding-check"><label><input aria-label={"Select " + finding.ruleName + " at " + finding.filePath} type="checkbox" checked={selected.has(finding.id)} onChange={() => toggle(finding.id)} /></label></td>
+              <td className="finding-check"><label><input aria-label={"Select " + finding.ruleName + " at " + [finding.repositoryId, finding.modulePath || finding.filePath].filter(Boolean).join(" · ")} type="checkbox" checked={selected.has(finding.id)} onChange={() => toggle(finding.id)} /></label></td>
               <td className="finding-column"><SeverityBadge severity={finding.severity} /></td>
               <td className="finding-summary">
                 <button type="button" aria-expanded={inspectedId === finding.id} aria-controls={inspectedId === finding.id ? "finding-inspector" : undefined} ref={(el) => { if (el) rowButtons.current.set(finding.id, el); else rowButtons.current.delete(finding.id); }} className="max-w-full break-words text-left text-sm font-semibold leading-snug hover:text-primary hover:underline" onClick={() => setInspectedId((current) => current === finding.id ? null : finding.id)} onKeyDown={(event) => {
