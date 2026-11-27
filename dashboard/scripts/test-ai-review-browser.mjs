@@ -857,7 +857,11 @@ async function checkProjectRecord(page, viewer, db, origin) {
   assert.equal((await details(api)).provider, ""); checks++;
   await (await elementWithText(page, '[role="dialog"] button', "Reload project")).click();
   await waitText(page, "Daily settlement batches and general ledger reconciliation.");
-  await (await button("Connect repository")).click(); await page.waitForSelector(choose); await page.click(choose);
+  await (await button("Connect repository")).click();
+  await page.waitForSelector('button[aria-label="Connect payments/storefront"]');
+  await (await nextGitHub()).click();
+  await page.waitForSelector(choose);
+  await page.click(choose);
   await waitText(page, "Repository connected.");
   assert.equal((await details(api)).ownerSlug, "payments/ledger-core"); checks++;
 
