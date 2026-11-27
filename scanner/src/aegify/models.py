@@ -309,6 +309,7 @@ class FunctionDef(BaseModel):
     source_columns: tuple[int, int] | None = None
     javascript_scope: tuple[int, int, int, int] | None = None
     javascript_constant_return: bool = False
+    javascript_regex_replacement: bool = False
     python_parameter_kinds: list[PythonParameterKind] = Field(default_factory=list)
     parameter_types: list[str] = Field(default_factory=list)
     parameter_defaults: list[bool] = Field(default_factory=list)
@@ -498,6 +499,7 @@ class CallSite(BaseModel):
     javascript_argument_calls: dict[int, tuple[int, int]] = Field(default_factory=dict)
     javascript_eager_arguments: dict[int, str] = Field(default_factory=dict)
     javascript_regex_pattern: bool | None = None
+    javascript_regex_rewritten_operand: bool = False
     python_regex_pattern: PythonRegexPattern | None = None
     python_download_url: PythonCallOperand | None = None
     python_process_input: PythonProcessInput | None = None
@@ -551,6 +553,7 @@ class TaintSink(BaseModel):
     line: int
     sink_type: str  # e.g., "sql_query", "os_command"
     argument_index: int = 0  # dangerous argument; -1 denotes the call receiver
+    regex_replacement_review: bool = False
     cli_path_origin_line: int | None = None
     in_function: str | None = None
 

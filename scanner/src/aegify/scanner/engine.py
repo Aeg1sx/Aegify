@@ -811,10 +811,14 @@ class ScanEngine:
         # Enrich call graph with endpoint info (both detected and OpenAPI)
         from aegify.scanner.call_graph import CallGraphNode as CGNode
 
-        for _, node_data in call_graph.nodes(data="data"):
-            if node_data and (node_data.file_path, node_data.qualified_name) in express_handlers:
-                node_data.is_entry_point = True
-                node_data.framework = "Express"
+        for _, attributes in call_graph.nodes(data=True):
+            handler = attributes.get("data")
+            if (
+                isinstance(handler, CGNode)
+                and (handler.file_path, handler.qualified_name) in express_handlers
+            ):
+                handler.is_entry_point = True
+                handler.framework = "Express"
 
         ep_count = 0
         for ep in detected_endpoints:

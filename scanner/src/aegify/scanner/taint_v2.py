@@ -966,6 +966,24 @@ class StructuredTaintAnalyzer:
                         self._object_return_events.add((target, context.node_id, call.line))
 
                 for sink_event in self._sink_events.get(id(call), []):
+                    if (
+                        sink_event.sink.sink_type == "regex_compile"
+                        and call.javascript_regex_pattern
+                    ):
+                        nested_pattern = direct_calls.get(
+                            call.javascript_argument_calls.get(0, (-1, -1))
+                        )
+                        helper = (
+                            self._contexts[nested_pattern[1]].definition if nested_pattern else None
+                        )
+                        sink_event.sink.regex_replacement_review = (
+                            call.javascript_regex_rewritten_operand
+                            or (
+                                helper is not None
+                                and helper.file_path == call.file_path
+                                and helper.javascript_regex_replacement
+                            )
+                        )
                     if sink_event.sink.sink_type == "os_command" and id(call) in process_values:
                         self._save_flows(
                             sink_event.sink, process_values[id(call)], flows, call_string
@@ -2009,9 +2027,10 @@ class StructuredTaintAnalyzer:
         )
 
     @staticmethod
-    def _flow_rank(flow: TaintFlow) -> tuple[int, bool, int]:
+    def _flow_rank(flow: TaintFlow) -> tuple[int, bool, bool, int]:
         return (
             1 if flow.sanitized else 0,
+            flow.sink.regex_replacement_review,
             inferred_process_field(flow.source, flow.path),
             len(flow.path),
         )

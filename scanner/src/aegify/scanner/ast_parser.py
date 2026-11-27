@@ -992,6 +992,7 @@ class _JavaScriptExtractor(_BaseExtractor):
                         visible = visible.parent
                 if not assigned and node.type == "function_expression":
                     visible = node  # The expression's own name is private to its body.
+                returned = javascript_functions.single_return(node)
                 functions.append(
                     FunctionDef(
                         name=name,
@@ -1011,7 +1012,11 @@ class _JavaScriptExtractor(_BaseExtractor):
                             else None
                         ),
                         parameters=self._extract_params(node, source),
-                        javascript_constant_return=javascript_functions.constant_return(node),
+                        javascript_constant_return=returned is not None
+                        and returned.type in {"string", "number", "true", "false", "null"},
+                        javascript_regex_replacement=javascript_regex.escaping_replacement(
+                            returned
+                        ),
                     )
                 )
                 names[node] = qualified
@@ -1158,6 +1163,8 @@ class _JavaScriptExtractor(_BaseExtractor):
                     receiver=receiver,
                     receiver_type=receiver_type,
                     javascript_regex_pattern=node in regex_calls if callee == "RegExp" else None,
+                    javascript_regex_rewritten_operand=node in regex_calls
+                    and javascript_regex.rewritten_operand(node),
                     javascript_handler=handler,
                     javascript_dynamic_call=node in dynamic_calls,
                     javascript_eager_arguments=eager_args,

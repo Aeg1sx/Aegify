@@ -171,3 +171,59 @@ def test_regex_facts_survive_snapshot_and_preserve_old_positions(tmp_path: Path)
     saved.python_regex_resolved = False
     saved.calls[0].python_regex_pattern = None
     assert regex_operand(saved.calls[0], saved, PythonModules([saved])) == ("re.search", 1)
+
+
+@pytest.mark.parametrize(
+    ("regex", "replacement", "disposition"),
+    [
+        (r"/[\x00-\x7f]/g", r"'\\$&'", "advisory"),
+        (r"/[\x00-\x7f]/g", r"c => '\\' + c", "advisory"),
+        (
+            r"/[\x00-\x7f]/g",
+            r"c => '\\x' + c.charCodeAt(0).toString(16).padStart(2, '0')",
+            "advisory",
+        ),
+        (r"/[\x00-\x7f]/", r"'\\$&'", "blocking"),
+        (r"/[\x40-\x7f]/g", r"'\\$&'", "blocking"),
+        (r"/[.]/g", r"'\\$&'", "blocking"),
+        (r"/[^\x00-\x7f]/g", r"'\\$&'", "blocking"),
+        (r"/[\x00-\x7f]/g", r"c => '\\' + req.query.extra", "blocking"),
+        (r"/[\x00-\x7f]/g", r"c => '\\x' + c", "blocking"),
+        (r"/[\x00-\x7f]/g", r"'$&'", "blocking"),
+    ],
+)
+def test_replacement_requires_global_coverage_and_matched_text(
+    tmp_path, regex, replacement, disposition
+):
+    source = (
+        "function transform(value) {\n"
+        f"  return value.replace({regex}, {replacement});\n"
+        "}\nfunction handler(req) {\n"
+        "  return RegExp(transform(req.query.term));\n}\n"
+    )
+    assert scan(tmp_path, {"api.js": source}) == [("api.js", 5, disposition)]
+
+
+def test_replacement_review_only_applies_to_the_complete_pattern(tmp_path):
+    source = r"""function handler(req) {
+  let term = req.query.term.replace(/[\x00-\x7f]/g, '\\$&');
+  RegExp(term);
+  RegExp(term + req.query.more);
+  term = req.query.raw;
+  RegExp(term);
+}
+"""
+    assert scan(tmp_path, {"api.js": source}) == [
+        ("api.js", 3, "advisory"),
+        ("api.js", 4, "blocking"),
+        ("api.js", 6, "blocking"),
+    ]
+
+
+def test_following_raw_operand_on_same_line_remains_blocking(tmp_path):
+    source = r"""function handler(req) {
+  const input = req.query.term;
+  RegExp(input.replace(/[\x00-\x7f]/g, '\\$&')); RegExp(input);
+}
+"""
+    assert scan(tmp_path, {"api.js": source}) == [("api.js", 3, "blocking")]

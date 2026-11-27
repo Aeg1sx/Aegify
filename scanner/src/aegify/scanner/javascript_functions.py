@@ -16,15 +16,15 @@ CALLABLES = {
 }
 
 
-def constant_return(function: Node) -> bool:
+def single_return(function: Node) -> Node | None:
     body = function.child_by_field_name("body")
     if body is not None and body.type == "statement_block":
         statements = [child for child in body.named_children if child.type != "comment"]
         if len(statements) != 1 or statements[0].type != "return_statement":
-            return False
+            return None
         values = [child for child in statements[0].named_children if child.type != "comment"]
         body = values[0] if len(values) == 1 else None
-    return body is not None and body.type in {"string", "number", "true", "false", "null"}
+    return body
 
 
 def eager_text(node: Node, source: bytes) -> str:
