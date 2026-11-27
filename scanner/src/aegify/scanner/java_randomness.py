@@ -360,7 +360,7 @@ class _Method:
         ):
             return None
         return _Origin(
-            "java.util.Random.nextBytes", fill.start_point.row + 1, encoder.start_point.row + 1
+            "java.util.Random.nextBytes", fill.start_point[0] + 1, encoder.start_point[0] + 1
         )
 
     def known_encoder(self, expr: Node, receiver: Node, args: list[Node]) -> bool:
@@ -415,9 +415,9 @@ class _Method:
         name, args = _name(expr), _args(expr)
         owner = self.owner(receiver)
         if owner == "java.lang.Math" and name == "random" and not args:
-            return _Origin("java.lang.Math.random", expr.start_point.row + 1)
+            return _Origin("java.lang.Math.random", expr.start_point[0] + 1)
         if name in _GENERATORS and self.weak_receiver(receiver):
-            return _Origin(f"java.util.Random.{name}", expr.start_point.row + 1)
+            return _Origin(f"java.util.Random.{name}", expr.start_point[0] + 1)
         if args and self.known_encoder(expr, receiver, args):
             return self.byte_origin(args[0], expr)
         if len(args) == 1 and (
@@ -506,7 +506,7 @@ class _Method:
                     and len(keys := _args(read)) == 1
                     and (slot := self.slot(read, keys[0]))
                 ):
-                    checked[slot] = call.start_point.row + 1
+                    checked[slot] = call.start_point[0] + 1
         facts = []
         for call, slot, value in pending:
             compare_line = checked.get(slot) if changes[slot] == 1 else None
@@ -526,7 +526,7 @@ class _Method:
                         use="servlet session value compared with a cookie"
                         if compare_line
                         else "servlet session credential field",
-                        use_line=call.start_point.row + 1,
+                        use_line=call.start_point[0] + 1,
                         comparison_line=compare_line,
                     )
                 )
@@ -592,7 +592,7 @@ class _Method:
                         generator_line=origin.line,
                         encoding_line=origin.encoding_line,
                         use="session registry key returned to the caller",
-                        use_line=call.start_point.row + 1,
+                        use_line=call.start_point[0] + 1,
                     )
                 )
         return facts

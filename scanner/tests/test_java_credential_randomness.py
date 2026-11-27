@@ -305,3 +305,20 @@ def test_closed_block_cannot_supply_a_later_same_named_binding(
     """,
     )
     assert bool(ast.credential_randomness) == expected
+
+
+def test_multiple_session_credentials_preserve_absolute_source_locations(tmp_path):
+    body = ["// header"] * 280
+    expected = []
+    for slot in range(16):
+        generator = "Random" if slot % 2 == 0 else "java.security.SecureRandom"
+        body.append(f"byte[] bytes{slot} = new byte[32];")
+        body.append(f"new {generator}().nextBytes(bytes{slot});")
+        body.append(f"String token{slot} = java.util.HexFormat.of().formatHex(bytes{slot});")
+        body.append(f'session.setAttribute("auth_token", token{slot});')
+        if slot % 2 == 0:
+            use_line = 7 + len(body)
+            expected.append((use_line - 2, use_line - 1, use_line))
+
+    facts = parse(tmp_path, "\n".join(body)).credential_randomness
+    assert [(fact.generator_line, fact.encoding_line, fact.use_line) for fact in facts] == expected
