@@ -527,6 +527,8 @@ The default Python model scopes HTML and shell encoding to their respective sink
 
 ### Directory containment checks
 
+`AEG-A03-011` follows HTTP input to the pattern argument of supported regular expression calls. Python analysis resolves the standard-library import, including aliases and reordered keyword arguments. The JavaScript and TypeScript models recognize direct calls to the global `RegExp` constructor with and without `new`. A finding records who controls the pattern. Evaluating the cost of a fixed pattern on an untrusted subject is a separate analysis. Go's standard regexp package guarantees linear-time matching in the input length. [Python regular expressions](https://docs.python.org/3/library/re.html) · [Go regexp](https://pkg.go.dev/regexp)
+
 `AEG-PATH-003` reports an advisory when a Python branch or returned predicate compares the result of `os.path.commonprefix` with one of two path operands. The scanner resolves supported standard-library imports, a local result or tuple, and explicit path construction. Text completion, ambiguous aliases and calls with unknown path semantics fall outside this rule. It records the prefix call and identifies the comparison line in the message.
 
 Review where the candidate comes from and how the application handles symlinks. For containment, compare path components after resolving paths according to that policy. The installed wheel distinguished the corrected and preceding versions of the selected functions in Starlette, pip and dbt-common. [Python path documentation](https://docs.python.org/3/library/os.path.html#os.path.commonprefix)

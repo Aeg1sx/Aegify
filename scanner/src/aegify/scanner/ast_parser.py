@@ -44,6 +44,7 @@ from aegify.scanner import (
     java_randomness,
     java_sql,
     java_types,
+    javascript_regex,
     python_buffers,
     python_code,
     python_deserialization,
@@ -54,6 +55,7 @@ from aegify.scanner import (
     python_literals,
     python_process,
     python_redirect,
+    python_regex,
     python_requests,
     python_scope,
     python_signing_keys,
@@ -133,6 +135,10 @@ def parser_fingerprint() -> str:
         "python_hosts": hashlib.sha256(Path(python_hosts.__file__).read_bytes()).hexdigest(),
         "python_files": hashlib.sha256(Path(python_files.__file__).read_bytes()).hexdigest(),
         "python_ldap": hashlib.sha256(Path(python_ldap.__file__).read_bytes()).hexdigest(),
+        "javascript_regex": hashlib.sha256(
+            Path(javascript_regex.__file__).read_bytes()
+        ).hexdigest(),
+        "python_regex": hashlib.sha256(Path(python_regex.__file__).read_bytes()).hexdigest(),
         "python_redirect": hashlib.sha256(Path(python_redirect.__file__).read_bytes()).hexdigest(),
         "python_text": hashlib.sha256(Path(python_text.__file__).read_bytes()).hexdigest(),
         "python_requests": hashlib.sha256(Path(python_requests.__file__).read_bytes()).hexdigest(),
@@ -581,6 +587,7 @@ class _PythonExtractor(_BaseExtractor):
             python_request_body_reads=python_requests.body_reads(source),
             python_file_access_resolved=True,
             python_process_resolved=True,
+            python_regex_resolved=True,
             python_redirect_resolved=True,
             python_custom_request_data=python_requests.custom_request_data(source),
             python_host_checks=python_hosts.host_checks(source),
@@ -761,6 +768,7 @@ class _PythonExtractor(_BaseExtractor):
         processes = python_process.process_calls(source)
         decoders, extensions = python_deserialization.decode_calls(source)
         factories, searches = python_ldap.search_facts(source)
+        regex_patterns = python_regex.regex_patterns(source)
         redirects = python_redirect.redirect_calls(source)
         templates = python_templates.template_sources(source)
         downloads = python_requests.download_urls(source)
@@ -815,6 +823,7 @@ class _PythonExtractor(_BaseExtractor):
                     python_redirect=redirects.get(location),
                     python_template_source=templates.get(location),
                     python_download_url=downloads.get(location),
+                    python_regex_pattern=regex_patterns.get(location),
                     python_code_input=code_inputs.get(location),
                     python_process_input=processes.get(location),
                     python_assigned_sanitizer=sanitizers.get(location, ""),
@@ -1011,8 +1020,17 @@ class _JavaScriptExtractor(_BaseExtractor):
     def _extract_calls(
         self, root: Node, source: bytes, file_path: str, calls: list[CallSite]
     ) -> None:
-        for node in self._find_nodes(root, "call_expression"):
-            func_node = node.child_by_field_name("function")
+        regex_calls = javascript_regex.pattern_calls(root, source)
+        nodes = self._find_nodes(root, "call_expression")
+        nodes.extend(
+            sorted(
+                (call for call in regex_calls if call.type == "new_expression"),
+                key=lambda call: call.start_byte,
+            )
+        )
+        for node in nodes:
+            field = "constructor" if node.type == "new_expression" else "function"
+            func_node = node.child_by_field_name(field)
             if not func_node:
                 continue
 
@@ -1038,7 +1056,7 @@ class _JavaScriptExtractor(_BaseExtractor):
             args_node = node.child_by_field_name("arguments")
             if args_node:
                 for child in args_node.children:
-                    if child.type not in ("(", ")", ","):
+                    if child.type not in ("(", ")", ",", "comment"):
                         args.append(self._node_text(child, source))
 
             enclosing = self._find_enclosing_function(
@@ -1054,6 +1072,7 @@ class _JavaScriptExtractor(_BaseExtractor):
                     arguments=args,
                     receiver=receiver,
                     receiver_type=receiver_type,
+                    javascript_regex_pattern=node in regex_calls if callee == "RegExp" else None,
                     in_function=enclosing,
                 )
             )

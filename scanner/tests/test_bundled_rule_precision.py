@@ -402,7 +402,7 @@ def test_redos_rule_requires_user_controlled_pattern_evidence(tmp_path: Path):
     unsafe_ids = _scan_blocking_rule(
         tmp_path,
         rule_file,
-        "def search(request, text):\n"
+        "import re\ndef search(request, text):\n"
         "    pattern = request.args.get('pattern')\n"
         "    return re.search(pattern, text)\n",
         "unsafe_redos.py",
@@ -410,7 +410,7 @@ def test_redos_rule_requires_user_controlled_pattern_evidence(tmp_path: Path):
     internal_ids = _scan_blocking_rule(
         tmp_path,
         rule_file,
-        "def parse(text):\n"
+        "import re\ndef parse(text):\n"
         "    compiled = re.compile(r'(?P<params>[^)]*)')\n"
         "    return compiled.search(text)\n",
         "internal_regex_helper.py",
@@ -420,18 +420,18 @@ def test_redos_rule_requires_user_controlled_pattern_evidence(tmp_path: Path):
     assert "AEG-A03-011" not in internal_ids
 
 
-def test_redos_rule_retains_constant_regex_signal_as_advisory(tmp_path: Path):
+def test_redos_rule_excludes_fixed_patterns_from_advisories(tmp_path: Path):
     rule_file = RULES_DIR / "a03-injection" / "injection.yml"
     findings = _scan_findings(
         tmp_path,
         rule_file,
-        "def parse(text):\n"
+        "import re\ndef parse(text):\n"
         "    compiled = re.compile(r'(?P<params>[^)]*)')\n"
         "    return compiled.search(text)\n",
         "advisory_internal_regex.py",
     )
 
-    assert "AEG-A03-011" in _advisory_ids(findings)
+    assert "AEG-A03-011" not in _advisory_ids(findings)
 
 
 def test_format_string_rule_only_treats_first_argument_as_format(tmp_path: Path):

@@ -1,0 +1,29 @@
+{
+  "repository": "github/codeql",
+  "revision": "117209c03510a6197ad0ada8bbce32d402211f32",
+  "suites": {
+    "python": {
+      "directory": "python/ql/test/query-tests/Security/CWE-730-RegexInjection",
+      "expected": "RegexInjection.expected",
+      "files": {
+        "RegexInjection.expected": "8aba3c9ed5f3aaf514f8a000965bbd5e53e50a559b5bc30566a26ee0744a3b31",
+        "re_bad.py": "014981832b8cc2fe399f44d2a7f653e1a50e7f3513fcb403a9ae12b6dcdf0a66",
+        "re_good.py": "c92b008a2eb85e3f57a4eff871a5adcfbcf2f00e1659f5002907a21e7138e62f",
+        "re_prefixmatch.py": "ce9b387eaf228399d277f274646ca98eb5165cab0913f2a9910bf00b25b04d83"
+      }
+    },
+    "javascript": {
+      "directory": "javascript/ql/test/query-tests/Security/CWE-730/Threat-models-disabled",
+      "expected": "RegExpInjection.expected",
+      "files": {
+        "RegExpInjection.expected": "e1b930e31ef74fd83a053fce4f449b5462161e50759ab2fa67af65739ca18cb6",
+        "RegExpInjection.js": "c3b4a8e1345c259dbf93368ae4d045525df5da9c4083991c3c646551daccbac9",
+        "RegExpInjectionGood.js": "9148098920f9dcc9fc78c448cf6865625b9a2cf64204cb636d76e9c692106a97",
+        "client-side.js": "ede88bc5e2e56d561f1bbebd189f453d1bc3f0dc24c956a66cfe256326703486",
+        "search.js": "831c6bcf8f215d2c11796b8d1a684dc404a4fc0a6aa8a914284767e415d1ef87",
+        "server-crash.js": "7da16b93e8c1f1c10fd64c73ac16defbbeac2e27de1ffe538bcfd5e891179f58",
+        "tst.js": "da19968ab875be09a88b16fa74a8389f6023e977d8784fe9fa2d3d3e6bb98385"
+      }
+    }
+  }
+}

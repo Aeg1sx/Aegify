@@ -264,25 +264,17 @@ rules:
       consume excessive CPU, leading to denial of service.
     severity: medium
     confidence: 0.65
-    languages: [python, javascript, typescript, java, go, kotlin]
+    languages: [python, javascript, typescript, java, kotlin]
     cwe_id: 1333
     owasp_category: "A03:2021-Injection"
     defense_patterns: ["re2", "regex_timeout", "fixed_pattern", "escape_regex", "re.escape", "regex_allowlist"]
-    patterns:
-      - callee_match: "(re\\.compile|re\\.match|re\\.search|re\\.findall|new RegExp|Pattern\\.compile|regexp\\.Compile|regexp\\.MustCompile)"
-        args_match: "(request|req|input|user|param|query|body|data|args)"
-        disposition: advisory
-      - callee_match: "(RegExp|re\\.compile|Pattern\\.compile)"
-        args_match: "(\\+|format|f['\"]|%s|concat|\\$\\{)"
-        disposition: advisory
     taint:
-      source_types: [http_param, http_body]
-      sink_pattern: "(re\\.(compile|match|search|findall|sub)|new RegExp|Pattern\\.compile|regexp\\.(Compile|MustCompile|Match))"
+      source_types: [http_param, http_body, http_header, http_cookie]
+      sink_types: [regex_compile]
     message: >
-      Potential ReDoS: user input from '{source}' (line {source_line})
-      is used to construct a regular expression at '{sink}' (line
-      {sink_line}). Use a safe regex engine (RE2), apply timeouts, or
-      validate patterns against a known-safe allowlist.
+      Input from '{source}' (line {source_line}) reaches the regular expression
+      pattern in '{sink}' (line {sink_line}). Check whether callers should be
+      allowed to choose the pattern and whether matching time is bounded.
 
   - id: AEG-A03-012
     name: Format String Vulnerability

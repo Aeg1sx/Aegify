@@ -188,6 +188,11 @@ advisory was retained while the Authlib accessors and Passport custom-store
 configuration cleared. The published NiFi logout defect remained missed.
 [Inputs and paired results](scanner/benchmarks/session-storage-review-v1/README.md)
 
+The packaged HTTP-to-regex rule matched all eight selected Python CodeQL test
+locations with zero extra locations, up from five matches with three extras.
+It matched one of 17 distinct JavaScript locations, up from zero. Both packages
+missed the published markdown2 fixed-pattern defect. [Pinned inputs and replay](scanner/benchmarks/regex-pattern-review-v1/README.md)
+
 ## Work required beyond beta
 
 1. **Detection acceptance:** independently review labels and expand held-out

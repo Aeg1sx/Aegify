@@ -264,6 +264,7 @@ class FileAST(BaseModel):
     python_directory_checks: list[PythonDirectoryCheck] = Field(default_factory=list)
     python_read_limits: list[PythonReadLimit] = Field(default_factory=list)
     python_ldap_factories: dict[str, str] = Field(default_factory=dict)
+    python_regex_resolved: bool = False
     python_redirect_resolved: bool = False
     python_process_resolved: bool = False
     python_custom_request_data: bool = False
@@ -429,6 +430,10 @@ class PythonCallOperand(BaseModel):
     argument_index: int = Field(ge=0)
 
 
+class PythonRegexPattern(PythonCallOperand):
+    escaped_request_text: bool = False
+
+
 class PythonRedirect(PythonCallOperand):
     validator: str = ""
 
@@ -485,6 +490,8 @@ class CallSite(BaseModel):
     python_redirect: PythonRedirect | None = None
     python_code_input: PythonCodeInput | None = None
     python_template_source: PythonCallOperand | None = None
+    javascript_regex_pattern: bool | None = None
+    python_regex_pattern: PythonRegexPattern | None = None
     python_download_url: PythonCallOperand | None = None
     python_process_input: PythonProcessInput | None = None
     python_deserialization: PythonDeserialization | None = None
