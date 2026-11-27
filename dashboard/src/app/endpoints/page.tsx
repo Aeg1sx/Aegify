@@ -154,7 +154,7 @@ function InventoryView() {
   // The native history mutation is synchronous; Next's route snapshot can trail
   // a keystroke. Read every control and the filtered list from the same URL.
   const queryString = useSyncExternalStore(subscribeInventory, currentSearch, () => routeSearch.toString());
-  const search = new URLSearchParams(queryString);
+  const search = useMemo(() => new URLSearchParams(queryString), [queryString]);
   const framework = search.get("framework") || "";
   const method = search.get("method") || "";
   const authValue = search.get("auth");
