@@ -501,6 +501,9 @@ def test_static_provider_receives_only_bounded_upstream_references() -> None:
 
         def invoke(self, spec: Any, payload: Any) -> AgentNarrative:
             self.inputs[spec.role] = payload["facts"]
+            if spec.role == AgentRole.SURFACE:
+                payload["facts"]["endpoints"] = 0
+                payload["evidence_ids"].clear()
             return AgentNarrative(summary="unverified-narrative-marker")
 
     backend = Backend()
@@ -516,6 +519,7 @@ def test_static_provider_receives_only_bounded_upstream_references() -> None:
     assert set(static["inputs"][0]["evidenceIds"]) <= {item.id for item in run.evidence}
     assert static["inputs"][0]["evidenceIds"]
     assert "unverified-narrative-marker" not in str(static)
+    assert "The scan supplied no endpoint inventory." not in static["gaps"]
     synthesis = backend.inputs[AgentRole.SYNTHESIS]
     assert [item["role"] for item in synthesis["reviewHandoff"]["inputs"]] == ["surface", "static"]
     assert len(synthesis["findings"]) == 25 and synthesis["omitted_findings"] == 1

@@ -65,7 +65,8 @@ AGENT_CATALOG: dict[AgentRole, AgentSpec] = {
         mission=(
             "Perform lite or deep static review, trace source-to-sink paths, "
             "and reduce false positives. Read reviewHandoff for upstream evidence and unresolved "
-            "assumptions. Check the finding location and contrary evidence before a verdict."
+            "assumptions. Use sourceLocations to reread relevant lines. Check the finding "
+            "location and contrary evidence before a verdict."
         ),
         allowed_tools=["finding_context", "call_path", "attack_surface", "workspace_summary"],
         required_evidence=["finding provenance", "source-to-sink trace", "defense context"],

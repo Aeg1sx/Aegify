@@ -7,6 +7,20 @@ AI review in Aegify is an enrichment layer. It cannot close, confirm, suppress,
 or raise the evidence state of a finding. A deterministic scanner result and a
 human triage decision remain authoritative.
 
+## Trace a conclusion back to its source
+
+Open the agent run, select the static review or final assessment, and expand
+**Review handoff**. A cited evidence ID opens its record in the preceding stage.
+The handoff retains up to 16 references per stage along with its completion
+status, omitted counts and unresolved questions.
+
+In scanner runs with source tools enabled, an upstream citation also carries
+the repository, file and inclusive line range verified by the source reader.
+The next reviewer can reopen those lines and cite its own read. If a gateway
+configuration has several possible owners or only partial coverage, the final
+assessment records that gap. The stored scan keeps every finding. A provider
+synthesis request includes up to 25 finding summaries and the count omitted.
+
 ## Configure the review provider
 
 Workspace administrators can open **Settings → AI review** to choose a service preset, check the request URL and edit credentials. The **Saved connection** panel shows the saved protocol and model while you edit. On a phone, select **Saved connection** beside the form heading to jump there. [Desktop settings](/assets/aegify-workspace-settings-desktop.png) · [Mobile settings](/assets/aegify-workspace-settings-mobile.png) · [Dark theme](/assets/aegify-workspace-settings-dark.png)

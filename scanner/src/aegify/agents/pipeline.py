@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
@@ -290,7 +291,7 @@ class SecurityAgentPipeline:
         spec = AGENT_CATALOG[AgentRole.STATIC]
         complete = sum(trace.static_complete for trace in traces)
         observed = sum(trace.runtime_observed for trace in traces)
-        facts = {
+        facts: dict[str, Any] = {
             "mode": mode.value,
             "findings": len(scan.findings),
             "severity": dict(Counter(finding.severity.value for finding in scan.findings)),
@@ -303,6 +304,17 @@ class SecurityAgentPipeline:
             "program_graph_fidelity": scan.program_graph.fidelity,
             "taint_fidelity": scan.taint_analysis.fidelity,
         }
+        if inventory := scan.gateway_inventory:
+            ownership = Counter(route.status for file in inventory.files for route in file.routes)
+            facts["gatewayOwnership"] = {
+                "inputStatus": inventory.input_status,
+                "configFiles": len(inventory.files),
+                "resolved": ownership["resolved"],
+                "ambiguous": ownership["ambiguous"],
+                "unresolved": ownership["unresolved"],
+                "omittedFiles": inventory.omitted_files,
+                "omittedRoutes": inventory.omitted_routes,
+            }
         status = (
             AgentStageStatus.COMPLETED
             if not scan.findings or complete
@@ -553,9 +565,9 @@ class SecurityAgentPipeline:
         tool_results = self.tools.collect(spec, stage, context)
         payload = {
             "deterministic_summary": stage.summary,
-            "facts": provider_facts(stage),
-            "evidence_ids": stage.evidence_ids,
-            "required_evidence": spec.required_evidence,
+            "facts": deepcopy(provider_facts(stage)),
+            "evidence_ids": list(stage.evidence_ids),
+            "required_evidence": list(spec.required_evidence),
             "tools": [result.model_dump(mode="json") for result in tool_results],
         }
         try:

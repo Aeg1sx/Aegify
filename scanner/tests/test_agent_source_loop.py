@@ -172,6 +172,16 @@ def test_model_selects_files_then_reads_and_cites_across_all_six_roles(tmp_path:
         for received in current.facts.get("reviewHandoff", {}).get("inputs", []):
             preceding = next(stage for stage in run.stages if stage.role.value == received["role"])
             assert preceding.exploration
+            assert received["sourceLocations"] == [
+                {
+                    "repositoryId": c.repository_id,
+                    "path": c.path,
+                    "lineStart": c.line_start,
+                    "lineEnd": c.line_end,
+                    "citationId": c.citation_id,
+                }
+                for c in preceding.exploration.citations
+            ]
             assert received["sourceCitationIds"] == [
                 item.citation_id for item in preceding.exploration.citations
             ]

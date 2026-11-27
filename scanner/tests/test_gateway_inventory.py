@@ -116,6 +116,18 @@ def test_workspace_cli_reports_owned_and_unresolved_declarations(tmp_path: Path)
             reports.append(data["runs"][0]["properties"]["gatewayInventory"])
     assert reports[0] == reports[1]
     report = GatewayInventory.model_validate(reports[0])
+    from aegify.agents.models import AgentRole
+    from aegify.agents.pipeline import SecurityAgentPipeline
+    from aegify.models import ScanResult
+
+    review = SecurityAgentPipeline().run(ScanResult(gateway_inventory=report))
+    stages = {s.role: s.facts for s in review.stages}
+    ownership = stages[AgentRole.STATIC]["gatewayOwnership"]
+    assert (ownership["resolved"], ownership["ambiguous"], ownership["unresolved"]) == (6, 1, 5)
+    assert (
+        "Some declared gateway routes lack a unique repository owner."
+        in stages[AgentRole.SYNTHESIS]["reviewHandoff"]["gaps"]
+    )
     assert report.input_status == "processed"
     routes = {route.route_name: route for file in report.files for route in file.routes}
     assert set(routes) == {

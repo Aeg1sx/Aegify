@@ -171,7 +171,7 @@ test("handoffs keep bounded references to the current workspace and disclose mis
   assert.equal(new Set(refs).size, 16);
   assert.deepEqual(review.facts.reviewHandoff, {
     version: 1,
-    inputs: [{ role: "surface", status: "completed", evidenceIds: refs, omittedEvidence: 2, sourceCitationIds: [], omittedCitations: 0 }],
+    inputs: [{ role: "surface", status: "completed", evidenceIds: refs, omittedEvidence: 2, sourceCitationIds: [], sourceLocations: [], omittedCitations: 0 }],
     gaps: ["Authentication enforcement is unresolved for some endpoints."],
   });
   const received = synthesis.facts.reviewHandoff as { inputs: {role: string}[]; gaps: string[] };

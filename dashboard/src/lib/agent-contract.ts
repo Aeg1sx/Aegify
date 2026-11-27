@@ -239,7 +239,7 @@ export function buildAgentBlueprint(
         }
         return {
           role: source.role, status: source.status, evidenceIds,
-          omittedEvidence: refs.length - evidenceIds.length, sourceCitationIds: [], omittedCitations: 0,
+          omittedEvidence: refs.length - evidenceIds.length, sourceCitationIds: [], sourceLocations: [], omittedCitations: 0,
         };
       });
       current.facts.reviewHandoff = { version: 1, inputs, gaps };
