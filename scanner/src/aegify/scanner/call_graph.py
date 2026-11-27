@@ -103,6 +103,7 @@ class CallGraphBuilder:
         self.graph: CodeGraph = nx.MultiDiGraph()
         self._function_index: dict[str, FunctionDef] = {}
         self._file_languages: dict[str, Language] = {}
+        self._dependencies: dict[str, list[str]] = {}
         # Precise indexes used before any fuzzy/global fallback. They are
         # essential in multi-repo workspaces where short names collide.
         self._file_function_index: dict[tuple[str, str], list[str]] = {}
@@ -122,10 +123,16 @@ class CallGraphBuilder:
         self._overload_ambiguous_sites: set[tuple[str, int, int, str]] = set()
         self._node_id_by_function: dict[int, str] = {}
 
-    def build(self, file_asts: list[FileAST]) -> CodeGraph:
+    def build(
+        self,
+        file_asts: list[FileAST],
+        *,
+        repository_dependencies: dict[str, list[str]] | None = None,
+    ) -> CodeGraph:
         """Build call graph from a list of parsed file ASTs."""
         self.graph = nx.MultiDiGraph()
         self._file_languages = {ast.file_path: ast.language for ast in file_asts}
+        self._dependencies = repository_dependencies or {}
         self._function_index = {}
         self._file_function_index = {}
         self._name_index = {}
@@ -554,13 +561,6 @@ class CallGraphBuilder:
         caller_function = self._caller_function(call)
         if not repository_id and caller_function:
             repository_id = caller_function.repository_id
-        if repository_id:
-            unique = [
-                candidate
-                for candidate in unique
-                if candidate in self._function_index
-                and self._function_index[candidate].repository_id == repository_id
-            ]
         language = self._file_languages[call.file_path]
         functions = [
             self._function_index[candidate]
@@ -570,6 +570,20 @@ class CallGraphBuilder:
                 language, self._file_languages[self._function_index[candidate].file_path]
             )
         ]
+        if repository_id:
+            local = [function for function in functions if function.repository_id == repository_id]
+            if local or language not in {Language.JAVA, Language.KOTLIN} or not call.receiver_type:
+                functions = local
+            else:
+                providers = self._dependencies.get(repository_id, [])
+                receiver = self._normalize_match_type(call.receiver_type)
+                functions = [
+                    function
+                    for function in functions
+                    if function.repository_id in providers
+                    and function.class_name
+                    and self._normalize_match_type(function.class_name) == receiver
+                ]
         if not functions:
             return None
         overload_site = (call.file_path, call.line, call.column, call.callee)

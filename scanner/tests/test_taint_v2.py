@@ -595,6 +595,15 @@ def test_workspace_taint_crosses_repository_boundary(tmp_path: Path):
     assert result.taint_analysis.contexts_analyzed >= 2
     assert cross_repo
 
+    manifest.write_text(manifest.read_text().replace("    depends_on: [provider]\n", ""))
+    isolated = ScanEngine(config=config).scan_workspace(manifest)
+    assert not any(
+        finding.taint_flow
+        and "/consumer/" in finding.taint_flow.source.file_path
+        and "/provider/" in finding.taint_flow.sink.file_path
+        for finding in isolated.findings
+    )
+
 
 def test_scip_occurrence_disambiguates_cross_repo_taint_target(tmp_path: Path):
     consumer = tmp_path / "consumer"

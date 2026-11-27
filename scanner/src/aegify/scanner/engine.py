@@ -636,7 +636,9 @@ class ScanEngine:
         # Phase 2: Call Graph
         logger.info("Phase 2: Building call graph...")
         self._emit_progress(2, "Building call graph", start_time)
-        call_graph = self.call_graph_builder.build(file_asts)
+        call_graph = self.call_graph_builder.build(
+            file_asts, repository_dependencies=repository_dependencies
+        )
         self._overlay_semantic_dispatch(call_graph, semantic_relationships or [])
         self._last_call_graph = call_graph
 
