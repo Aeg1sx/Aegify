@@ -650,3 +650,121 @@ def test_workflow_rule_matches_the_registered_route_path(tmp_path: Path, name, s
         tmp_path, RULES_DIR / "a04-insecure-design" / "business_logic.yml", source, name
     )
     assert ("AEG-LOGIC-003" in found) is expected
+
+
+@pytest.mark.parametrize(
+    ("name", "source", "expected"),
+    [
+        (
+            "lookup.py",
+            "def resolve_account(root, info, id):\n"
+            "    key = str(id)\n"
+            "    return Account.objects.get(pk=key)\n",
+            True,
+        ),
+        (
+            "resolver.js",
+            "const field = { resolve(parent, args) { return store.findById(args.id); } };",
+            True,
+        ),
+        (
+            "map.js",
+            "const resolvers = { Query: { node: (_, { id }) => database.findById(id) } };",
+            True,
+        ),
+        (
+            "resolver.ts",
+            "const query = { resolve(parent: Source, args: Args) { "
+            "return store.findById(args.id); } };",
+            True,
+        ),
+        (
+            "Account.java",
+            "class AccountQuery { @QueryMapping Account account(String id) { "
+            "return repository.findById(id); } }",
+            True,
+        ),
+        (
+            "authorized.py",
+            "def resolve_account(root, info, id):\n"
+            "    if not has_permission(info.context.user, id):\n"
+            "        raise PermissionError()\n"
+            "    return Account.objects.get(pk=id)\n",
+            False,
+        ),
+        (
+            "viewer.py",
+            "def resolve_account(root, info, id):\n"
+            "    return Account.objects.get(pk=id, owner=info.context.user)\n",
+            False,
+        ),
+        (
+            "unrelated.js",
+            "const f = { resolve(parent, args) { const id = args.id; "
+            "return store.findOne({active: true}); } };",
+            False,
+        ),
+        (
+            "parser.py",
+            "def query(self, call: Node) -> QueryExpression:\n"
+            "    node = call.child_by_field_name('object')\n"
+            "    return self.lookup(node)\n",
+            False,
+        ),
+        (
+            "store.py",
+            "def query(self, id):\n    node = Account.objects.get(pk=id)\n    return node\n",
+            False,
+        ),
+        (
+            "schema.py",
+            "def resolve_label(root, info, id):\n    return str(id)\n",
+            False,
+        ),
+    ],
+)
+def test_graphql_object_lookup_requires_resolver_and_storage(tmp_path, name, source, expected):
+    ids = _scan_rule(tmp_path, RULES_DIR / "api-security" / "bola.yml", source, name)
+    assert ("AEG-BOLA-004" in ids) is expected
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "def advance(cache, key):\n    item = cache.get(key)\n"
+            "    item['total'] += 1\n    cache.put(key, item)\n",
+            True,
+        ),
+        (
+            "def advance(key):\n    item = Account.objects.get(pk=key)\n"
+            "    item.value += 1\n    item.save()\n",
+            True,
+        ),
+        (
+            "def advance(cursor, key):\n    cursor.execute('SELECT total FROM counts')\n"
+            "    total = cursor.fetchone()[0]\n    total += 1\n"
+            "    cursor.execute('UPDATE counts SET total=?', (total,))\n",
+            True,
+        ),
+        (
+            "def transport(env):\n    value = os.environ.get('CA_FILE')\n"
+            "    env['certificate'] = value\n    env.update(mode='tls')\n",
+            False,
+        ),
+        (
+            "def render(settings, props):\n    item = settings.get('size')\n"
+            "    props['size'] = item\n    props.update(done=True)\n",
+            False,
+        ),
+        (
+            "def read(cache, key):\n    return cache.get(key)\n"
+            "def write(cache, key, item):\n    item.count += 1\n    cache.put(key, item)\n",
+            False,
+        ),
+    ],
+)
+def test_race_advisory_uses_storage_operations_in_one_function(tmp_path, source, expected):
+    rule_file = RULES_DIR / "a04-insecure-design" / "race_conditions.yml"
+    findings = _scan_findings(tmp_path, rule_file, source, "storage.py")
+    assert ("AEG-RACE-003" in _advisory_ids(findings)) is expected
