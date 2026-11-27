@@ -1,38 +1,22 @@
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { BookmarkCheck, CheckCheck, Circle, CircleCheck, CircleDot, CircleMinus, Clock3, type LucideIcon } from "lucide-react";
 
-const statusConfig: Record<string, { color: string; label: string }> = {
-  open: {
-    color: "bg-[var(--status-open-bg)] text-[var(--status-open)] border-[var(--status-open)]/20",
-    label: "Open",
-  },
-  triaged: {
-    color: "bg-[var(--status-triaged-bg)] text-[var(--status-triaged)] border-[var(--status-triaged)]/20",
-    label: "Triaged",
-  },
-  in_progress: {
-    color: "bg-[var(--status-in-progress-bg)] text-[var(--status-in-progress)] border-[var(--status-in-progress)]/20",
-    label: "In Progress",
-  },
-  confirmed: {
-    color: "bg-[var(--status-confirmed-bg)] text-[var(--status-confirmed)] border-[var(--status-confirmed)]/20",
-    label: "Confirmed",
-  },
-  false_positive: {
-    color: "bg-[var(--status-false-positive-bg)] text-[var(--status-false-positive)] border-[var(--status-false-positive)]/20",
-    label: "False Positive",
-  },
-  fixed: {
-    color: "bg-[var(--status-fixed-bg)] text-[var(--status-fixed)] border-[var(--status-fixed)]/20",
-    label: "Fixed",
-  },
+const states: Record<string, { label: string; icon: LucideIcon; color?: string }> = {
+  open: { label: "Open", icon: Circle },
+  triaged: { label: "Triaged", icon: BookmarkCheck },
+  in_progress: { label: "In progress", icon: CircleDot, color: "text-[var(--status-in-progress)]" },
+  confirmed: { label: "Confirmed", icon: CheckCheck, color: "text-primary" },
+  false_positive: { label: "False positive", icon: CircleMinus },
+  accepted_risk: { label: "Accepted risk", icon: Clock3 },
+  fixed: { label: "Fixed", icon: CircleCheck, color: "text-primary" },
 };
 
+export const findingStatusOptions = Object.entries(states).map(([value, { label }]) => ({ value, label }));
+
 export function StatusBadge({ status }: { status: string }) {
-  const config = statusConfig[status] || statusConfig.open;
-  return (
-    <Badge variant="outline" className={cn("text-xs", config.color)}>
-      {config.label}
-    </Badge>
-  );
+  const { label, icon: Icon, color } = Object.hasOwn(states, status)
+    ? states[status]
+    : { label: status || "Unclassified", icon: Circle, color: undefined };
+  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+    <Icon aria-hidden className={"size-3.5 shrink-0 " + (color ?? "")} />{label}
+  </span>;
 }

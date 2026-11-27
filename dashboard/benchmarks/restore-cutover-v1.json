@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "exercise": "local-service-cutover",
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.7.0",
+    "nextBuild": "dKuVL8GUdynugnvzCtQt5",
+    "scriptSha256": "b93db2ca3edd83cf16eb06733844bdaa17c09b437112200d9aaff1508c3e68e8"
+  },
+  "trials": [
+    {
+      "durationsMs": {
+        "stopServices": 121,
+        "restoreCommand": 129,
+        "candidatePreparationAndStart": 1073,
+        "activationAndFreshLogin": 929,
+        "stopToAdmittedRead": 2568,
+        "stopToNewCiDelivery": 2832,
+        "stopToVerifiedWorkerResult": 5917
+      },
+      "snapshotAgeAtStopMs": 369,
+      "snapshotBytes": 720896,
+      "snapshotCounts": {
+        "User": 2,
+        "Project": 1,
+        "Scan": 1,
+        "Finding": 1,
+        "AuditEvent": 6
+      },
+      "archiveCreationMs": 127,
+      "archiveVerificationMs": 81,
+      "accountsQuarantined": 2,
+      "accountsReactivated": 1,
+      "retainedFindingsChecked": 1,
+      "laterProjectExcluded": true,
+      "previousSessionRejectedAfterActivation": true,
+      "previousCiCredentialRejected": true,
+      "newCredentialDelivery": true,
+      "recoveredWorkerQueues": [
+        "source",
+        "ai"
+      ],
+      "newRuleFixture": {
+        "positive": 1,
+        "negative": 3,
+        "outcome": "passed"
+      }
+    },
+    {
+      "durationsMs": {
+        "stopServices": 127,
+        "restoreCommand": 96,
+        "candidatePreparationAndStart": 1047,
+        "activationAndFreshLogin": 1026,
+        "stopToAdmittedRead": 2613,
+        "stopToNewCiDelivery": 2881,
+        "stopToVerifiedWorkerResult": 5970
+      },
+      "snapshotAgeAtStopMs": 291,
+      "snapshotBytes": 720896,
+      "snapshotCounts": {
+        "User": 2,
+        "Project": 1,
+        "Scan": 1,
+        "Finding": 1,
+        "AuditEvent": 6
+      },
+      "archiveCreationMs": 99,
+      "archiveVerificationMs": 77,
+      "accountsQuarantined": 2,
+      "accountsReactivated": 1,
+      "retainedFindingsChecked": 1,
+      "laterProjectExcluded": true,
+      "previousSessionRejectedAfterActivation": true,
+      "previousCiCredentialRejected": true,
+      "newCredentialDelivery": true,
+      "recoveredWorkerQueues": [
+        "source",
+        "ai"
+      ],
+      "newRuleFixture": {
+        "positive": 1,
+        "negative": 3,
+        "outcome": "passed"
+      }
+    }
+  ]
+}

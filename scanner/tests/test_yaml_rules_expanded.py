@@ -73,15 +73,19 @@ class TestExpandedYAMLRules:
         total = len(registry.get_all())
         assert total >= 95, f"Expected 95+ rules, got {total}"
 
-    def test_rules_have_either_taint_or_patterns(self):
-        """Each YAML rule should have either taint spec or pattern spec."""
+    def test_rules_have_an_executable_detector(self):
+        """Each loaded rule must provide an evaluator for its findings."""
         if not RULES_DIR.exists():
             pytest.skip("rules/ directory not found")
 
         rules = load_yaml_rules(RULES_DIR)
         for rule in rules:
-            has_detection = rule.spec.taint is not None or len(rule.spec.patterns) > 0
-            assert has_detection, f"Rule {rule.definition.id} has neither taint nor patterns"
+            semantic = rule.spec.semantic
+            assert (
+                rule.spec.taint is not None
+                or rule.spec.patterns
+                or (semantic and semantic.is_executable)
+            ), f"Rule {rule.definition.id} has no executable detector"
 
     def test_no_duplicate_rule_ids(self):
         """All rule IDs should be unique."""

@@ -1,0 +1,159 @@
+{
+  "wrangler": "4.166.0",
+  "wranglerCliSha256": "0d064b8bde1073900f1337aec71c76732007fe1408a2654dda99f9ffe51bd873",
+  "comparisonScriptSha256": "845ece9a9a4803b79a39530f285118fea01b6140a08d8c81ab9d7ffea3ff3b30",
+  "fixtureSha256": "f1805c81c3ab386e1c0f9b02db3e058e0ad22b31dd25affb4f6879fd89f7de38",
+  "scannerVersion": "0.3.0b1",
+  "scopesRead": 58,
+  "cases": 29,
+  "expectedFindings": 10,
+  "expectedClean": 19,
+  "lineAgreement": 29,
+  "results": [
+    {
+      "case": "kv_namespaces-primary-shared",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "kv_namespaces-preview-shared",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "kv_namespaces-preview-isolated",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "kv_namespaces-peer-preview-only",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "kv_namespaces-local-binding",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "kv_namespaces-remote-unspecified",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "kv_namespaces-explicit-peer-account",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "kv_namespaces-sibling-scope",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "kv_namespaces-peer-binding-omitted",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "d1_databases-primary-shared",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "d1_databases-preview-shared",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "d1_databases-preview-isolated",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "d1_databases-peer-preview-only",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "d1_databases-local-binding",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "d1_databases-remote-unspecified",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "d1_databases-explicit-peer-account",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "d1_databases-sibling-scope",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "d1_databases-peer-binding-omitted",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "r2_buckets-primary-shared",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "r2_buckets-preview-shared",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "r2_buckets-preview-isolated",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "r2_buckets-peer-preview-only",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "r2_buckets-local-binding",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "r2_buckets-remote-unspecified",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "r2_buckets-explicit-peer-account",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "r2_buckets-sibling-scope",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "r2_buckets-peer-binding-omitted",
+      "expected": false,
+      "line": null
+    },
+    {
+      "case": "r2_buckets-same-jurisdiction",
+      "expected": true,
+      "line": 11
+    },
+    {
+      "case": "r2_buckets-separate-jurisdictions",
+      "expected": false,
+      "line": null
+    }
+  ]
+}

@@ -29,10 +29,10 @@ export default function RootLayout({
       >
         <SessionProvider>
           <a href="#workspace" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-3">Skip to workspace</a>
-          <div className="flex h-dvh">
+          <div className="flex h-dvh flex-col md:flex-row">
             <Sidebar />
-            <main id="workspace" className="min-w-0 flex-1 overflow-auto">
-              <div className="mx-auto max-w-[1920px] p-4 md:p-7">{children}</div>
+            <main id="workspace" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-auto">
+              <div className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">{children}</div>
             </main>
           </div>
         </SessionProvider>

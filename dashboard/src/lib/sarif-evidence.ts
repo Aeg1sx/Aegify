@@ -22,6 +22,7 @@ interface RunProperties {
   analyzedFiles?: unknown;
   sourceIdentityVersion?: unknown;
   analyzedSources?: unknown;
+  taintAnalysis?: unknown;
 }
 
 export interface ScanHealth {
@@ -34,6 +35,48 @@ export interface ScanHealth {
   analyzedSources?: Array<{ repositoryId: string; modulePath: string; filePath: string }>;
 }
 
+export interface ScanCoverage {
+  scope: ScanHealth["scope"];
+  files: number | null;
+  rules: number | null;
+  gaps: number | null;
+}
+
+const diagnosticLimit = 100;
+
+function recordedTaintLimit(summary: Record<string, unknown>, reached: unknown[]): string {
+  const warnings = Array.isArray(summary.warnings) ? summary.warnings.slice(0, diagnosticLimit) : [];
+  const contexts = summary.context_limit ?? summary.contexts_analyzed;
+  const passes = summary.iterations;
+  const messages: string[] = [];
+  if (typeof contexts === "number" && Number.isSafeInteger(contexts) && contexts > 0 &&
+      ((reached.includes("contexts") && summary.context_limit === contexts) ||
+       warnings.includes(`global taint hit the ${contexts}-context bound`))) {
+    messages.push(`Data flow reached its limit of ${contexts.toLocaleString("en-US")} call ${contexts === 1 ? "context" : "contexts"}. Additional call contexts could not be analyzed.`);
+  }
+  if (typeof passes === "number" && Number.isSafeInteger(passes) && passes > 0 &&
+      ((reached.includes("iterations") && summary.iteration_limit === passes) ||
+       warnings.includes(`global taint fixed point hit the ${passes}-iteration bound`))) {
+    messages.push(`Data flow stopped after ${passes.toLocaleString("en-US")} ${passes === 1 ? "pass" : "passes"} while results were still changing.`);
+  }
+  return messages.join(" ") || "Data flow reached an analysis limit.";
+}
+
+/** Keep artifact counts for exports without copying paths or diagnostic text. */
+export function scanCoverageForRun(health: ScanHealth, run?: RunProperties, invocation?: RunProperties): ScanCoverage {
+  function inventory(raw: unknown, normalized: string[]): number | null {
+    return normalized.length || (Array.isArray(raw) && raw.length === 0 ? 0 : null);
+  }
+  const rawGaps = run?.analysisGaps ?? invocation?.analysisGaps;
+  const overflow = Array.isArray(rawGaps) ? Math.max(0, rawGaps.length - diagnosticLimit) : 0;
+  return {
+    scope: health.scope,
+    files: inventory(run?.analyzedFiles, health.analyzedFiles),
+    rules: inventory(run?.evaluatedRules, health.evaluatedRules),
+    gaps: health.gaps.length || Array.isArray(rawGaps) ? health.gaps.length + overflow : null,
+  };
+}
+
 export function scanHealthForRun(
   runProperties?: RunProperties,
   invocation?: { executionSuccessful?: unknown; properties?: RunProperties },
@@ -43,7 +86,7 @@ export function scanHealthForRun(
   const scope = runProperties?.analysisScope;
   const gaps: ScanHealth["gaps"] = [];
   if (Array.isArray(rawGaps)) {
-    for (const raw of rawGaps.slice(0, 100)) {
+    for (const raw of rawGaps.slice(0, diagnosticLimit)) {
       const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
       gaps.push({
         code: typeof item.code === "string" ? item.code.slice(0, 100) : "invalid_diagnostic",
@@ -54,6 +97,16 @@ export function scanHealthForRun(
     }
   } else if (rawGaps !== undefined) {
     gaps.push({ code: "invalid_diagnostics", stage: "import", message: "Malformed scan diagnostics", affected_count: 1 });
+  }
+  const taint = runProperties?.taintAnalysis;
+  if (taint && typeof taint === "object") {
+    const summary = taint as Record<string, unknown>;
+    const reached = Array.isArray(summary.limits_reached) ? summary.limits_reached : [];
+    if (summary.truncated === true || reached.includes("contexts") || reached.includes("iterations")) {
+      const gap = gaps.find((item) => item.code === "taint_limit" && item.stage === "taint");
+      if (!gap) gaps.push({ code: "taint_limit", stage: "taint", message: recordedTaintLimit(summary, reached), affected_count: 1 });
+      else if (gap.message === "Taint analysis reached its configured bound") gap.message = recordedTaintLimit(summary, reached);
+    }
   }
   const rules = runProperties?.evaluatedRules;
   const evaluatedRules = Array.isArray(rules) && rules.length <= 10_000 && rules.every((rule) => typeof rule === "string" && /^[A-Z][A-Z0-9-]{1,127}$/.test(rule))
@@ -194,4 +247,14 @@ export function normalizeSourceSnippet(location?: { region?: SnippetRegion; cont
   const end = region?.endLine ?? region?.startLine;
   const known = positiveLine(region?.startLine) && positiveLine(end) && count <= end - region.startLine + 1;
   return { codeSnippet: text, snippetStartLine: known ? region!.startLine! : null };
+}
+
+/** Keep the reported line of an explicitly located flow excerpt. */
+export function flowLineExcerpt(location?: { region?: SnippetRegion; contextRegion?: SnippetRegion }): string | undefined {
+  const line = location?.region?.startLine;
+  if (!line) return;
+  const { codeSnippet, snippetStartLine } = normalizeSourceSnippet(location);
+  if (snippetStartLine === null || !codeSnippet) return;
+  const excerpt = codeSnippet.replace(/\r\n/g, "\n").split("\n")[line - snippetStartLine];
+  if (excerpt?.trim() && excerpt.length <= 4096) return excerpt;
 }

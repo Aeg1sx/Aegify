@@ -1,0 +1,2101 @@
+{
+  "schema_version": 1,
+  "comparison": "owasp-python-paired-v1",
+  "mode": "no_case_regressions",
+  "baseline_artifact_digest": "sha256:0943a73135473c41ed9f07e6dd4471da593730d943f0ea01f5ab34089cfe6b8b",
+  "candidate_artifact_digest": "sha256:689ed0f562e9dadf86babcfc04b18e69e3d26bd8b12b8c318c6f55a238cd4b29",
+  "input_identity": {
+    "corpus_digest": "sha256:19f1fab3f5ba12d14f2f59cbdebafb930e32f55d2d9c959079798c23a3ddc3c8",
+    "ground_truth_digest": "sha256:6396f37c97cfd0c018db3d8750095ce6c678a083f83620cfb3e88fe27a46bb0c",
+    "config_digest": "sha256:14a4dd88d1b04d08bc96224da6fc18e58a5f2ee3b69e1fc0290995c6d4aae1d6",
+    "case_identity_digest": "sha256:bfff7f093ee0fcc897410870dcbd3b93d1d21c254ada6e95b68a53bfd179707f"
+  },
+  "implementation_changes": [
+    "bundled_rules_digest",
+    "parser_fingerprint",
+    "rule_definitions_digest",
+    "scanner_code_and_modelpacks_digest",
+    "evaluated_rules"
+  ],
+  "identical_replay": false,
+  "regression_free": true,
+  "evaluation_complete": true,
+  "exit_code": 0,
+  "coverage_lost": [],
+  "coverage_gained": [],
+  "baseline_unscored_findings": {
+    "different_cwe": 9396,
+    "outside_labeled_case": 12
+  },
+  "candidate_unscored_findings": {
+    "different_cwe": 9460,
+    "outside_labeled_case": 12
+  },
+  "channels": {
+    "all_candidates": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 236,
+        "false_positives": 98,
+        "false_negatives": 216,
+        "true_negatives": 680,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7065868263473054,
+        "recall": 0.5221238938053098,
+        "f1": 0.6005089058524173,
+        "accuracy": 0.7447154471544716,
+        "false_positive_rate": 0.12596401028277635,
+        "balanced_accuracy": 0.6980799417612666,
+        "mcc": 0.4294397812974913,
+        "precision_wilson_95": [
+          0.6556282306435247,
+          0.7528473912701318
+        ],
+        "recall_wilson_95": [
+          0.4760821862493586,
+          0.5677927172132223
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 300,
+        "false_positives": 98,
+        "false_negatives": 152,
+        "true_negatives": 680,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7537688442211056,
+        "recall": 0.6637168141592921,
+        "f1": 0.7058823529411765,
+        "accuracy": 0.7967479674796748,
+        "false_positive_rate": 0.12596401028277635,
+        "balanced_accuracy": 0.7688764019382579,
+        "mcc": 0.5541642434752088,
+        "precision_wilson_95": [
+          0.7091508795448199,
+          0.7935349323990756
+        ],
+        "recall_wilson_95": [
+          0.6189456282976905,
+          0.7057286573254081
+        ]
+      },
+      "transitions": {
+        "fn->fn": 152,
+        "fn->tp": 64,
+        "fp->fp": 98,
+        "tn->tn": 680,
+        "tp->tp": 236
+      },
+      "improved_cases": [
+        "BenchmarkTest00025",
+        "BenchmarkTest00026",
+        "BenchmarkTest00027",
+        "BenchmarkTest00028",
+        "BenchmarkTest00114",
+        "BenchmarkTest00115",
+        "BenchmarkTest00116",
+        "BenchmarkTest00218",
+        "BenchmarkTest00219",
+        "BenchmarkTest00220",
+        "BenchmarkTest00221",
+        "BenchmarkTest00305",
+        "BenchmarkTest00306",
+        "BenchmarkTest00307",
+        "BenchmarkTest00308",
+        "BenchmarkTest00381",
+        "BenchmarkTest00382",
+        "BenchmarkTest00383",
+        "BenchmarkTest00384",
+        "BenchmarkTest00473",
+        "BenchmarkTest00474",
+        "BenchmarkTest00475",
+        "BenchmarkTest00556",
+        "BenchmarkTest00557",
+        "BenchmarkTest00558",
+        "BenchmarkTest00559",
+        "BenchmarkTest00560",
+        "BenchmarkTest00621",
+        "BenchmarkTest00622",
+        "BenchmarkTest00623",
+        "BenchmarkTest00624",
+        "BenchmarkTest00625",
+        "BenchmarkTest00626",
+        "BenchmarkTest00688",
+        "BenchmarkTest00689",
+        "BenchmarkTest00765",
+        "BenchmarkTest00766",
+        "BenchmarkTest00767",
+        "BenchmarkTest00768",
+        "BenchmarkTest00769",
+        "BenchmarkTest00770",
+        "BenchmarkTest00771",
+        "BenchmarkTest00772",
+        "BenchmarkTest00859",
+        "BenchmarkTest00860",
+        "BenchmarkTest00861",
+        "BenchmarkTest00862",
+        "BenchmarkTest00863",
+        "BenchmarkTest00945",
+        "BenchmarkTest00946",
+        "BenchmarkTest00947",
+        "BenchmarkTest00948",
+        "BenchmarkTest00949",
+        "BenchmarkTest01040",
+        "BenchmarkTest01041",
+        "BenchmarkTest01042",
+        "BenchmarkTest01043",
+        "BenchmarkTest01044",
+        "BenchmarkTest01045",
+        "BenchmarkTest01126",
+        "BenchmarkTest01127",
+        "BenchmarkTest01128",
+        "BenchmarkTest01176",
+        "BenchmarkTest01185"
+      ],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.047182017873800164,
+        "recall": 0.1415929203539823,
+        "f1": 0.10537344708875918,
+        "accuracy": 0.052032520325203224,
+        "false_positive_rate": 0.0,
+        "mcc": 0.12472446217771749
+      }
+    },
+    "advisory": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 210,
+        "false_positives": 80,
+        "false_negatives": 242,
+        "true_negatives": 698,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7241379310344828,
+        "recall": 0.4646017699115044,
+        "f1": 0.5660377358490566,
+        "accuracy": 0.7382113821138211,
+        "false_positive_rate": 0.10282776349614396,
+        "balanced_accuracy": 0.6808870032076803,
+        "mcc": 0.41089745333103866,
+        "precision_wilson_95": [
+          0.6700205721512081,
+          0.772394873653285
+        ],
+        "recall_wilson_95": [
+          0.41911443676723925,
+          0.5106857176926313
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 274,
+        "false_positives": 80,
+        "false_negatives": 178,
+        "true_negatives": 698,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7740112994350282,
+        "recall": 0.6061946902654868,
+        "f1": 0.6799007444168734,
+        "accuracy": 0.7902439024390244,
+        "false_positive_rate": 0.10282776349614396,
+        "balanced_accuracy": 0.7516834633846714,
+        "mcc": 0.5360311262838375,
+        "precision_wilson_95": [
+          0.7276369390934678,
+          0.8145025900693863
+        ],
+        "recall_wilson_95": [
+          0.5604381994358233,
+          0.650161337184565
+        ]
+      },
+      "transitions": {
+        "fn->fn": 178,
+        "fn->tp": 64,
+        "fp->fp": 80,
+        "tn->tn": 698,
+        "tp->tp": 210
+      },
+      "improved_cases": [
+        "BenchmarkTest00025",
+        "BenchmarkTest00026",
+        "BenchmarkTest00027",
+        "BenchmarkTest00028",
+        "BenchmarkTest00114",
+        "BenchmarkTest00115",
+        "BenchmarkTest00116",
+        "BenchmarkTest00218",
+        "BenchmarkTest00219",
+        "BenchmarkTest00220",
+        "BenchmarkTest00221",
+        "BenchmarkTest00305",
+        "BenchmarkTest00306",
+        "BenchmarkTest00307",
+        "BenchmarkTest00308",
+        "BenchmarkTest00381",
+        "BenchmarkTest00382",
+        "BenchmarkTest00383",
+        "BenchmarkTest00384",
+        "BenchmarkTest00473",
+        "BenchmarkTest00474",
+        "BenchmarkTest00475",
+        "BenchmarkTest00556",
+        "BenchmarkTest00557",
+        "BenchmarkTest00558",
+        "BenchmarkTest00559",
+        "BenchmarkTest00560",
+        "BenchmarkTest00621",
+        "BenchmarkTest00622",
+        "BenchmarkTest00623",
+        "BenchmarkTest00624",
+        "BenchmarkTest00625",
+        "BenchmarkTest00626",
+        "BenchmarkTest00688",
+        "BenchmarkTest00689",
+        "BenchmarkTest00765",
+        "BenchmarkTest00766",
+        "BenchmarkTest00767",
+        "BenchmarkTest00768",
+        "BenchmarkTest00769",
+        "BenchmarkTest00770",
+        "BenchmarkTest00771",
+        "BenchmarkTest00772",
+        "BenchmarkTest00859",
+        "BenchmarkTest00860",
+        "BenchmarkTest00861",
+        "BenchmarkTest00862",
+        "BenchmarkTest00863",
+        "BenchmarkTest00945",
+        "BenchmarkTest00946",
+        "BenchmarkTest00947",
+        "BenchmarkTest00948",
+        "BenchmarkTest00949",
+        "BenchmarkTest01040",
+        "BenchmarkTest01041",
+        "BenchmarkTest01042",
+        "BenchmarkTest01043",
+        "BenchmarkTest01044",
+        "BenchmarkTest01045",
+        "BenchmarkTest01126",
+        "BenchmarkTest01127",
+        "BenchmarkTest01128",
+        "BenchmarkTest01176",
+        "BenchmarkTest01185"
+      ],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.04987336840054546,
+        "recall": 0.14159292035398235,
+        "f1": 0.11386300856781684,
+        "accuracy": 0.052032520325203335,
+        "false_positive_rate": 0.0,
+        "mcc": 0.12513367295279887
+      }
+    },
+    "blocking": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 41,
+        "false_positives": 29,
+        "false_negatives": 411,
+        "true_negatives": 749,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.5857142857142857,
+        "recall": 0.09070796460176991,
+        "f1": 0.15708812260536398,
+        "accuracy": 0.6422764227642277,
+        "false_positive_rate": 0.037275064267352186,
+        "balanced_accuracy": 0.5267164501672089,
+        "mcc": 0.11119614971027778,
+        "precision_wilson_95": [
+          0.46881211784560456,
+          0.6936982143126353
+        ],
+        "recall_wilson_95": [
+          0.06756821609176616,
+          0.12074606985048725
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 41,
+        "false_positives": 29,
+        "false_negatives": 411,
+        "true_negatives": 749,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.5857142857142857,
+        "recall": 0.09070796460176991,
+        "f1": 0.15708812260536398,
+        "accuracy": 0.6422764227642277,
+        "false_positive_rate": 0.037275064267352186,
+        "balanced_accuracy": 0.5267164501672089,
+        "mcc": 0.11119614971027778,
+        "precision_wilson_95": [
+          0.46881211784560456,
+          0.6936982143126353
+        ],
+        "recall_wilson_95": [
+          0.06756821609176616,
+          0.12074606985048725
+        ]
+      },
+      "transitions": {
+        "fn->fn": 411,
+        "fp->fp": 29,
+        "tn->tn": 749,
+        "tp->tp": 41
+      },
+      "improved_cases": [],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "false_positive_rate": 0.0,
+        "mcc": 0.0
+      }
+    }
+  },
+  "changed_cases": [
+    {
+      "case": "BenchmarkTest00025",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00026",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00027",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00028",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00114",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00115",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00116",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00218",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00219",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00220",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00221",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00305",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00306",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00307",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00308",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00381",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00382",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00383",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00384",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00473",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00474",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00475",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00556",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00557",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00558",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00559",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00560",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00621",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00622",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00623",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00624",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00625",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00626",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00688",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00689",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00765",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00766",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00767",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00768",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00769",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00770",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00771",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00772",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00859",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00860",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00861",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00862",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00863",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00945",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00946",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00947",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00948",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00949",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01040",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01041",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01042",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01043",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01044",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01045",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01126",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01127",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01128",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01176",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01185",
+      "cwe": 330,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CRYPTO-002"
+        ],
+        "matched_finding_count": 1
+      }
+    }
+  ],
+  "limitations": [
+    "Internal consistency and paired change only; no independent label adjudication.",
+    "Public synthetic cases are not held-out production or live AI evaluation.",
+    "Identical replay excludes timing/RSS and does not prove performance equivalence.",
+    "Digests identify supplied artifacts; they do not authenticate their authors.",
+    "No significance claim or independent-sample assumption for related templates.",
+    "A regression-free comparison is not an absolute precision/recall release gate."
+  ]
+}

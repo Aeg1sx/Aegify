@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { captureReviewSources, executeSourceTool, parseSourceToolRequest, SOURCE_TOOL_LIMITS, validateReviewSources } from "./ai-source-tools.ts";
 import { sourceDigest } from "./source-snapshot.ts";
 import { emptySourceSession, finalizeSourceReview, parseSourceResponse, runSourceRequests, saveSourceEvidence, sourceReviewPrompt, validateSavedSourceEvidence } from "./ai-source-review.ts";
-import { packSnapshot, reviewSystem, type ReviewResult, type ReviewSnapshot } from "./ai-review-contract.ts";
+import { batchPrompt, packSnapshot, reviewSystem, type ReviewResult, type ReviewSnapshot } from "./ai-review-contract.ts";
 import { sanitizeLLMSourceText } from "./llm-safety.ts";
 
 const hex = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -20,6 +20,54 @@ function snapshot(): ReviewSnapshot {
 }
 const result: ReviewResult = { findingId: "finding", verdict: "likely_false_positive", confidence: 0.8, reasoning: "Owned static fixture.", remediation: "Review caller constraints.", adjustedSeverity: "low", evidenceFor: [], evidenceAgainst: ["A static guard was read."], evidenceGaps: [] };
 
+test("Wrangler manifests stay out of model source tools and restored catalogs", () => {
+  const { sources } = catalog({
+    "wrangler.json": "owned-config-marker", "apps/api/wrangler.jsonc": "owned-config-marker",
+    "work/wrangler.toml": "owned-config-marker", "main.py": "value = 2",
+  });
+  assert.deepEqual(sources.files.map((file) => file.path), ["main.py"]);
+  assert.equal(sources.omittedFiles, 3);
+  assert.equal(sources.truncated, true);
+  assert.ok(!JSON.stringify(sources).includes("owned-config-marker"));
+  assert.equal(validateReviewSources(sources), sources);
+  assert.throws(() => validateReviewSources({ ...sources, files: [{ ...sources.files[0], path: "old/wrangler.toml" }] }), /withheld/);
+});
+
+test("quick, deep and source prompts withhold raw configuration in older finding records", () => {
+  const marker = "owned-private-configuration-value";
+  const review = snapshot();
+  const item = { ...review.findings[0], data: { filePath: "app/wrangler.toml", lineStart: 7, ruleId: "EXT-001",
+    codeSnippet: 'PASSWORD = "' + marker + '"', message: marker, defenseContext: marker }, apiContractContext: marker };
+  for (const mode of ["quick", "deep", "source"] as const) {
+    const prompt = batchPrompt({ ...review, mode, findings: [item], graphContext: { data: marker, omitted: 0 } }, [item.id]);
+    assert.ok(!prompt.includes(marker));
+    const record = JSON.parse(prompt).findings[0];
+    assert.equal(record.data.lineStart, 7);
+    assert.ok(record.omittedFields.includes("codeSnippet"));
+    assert.ok(record.omittedFields.includes("message"));
+    assert.equal(record.apiContractContext, null);
+    assert.equal(JSON.parse(prompt).graphContext, null);
+  }
+  const storage = "env.qa.d1_databases[1].remote = true (line 8), preview_database_id (line 7) matches default.d1_databases[0].database_id (line 4)";
+  const preview = "default.previews.queues.producers[0].queue (line 8) matches env.qa.queues.producers[1].queue (line 6)";
+  for (const unsafe of [storage + "\n", storage.replace("preview_database_id", marker),
+    storage.replace("default.d1_databases", "default.kv_namespaces"), storage.replace("preview_database_id", "id"),
+    preview.replace("default.previews", "env.sibling.previews"), preview.replace(".queue (line", ".bucket_name (line"),
+    preview.replaceAll("queues.producers", "queuesXproducers"), preview + " · " + marker]) {
+    const record = { ...item, data: { ...item.data, codeSnippet: unsafe } };
+    assert.equal(JSON.parse(batchPrompt({ ...review, findings: [record] }, [record.id])).findings[0].data.codeSnippet, undefined);
+  }
+  for (const safe of ["env.staging.vars.PASSWORD = [withheld]", "default.previews.vars.SIGNING_KEY = [withheld]",
+    "default: workers_dev = false (line 4), preview_urls = true (line 6)", storage, preview]) {
+    const record = { ...item, data: { ...item.data, codeSnippet: safe } };
+    for (const mode of ["quick", "deep", "source"] as const) {
+      const retained = JSON.parse(batchPrompt({ ...review, mode, findings: [record] }, [record.id])).findings[0];
+      assert.equal(retained.data.codeSnippet, safe);
+      assert.ok(!JSON.stringify(retained).includes(marker));
+    }
+  }
+});
+
 test("catalog binds repository, commit, bytes and redacted manifest; no altered source is admitted", () => {
   const { input, sources } = catalog();
   assert.equal(validateReviewSources(sources), sources);
@@ -29,6 +77,30 @@ test("catalog binds repository, commit, bytes and redacted manifest; no altered 
   }
   for (const mutate of [() => ({ ...sources, repository: "other/repo" }), () => ({ ...sources, omittedFiles: -1 }),
     () => ({ ...sources, files: [{ ...sources.files[0], content: "changed" }] }), () => ({ ...sources, commit: "" })]) assert.throws(() => validateReviewSources(mutate()));
+});
+
+test("signing key masks bind to the original file bytes and survive catalog recovery", () => {
+  const key = "owned-marker-for-review";
+  const source = `from jose import jwt\r\nmaterial = """${key}\r\nsecond-part"""\r\ndef issue(data): return jwt.encode(data, material, algorithm="HS256")\r\n`;
+  const { input } = catalog({ "auth.py": source, "app.py": "def ready(): return True" });
+  const expected = source.replace(/\r\n/g, "\n").split("\n");
+  expected.fill("[REDACTED_SIGNING_KEY]", 1, 3);
+  const proof = { ranges: [[2, 3]], sha256: hex(expected.join("\n")) };
+  const masks = { [hex(source)]: proof };
+  const captured = captureReviewSources(input, input, [], masks);
+  assert.equal(captured.omittedFiles, 0);
+  const restored = validateReviewSources(JSON.parse(JSON.stringify(captured)));
+  const auth = restored.files.find((file) => file.path === "auth.py")!;
+  assert.equal(auth.content, expected.join("\n"));
+  assert.equal(auth.sourceDigest, "sha256:" + hex(source));
+  assert.ok(!JSON.stringify(restored).includes(key));
+  assert.throws(() => validateReviewSources({ ...restored, files: [{ ...auth, signingKeyReview: undefined }] }));
+  for (const bad of [undefined, {}, { [hex(source)]: { ...proof, ranges: [[3, 3]] } }]) {
+    const unavailable = captureReviewSources(input, input, [], bad);
+    assert.equal(unavailable.omittedFiles, 1);
+    assert.equal(unavailable.unverifiedSigningKeyFiles, 1);
+    assert.deepEqual(unavailable.files.map((file) => file.path), ["app.py"]);
+  }
 });
 
 test("credential redaction preserves original source line numbers including multiline credentials", () => {
@@ -116,4 +188,48 @@ test("round, tool, prompt and evidence ceilings are enforced before further sour
   for (const raw of [response.replace('"finding"', '"invented"'), JSON.stringify({ kind: "tools", requests: [] }), JSON.stringify({ kind: "tools", requests: [request], extra: true }), "[]", "not json"])
     assert.throws(() => parseSourceResponse(raw, ["finding"]));
   assert.equal(SOURCE_TOOL_LIMITS.calls, 8);
+});
+
+test("source verdicts require contiguous cited coverage, matching snapshot bytes and directional evidence", () => {
+  const snap = snapshot();
+  snap.sources = catalog({ "main.py": "first\nmiddle\nlast\n" }).sources;
+  snap.findings[0].data.lineEnd = 3;
+  const session = emptySourceSession();
+  const read = (line: number) => {
+    const request = parseSourceToolRequest({ name: "source_read", arguments: {
+      file_id: snap.sources!.files[0].id, line_start: line, line_end: line,
+    } });
+    const [span] = runSourceRequests(snap, session, [request]);
+    session.spans.push(span);
+    return (span.evidence.citation as { citation_id: string }).citation_id;
+  };
+  const citations = [read(3), read(1)];
+  const finalize = (row = result) => finalizeSourceReview(snap, ["finding"], session, {
+    results: [row], citationIds: { finding: citations },
+  }).results[0];
+  assert.equal(finalize().verdict, "needs_review");
+  citations.push(read(2));
+  assert.equal(finalize().verdict, "likely_false_positive");
+  assert.equal(finalize({ ...result, evidenceAgainst: [" "] }).verdict, "needs_review");
+  assert.equal(finalize({ ...result, verdict: "likely_true_positive" }).verdict, "needs_review");
+  snap.sources = catalog({ "main.py": "first\nchanged\nlast\n" }).sources;
+  assert.throws(() => finalize());
+});
+
+test("a positive flow review requires citations for the recorded origin and the reported location", () => {
+  const snap = snapshot();
+  snap.findings[0].data.taintFlow = JSON.stringify([{ file: "lib/helper.py", line: 2, message: "source: value" }]);
+  const session = emptySourceSession();
+  const requests = ["main.py", "lib/helper.py"].map((path) => parseSourceToolRequest({
+    name: "source_read", arguments: { file_id: snap.sources!.files.find((f) => f.path === path)!.id, line_start: 1, line_end: 2 },
+  }));
+  session.spans = runSourceRequests(snap, session, requests);
+  const ids = session.spans.map((s) => (s.evidence.citation as { citation_id: string }).citation_id);
+  const positive = { ...result, verdict: "likely_true_positive" as const, evidenceFor: ["Recorded input reaches the operation."] };
+  const finalize = (citations: string[]) => finalizeSourceReview(snap, ["finding"], session, {
+    results: [positive], citationIds: { finding: citations },
+  }).results[0];
+  assert.equal(finalize(ids.slice(0, 1)).verdict, "needs_review");
+  assert.equal(finalize(ids.slice(1)).verdict, "needs_review");
+  assert.equal(finalize(ids).verdict, "likely_true_positive");
 });

@@ -47,19 +47,21 @@ rules:
       hostnames instead of '*' to prevent Host header injection attacks.
 
   - id: AEG-A05-004
-    name: XML External Entity (XXE) Processing Enabled
+    name: XML Parser Configuration Review
     description: >
-      XML parser is configured to process external entities or DTDs, enabling
-      XXE attacks. Attackers can read local files, perform SSRF, or cause
-      denial of service via entity expansion (billion laughs attack).
+      Review how this XML parser handles external entities. Python SAX and DOM
+      advisories identify an enabled feature or an unresolved supplied parser.
+      Check the document source and the effective parser configuration.
     severity: high
     confidence: 0.85
     languages: [python, javascript, java, go]
     cwe_id: 611
     owasp_category: "A05:2021-Security Misconfiguration"
     defense_patterns: ["defusedxml", "resolve_entities=False", "FEATURE_SECURE_PROCESSING", "disallow-doctype-decl", "NoEntityResolver"]
+    semantic:
+      kind: python_xml_configuration
     patterns:
-      - callee: "(etree\\.parse|etree\\.fromstring|etree\\.iterparse|minidom\\.parse|minidom\\.parseString|sax\\.parse)"
+      - callee: "(etree\\.parse|etree\\.fromstring|etree\\.iterparse)"
         args_match: ".*"
       - callee: "(xml2js\\.parseString|DOMParser|XMLReader|SAXParser)"
         args_match: ".*"

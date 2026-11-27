@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 from aegify import __version__
-from aegify.models import Finding, ScanResult, Severity
+from aegify.models import Finding, ScanResult, Severity, TaintFlow
 
 # SARIF severity mapping
 SEVERITY_MAP: dict[Severity, str] = {
@@ -519,8 +519,8 @@ class SARIFReporter:
         }
 
         # Add code flows if taint flow exists
-        if finding.taint_flow and finding.taint_flow.path:
-            code_flow = self._build_code_flow(finding)
+        if finding.taint_flow:
+            code_flow = self._build_code_flow(finding.taint_flow)
             if code_flow:
                 result["codeFlows"] = [code_flow]
 
@@ -567,26 +567,35 @@ class SARIFReporter:
 
         return result
 
-    def _build_code_flow(self, finding: Finding) -> dict[str, Any] | None:
-        """Build SARIF codeFlow from taint path."""
-        if not finding.taint_flow or not finding.taint_flow.path:
-            return None
-
+    def _build_code_flow(self, flow: TaintFlow) -> dict[str, Any] | None:
+        """Carry recorded endpoints even for flows with no intermediate steps."""
+        steps = [
+            (step.propagation_type, step.file_path, step.line, step.variable) for step in flow.path
+        ]
+        source = ("source", flow.source.file_path, flow.source.line, flow.source.variable)
+        sink = ("sink", flow.sink.file_path, flow.sink.line, flow.sink.function)
+        if not steps or steps[0][:3] != source[:3]:
+            steps.insert(0, source)
+        if steps[-1][:3] != sink[:3]:
+            steps.append(sink)
         locations: list[dict[str, Any]] = []
-        for step in finding.taint_flow.path:
+        for role, path, line, value in steps:
+            if not path or line < 1:
+                continue
             locations.append(
                 {
+                    **({"kinds": [role]} if role in ("source", "sink") else {}),
                     "location": {
                         "physicalLocation": {
                             "artifactLocation": {
-                                "uri": quote(step.file_path, safe="/"),
+                                "uri": quote(path, safe="/"),
                                 "uriBaseId": "%WORKDIR%",
                             },
-                            "region": {"startLine": step.line},
+                            "region": {"startLine": line},
                         },
-                        "message": {"text": f"{step.propagation_type}: {step.variable}"},
-                    }
+                        "message": {"text": f"{role}: {value}"},
+                    },
                 }
             )
 
-        return {"threadFlows": [{"locations": locations}]}
+        return {"threadFlows": [{"locations": locations}]} if locations else None

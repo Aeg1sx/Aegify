@@ -322,6 +322,13 @@ test("repository and rule namespaces isolate producer hashes and checkout-indepe
     analyzedFiles: ["/checkout/new/src/app.py", "/checkout/b/src/app.py"],
   } }] };
   await importSarif(db, legacyEmpty, context);
+  const incomplete = { ...empty, runs: [{ ...empty.runs[0], properties: {
+    ...empty.runs[0].properties, taintAnalysis: { truncated: true },
+  } }] };
+  const incompleteReceipt = await importSarif(db, incomplete, context);
+  assert.equal(incompleteReceipt.status, "partial");
+  assert.equal((await db.findingIdentity.findUniqueOrThrow({ where: { id: firstFinding.identityId } })).absentAt, null);
+  assert.equal((await db.finding.findUniqueOrThrow({ where: { id: firstFinding.id } })).isCurrent, true);
   assert.equal(await db.finding.count({ where: { isCurrent: true } }), 3, "An unqualified legacy inventory cannot erase known repository scopes");
   const invalid = structuredClone(empty);
   invalid.runs[0].properties.analyzedSources.push({ ...invalid.runs[0].properties.analyzedSources[0], repositoryId: "service-b" });

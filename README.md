@@ -23,13 +23,30 @@ need source-grounded triage and remediation suggestions.
 
 ![Aegify dashboard overview using demo scan data](docs/assets/aegify-dashboard.png)
 
-*Dashboard preview with demo scan data.*
+*Expand a priority finding to see its source and owner. Select the file to open the recorded evidence. The example uses synthetic scan data.* [Mobile overview](docs/assets/aegify-dashboard-mobile.png) · [Dark appearance](docs/assets/aegify-dashboard-dark.png)
+
+| Review screen | Desktop | Mobile |
+|---|---|---|
+| Import a report and check its scan coverage | [Desktop receipt](docs/assets/aegify-import-desktop.png) | [Mobile receipt](docs/assets/aegify-import-mobile.png) |
+| AI review setup and recent runs | [Desktop setup](docs/assets/aegify-review-setup-desktop.png) | [Mobile setup](docs/assets/aegify-review-setup-mobile.png) |
+| Edit a provider and inspect the saved connection | [Desktop settings](docs/assets/aegify-workspace-settings-desktop.png) | [Mobile settings](docs/assets/aegify-workspace-settings-mobile.png) |
+| Projects and their latest scan | [Desktop projects](docs/assets/aegify-projects-desktop.png) | [Mobile projects](docs/assets/aegify-projects-mobile.png) |
+| Project revisions and current findings | [Desktop project record](docs/assets/aegify-project-record-desktop.png) | [Mobile project record](docs/assets/aegify-project-record-mobile.png) |
+| Finding and source evidence | [Desktop finding](docs/assets/aegify-findings-desktop.png) | [Mobile finding](docs/assets/aegify-findings-mobile.png) |
+| Follow a flow across files and inspect a recorded source line | [Desktop flow](docs/assets/aegify-flow-excerpt-desktop.png) | [Mobile flow](docs/assets/aegify-flow-excerpt-mobile.png) |
+| Triage decision and earlier scan record | [Desktop report](docs/assets/aegify-report-desktop.png) | [Mobile report](docs/assets/aegify-report-mobile.png) |
+| Cloudflare settings and source lines | [Desktop audit](docs/assets/aegify-cloudflare-desktop.png) | [Mobile audit](docs/assets/aegify-cloudflare-mobile.png) |
+| Call graph and source navigation | [Desktop graph](docs/assets/aegify-call-graph-desktop.png) | [Mobile graph](docs/assets/aegify-call-graph-mobile.png) |
+| Source scan activity and recovery | [Desktop job](docs/assets/aegify-worker-recovery-desktop.png) | [Mobile job](docs/assets/aegify-worker-recovery-mobile.png) |
+| Saved model verdict and reviewed source | [Desktop review](docs/assets/aegify-saved-review-desktop.png) | [Mobile review](docs/assets/aegify-saved-review-mobile.png) |
+| AI analysis and review stages | [Desktop analysis](docs/assets/aegify-agent-analysis-desktop.png) | [Mobile analysis](docs/assets/aegify-agent-analysis-mobile.png) |
 
 ## What you can do
 
 | Workflow | Included capabilities |
 |---|---|
 | **Scan code and inspect evidence** | Eight-language AST parsing, bounded interprocedural taint, call graphs, source locations, analysis gaps, JSON and SARIF output |
+| **Audit Cloudflare configuration** | Compare a Worker Preview with its deployment's KV, D1, R2 and Queue bindings. Review plaintext variables, Worker version URLs and shared remote development storage. Each finding cites its manifest lines. [Wrangler audit](docs/analysis/cloudflare-configuration.mdx) |
 | **Understand larger applications** | Repository-qualified identity, multi-repository workspaces, SCIP import, JVM classpath/bytecode evidence, Spring models, endpoint and frontend/Gateway correlation |
 | **Review findings with AI** | Optional API, Codex and Claude Code adapters; six-role CLI pipeline; bounded source list/search/read tools with citations and retained evidence |
 | **Work as a team** | Project roles, expiring project CI tokens, source scan and AI review queues, cancellation/recovery, finding history, assignment, due dates, tags and audit events |
@@ -142,17 +159,18 @@ generated code, unmodeled libraries and conservative control-flow handling can
 leave gaps. See the [technical architecture](docs/architecture/technical-architecture.mdx)
 and [semantic analysis contract](docs/analysis/semantic-analysis.mdx).
 
-The latest retained public OWASP Benchmark Python measurement scored **1,193
-cases**: **69.58% precision**, **49.54% recall** (215 TP, 94 FP, 219 FN, 665 TN).
-Another 37 CWE-501 cases are unscored, so the overall evaluation remains partial.
-This is a public synthetic case/CWE evaluation, not an independent application
-holdout or a precision estimate for every emitted finding.
-The change removes eight false-positive cases, introduces three, and recovers one
-missed case. The strict no-case-regressions gate remains unmet; aggregate gains
-are not a clean acceptance result.
-[Corpus, case changes and replay instructions](scanner/benchmarks/beta-quality-v1/README.md).
+The development scanner scored **1,230 public OWASP Benchmark Python cases** with
+**89.50% precision and 100% recall** (452 TP, 53 FP, 0 FN, 725 TN).
+Two installed runs agreed on every label. The latest change recovered a Flask
+session write, cleared five reader warnings and introduced one HTML-response
+advisory on a labeled negative. The 90% precision target and independent
+application evaluation remain open. [Case inventory and replay](scanner/benchmarks/python-reader-flows-v1/README.md)
 
-The same acceptance record includes a separately authored Java corpus with 2,740
+The API specification workbench pairs each route’s declared authentication with
+the source handler, its file and lines, and any recorded authentication signal.
+[Desktop and mobile views](docs/operations/api-specifications.mdx#compare-with-a-scan)
+
+The [September acceptance record](scanner/benchmarks/beta-quality-v1/README.md) includes a separately authored Java corpus with 2,740
 upstream labels, a live Codex CLI conformance run (six roles, twelve calls), and
 fresh-process performance tooling. Public benchmarks are not private application
 holdouts, and provider conformance is not AI detection accuracy.

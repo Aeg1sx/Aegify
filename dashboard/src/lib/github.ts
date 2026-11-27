@@ -1,3 +1,4 @@
+import { repositoryPages } from "./repository-pages.ts";
 import { prisma } from "@/lib/prisma";
 
 interface GitHubRepo {
@@ -19,31 +20,8 @@ export async function getGitHubToken(userId: string): Promise<string | null> {
   return account?.access_token || null;
 }
 
-export async function listGitHubRepos(accessToken: string): Promise<GitHubRepo[]> {
-  const repos: GitHubRepo[] = [];
-  let page = 1;
-
-  while (page <= 5) { // Max 5 pages (500 repos)
-    const res = await fetch(
-      `https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&type=all`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: "application/vnd.github.v3+json",
-        },
-      },
-    );
-
-    if (!res.ok) break;
-
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) break;
-
-    repos.push(...data);
-    page++;
-  }
-
-  return repos;
+export function listGitHubRepos(accessToken: string, signal: AbortSignal) {
+  return repositoryPages<GitHubRepo>((page) => `https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&type=all`, { Authorization: `Bearer ${accessToken}`, Accept: "application/vnd.github.v3+json" }, signal);
 }
 
 export async function getGitHubFileContent(

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Finding, FindingIdentity, PrismaClient } from "@prisma/client";
+import type { Finding, FindingIdentity, Prisma, PrismaClient } from "@prisma/client";
 import { writeTransaction } from "./database-runtime.ts";
 import { AccessDenied, authorizeProject, resolvePrincipal, type AccessPrincipal } from "./project-access.ts";
 import type { AuthEnvironment } from "./auth-policy.ts";
@@ -19,14 +19,38 @@ export function findingManagement(value: Management): Management {
     ticketProvider: value.ticketProvider, ticketKey: value.ticketKey, ticketUrl: value.ticketUrl, lastNotifiedAt: value.lastNotifiedAt };
 }
 
-export function findingWorkflow(finding: Finding, identity: FindingIdentity | null) {
+type ObservationDecision = { id: string; actorId: string; status: string; reason: string };
+
+export function findingWorkflow(finding: Finding, identity: FindingIdentity | null, decision?: ObservationDecision) {
   const saved = identity || finding;
   const management = findingManagement(saved);
   const version = identity ? `identity:${identity.id}:${identity.workflowRevision}`
-    : `observation:${createHash("sha256").update(JSON.stringify([finding.id, finding.status, management])).digest("hex")}`;
+    : `observation:${createHash("sha256").update(JSON.stringify([finding.id, finding.status, management, ...(decision ? [decision.id] : [])])).digest("hex")}`;
   return { ...management, status: saved.status, version, scope: identity ? "identity" : "observation",
-    needsReview: identity?.workflowNeedsReview || false, reason: identity?.triageReason || "",
-    actor: identity?.triageActor || "", expiresAt: identity?.triageExpiresAt || null };
+    needsReview: identity?.workflowNeedsReview || false, reason: identity?.triageReason ?? decision?.reason ?? "",
+    actor: identity?.triageActor ?? decision?.actorId ?? "", expiresAt: identity?.triageExpiresAt || null };
+}
+
+export async function readObservationDecision(db: Prisma.TransactionClient, finding: Finding, projectId: string | null) {
+  // Branch observations keep their decisions in the audit trail. Assignment edits
+  // share the action name, so select the latest status decision for this exact record.
+  const [last] = await db.$queryRaw<ObservationDecision[]>`
+    SELECT id, actorId, json_extract(details, '$.toStatus') AS status,
+           json_extract(details, '$.reason') AS reason
+    FROM AuditEvent
+    WHERE targetId = ${finding.id} AND action = 'finding.workflow.updated' AND projectId IS ${projectId}
+      AND CASE WHEN json_valid(details) THEN
+        json_extract(details, '$.scope') = 'observation'
+        AND json_extract(details, '$.findingId') = ${finding.id}
+        AND json_type(details, '$.toStatus') = 'text'
+      ELSE 0 END
+    ORDER BY createdAt DESC, rowid DESC LIMIT 1`;
+  return last?.status === finding.status && typeof last.reason === "string" ? last : undefined;
+}
+
+export async function readFindingWorkflow(db: Prisma.TransactionClient, finding: Finding, identity: FindingIdentity | null, projectId: string | null) {
+  const decision = identity || finding.identityId ? undefined : await readObservationDecision(db, finding, projectId);
+  return findingWorkflow(finding, identity, decision);
 }
 
 interface WorkflowPatch {
@@ -92,7 +116,7 @@ export async function updateFindingWorkflow(db: PrismaClient, principal: AccessP
     if (projectId && (await authorizeProject(tx, currentPrincipal, projectId, "triager")).archived) throw new FindingWorkflowError("Archived projects are read only.", 409);
     const identity = finding.identityId ? await tx.findingIdentity.findFirst({ where: { id: finding.identityId, projectId: projectId || "" } }) : null;
     if (finding.identityId && !identity) throw new FindingWorkflowError("Finding history is unavailable; review its project linkage.", 409);
-    const before = findingWorkflow(finding, identity);
+    const before = await readFindingWorkflow(tx, finding, identity, projectId);
     if (patch.expectedVersion !== before.version) throw new FindingWorkflowError("This finding was updated by another action. Reload it before saving.", 409);
     if (!identity && patch.expiresAt) throw new FindingWorkflowError("Time-bounded triage requires a default-branch finding identity.");
     const actorId = currentPrincipal.userId || "development";
@@ -118,7 +142,7 @@ export async function updateFindingWorkflow(db: PrismaClient, principal: AccessP
     } });
     const updated = await tx.finding.findUniqueOrThrow({ where: { id: finding.id } });
     const updatedIdentity = identity ? await tx.findingIdentity.findUniqueOrThrow({ where: { id: identity.id } }) : null;
-    return { ...updated, workflow: findingWorkflow(updated, updatedIdentity) };
+    return { ...updated, workflow: await readFindingWorkflow(tx, updated, updatedIdentity, projectId) };
   });
 }
 

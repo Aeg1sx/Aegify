@@ -1,3 +1,4 @@
+import { WORKER_FRESH_MS } from "@/lib/worker-registry";
 import { requireAccess, scanScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -17,6 +18,6 @@ export async function GET(request: NextRequest) {
     orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: rawLimit,
     select: { ...llmJobMetadata, scan: { select: { id: true, repository: true, branch: true } } },
   });
-  const workerReady = (await prisma.llmWorker.count({ where: { lastSeenAt: { gt: new Date(Date.now() - 45_000) } } })) > 0;
+  const workerReady = (await prisma.llmWorker.count({ where: { lastSeenAt: { gt: new Date(Date.now() - WORKER_FRESH_MS) } } })) > 0;
   return NextResponse.json({ jobs, workerReady }, { headers: { "Cache-Control": "no-store" } });
 }

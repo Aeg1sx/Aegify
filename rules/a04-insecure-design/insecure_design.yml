@@ -101,9 +101,9 @@ rules:
     owasp_category: "A04:2021-Insecure Design"
     defense_patterns: ["url_has_allowed_host_and_scheme", "is_safe_url", "validate_redirect", "allowlist", "whitelist", "urlparse"]
     taint:
-      source_types: [http_param, http_body, http_header]
-      sink_pattern: "(redirect|sendRedirect|res\\.redirect|location\\.href|window\\.location|http\\.Redirect|Header\\(\\s*[\"']Location)"
+      source_types: [http_param, http_body, http_query, http_header, http_cookie, form_input]
+      sink_pattern: "(redirect|HttpResponse(?:Permanent)?Redirect|RedirectResponse|sendRedirect|res\\.redirect|location\\.href|window\\.location|http\\.Redirect|Header\\(\\s*[\"']Location)"
     message: >
-      Potential open redirect: user input from '{source}' (line {source_line})
-      flows to redirect at '{sink}' (line {sink_line}). Validate redirect
-      destinations against an allowlist of trusted domains.
+      Input from '{source}' on line {source_line} reaches the destination passed
+      to '{sink}' on line {sink_line}. Check the accepted hosts and schemes
+      before returning the redirect.

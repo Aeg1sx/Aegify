@@ -16,22 +16,20 @@ export async function GET(request: NextRequest) {
       _count: { select: { scans: true } },
       scans: {
         include: { _count: { select: { findings: true } } },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 1,
       },
     },
   });
 
   const result = projects.map((p) => {
-    const totalFindings = p.scans.reduce(
-      (sum, s) => sum + s._count.findings,
-      0
-    );
+    const latestScan = p.scans[0];
     return {
       id: p.id,
       accessRole: access.workspaceAdmin ? "admin" : p.members[0]?.role || "viewer",
       name: p.name,
       repositoryUrl: p.repositoryUrl,
+      ownerSlug: p.ownerSlug,
       defaultBranch: p.defaultBranch,
       description: p.description,
       color: p.color,
@@ -40,8 +38,8 @@ export async function GET(request: NextRequest) {
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       scanCount: p._count.scans,
-      findingCount: totalFindings,
-      lastScan: p.scans[0] || null,
+      findingCount: latestScan?._count.findings ?? 0,
+      lastScan: latestScan || null,
     };
   });
 

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import time
+from bisect import bisect_left
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -48,6 +49,12 @@ from aegify.scanner.context import ContextAnalyzer
 from aegify.scanner.dataflow import DataflowAnalyzer
 from aegify.scanner.endpoint_detector import EndpointDetector
 from aegify.scanner.openapi_parser import find_openapi_files, parse_openapi_file
+from aegify.scanner.python_signing_keys import (
+    REDACTED_SIGNING_KEY,
+    protected_lines,
+    redact_signing_source,
+)
+from aegify.source_files import read_scanned_source
 from aegify.storage import InMemoryBackend, StorageBackend
 from aegify.storage.hasher import compute_file_hash
 
@@ -442,7 +449,34 @@ class ScanEngine:
     @staticmethod
     def _export_graph_jsonl(graph: Any, path: Path) -> None:
         with path.open("w", encoding="utf-8") as stream:
+            sensitive = graph.graph.get("signing_key_lines", {})
             for node_id, attributes in graph.nodes(data=True):
+                if (
+                    sensitive
+                    and attributes.get("kind") == "statement"
+                    and (
+                        lines := sensitive.get(
+                            (attributes.get("repository_id"), attributes.get("file_path"))
+                        )
+                    )
+                ):
+                    index = bisect_left(lines, attributes["line_start"])
+                    if index < len(lines) and lines[index] <= attributes["line_end"]:
+                        # Preserve graph identity and topology. Operand attributes may contain
+                        # copies of source even when the statement's code is withheld.
+                        attributes = {
+                            k: attributes[k]
+                            for k in (
+                                "kind",
+                                "syntax_kind",
+                                "function",
+                                "repository_id",
+                                "file_path",
+                                "line_start",
+                                "line_end",
+                            )
+                        }
+                        attributes["code"] = REDACTED_SIGNING_KEY
                 stream.write(
                     json.dumps(
                         {"record": "node", "id": node_id, **attributes},
@@ -603,6 +637,13 @@ class ScanEngine:
             call_graph,
             framework.relationships,
         )
+        program.graph.graph["signing_key_lines"] = {
+            (file.repository_id, file.module_path or file.file_path): sorted(
+                protected_lines(file.python_signing_keys)
+            )
+            for file in file_asts
+            if file.python_signing_keys
+        }
         self._last_program_graph = program.graph
         program.summary.callable_descriptors = self.call_graph_builder.descriptor_callables
         program.summary.overload_calls_resolved = self.call_graph_builder.overload_calls_resolved
@@ -831,6 +872,7 @@ class ScanEngine:
         lang_to_asts: dict[Language, list[FileAST]] = {}
         for ast in file_asts:
             lang_to_asts.setdefault(ast.language, []).append(ast)
+        code_asts = [ast for ast in file_asts if ast.language != Language.WRANGLER]
 
         all_findings: list[Finding] = []
         total_rules = len(enabled_rules)
@@ -868,12 +910,12 @@ class ScanEngine:
                 filtered_asts: list[FileAST] = []
                 for lang in rule.definition.languages:
                     filtered_asts.extend(lang_to_asts.get(lang, []))
-                if not filtered_asts:
-                    skipped_rules += 1
-                    continue  # Skip rule entirely - no files match target language
-                findings = rule.evaluate(filtered_asts, call_graph, taint_flows)
             else:
-                findings = rule.evaluate(file_asts, call_graph, taint_flows)
+                filtered_asts = code_asts
+            if not filtered_asts:
+                skipped_rules += 1
+                continue
+            findings = rule.evaluate(filtered_asts, call_graph, taint_flows)
             result.evaluated_rules.append(rule.definition.id)
             rule_elapsed = time.monotonic() - rule_started
             if rule_elapsed >= 2.0:
@@ -881,7 +923,7 @@ class ScanEngine:
                     "Rule %s required %.2fs across %d candidate files",
                     rule.definition.id,
                     rule_elapsed,
-                    len(filtered_asts) if rule.definition.languages else len(file_asts),
+                    len(filtered_asts),
                 )
             # Cap findings per rule to prevent memory explosion
             if max_per_rule > 0 and len(findings) > max_per_rule:
@@ -965,7 +1007,7 @@ class ScanEngine:
         findings.sort(key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), -f.confidence))
 
         # Enrich code snippets
-        self._enrich_snippets(findings)
+        self._enrich_snippets(findings, file_asts)
 
         # Attach endpoint context to findings for LLM verification
         self._attach_endpoint_context(findings, detected_endpoints)
@@ -974,7 +1016,7 @@ class ScanEngine:
 
         result.findings = findings
         if result.taint_analysis.truncated:
-            result.add_gap("taint_limit", "taint", "Taint analysis reached its configured bound")
+            result.add_gap("taint_limit", "taint", result.taint_analysis.limit_message())
         if result.semantic_analysis.jvm_points_to_truncated:
             result.add_gap("points_to_limit", "semantics", "Points-to analysis reached its bound")
         if result.external_analysis.truncated:
@@ -1625,27 +1667,19 @@ class ScanEngine:
                 )
             )
             evidence_id = f"ev:{hashlib.sha256(identity.encode()).hexdigest()[:32]}"
+            if ast and ast.language == Language.WRANGLER:
+                kind, fidelity = "configuration", "parsed-settings"
+            elif finding.taint_flow is not None:
+                kind, fidelity = "semantic-taint", "source-to-sink"
+            elif finding.evidence_state != EvidenceState.CANDIDATE:
+                kind, fidelity = "semantic-structural", "same-function-structured"
+            else:
+                kind, fidelity = "heuristic-candidate", "heuristic"
             finding.provenance = EvidenceProvenance(
                 producer=producer,
                 producer_version=__version__,
-                analysis_kind=(
-                    "semantic-taint"
-                    if finding.taint_flow is not None
-                    else (
-                        "semantic-structural"
-                        if finding.evidence_state != EvidenceState.CANDIDATE
-                        else "heuristic-candidate"
-                    )
-                ),
-                fidelity=(
-                    "source-to-sink"
-                    if finding.taint_flow is not None
-                    else (
-                        "same-function-structured"
-                        if finding.evidence_state != EvidenceState.CANDIDATE
-                        else "heuristic"
-                    )
-                ),
+                analysis_kind=kind,
+                fidelity=fidelity,
                 repository_id=repository_id,
                 module_path=module_path,
                 workspace_snapshot=workspace_snapshot,
@@ -2078,25 +2112,49 @@ class ScanEngine:
     # Number of context lines before/after the finding to include in snippets
     _SNIPPET_CONTEXT_LINES = 5
 
-    def _enrich_snippets(self, findings: list[Finding]) -> None:
+    def _enrich_snippets(self, findings: list[Finding], files: list[FileAST] | None = None) -> None:
         """Load code snippets for findings that don't have them."""
         ctx = self._SNIPPET_CONTEXT_LINES
         # Cache file contents to avoid re-reading the same file for multiple findings
         file_cache: dict[str, list[str]] = {}
+        sensitive = {file.file_path: file for file in files or [] if file.python_signing_keys}
+
+        def safe_lines(path: str) -> list[str]:
+            if path not in file_cache:
+                file = sensitive[path]
+                raw = read_scanned_source(file, 8 * 1024 * 1024)
+                file_cache[path] = (
+                    redact_signing_source(raw, file.python_signing_keys).split("\n")
+                    if raw is not None
+                    else []
+                )
+            return file_cache[path]
+
         for finding in findings:
-            if finding.code_snippet:
+            for step in finding.call_chain:
+                if step.file_path in sensitive:
+                    step.code_snippet = (
+                        "\n".join(safe_lines(step.file_path)[max(0, step.line - 3) : step.line + 2])
+                        or REDACTED_SIGNING_KEY
+                    )
+            fp = finding.file_path
+            if fp in sensitive:
+                lines = safe_lines(fp)
+            elif finding.code_snippet:
                 continue
-            try:
-                fp = finding.file_path
-                if fp not in file_cache:
-                    file_cache[fp] = Path(fp).read_text(errors="replace").splitlines()
-                lines = file_cache[fp]
-                start = max(0, finding.line_start - 1 - ctx)
-                end = min(len(lines), finding.line_end + ctx)
-                finding.code_snippet = "\n".join(lines[start:end])
-                finding.code_snippet_start_line = start + 1
-            except OSError:
-                pass
+            else:
+                try:
+                    if fp not in file_cache:
+                        file_cache[fp] = Path(fp).read_text(errors="replace").splitlines()
+                    lines = file_cache[fp]
+                except OSError:
+                    continue
+            start = max(0, finding.line_start - 1 - ctx)
+            end = min(len(lines), finding.line_end + ctx)
+            finding.code_snippet = "\n".join(lines[start:end])
+            if fp in sensitive and not finding.code_snippet:
+                finding.code_snippet = REDACTED_SIGNING_KEY
+            finding.code_snippet_start_line = start + 1
 
     @staticmethod
     def _attach_endpoint_context(

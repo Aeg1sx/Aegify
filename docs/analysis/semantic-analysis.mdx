@@ -4,8 +4,13 @@ description: "SCIP, JVM, Spring, Program Graph, points-to, taint, and cross-repo
 icon: "git-branch"
 ---
 
-This document describes the executable semantic layers in the Aegify alpha and
-the boundary between exact evidence, conservative modeling, and fallback edges.
+## Read a scan's call graph
+
+Open a completed scan and select **Call graph**. **Structure & source** shows the selected symbol, its file and line range. **Called by** lists callers. **Calls** lists callees. The line beside each connection belongs to the caller. Select a symbol in either list to follow the recorded call. **Recorded entry path** shows one path from an entry point in the loaded graph.
+
+On a phone, **Browse source files** opens the index. Selecting a result returns focus to the symbol heading. A file can contain several functions. **Finding in file** applies to the file, and **Related finding** uses the selected symbol’s file and line range to retrieve the first overlapping saved excerpt in that scan. [Desktop source view](/assets/aegify-call-graph-desktop.png) · [Mobile source view](/assets/aegify-call-graph-mobile.png) · [Dark appearance](/assets/aegify-call-graph-dark.png)
+
+**Network** opens the interactive diagram with search, type filtering, zoom and fit controls. Each node’s fill identifies its type. A solid outline marks a file with a finding, and a dashed outline marks the selection. Select **Open in source structure** to read the selected symbol's callers, callees and source evidence. **Summary** loads entry points, sinks, symbols in files with findings and their immediate neighbors within its limit. **Full graph** includes the scan’s other symbols. Runtime reachability and data flow require their own evidence. [Network view](/assets/aegify-call-network-desktop.png)
 
 ## Repository and module identity
 

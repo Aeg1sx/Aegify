@@ -2,6 +2,7 @@ import { requireAccess, findingScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { analyzeFinding } from "@/lib/llm";
+import { reviewFindingSelect } from "@/lib/ai-review-contract";
 
 export async function POST(request: NextRequest) {
   const access = await requireAccess(request);
@@ -19,6 +20,7 @@ export async function POST(request: NextRequest) {
 
   const findings = await prisma.finding.findMany({
     where: { ...findingScope(access, "maintainer"), id: { in: ids } },
+    select: reviewFindingSelect,
   });
 
   if (findings.length !== new Set(ids).size) {
@@ -34,21 +36,7 @@ export async function POST(request: NextRequest) {
     while (queue.length > 0) {
       const finding = queue.shift()!;
       try {
-        const result = await analyzeFinding({
-          ruleId: finding.ruleId,
-          ruleName: finding.ruleName,
-          severity: finding.severity,
-          message: finding.message,
-          filePath: finding.filePath,
-          lineStart: finding.lineStart,
-          lineEnd: finding.lineEnd,
-          codeSnippet: finding.codeSnippet,
-          cweId: finding.cweId,
-          owaspCategory: finding.owaspCategory,
-          taintFlow: finding.taintFlow,
-          callChain: finding.callChain,
-          defenseContext: (finding as Record<string, unknown>).defenseContext as string | null ?? null,
-        });
+        const result = await analyzeFinding(finding);
 
         await prisma.finding.update({
           where: { id: finding.id },

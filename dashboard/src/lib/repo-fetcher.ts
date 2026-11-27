@@ -4,6 +4,9 @@
  * and processed in memory only (no disk writes).
  */
 
+import { isWranglerManifest } from "./configuration-evidence.ts";
+export { isWranglerManifest } from "./configuration-evidence.ts";
+
 export interface RepoFetchConfig {
   provider: "github" | "gitlab";
   accessToken: string;
@@ -12,6 +15,7 @@ export interface RepoFetchConfig {
   ref: string;             // branch or commit SHA
   signal?: AbortSignal;
   onResolved?: (commit: string) => Promise<void>;
+  withholdWranglerFromModel?: boolean;
   maxFiles?: number;       // default 1000
   maxFileSizeBytes?: number;  // default 102400 (100KB)
   maxTotalBytes?: number;     // default 10485760 (10MB)
@@ -147,6 +151,7 @@ export function isScannableFile(path: string): boolean {
   for (const part of parts) {
     if (BLOCKED_DIRECTORIES.has(part)) return false;
   }
+  if (isWranglerManifest(path)) return true;
 
   // Check extension allowlist
   const dotIdx = fileName.lastIndexOf(".");
@@ -262,6 +267,9 @@ export async function fetchRepoCode(config: RepoFetchConfig): Promise<CodeBundle
     if (!entry || typeof entry.path !== "string" || typeof entry.type !== "string") { truncated = true; omittedFiles++; continue; }
     if (entry.type !== "blob") continue;
     if (!isScannableFile(entry.path)) { skippedFiles++; continue; }
+    if (config.withholdWranglerFromModel && isWranglerManifest(entry.path)) {
+      skippedFiles++; omittedFiles++; truncated = true; continue;
+    }
     if (entry.mode !== "100644" && entry.mode !== "100755") { omittedFiles++; skippedFiles++; truncated = true; continue; }
     if (!isPathSafe(entry.path) || (entry.size !== undefined && (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > maxFileSize))) { omittedFiles++; skippedFiles++; truncated = true; continue; }
     if (candidates.has(entry.path)) throw new Error("Provider tree contains duplicate paths.");

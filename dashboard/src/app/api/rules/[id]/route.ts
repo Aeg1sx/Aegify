@@ -16,42 +16,25 @@ export async function GET(
     return NextResponse.json({ error: "Rule not found" }, { status: 404 });
   }
 
-  // Get finding stats for this rule
-  const findings = await prisma.finding.findMany({
-    where: { ruleId: id, isCurrent: true },
-    select: {
-      severity: true,
-      status: true,
-      filePath: true,
-      confidence: true,
-    },
-  });
-
-  const severityBreakdown: Record<string, number> = {};
-  const statusBreakdown: Record<string, number> = {};
-  const fileBreakdown: Record<string, number> = {};
-  let totalConfidence = 0;
-
-  for (const f of findings) {
-    severityBreakdown[f.severity] = (severityBreakdown[f.severity] || 0) + 1;
-    statusBreakdown[f.status] = (statusBreakdown[f.status] || 0) + 1;
-    fileBreakdown[f.filePath] = (fileBreakdown[f.filePath] || 0) + 1;
-    totalConfidence += f.confidence;
-  }
-
-  const topFiles = Object.entries(fileBreakdown)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([path, count]) => ({ path, count }));
-
+  const where = { ruleId: id, isCurrent: true };
+  const [total, severities, statuses, paths] = await prisma.$transaction([
+    prisma.finding.aggregate({ where, _count: true, _avg: { confidence: true } }),
+    prisma.finding.groupBy({ by: ["severity"], where, _count: { _all: true } }),
+    prisma.finding.groupBy({ by: ["status"], where, _count: { _all: true } }),
+    prisma.finding.groupBy({
+      by: ["filePath"], where, _count: { _all: true },
+      orderBy: [{ _count: { filePath: "desc" } }, { filePath: "asc" }],
+    }),
+  ]);
   return NextResponse.json({
     rule,
     stats: {
-      totalFindings: findings.length,
-      severityBreakdown,
-      statusBreakdown,
-      avgConfidence: findings.length > 0 ? totalConfidence / findings.length : 0,
-      topFiles,
+      totalFindings: total._count,
+      severityBreakdown: Object.fromEntries(severities.map((row) => [row.severity, row._count._all])),
+      statusBreakdown: Object.fromEntries(statuses.map((row) => [row.status, row._count._all])),
+      avgConfidence: total._avg.confidence ?? 0,
+      filePathCount: paths.length,
+      topFiles: paths.slice(0, 10).map((row) => ({ path: row.filePath, count: row._count._all })),
     },
   });
 }

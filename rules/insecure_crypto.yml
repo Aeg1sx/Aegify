@@ -27,9 +27,11 @@ rules:
     confidence: 0.6
     languages: [python, javascript]
     cwe_id: 330
+    semantic:
+      kind: credential_randomness
     patterns:
-      - callee: "random\\.(random|randint|choice|randrange)"
       - callee: "Math\\.random"
+        languages: [javascript]
     message: "Insecure RNG at '{callee}' (line {line}). Use cryptographic RNG for security."
 
   - id: AEG-CRYPTO-003
@@ -41,7 +43,10 @@ rules:
     languages: [python, javascript]
     cwe_id: 295
     owasp_category: "A02:2021-Cryptographic Failures"
+    semantic:
+      kind: python_http_verify_option
     patterns:
       - callee: "(get|post|put|delete|request|fetch)"
+        languages: [javascript]
         args_match: '(verify\s*=\s*False|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED)'
     message: "SSL/TLS verification disabled at '{callee}' (line {line})."

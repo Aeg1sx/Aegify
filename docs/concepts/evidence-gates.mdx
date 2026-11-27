@@ -43,9 +43,12 @@ unreadable sources, file-size limits, and result/analysis bounds are visible gap
 to disable that bound; do this only after considering the available worker memory.
 
 Global taint limits are configurable under `taint`: `max_contexts` (default
-10,000), `context_depth` (default 2, range 1–4), and `max_iterations` (default 64).
-Increasing a bound can increase memory and latency. A reached bound still marks
-the scan partial; changing a limit never hides the corresponding coverage gap.
+50,000 for both the CLI and source worker), `context_depth` (default 2, range 1–4),
+and `max_iterations` (default 64). Increasing a bound can increase memory and
+latency. A scan becomes partial when the solver rejects another call context or
+exhausts its passes while results are still changing. The SARIF run property
+`taintAnalysis` records the effective limits, the contexts admitted and evaluated,
+the passes performed, and which limits interrupted analysis.
 
 The dashboard reconciles absent findings only after a completed import on the
 project's explicitly supplied default branch, and only for analyzed file paths

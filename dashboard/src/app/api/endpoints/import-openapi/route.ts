@@ -10,17 +10,24 @@ export async function GET(request: NextRequest) {
   const scanId = request.nextUrl.searchParams.get("scanId");
   const access = await requireResource(request, "scan", scanId, "viewer");
   if (access instanceof Response) return access;
-  if (!scanId || !await prisma.scan.findUnique({ where: { id: scanId }, select: { id: true } })) return NextResponse.json({ error: "Select an existing scan." }, { status: 404, headers });
+  const scan = scanId && await prisma.scan.findUnique({ where: { id: scanId }, select: { id: true, repository: true, branch: true, createdAt: true } });
+  if (!scanId || !scan) return NextResponse.json({ error: "Select an existing scan." }, { status: 404, headers });
+  const repositoryId = request.nextUrl.searchParams.get("repositoryId");
+  const scope = repositoryId === null ? { scanId } : { scanId, repositoryId };
   const id = request.nextUrl.searchParams.get("id");
   if (id) {
-    const spec = await prisma.apiSpecification.findFirst({ where: { id, scanId } });
+    const spec = await prisma.apiSpecification.findFirst({ where: { ...scope, id } });
     if (!spec) return NextResponse.json({ error: "Specification not found in this scan." }, { status: 404, headers });
     const contract = JSON.parse(spec.contract) as ApiContract;
     return NextResponse.json({ spec: { ...spec, contract }, comparison: await inspectApiContract(prisma, scanId, spec.repositoryId, contract) }, { headers });
   }
-  const repositoryIds = await contractRepositoryIds(prisma, scanId);
-  const specifications = await prisma.apiSpecification.findMany({ where: { scanId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100, select: { id: true, scanId: true, repositoryId: true, sourceType: true, sourceName: true, sourceUrl: true, contentHash: true, title: true, apiVersion: true, specVersion: true, operationCount: true, createdAt: true } });
-  return NextResponse.json({ repositoryIds, specifications, total: await prisma.apiSpecification.count({ where: { scanId } }) }, { headers });
+  const [repositoryIds, specifications, total] = await Promise.all([
+    contractRepositoryIds(prisma, scanId),
+    prisma.apiSpecification.findMany({ where: scope, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100,
+      select: { id: true, scanId: true, repositoryId: true, sourceType: true, sourceName: true, sourceUrl: true, contentHash: true, title: true, apiVersion: true, specVersion: true, operationCount: true, createdAt: true } }),
+    prisma.apiSpecification.count({ where: scope }),
+  ]);
+  return NextResponse.json({ scan, repositoryIds, specifications, total }, { headers });
 }
 export async function POST(request: NextRequest) {
   if (!specMutationOriginAllowed(request, process.env)) return NextResponse.json({ error: "Same-origin request required." }, { status: 403, headers });

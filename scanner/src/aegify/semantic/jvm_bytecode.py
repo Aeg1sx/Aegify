@@ -537,7 +537,8 @@ class JvmBytecodeImporter:
     ) -> JvmBytecodeBundle:
         result = JvmBytecodeBundle()
         result.summary.snapshots = 1
-        raw = artifact.path.read_bytes()
+        with artifact.path.open("rb") as stream:
+            raw = stream.read(self._SNAPSHOT_LIMIT + 1)
         if len(raw) > self._SNAPSHOT_LIMIT:
             raise ValueError(f"classpath snapshot exceeds {self._SNAPSHOT_LIMIT} bytes")
         snapshot = JvmClasspathSnapshot.model_validate(json.loads(raw))

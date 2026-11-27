@@ -1,5 +1,17 @@
 export interface PathNode { id: string; nodeType: string }
 export interface PathEdge { sourceNodeId: string; targetNodeId: string }
+
+export function graphSymbolName(name: string): string {
+  if (name.startsWith("<module:") && name.endsWith(">")) {
+    return name.slice(8, -1).split(/[\\/]/).pop() || name;
+  }
+  const separator = name.indexOf("::");
+  if (name.startsWith("file:") && separator >= 0) {
+    const symbol = name.slice(separator + 2);
+    return symbol.replace(/\((?:\?(?:,\?)*)?\)$/, "") || name;
+  }
+  return name;
+}
 /** One shortest recorded call path, not a proof of data flow or runtime reachability. */
 export function entryPath(nodes: PathNode[], edges: PathEdge[], target: string): string[] {
   const byId = new Map(nodes.map((node) => [node.id, node]));

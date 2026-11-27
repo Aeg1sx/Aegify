@@ -32,7 +32,21 @@ class TestScanEngine:
         taint_findings = [f for f in result.findings if f.taint_flow is not None]
         assert taint_findings
         assert all(f.evidence_state == EvidenceState.REACHABLE for f in taint_findings)
-        assert all(f.disposition == FindingDisposition.BLOCKING for f in taint_findings)
+        expected_advisories = {"AEG-AC-PY-006": 50, "AEG-FLASK-XSS-001": 59}
+        assert {
+            f.rule_id: f.line_start
+            for f in taint_findings
+            if f.disposition == FindingDisposition.ADVISORY
+        } == expected_advisories
+        assert all(
+            f.disposition
+            == (
+                FindingDisposition.ADVISORY
+                if f.rule_id in expected_advisories
+                else FindingDisposition.BLOCKING
+            )
+            for f in taint_findings
+        )
         assert all(
             f.disposition == FindingDisposition.ADVISORY
             for f in result.findings

@@ -1,0 +1,768 @@
+{
+  "schema_version": 1,
+  "comparison": "owasp-python-paired-v1",
+  "mode": "no_case_regressions",
+  "baseline_artifact_digest": "sha256:8ac1f12162c9bd8d55adb7ca4c672685395a0928bcdc651825f0edbe190767e2",
+  "candidate_artifact_digest": "sha256:329b230e83a350590ead36288cbb5e973ff4550704c9fa6fed1a6180a7d250bc",
+  "input_identity": {
+    "corpus_digest": "sha256:19f1fab3f5ba12d14f2f59cbdebafb930e32f55d2d9c959079798c23a3ddc3c8",
+    "ground_truth_digest": "sha256:6396f37c97cfd0c018db3d8750095ce6c678a083f83620cfb3e88fe27a46bb0c",
+    "config_digest": "sha256:14a4dd88d1b04d08bc96224da6fc18e58a5f2ee3b69e1fc0290995c6d4aae1d6",
+    "case_identity_digest": "sha256:bfff7f093ee0fcc897410870dcbd3b93d1d21c254ada6e95b68a53bfd179707f"
+  },
+  "implementation_changes": [
+    "bundled_rules_digest",
+    "parser_fingerprint",
+    "rule_definitions_digest",
+    "scanner_code_and_modelpacks_digest"
+  ],
+  "identical_replay": false,
+  "regression_free": true,
+  "evaluation_complete": true,
+  "exit_code": 0,
+  "coverage_lost": [],
+  "coverage_gained": [],
+  "baseline_unscored_findings": {
+    "different_cwe": 9374,
+    "outside_labeled_case": 12
+  },
+  "candidate_unscored_findings": {
+    "different_cwe": 9374,
+    "outside_labeled_case": 12
+  },
+  "channels": {
+    "all_candidates": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 425,
+        "false_positives": 74,
+        "false_negatives": 27,
+        "true_negatives": 704,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8517034068136272,
+        "recall": 0.9402654867256637,
+        "f1": 0.8937960042060988,
+        "accuracy": 0.9178861788617886,
+        "false_positive_rate": 0.09511568123393316,
+        "balanced_accuracy": 0.9225749027458652,
+        "mcc": 0.829819718444414,
+        "precision_wilson_95": [
+          0.8178376590050432,
+          0.8801954761767584
+        ],
+        "recall_wilson_95": [
+          0.9144851922171906,
+          0.9586253866881691
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 425,
+        "false_positives": 67,
+        "false_negatives": 27,
+        "true_negatives": 711,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8638211382113821,
+        "recall": 0.9402654867256637,
+        "f1": 0.9004237288135594,
+        "accuracy": 0.9235772357723577,
+        "false_positive_rate": 0.08611825192802057,
+        "balanced_accuracy": 0.9270736173988215,
+        "mcc": 0.8405838134802752,
+        "precision_wilson_95": [
+          0.8306825549230245,
+          0.8913224199160393
+        ],
+        "recall_wilson_95": [
+          0.9144851922171906,
+          0.9586253866881691
+        ]
+      },
+      "transitions": {
+        "fn->fn": 27,
+        "fp->fp": 67,
+        "fp->tn": 7,
+        "tn->tn": 704,
+        "tp->tp": 425
+      },
+      "improved_cases": [
+        "BenchmarkTest00349",
+        "BenchmarkTest00508",
+        "BenchmarkTest00513",
+        "BenchmarkTest00608",
+        "BenchmarkTest00658",
+        "BenchmarkTest00995",
+        "BenchmarkTest01099"
+      ],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.01211773139775485,
+        "recall": 0.0,
+        "f1": 0.006627724607460528,
+        "accuracy": 0.005691056910569148,
+        "false_positive_rate": -0.008997429305912588,
+        "mcc": 0.010764095035861176
+      }
+    },
+    "advisory": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 345,
+        "false_positives": 51,
+        "false_negatives": 107,
+        "true_negatives": 727,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8712121212121212,
+        "recall": 0.7632743362831859,
+        "f1": 0.8136792452830188,
+        "accuracy": 0.8715447154471545,
+        "false_positive_rate": 0.06555269922879177,
+        "balanced_accuracy": 0.8488608185271971,
+        "mcc": 0.7199636809675786,
+        "precision_wilson_95": [
+          0.8346201109748271,
+          0.9006713239532403
+        ],
+        "recall_wilson_95": [
+          0.7219711329614145,
+          0.8001402182432982
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 345,
+        "false_positives": 44,
+        "false_negatives": 107,
+        "true_negatives": 734,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8868894601542416,
+        "recall": 0.7632743362831859,
+        "f1": 0.8204518430439952,
+        "accuracy": 0.8772357723577235,
+        "false_positive_rate": 0.056555269922879174,
+        "balanced_accuracy": 0.8533595331801533,
+        "mcc": 0.7327115297132055,
+        "precision_wilson_95": [
+          0.8515582508505738,
+          0.9146541568306287
+        ],
+        "recall_wilson_95": [
+          0.7219711329614145,
+          0.8001402182432982
+        ]
+      },
+      "transitions": {
+        "fn->fn": 107,
+        "fp->fp": 44,
+        "fp->tn": 7,
+        "tn->tn": 727,
+        "tp->tp": 345
+      },
+      "improved_cases": [
+        "BenchmarkTest00349",
+        "BenchmarkTest00508",
+        "BenchmarkTest00513",
+        "BenchmarkTest00608",
+        "BenchmarkTest00658",
+        "BenchmarkTest00995",
+        "BenchmarkTest01099"
+      ],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.015677338942120422,
+        "recall": 0.0,
+        "f1": 0.006772597760976384,
+        "accuracy": 0.005691056910569037,
+        "false_positive_rate": -0.008997429305912595,
+        "mcc": 0.012747848745626955
+      }
+    },
+    "blocking": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 153,
+        "false_positives": 46,
+        "false_negatives": 299,
+        "true_negatives": 732,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7688442211055276,
+        "recall": 0.33849557522123896,
+        "f1": 0.4700460829493088,
+        "accuracy": 0.7195121951219512,
+        "false_positive_rate": 0.05912596401028278,
+        "balanced_accuracy": 0.639684805605478,
+        "mcc": 0.36574829348243626,
+        "precision_wilson_95": [
+          0.7055146700082396,
+          0.8219909031723637
+        ],
+        "recall_wilson_95": [
+          0.2963958623093711,
+          0.38331734241378845
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 162,
+        "false_positives": 46,
+        "false_negatives": 290,
+        "true_negatives": 732,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7788461538461539,
+        "recall": 0.3584070796460177,
+        "f1": 0.4909090909090909,
+        "accuracy": 0.7268292682926829,
+        "false_positive_rate": 0.05912596401028278,
+        "balanced_accuracy": 0.6496405578178674,
+        "mcc": 0.38492951689893934,
+        "precision_wilson_95": [
+          0.7176737443973231,
+          0.829905566308728
+        ],
+        "recall_wilson_95": [
+          0.315563206210784,
+          0.4036374116286983
+        ]
+      },
+      "transitions": {
+        "fn->fn": 290,
+        "fn->tp": 9,
+        "fp->fp": 46,
+        "tn->tn": 732,
+        "tp->tp": 153
+      },
+      "improved_cases": [
+        "BenchmarkTest00078",
+        "BenchmarkTest00269",
+        "BenchmarkTest00270",
+        "BenchmarkTest00433",
+        "BenchmarkTest00507",
+        "BenchmarkTest00510",
+        "BenchmarkTest00657",
+        "BenchmarkTest00827",
+        "BenchmarkTest00994"
+      ],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.010001932740626218,
+        "recall": 0.019911504424778736,
+        "f1": 0.02086300795978213,
+        "accuracy": 0.007317073170731714,
+        "false_positive_rate": 0.0,
+        "mcc": 0.01918122341650308
+      }
+    }
+  },
+  "changed_cases": [
+    {
+      "case": "BenchmarkTest00078",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001"
+        ],
+        "matched_finding_count": 1
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001",
+          "AEG-RCE-PY-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00269",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00270",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00349",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001"
+        ],
+        "matched_finding_count": 1
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      }
+    },
+    {
+      "case": "BenchmarkTest00433",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00507",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001"
+        ],
+        "matched_finding_count": 1
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001",
+          "AEG-RCE-PY-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00508",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001"
+        ],
+        "matched_finding_count": 1
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      }
+    },
+    {
+      "case": "BenchmarkTest00510",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001"
+        ],
+        "matched_finding_count": 1
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001",
+          "AEG-RCE-PY-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00513",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      }
+    },
+    {
+      "case": "BenchmarkTest00608",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      }
+    },
+    {
+      "case": "BenchmarkTest00657",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001"
+        ],
+        "matched_finding_count": 1
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001",
+          "AEG-RCE-PY-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00658",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      }
+    },
+    {
+      "case": "BenchmarkTest00827",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00994",
+      "cwe": 502,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00995",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      }
+    },
+    {
+      "case": "BenchmarkTest01099",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A08-004",
+          "AEG-DESER-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      }
+    },
+    {
+      "case": "BenchmarkTest01230",
+      "cwe": 502,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001",
+          "AEG-RCE-PY-006"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-DESER-001"
+        ],
+        "matched_finding_count": 1
+      }
+    }
+  ],
+  "limitations": [
+    "Internal consistency and paired change only; no independent label adjudication.",
+    "Public synthetic cases are not held-out production or live AI evaluation.",
+    "Identical replay excludes timing/RSS and does not prove performance equivalence.",
+    "Digests identify supplied artifacts; they do not authenticate their authors.",
+    "No significance claim or independent-sample assumption for related templates.",
+    "A regression-free comparison is not an absolute precision/recall release gate."
+  ]
+}

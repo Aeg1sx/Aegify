@@ -1,3 +1,4 @@
+import { parseEvidenceSteps } from "./code-evidence.ts";
 /** Strict source-review protocol and replayable, bounded evidence. */
 import { batchPrompt, parseReviewResults, REVIEW_LIMITS, ReviewContractError, type ReviewResult, type ReviewSnapshot } from "./ai-review-contract.ts";
 import { executeSourceTool, parseSourceToolRequest, SOURCE_TOOL_LIMITS, sourceCatalogSummary, type SourceCitation, type SourceToolRequest, type SourceToolSpan } from "./ai-source-tools.ts";
@@ -92,22 +93,58 @@ function citationsFrom(spans: SourceToolSpan[]) {
 }
 
 export function finalizeSourceReview(snapshot: ReviewSnapshot, ids: string[], session: SourceSession, final: SourceFinal): SourceFinal {
-  if (!snapshot.sources) return fail();
+  const sources = snapshot.sources;
+  if (!sources) return fail();
   const parsed = parseSourceResponse(JSON.stringify({ kind: "review", reviews: final.results.map((result) => ({ ...result, citationIds: final.citationIds[result.findingId] })) }), ids);
   if (parsed.kind !== "review") return fail();
   const available = citationsFrom(session.spans);
   for (const result of parsed.results) {
     const citations = parsed.citationIds[result.findingId].map((id) => available.get(id) || fail());
     const finding = snapshot.findings.find((finding) => finding.id === result.findingId)!;
-    const covered = citations.some((citation) => citation.repository_id === snapshot.sources!.repository
-      && citation.path === finding.data.filePath && typeof finding.data.lineStart === "number"
-      && citation.line_start <= finding.data.lineStart && citation.line_end >= finding.data.lineStart);
-    if (result.verdict !== "needs_review" && !covered) {
-      result.verdict = "needs_review"; result.confidence = 0; result.adjustedSeverity = null;
-      result.evidenceGaps = ["The source tools did not provide a cited read covering this finding location.", ...result.evidenceGaps].slice(0, 20);
+    // Recheck retained claims against the redacted snapshot, including on worker recovery.
+    for (const citation of citations) {
+      const file = sources.files.find((entry) => entry.path === citation.path);
+      if (!file || citation.repository_id !== sources.repository || file.sourceDigest !== citation.source_digest
+        || citation.line_end > file.lineCount || sha256(file.content.split("\n")
+          .slice(citation.line_start - 1, citation.line_end).join("\n")) !== citation.excerpt_digest) return fail();
+    }
+    if (result.verdict !== "needs_review") {
+      let gap = "";
+      if (!coversRange(finding.data, citations)) gap = "Cited source does not cover the full finding range.";
+      if (!gap && result.verdict === "likely_true_positive" && finding.data.taintFlow) {
+        const { steps, warning } = parseEvidenceSteps(finding.data.taintFlow);
+        const origins = steps.filter((step) => step.message.startsWith("source: "));
+        if (warning || finding.omittedFields.includes("taintFlow")) {
+          gap = "The recorded flow is incomplete.";
+        } else if (origins.some((step) => !coversRange({ filePath: step.file, lineStart: step.line }, citations))) {
+          gap = "Cited source does not cover the recorded input to this flow.";
+        }
+      }
+      if (gap) {
+        result.verdict = "needs_review";
+        result.evidenceGaps = [gap, ...result.evidenceGaps].slice(0, 20);
+      }
+    }
+    if (result.verdict === "needs_review") {
+      result.confidence = 0;
+      result.adjustedSeverity = null;
     }
   }
   return { results: parsed.results, citationIds: parsed.citationIds };
+}
+
+function coversRange(finding: ReviewSnapshot["findings"][number]["data"], citations: SourceCitation[]): boolean {
+  const start = finding.lineStart;
+  const end = finding.lineEnd === undefined ? start : finding.lineEnd;
+  if (typeof start !== "number" || typeof end !== "number" || !Number.isSafeInteger(start)
+    || !Number.isSafeInteger(end) || start < 1 || end < start) return false;
+  let nextLine = start;
+  for (const span of citations.filter((item) => item.path === finding.filePath).sort((a, b) => a.line_start - b.line_start)) {
+    if (span.line_start > nextLine) break;
+    nextLine = Math.max(nextLine, span.line_end + 1);
+    if (nextLine > end) return true;
+  }
+  return false;
 }
 
 export function saveSourceEvidence(snapshot: ReviewSnapshot, session: SourceSession, ids: string[], model: string, promptDigest: string, currentPromptBytes: number): SavedSourceEvidence {
@@ -122,6 +159,7 @@ export function saveSourceEvidence(snapshot: ReviewSnapshot, session: SourceSess
 export function validateSavedSourceEvidence(raw: SavedSourceEvidence): void {
   if (!raw || raw.version !== 1 || bytes(raw) > SOURCE_TOOL_LIMITS.totalEvidenceBytes + 20_000 || !Array.isArray(raw.tools_used)
     || raw.tools_used.length > SOURCE_TOOL_LIMITS.calls || !Array.isArray(raw.citations) || raw.citations.length > 16
+    || (raw.catalog?.unverifiedSigningKeyFiles !== undefined && (!Number.isSafeInteger(raw.catalog.unverifiedSigningKeyFiles) || raw.catalog.unverifiedSigningKeyFiles < 0 || raw.catalog.unverifiedSigningKeyFiles > raw.catalog.omittedFiles))
     || raw.catalog?.manifestDigest !== raw.trace?.source_manifest || !/^sha256:[a-f0-9]{64}$/.test(raw.trace?.source_manifest)
     || !Number.isInteger(raw.trace.model_calls) || raw.trace.model_calls < 1 || raw.trace.model_calls > SOURCE_TOOL_LIMITS.rounds) return fail();
   for (const span of raw.tools_used) {

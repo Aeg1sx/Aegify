@@ -4,9 +4,9 @@
   "name": "Aegify",
   "description": "Repository-aware white-box application security analysis with explicit evidence and CI-gating boundaries.",
   "colors": {
-    "primary": "#4F46E5",
-    "light": "#818CF8",
-    "dark": "#4F46E5"
+    "primary": "#14615A",
+    "light": "#86D9C3",
+    "dark": "#247D6F"
   },
   "appearance": {
     "default": "system"
@@ -64,6 +64,7 @@
                 "pages": [
                   "analysis/semantic-analysis",
                   "analysis/ai-sast-operations",
+                  "analysis/cloudflare-configuration",
                   "analysis/benchmark-evaluation",
                   "analysis/rule-authoring",
                   "architecture/technical-architecture"

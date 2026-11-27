@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Shield,
+  Menu,
   LayoutDashboard,
   ScanSearch,
   AlertTriangle,
@@ -12,19 +12,21 @@ import {
   Settings,
   FolderKanban,
   Globe,
-  Bot,
+  ClipboardList,
   Moon,
   Sun,
-  Loader2,
+  Clock,
   Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { UserMenu } from "@/components/user-menu";
+import { WorkspaceBrand } from "@/components/workspace-brand";
 
 const navSections = [
   {
-    label: "Analytics",
+    label: "Workspace",
     items: [
       { href: "/", label: "Overview", icon: LayoutDashboard },
       { href: "/scans", label: "Scans", icon: ScanSearch },
@@ -32,20 +34,20 @@ const navSections = [
     ],
   },
   {
-    label: "Security",
+    label: "Analysis",
     items: [
       { href: "/projects", label: "Projects", icon: FolderKanban },
       { href: "/endpoints", label: "Endpoints", icon: Globe },
-      { href: "/api-specs", label: "API Specifications", icon: BookOpen },
-      { href: "/agents", label: "AI Agents", icon: Workflow },
-      { href: "/llm-scan", label: "LLM Scan", icon: Bot },
+      { href: "/api-specs", label: "API specifications", icon: BookOpen },
+      { href: "/agents", label: "AI agents", icon: Workflow },
+      { href: "/llm-scan", label: "AI reviews", icon: ClipboardList },
     ],
   },
   {
     label: "Tools",
     items: [
       { href: "/rules", label: "Rules", icon: BookOpen },
-      { href: "/upload", label: "Upload", icon: Upload },
+      { href: "/upload", label: "Import scan", icon: Upload },
     ],
   },
   {
@@ -55,13 +57,9 @@ const navSections = [
 ];
 
 interface ActiveJob {
-  id: string;
   status: string;
-  mode: string;
   totalFindings: number;
   reviewedCount: number;
-  currentBatch: number;
-  totalBatches: number;
   scan: { repository: string };
 }
 
@@ -69,52 +67,46 @@ function LlmJobIndicator() {
   const [job, setJob] = useState<ActiveJob | null>(null);
 
   useEffect(() => {
-    let mounted = true;
-
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     async function poll() {
       try {
-        const res = await fetch("/api/llm-jobs?active=true&limit=1");
-        const data = await res.json();
-        if (!mounted) return;
-        setJob(data.jobs?.[0] || null);
+        const response = await fetch("/api/llm-jobs?active=true&limit=1", { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (!controller.signal.aborted) setJob(data.jobs?.[0] ?? null);
       } catch {
-        // ignore
+        if (!controller.signal.aborted) setJob(null);
+      } finally {
+        if (!controller.signal.aborted) timer = setTimeout(poll, 5000);
       }
     }
-
-    poll();
-    const interval = setInterval(poll, 5000);
+    void poll();
     return () => {
-      mounted = false;
-      clearInterval(interval);
+      controller.abort();
+      clearTimeout(timer);
     };
   }, []);
 
   if (!job) return null;
 
-  const percent =
-    job.totalFindings > 0
-      ? Math.round((job.reviewedCount / job.totalFindings) * 100)
-      : 0;
+  const queued = job.status === "pending";
 
   return (
     <Link
       href="/llm-scan"
-      className="mx-3 mb-2 p-2 rounded-md bg-primary/5 border border-primary/20 hover:bg-primary/10 transition-colors block"
+      data-review-state={job.status}
+      className="mx-3 block border-t border-sidebar-border px-3 py-3 text-sm hover:bg-sidebar-accent"
     >
-      <div className="flex items-center gap-2 text-xs font-medium text-primary mb-1.5">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        <span>Reviewing{job.scan?.repository ? ` ${job.scan.repository}` : ""}...</span>
-      </div>
-      <div className="w-full h-1.5 bg-primary/10 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-primary rounded-full transition-all duration-500"
-          style={{ width: `${Math.max(percent, 2)}%` }}
-        />
-      </div>
-      <p className="text-[10px] text-muted-foreground mt-1">
-        {job.currentBatch}/{job.totalBatches} batches — {percent}%
-      </p>
+      <span className="flex items-center gap-2 font-medium">
+        {queued ? <Clock aria-hidden className="size-3.5" /> : <ClipboardList aria-hidden className="size-3.5" />}
+        {queued ? "Review queued" : "Active review"}
+      </span>
+      {job.scan?.repository && <span className="mt-1 block wrap-anywhere text-xs text-muted-foreground">{job.scan.repository}</span>}
+      {!queued && job.totalFindings > 0 && <>
+        <progress className="my-1.5 block h-1 w-full accent-primary" aria-label="Findings reviewed in active run" value={job.reviewedCount} max={job.totalFindings} />
+        <span className="block text-xs tabular-nums text-muted-foreground">{job.reviewedCount}/{job.totalFindings} reviewed</span>
+      </>}
     </Link>
   );
 }
@@ -133,13 +125,14 @@ function ThemeToggle() {
     const next = !dark;
     setDark(next);
     document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
+    try { localStorage.setItem("theme", next ? "dark" : "light"); } catch { /* The session theme still applies. */ }
   };
 
   return (
     <button
+      type="button"
       onClick={toggle}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors w-full"
+      className="flex items-center gap-2 px-3 min-h-11 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors w-full"
     >
       {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
       {dark ? "Light mode" : "Dark mode"}
@@ -147,67 +140,73 @@ function ThemeToggle() {
   );
 }
 
+const mobileQuery = "(max-width: 47.999rem)";
+function listenViewport(notify: () => void) {
+  const query = window.matchMedia(mobileQuery);
+  query.addEventListener("change", notify);
+  return () => query.removeEventListener("change", notify);
+}
+const mobileViewport = () => window.matchMedia(mobileQuery).matches;
+const serverViewport = () => false;
+
+function Navigation({ pathname, workspaceAdmin, onNavigate }: {
+  pathname: string; workspaceAdmin: boolean; onNavigate?: () => void;
+}) {
+  return <>
+    <div className="px-5 pb-3 pt-4"><WorkspaceBrand onNavigate={onNavigate} /></div>
+    <nav aria-label="Workspace" className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-5 pt-3">
+      {navSections.map((section) => {
+        const items = section.items.filter((item) => workspaceAdmin || !["/settings", "/rules"].includes(item.href));
+        if (!items.length) return null;
+        return <div key={section.label}>
+          <p className="mb-1.5 px-3 text-xs font-semibold text-muted-foreground">{section.label}</p>
+          <ul>{items.map((item) => {
+            const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
+            return <li key={item.href}><Link href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined}
+              className={cn("workspace-nav-link flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm transition-colors md:min-h-9",
+                active ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60")}>
+              <item.icon aria-hidden className="size-4 shrink-0" /><span>{item.label}</span>
+            </Link></li>;
+          })}</ul>
+        </div>;
+      })}
+    </nav>
+    <LlmJobIndicator />
+    <div className="shrink-0 border-t border-sidebar-border p-3"><UserMenu /><ThemeToggle /><p className="px-3 pt-1 font-mono text-xs text-muted-foreground">v0.3.0-beta.1</p></div>
+  </>;
+}
+
+function MobileNavigation({ pathname, workspaceAdmin }: { pathname: string; workspaceAdmin: boolean }) {
+  const [open, setOpen] = useState(false);
+  return <header className="workspace-rail app-sidebar flex shrink-0 items-center justify-between border-b border-sidebar-border px-4 py-1.5 md:hidden">
+    <WorkspaceBrand />
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild><button type="button" aria-label="Open navigation" className="grid size-11 place-items-center rounded-md hover:bg-sidebar-accent"><Menu aria-hidden className="size-5" /></button></SheetTrigger>
+      <SheetContent side="left" aria-describedby={undefined} className="workspace-rail flex h-dvh w-72 max-w-[90vw] flex-col gap-0 border-sidebar-border p-0 [&_[data-slot=sheet-close]]:size-10">
+        <SheetTitle className="sr-only">Workspace navigation</SheetTitle>
+        <Navigation pathname={pathname} workspaceAdmin={workspaceAdmin} onNavigate={() => setOpen(false)} />
+      </SheetContent>
+    </Sheet>
+  </header>;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
+  const mobile = useSyncExternalStore(listenViewport, mobileViewport, serverViewport);
   const [workspaceAdmin, setWorkspaceAdmin] = useState(false);
+  const authPage = pathname.startsWith("/auth/");
   useEffect(() => {
-    if (pathname.startsWith("/auth/")) return;
-    let active = true;
-    fetch("/api/account/access").then((response) => response.json()).then((access) => { if (active) setWorkspaceAdmin(access.workspaceAdmin === true); }).catch(() => {});
-    return () => { active = false; };
-  }, [pathname]);
-
-  if (pathname.startsWith("/auth/")) return null;
-
-  return (
-    <aside className="app-sidebar w-16 shrink-0 border-r border-border bg-sidebar flex flex-col md:w-52">
-      <div className="p-4 border-b border-border">
-        <Link href="/" className="flex items-center gap-2">
-          <Shield className="h-6 w-6 text-primary" />
-          <span className="hidden font-semibold text-lg tracking-tight text-foreground md:inline">Aegify<span className="ml-1 text-primary">.</span></span>
-        </Link>
-        <p className="hidden text-[11px] text-muted-foreground mt-1 md:block">Security workspace</p>
-      </div>
-      <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
-        {navSections.filter((section) => workspaceAdmin || section.items.some((item) => !["/settings", "/rules"].includes(item.href))).map((section) => (
-          <div key={section.label}>
-            <p className="hidden px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:block">
-              {section.label}
-            </p>
-            <div className="space-y-0.5">
-              {section.items.filter((item) => workspaceAdmin || !["/settings", "/rules"].includes(item.href)).map((item) => {
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/" && pathname.startsWith(item.href));
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={item.label}
-                    aria-label={item.label}
-                    aria-current={isActive ? "page" : undefined}
-                    className={cn(
-                      "flex items-center gap-3 px-2 md:px-3 py-2 rounded-md text-[13px] transition-colors relative",
-                      isActive
-                        ? "bg-accent text-foreground font-medium before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    )}
-                  >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </nav>
-      <div className="hidden md:block"><LlmJobIndicator /></div>
-      <div className="hidden p-3 border-t border-border space-y-1 md:block">
-        <UserMenu />
-        <ThemeToggle />
-        <p className="text-[10px] text-muted-foreground/50 px-3">v0.3.0-beta.1</p>
-      </div>
-    </aside>
-  );
+    if (authPage) return;
+    const controller = new AbortController();
+    fetch("/api/account/access", { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : { workspaceAdmin: false })
+      .then((access) => { if (!controller.signal.aborted) setWorkspaceAdmin(access.workspaceAdmin === true); })
+      .catch(() => { if (!controller.signal.aborted) setWorkspaceAdmin(false); });
+    return () => controller.abort();
+  }, [authPage, pathname]);
+  if (authPage) return null;
+  if (mobile) return <MobileNavigation key={pathname} pathname={pathname} workspaceAdmin={workspaceAdmin} />;
+  return <aside className="workspace-rail app-sidebar hidden w-48 shrink-0 flex-col border-r border-sidebar-border md:flex xl:w-52">
+    <Navigation pathname={pathname} workspaceAdmin={workspaceAdmin} />
+  </aside>;
 }

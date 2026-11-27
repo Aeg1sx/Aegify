@@ -13,6 +13,8 @@ from aegify.models import (
     TaintFlow,
 )
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
+from aegify.scanner.python_process import process_input
+from aegify.scanner.python_scope import PythonModules
 
 
 class CommandInjectionRule(SecurityRule):
@@ -115,14 +117,12 @@ class ShellTrueRule(SecurityRule):
                 ],
                 "args_match": {
                     "required": ["shell=True"],
-                    "logic": "callee is a subprocess function AND arguments contain shell=True",
+                    "logic": "resolved subprocess API with an enabled shell argument",
                 },
             },
             "description": (
-                "Scans for subprocess function calls (run, call, Popen, check_output, check_call) "
-                "that include shell=True in their arguments. When shell=True, the command is "
-                "executed through the shell interpreter, making it vulnerable to command injection "
-                "if any part of the command string is user-controlled."
+                "Resolves standard-library subprocess calls and checks whether their shell "
+                "option is enabled. Review the command input for each observed use."
             ),
         }
 
@@ -134,22 +134,14 @@ class ShellTrueRule(SecurityRule):
     ) -> list[Finding]:
         findings: list[Finding] = []
 
+        modules = PythonModules(file_asts)
         for ast in file_asts:
             if ast.language != Language.PYTHON:
                 continue
 
             for call in ast.calls:
-                callee = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
-                if callee not in (
-                    "subprocess.run",
-                    "subprocess.call",
-                    "subprocess.Popen",
-                    "subprocess.check_output",
-                    "subprocess.check_call",
-                ):
-                    continue
-
-                if any("shell=True" in arg or "shell = True" in arg for arg in call.arguments):
+                process = process_input(call, ast, modules)
+                if process and process.shell is True:
                     findings.append(
                         self._create_finding(
                             file_path=ast.file_path,
@@ -157,8 +149,8 @@ class ShellTrueRule(SecurityRule):
                             line_end=call.line,
                             code_snippet="",
                             message=(
-                                f"subprocess call at line {call.line} uses shell=True. "
-                                f"This is dangerous if any command argument is user-controlled."
+                                f"{process.api} enables the shell on line {call.line}. "
+                                "Review how the command text is constructed."
                             ),
                         )
                     )

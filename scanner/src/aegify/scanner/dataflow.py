@@ -11,14 +11,22 @@ import networkx as nx
 from aegify.config import TaintAnalysisConfig
 from aegify.graph_types import CodeGraph
 from aegify.models import (
+    CallSite,
     FileAST,
     Language,
+    PythonFileAccess,
     TaintAnalysisSummary,
     TaintFlow,
     TaintPropagation,
     TaintSink,
     TaintSource,
 )
+from aegify.scanner.python_code import code_operand
+from aegify.scanner.python_deserialization import sink_operand
+from aegify.scanner.python_ldap import LDAPConnections
+from aegify.scanner.python_process import process_input
+from aegify.scanner.python_redirect import redirect_operand
+from aegify.scanner.python_scope import PythonModules
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +46,12 @@ class TaintConfig:
                 Language.PYTHON: [
                     SourcePattern("request.args", "http_param"),
                     SourcePattern("request.form", "http_param"),
+                    SourcePattern("request.GET", "http_param"),
+                    SourcePattern("request.POST", "http_param"),
                     SourcePattern("request.json", "http_body"),
                     SourcePattern("request.data", "http_body"),
                     SourcePattern("request.values", "http_param"),
+                    SourcePattern("request.query_string", "http_query"),
                     SourcePattern("request.headers", "http_header"),
                     SourcePattern("request.cookies", "http_cookie"),
                     SourcePattern("sys.argv", "cli_arg"),
@@ -52,7 +63,7 @@ class TaintConfig:
                     SourcePattern("cursor.fetchone", "database_result"),
                     SourcePattern("cursor.fetchall", "database_result"),
                     SourcePattern(".query(", "database_result"),
-                    SourcePattern("configparser", "config_value"),
+                    SourcePattern("configparser.file_value", "config_value", resolved_only=True),
                     SourcePattern(".get_config", "config_value"),
                     SourcePattern("requests.get", "external_api_response"),
                     SourcePattern("requests.post", "external_api_response"),
@@ -145,33 +156,26 @@ class TaintConfig:
                     SinkPattern("session.execute", "sql_query", 0),
                     SinkPattern("db.execute", "sql_query", 0),
                     SinkPattern("os.system", "os_command", 0),
-                    SinkPattern("subprocess.run", "os_command", 0),
-                    SinkPattern("subprocess.call", "os_command", 0),
-                    SinkPattern("subprocess.Popen", "os_command", 0),
-                    SinkPattern("eval", "code_exec", 0),
-                    SinkPattern("exec", "code_exec", 0),
-                    # Python's builtin open is a free function. An arbitrary
-                    # object's .open() may be an HTTP client or a UI method;
-                    # sharing a method name is not a filesystem model.
-                    SinkPattern("open", "file_access", 0, exact=True),
-                    SinkPattern("builtins.open", "file_access", 0, exact=True),
-                    SinkPattern("io.open", "file_access", 0, exact=True),
+                    SinkPattern("python.subprocess", "os_command", python_process=True),
+                    SinkPattern("python.dynamic_code", "code_exec", python_code=True),
+                    SinkPattern("python.filesystem", "file_access", python_files=True),
+                    SinkPattern("python.template", "template_source", python_template=True),
                     SinkPattern("render_template_string", "xss", 0),
                     SinkPattern("Markup", "xss", 0),
-                    SinkPattern("pickle.loads", "deserialization", 0),
-                    SinkPattern("yaml.load", "deserialization", 0),
+                    SinkPattern(
+                        "python.deserialization", "deserialization", python_deserialization=True
+                    ),
                     SinkPattern("marshal.loads", "deserialization", 0),
                     SinkPattern("jsonpickle.decode", "deserialization", 0),
-                    SinkPattern("ldap.search", "ldap_query", 0),
-                    SinkPattern("ldap.filter_format", "ldap_query", 0),
+                    SinkPattern("python.ldap.search", "ldap_search_filter", python_ldap=True),
                     SinkPattern("etree.fromstring", "xml_parse", 0),
                     SinkPattern("etree.parse", "xml_parse", 0),
-                    SinkPattern("minidom.parseString", "xml_parse", 0),
                     SinkPattern("requests.get", "ssrf", 0),
                     SinkPattern("requests.post", "ssrf", 0),
                     SinkPattern("urllib.request.urlopen", "ssrf", 0),
+                    SinkPattern("python.download", "ssrf", python_download=True),
                     SinkPattern("httpx.get", "ssrf", 0),
-                    SinkPattern("redirect", "redirect", 0),
+                    SinkPattern("python.http.redirect", "redirect", python_redirect=True),
                     SinkPattern("logging.info", "log_injection", 0),
                     SinkPattern("logger.info", "log_injection", 0),
                     SinkPattern("logger.warning", "log_injection", 0),
@@ -274,11 +278,8 @@ class TaintConfig:
                     "bleach.clean",
                     "shlex.quote",
                     "markupsafe.escape",
-                    "escape",
-                    "sanitize",
-                    "validate",
-                    "parameterized",
-                    "prepare",
+                    "validate_path",
+                    "validate_command",
                 ],
                 Language.JAVASCRIPT: [
                     "DOMPurify.sanitize",
@@ -348,6 +349,7 @@ class TaintConfig:
 class SourcePattern:
     pattern: str
     source_type: str
+    resolved_only: bool = False
 
 
 @dataclass
@@ -356,6 +358,61 @@ class SinkPattern:
     sink_type: str
     argument_index: int = 0
     exact: bool = False
+    python_files: bool = False
+    python_deserialization: bool = False
+    python_ldap: bool = False
+    python_redirect: bool = False
+    python_code: bool = False
+    python_process: bool = False
+    python_template: bool = False
+    python_download: bool = False
+
+    @property
+    def has_python_operand(self) -> bool:
+        return (
+            self.python_code
+            or self.python_template
+            or self.python_download
+            or self.python_process
+            or self.python_ldap
+            or self.python_redirect
+            or self.python_deserialization
+        )
+
+    def select_operand(
+        self, call: CallSite, file: FileAST, modules: PythonModules, ldap: LDAPConnections
+    ) -> tuple[str, int] | None:
+        if self.python_template or self.python_download:
+            operand = (
+                call.python_template_source if self.python_template else call.python_download_url
+            )
+            if operand and modules.external(file, operand.api):
+                return operand.api, operand.argument_index
+            return None
+        if self.python_process:
+            process = process_input(call, file, modules)
+            return (
+                (process.api, process.argument_index)
+                if process and process.argument_index is not None
+                else None
+            )
+        if self.python_code:
+            return code_operand(call, file, modules)
+        if self.python_ldap:
+            return ldap.operand(call, file)
+        if self.python_redirect:
+            return redirect_operand(call, file, modules)
+        return sink_operand(call, file) if self.python_deserialization else None
+
+    @staticmethod
+    def file_operation(call: CallSite, file_ast: FileAST) -> PythonFileAccess | None:
+        if file_ast.python_file_access_resolved or call.python_file_access:
+            return call.python_file_access
+        # Older serialized ASTs predate import-aware path selection.
+        name = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
+        if name in {"open", "builtins.open", "io.open"}:
+            return PythonFileAccess(api=name, path_indices=[0])
+        return None
 
 
 class DataflowAnalyzer:
@@ -408,7 +465,11 @@ class DataflowAnalyzer:
         for call in ast.calls:
             for pattern in patterns:
                 call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
-                if pattern.pattern in call_text:
+                if (
+                    call.resolved_source == pattern.pattern
+                    if pattern.resolved_only
+                    else pattern.pattern in call_text
+                ):
                     sources.append(
                         TaintSource(
                             variable=call_text,
@@ -423,7 +484,7 @@ class DataflowAnalyzer:
             # Also check arguments for source patterns
             for arg in call.arguments:
                 for pattern in patterns:
-                    if pattern.pattern in arg:
+                    if not pattern.resolved_only and pattern.pattern in arg:
                         sources.append(
                             TaintSource(
                                 variable=arg,
@@ -439,12 +500,44 @@ class DataflowAnalyzer:
 
     def _find_sinks(self, ast: FileAST) -> list[TaintSink]:
         """Find taint sinks in a file."""
+        modules = PythonModules([ast])
+        ldap = LDAPConnections([ast], modules)
         sinks: list[TaintSink] = []
         patterns = self.config.sinks.get(ast.language, [])
 
         for call in ast.calls:
             call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
             for pattern in patterns:
+                if pattern.has_python_operand:
+                    selected = pattern.select_operand(call, ast, modules, ldap)
+                    if selected:
+                        sinks.append(
+                            TaintSink(
+                                function=selected[0],
+                                argument_index=selected[1],
+                                file_path=ast.file_path,
+                                line=call.line,
+                                sink_type=pattern.sink_type,
+                                in_function=call.in_function,
+                            )
+                        )
+                        break
+                    continue
+                if pattern.python_files:
+                    if operation := pattern.file_operation(call, ast):
+                        sinks.extend(
+                            TaintSink(
+                                function=operation.api,
+                                file_path=ast.file_path,
+                                line=call.line,
+                                sink_type=operation.sink_type,
+                                argument_index=index,
+                                in_function=call.in_function,
+                            )
+                            for index in operation.path_indices
+                        )
+                        break
+                    continue
                 matches = (
                     call_text == pattern.pattern
                     if pattern.exact

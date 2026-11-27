@@ -1,84 +1,65 @@
 import { requireAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { getGitHubToken, listGitHubRepos } from "@/lib/github";
 import { getGitLabToken, listGitLabProjects } from "@/lib/gitlab";
 
 export async function GET(request: Request) {
-  // Provider tokens are loaded only from this caller's own OAuth account.
   const access = await requireAccess(request);
   if (access instanceof Response) return access;
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!access.userId)
+    return NextResponse.json({ error: "Sign in to list your repositories." }, { status: 401 });
+
+  const [ghToken, glToken] = await Promise.all([
+    getGitHubToken(access.userId),
+    getGitLabToken(access.userId),
+  ]);
+  const [github, gitlab] = await Promise.all([
+    ghToken ? listGitHubRepos(ghToken, request.signal) : undefined,
+    glToken ? listGitLabProjects(glToken, request.signal) : undefined,
+  ]);
+  const warnings: string[] = [];
+  for (const [provider, state] of [
+    ["GitHub", github?.state],
+    ["GitLab", gitlab?.state],
+  ]) {
+    if (state === "interrupted")
+      warnings.push(provider + " could not finish loading repositories. Try again.");
+    if (state === "limited") warnings.push("Showing the first 500 repositories from " + provider + ".");
   }
 
-  const repos: Array<{
-    provider: string;
-    id: string;
-    name: string;
-    fullName: string;
-    url: string;
-    description: string | null;
-    isPrivate: boolean;
-    defaultBranch: string;
-    language: string | null;
-    updatedAt: string;
-  }> = [];
-
-  // Fetch GitHub repos
-  const ghToken = await getGitHubToken(session.user.id);
-  if (ghToken) {
-    try {
-      const ghRepos = await listGitHubRepos(ghToken);
-      for (const repo of ghRepos) {
-        repos.push({
-          provider: "github",
-          id: `gh-${repo.id}`,
-          name: repo.name,
-          fullName: repo.full_name,
-          url: repo.html_url,
-          description: repo.description,
-          isPrivate: repo.private,
-          defaultBranch: repo.default_branch,
-          language: repo.language,
-          updatedAt: repo.updated_at,
-        });
-      }
-    } catch (e) {
-      console.error("GitHub repo fetch error:", e);
-    }
-  }
-
-  // Fetch GitLab projects
-  const glToken = await getGitLabToken(session.user.id);
-  if (glToken) {
-    try {
-      const glProjects = await listGitLabProjects(glToken);
-      for (const proj of glProjects) {
-        repos.push({
-          provider: "gitlab",
-          id: `gl-${proj.id}`,
-          name: proj.name,
-          fullName: proj.path_with_namespace,
-          url: proj.web_url,
-          description: proj.description,
-          isPrivate: proj.visibility !== "public",
-          defaultBranch: proj.default_branch,
-          language: null,
-          updatedAt: proj.last_activity_at,
-        });
-      }
-    } catch (e) {
-      console.error("GitLab project fetch error:", e);
-    }
-  }
-
-  return NextResponse.json({
-    repos,
-    providers: {
-      github: !!ghToken,
-      gitlab: !!glToken,
+  const repos = [
+    ...(github?.items ?? []).map((repo) => ({
+      provider: "github",
+      id: "gh-" + repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      url: repo.html_url,
+      description: repo.description,
+      isPrivate: repo.private,
+      defaultBranch: repo.default_branch,
+      language: repo.language,
+      updatedAt: repo.updated_at,
+    })),
+    ...(gitlab?.items ?? []).map((repo) => ({
+      provider: "gitlab",
+      id: "gl-" + repo.id,
+      name: repo.name,
+      fullName: repo.path_with_namespace,
+      url: repo.web_url,
+      description: repo.description,
+      isPrivate: repo.visibility !== "public",
+      defaultBranch: repo.default_branch || "",
+      language: null,
+      updatedAt: repo.last_activity_at,
+    })),
+  ];
+  return NextResponse.json(
+    {
+      repos,
+      providers: { github: !!ghToken, gitlab: !!glToken },
+      warnings,
+      retryable: [github?.state, gitlab?.state].includes("interrupted"),
     },
-  });
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
 }

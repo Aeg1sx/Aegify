@@ -33,6 +33,7 @@ from aegify.models import ScanProgress
 from aegify.reporter.sarif import SARIFReporter
 from aegify.scanner.ast_parser import parser_fingerprint
 from aegify.scanner.engine import ScanEngine
+from aegify.scanner.python_signing_keys import REDACTED_SIGNING_KEY, signing_keys
 
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 MAX_OUTPUT_BYTES = 100 * 1024 * 1024
@@ -108,7 +109,7 @@ def worker_config() -> AegifyConfig:
     return AegifyConfig(
         scan=ScanConfig(max_workers=2, max_findings_per_rule=500, max_findings_per_file=200),
         rules=RulesConfig(severity_threshold="low"),
-        taint=TaintAnalysisConfig(max_contexts=50_000),
+        taint=TaintAnalysisConfig(),
         storage=StorageConfig(backend="memory"),
         reporting=ReportingConfig(),
         context=ContextConfig(),
@@ -138,6 +139,34 @@ def implementation_manifest(engine: ScanEngine) -> dict[str, Any]:
         + hashlib.sha256(json.dumps(rules, sort_keys=True, default=str).encode()).hexdigest(),
         "parserFingerprint": parser_fingerprint(),
     }
+
+
+def _signing_key_review(files: list[dict[str, Any]]) -> dict[str, Any]:
+    """Bind line masks to immutable UTF-8 worker inputs for the dashboard source tools."""
+    entries = {}
+    size = 0
+    for file in files:
+        text = file["content"]
+        digest = file["sha256"]
+        if (
+            not file["path"].lower().endswith(".py")
+            or "jwt" not in text
+            or "encode" not in text
+            or digest in entries
+        ):
+            continue
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        facts = signing_keys(text.encode())
+        ranges = sorted({(f.line, f.end_line) for f in facts})
+        lines = text.split("\n")
+        for start, end in ranges:
+            lines[start - 1 : end] = [REDACTED_SIGNING_KEY] * (end - start + 1)
+        entry = {"ranges": ranges, "sha256": hashlib.sha256("\n".join(lines).encode()).hexdigest()}
+        entry_size = len(digest) + len(json.dumps(entry)) + 8
+        if size + entry_size <= 64 * 1024:
+            entries[digest] = entry
+            size += entry_size
+    return entries
 
 
 def run_snapshot(payload: dict[str, Any], workspace: Path) -> dict[str, Any]:
@@ -189,6 +218,7 @@ def run_snapshot(payload: dict[str, Any], workspace: Path) -> dict[str, Any]:
         "sourceDigest": payload["sourceDigest"],
         "commit": payload["commit"],
         "sourceSelection": "source-and-config",
+        "signingKeyReviewV1": _signing_key_review(payload["files"]),
         "engine": version("aegify-sast"),
         "python": sys.version.split()[0],
         "treeSitter": version("tree-sitter"),

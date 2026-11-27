@@ -1,29 +1,21 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
-  Globe,
-  Shield,
-  ShieldOff,
-  FileCode,
-  Upload,
-  Search,
-  List,
-  FolderOpen,
+  ArrowRight,
   ChevronDown,
   ChevronRight,
-  MonitorSmartphone,
-  Route,
-  Activity,
+  FileCode,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-interface EndpointItem {
+interface Endpoint {
   id: string;
-  scanId: string;
   path: string;
   method: string;
   handlerFunction: string;
@@ -31,526 +23,471 @@ interface EndpointItem {
   lineStart: number;
   framework: string;
   authRequired: boolean;
-  parameters: string;
   repositoryId: string;
   calledByFrontend: boolean;
   frontendCallCount: number;
   exposedViaGateway: boolean;
-  gatewayRouteIds: string;
   runtimeObserved: boolean;
   runtimeObservationCount: number;
-  scan: { id: string; repository: string; createdAt: string };
+  scan: { id: string; projectId: string | null; repository: string };
 }
 
-const METHOD_COLORS: Record<string, string> = {
-  GET: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  POST: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  PUT: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  DELETE: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  PATCH: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  ALL: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
-};
+interface Inventory {
+  endpoints: Endpoint[];
+  frameworks: string[];
+  totalUnfiltered: number;
+}
 
-type ViewMode = "flat" | "handler";
+type View = "routes" | "files";
+type EvidenceFilter = "" | "frontend" | "gateway" | "runtime" | "unlinked";
+
+const columns = "@3xl/inventory:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(11rem,0.85fr)]";
+const selectStyle = "workbench-select min-h-11 w-full text-sm";
+
+function evidenceMatches(ep: Endpoint, filter: EvidenceFilter) {
+  switch (filter) {
+    case "frontend":
+      return ep.calledByFrontend;
+    case "gateway":
+      return ep.exposedViaGateway;
+    case "runtime":
+      return ep.runtimeObserved;
+    case "unlinked":
+      return !ep.calledByFrontend && !ep.exposedViaGateway && !ep.runtimeObserved;
+    default:
+      return true;
+  }
+}
+
+function repository(ep: Endpoint) {
+  return ep.repositoryId || ep.scan.repository;
+}
+
+function Routes({ records }: { records: Endpoint[] }) {
+  return (
+    <ul className="divide-y" aria-label="Endpoint records">
+      {records.map((ep) => {
+        const evidence = [];
+        if (ep.calledByFrontend)
+          evidence.push(ep.frontendCallCount > 0 ? "Frontend (" + ep.frontendCallCount + ")" : "Frontend");
+        if (ep.exposedViaGateway) evidence.push("Gateway");
+        if (ep.runtimeObserved)
+          evidence.push(
+            ep.runtimeObservationCount > 0 ? "Runtime (" + ep.runtimeObservationCount + ")" : "Runtime",
+          );
+        return (
+          <li key={ep.id}>
+            <Link
+              href={"/endpoints/" + ep.id}
+              className={
+                "group grid min-w-0 items-start gap-x-5 gap-y-2 px-4 py-3.5 hover:bg-accent/50 focus-visible:outline-offset-[-3px] sm:px-5 " +
+                columns
+              }
+            >
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2.5">
+                  <span className="shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium">
+                    {ep.method}
+                  </span>
+                  <span className="min-w-0 break-all font-mono text-sm font-semibold text-foreground group-hover:text-primary">
+                    {ep.path}
+                  </span>
+                </div>
+                <p className="mt-1.5 break-all text-xs text-muted-foreground">
+                  {[repository(ep), ep.framework].filter(Boolean).join(" · ") ||
+                    "Scan " + ep.scan.id.slice(-8)}
+                </p>
+              </div>
+              <div className="min-w-0">
+                {ep.handlerFunction && <p className="break-all font-mono text-xs">{ep.handlerFunction}</p>}
+                <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
+                  {ep.filePath || "Source unavailable"}
+                  {ep.filePath && ep.lineStart > 0 ? ":" + ep.lineStart : ""}
+                </p>
+              </div>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p className="flex items-center gap-1.5">
+                  {ep.authRequired && <ShieldCheck aria-hidden className="size-3.5 shrink-0 text-primary" />}
+                  {ep.authRequired ? "Auth signal recorded" : "No auth signal recorded"}
+                </p>
+                {evidence.length > 0 && <p>{evidence.join(" · ")}</p>}
+              </div>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 export default function EndpointsPage() {
-  const [endpoints, setEndpoints] = useState<EndpointItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [frameworks, setFrameworks] = useState<string[]>([]);
-  const [filterFramework, setFilterFramework] = useState("");
-  const [filterMethod, setFilterMethod] = useState("");
-  const [filterAuth, setFilterAuth] = useState("");
-  const [filterExposure, setFilterExposure] = useState("");
-  const [showAll, setShowAll] = useState(false);
-  const [totalUnfiltered, setTotalUnfiltered] = useState(0);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("flat");
-  const [expandedHandlers, setExpandedHandlers] = useState<Set<string>>(new Set());
+  return (
+    <Suspense
+      fallback={
+        <p className="p-5 text-sm text-muted-foreground" role="status">
+          Loading endpoints…
+        </p>
+      }
+    >
+      <InventoryView />
+    </Suspense>
+  );
+}
 
+function InventoryView() {
+  const search = useSearchParams();
+  const framework = search.get("framework") || "";
+  const method = search.get("method") || "";
+  const authValue = search.get("auth");
+  const auth = authValue === "true" || authValue === "false" ? authValue : "";
+  const exposureValue = search.get("evidence");
+  const exposure =
+    exposureValue === "frontend" ||
+    exposureValue === "gateway" ||
+    exposureValue === "runtime" ||
+    exposureValue === "unlinked"
+      ? exposureValue
+      : "";
+  const allRecords = search.get("all") === "1";
+  const query = search.get("q") || "";
+  const view: View = search.get("view") === "files" ? "files" : "routes";
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [attempt, setAttempt] = useState(0);
+  const [response, setResponse] = useState<{ key: string; data: Inventory | null } | null>(null);
+
+  const params = new URLSearchParams();
+  if (framework) params.set("framework", framework);
+  if (method) params.set("method", method);
+  if (auth) params.set("authOnly", auth);
+  if (!allRecords) params.set("quality", "api");
+  const key = params.toString();
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (filterFramework) params.set("framework", filterFramework);
-    if (filterMethod) params.set("method", filterMethod);
-    if (filterAuth) params.set("authOnly", filterAuth);
-
-    if (!showAll) params.set("quality", "api");
-    fetch(`/api/endpoints?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setEndpoints(data.endpoints || []);
-        setFrameworks(data.frameworks || []);
-        setTotalUnfiltered(data.totalUnfiltered || data.endpoints?.length || 0);
-      })
-      .finally(() => setLoading(false));
-  }, [filterFramework, filterMethod, filterAuth, showAll]);
-
-  // Client-side search filter
-  const filtered = useMemo(() => {
-    const q = searchQuery.toLowerCase();
-    return endpoints.filter((ep) => {
-      const matchesSearch =
-        !q ||
-        ep.path.toLowerCase().includes(q) ||
-        ep.handlerFunction.toLowerCase().includes(q) ||
-        ep.framework.toLowerCase().includes(q) ||
-        ep.filePath.toLowerCase().includes(q) ||
-        ep.repositoryId.toLowerCase().includes(q) ||
-        ep.method.toLowerCase().includes(q);
-      const matchesExposure =
-        !filterExposure ||
-        (filterExposure === "frontend" && ep.calledByFrontend) ||
-        (filterExposure === "gateway" && ep.exposedViaGateway) ||
-        (filterExposure === "runtime" && ep.runtimeObserved) ||
-        (filterExposure === "unlinked" &&
-          !ep.calledByFrontend &&
-          !ep.exposedViaGateway &&
-          !ep.runtimeObserved);
-      return matchesSearch && matchesExposure;
-    });
-  }, [endpoints, searchQuery, filterExposure]);
-
-  // Group by handler for grouped view
-  const handlerGroups = useMemo(() => {
-    const groups = new Map<string, { handler: string; filePath: string; framework: string; endpoints: EndpointItem[] }>();
-    for (const ep of filtered) {
-      // Use filePath as grouping key (handler name can be duplicated across files)
-      const key = ep.filePath || ep.handlerFunction;
-      const existing = groups.get(key);
-      if (existing) {
-        existing.endpoints.push(ep);
-      } else {
-        groups.set(key, {
-          handler: ep.handlerFunction,
-          filePath: ep.filePath,
-          framework: ep.framework,
-          endpoints: [ep],
-        });
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const result = await fetch("/api/endpoints?" + key, { signal: controller.signal });
+        if (!result.ok) throw new Error();
+        const data: Inventory = await result.json();
+        if (!controller.signal.aborted) setResponse({ key, data });
+      } catch {
+        if (!controller.signal.aborted) setResponse({ key, data: null });
       }
     }
-    // Sort by endpoint count descending
-    return Array.from(groups.values()).sort((a, b) => b.endpoints.length - a.endpoints.length);
-  }, [filtered]);
+    void load();
+    return () => controller.abort();
+  }, [key, attempt]);
 
-  const toggleHandler = (key: string) => {
-    setExpandedHandlers((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
+  const current = response?.key === key ? response.data : undefined;
+  const records = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (current?.endpoints || []).filter(
+      (ep) =>
+        evidenceMatches(ep, exposure) &&
+        (!needle ||
+          [ep.path, ep.handlerFunction, ep.filePath, ep.framework, ep.method, repository(ep)].some((value) =>
+            value.toLowerCase().includes(needle),
+          )),
+    );
+  }, [current, query, exposure]);
+
+  const files = useMemo(() => {
+    const groups = new Map<string, Endpoint[]>();
+    for (const ep of records) {
+      const source = ep.filePath || ep.handlerFunction || ep.id;
+      const group = JSON.stringify([
+        ep.scan.projectId,
+        repository(ep) || ep.scan.projectId || ep.scan.id,
+        source,
+      ]);
+      const entries = groups.get(group);
+      if (entries) entries.push(ep);
+      else groups.set(group, [ep]);
+    }
+    return [...groups].sort(
+      ([, left], [, right]) =>
+        right.length - left.length || left[0].filePath.localeCompare(right[0].filePath),
+    );
+  }, [records]);
+
+  const applied = [framework, method, auth, exposure, allRecords].filter(Boolean).length;
+  const filtering = Boolean(applied || query.trim());
+  const frameworks = [...new Set([...(response?.data?.frameworks || []), framework].filter(Boolean))].sort();
+  const linked = records.filter((ep) => !evidenceMatches(ep, "unlinked")).length;
+  const authSignals = records.filter((ep) => ep.authRequired).length;
+
+  function update(changes: Record<string, string>) {
+    const url = new URL(window.location.href);
+    for (const [name, value] of Object.entries(changes)) {
+      if (value) url.searchParams.set(name, value);
+      else url.searchParams.delete(name);
+    }
+    window.history.replaceState(null, "", url);
+  }
+
+  function reset() {
+    update({ framework: "", method: "", auth: "", evidence: "", all: "", q: "" });
+  }
+
+  function toggleFile(id: string) {
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
-  };
-
-  const expandAll = () => {
-    setExpandedHandlers(new Set(handlerGroups.map((g) => g.filePath)));
-  };
-
-  const collapseAll = () => {
-    setExpandedHandlers(new Set());
-  };
-
-  const authCount = filtered.filter((e) => e.authRequired).length;
-  const noAuthCount = filtered.filter((e) => !e.authRequired).length;
-  const frontendCount = filtered.filter((e) => e.calledByFrontend).length;
-  const gatewayCount = filtered.filter((e) => e.exposedViaGateway).length;
-  const runtimeCount = filtered.filter((e) => e.runtimeObserved).length;
-
-  // Extract short filename from full path
-  const shortFile = (filePath: string) => {
-    const parts = filePath.split("/");
-    // Show last 3 segments for context
-    return parts.length > 3 ? ".../" + parts.slice(-3).join("/") : filePath;
-  };
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Endpoints</h1>
-          <p className="text-muted-foreground">
-            API attack surface detected from scans
+    <div className="@container/inventory min-w-0 space-y-5">
+      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
+        <h1 className="workbench-title">Endpoints</h1>
+        <Link
+          href="/api-specs"
+          className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-primary hover:underline"
+        >
+          API specifications <ArrowRight aria-hidden className="size-4" />
+        </Link>
+        {current && (
+          <p className="col-span-full flex flex-wrap gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>
+              {records.length.toLocaleString()} {allRecords ? "route record" : "route"}
+              {records.length === 1 ? "" : "s"}
+            </span>
+            <span aria-hidden>·</span>
+            <span>{authSignals.toLocaleString()} with auth signals</span>
+            <span aria-hidden>·</span>
+            <span>{linked.toLocaleString()} with linked evidence</span>
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild><Link href="/api-specs"><Upload className="mr-2 h-4 w-4" />API Specifications</Link></Button>
-        </div>
-      </div>
+        )}
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Endpoints</p>
-                <p className="text-3xl font-bold">{filtered.length}</p>
-              </div>
-              <Globe className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Exposure Evidence</p>
-                <p className="text-3xl font-bold">
-                  {frontendCount + gatewayCount + runtimeCount}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {frontendCount} UI · {gatewayCount} gateway · {runtimeCount} runtime
-                </p>
-              </div>
-              <MonitorSmartphone className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Auth Signal</p>
-                <p className="text-3xl font-bold text-[var(--status-fixed)]">
-                  {authCount}
-                </p>
-              </div>
-              <Shield className="h-8 w-8 text-[var(--status-fixed)]" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">No Auth Signal</p>
-                <p className="text-3xl font-bold text-[var(--status-open)]">
-                  {noAuthCount}
-                </p>
-              </div>
-              <ShieldOff className="h-8 w-8 text-[var(--status-open)]" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {viewMode === "handler" ? "Files" : "Frameworks"}
-                </p>
-                <p className="text-3xl font-bold">
-                  {viewMode === "handler" ? handlerGroups.length : frameworks.length}
-                </p>
-              </div>
-              <FileCode className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search + Filters */}
-      <div className="flex flex-col gap-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by path, handler, framework, file..."
-            className="w-full h-9 rounded-md border border-input bg-background pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <select
-            value={filterFramework}
-            onChange={(e) => {
-              setLoading(true);
-              setFilterFramework(e.target.value);
-            }}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">All frameworks</option>
-            {frameworks.map((fw) => (
-              <option key={fw} value={fw}>
-                {fw}
-              </option>
-            ))}
-          </select>
-          <select
-            value={filterMethod}
-            onChange={(e) => {
-              setLoading(true);
-              setFilterMethod(e.target.value);
-            }}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">All methods</option>
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-            <option value="PUT">PUT</option>
-            <option value="DELETE">DELETE</option>
-            <option value="PATCH">PATCH</option>
-          </select>
-          <select
-            value={filterAuth}
-            onChange={(e) => {
-              setLoading(true);
-              setFilterAuth(e.target.value);
-            }}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">All auth states</option>
-            <option value="true">Auth signal recorded</option>
-            <option value="false">No auth signal recorded</option>
-          </select>
-          <select
-            value={filterExposure}
-            onChange={(e) => setFilterExposure(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">All exposure evidence</option>
-            <option value="frontend">Called by frontend</option>
-            <option value="gateway">Exposed via gateway</option>
-            <option value="runtime">Observed at runtime</option>
-            <option value="unlinked">No correlated evidence</option>
-          </select>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showAll}
-              onChange={(e) => {
-                setLoading(true);
-                setShowAll(e.target.checked);
-              }}
-              className="rounded border-input"
+      <section aria-label="Endpoint inventory" className="workbench-panel">
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 sm:px-5">
+          <label className="relative min-w-0 basis-full @lg/inventory:flex-1">
+            <span className="sr-only">Search endpoints</span>
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
-            Show all ({totalUnfiltered})
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => update({ q: event.target.value })}
+              placeholder="Search path, handler, or repository…"
+              className="h-11 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm"
+            />
           </label>
-
-          <div className="ml-auto flex items-center gap-1 border border-input rounded-md">
-            <button
-              onClick={() => setViewMode("flat")}
-              className={`p-1.5 rounded-sm ${viewMode === "flat" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              title="Flat list"
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("handler")}
-              className={`p-1.5 rounded-sm ${viewMode === "handler" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              title="Group by file"
-            >
-              <FolderOpen className="h-4 w-4" />
-            </button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11"
+            aria-expanded={filtersOpen}
+            aria-controls="endpoint-filters"
+            onClick={() => setFiltersOpen(!filtersOpen)}
+          >
+            <SlidersHorizontal aria-hidden />
+            Filters{applied ? " (" + applied + ")" : ""}
+          </Button>
+          <div
+            role="group"
+            aria-label="Group endpoints"
+            className="inline-flex min-w-0 rounded-md border bg-background p-0.5"
+          >
+            {(["routes", "files"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={view === option}
+                onClick={() => update({ view: option === "files" ? option : "" })}
+                className="min-h-10 rounded-sm px-2.5 text-sm text-muted-foreground hover:text-foreground aria-pressed:bg-accent aria-pressed:font-medium aria-pressed:text-foreground"
+              >
+                {option === "routes" ? "Routes" : "By file"}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
-
-      {/* Endpoint List */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <Globe className="h-5 w-5" />
-              {filtered.length} endpoints
-              {searchQuery && (
-                <span className="text-sm font-normal text-muted-foreground">
-                  (filtered from {endpoints.length})
-                </span>
-              )}
-            </span>
-            {viewMode === "handler" && (
-              <span className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={expandAll} className="text-xs h-7">
-                  Expand all
-                </Button>
-                <Button variant="ghost" size="sm" onClick={collapseAll} className="text-xs h-7">
-                  Collapse all
-                </Button>
-              </span>
+        <div id="endpoint-filters" hidden={!filtersOpen} className="border-b bg-muted/30 px-4 py-3 sm:px-5">
+          <div className="grid grid-cols-1 gap-3 @sm/inventory:grid-cols-2 @3xl/inventory:grid-cols-4">
+            <label className="grid gap-1.5 text-xs text-muted-foreground">
+              Framework
+              <select
+                className={selectStyle}
+                value={framework}
+                onChange={(e) => update({ framework: e.target.value })}
+              >
+                <option value="">All frameworks</option>
+                {frameworks.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-xs text-muted-foreground">
+              HTTP method
+              <select
+                className={selectStyle}
+                value={method}
+                onChange={(e) => update({ method: e.target.value })}
+              >
+                <option value="">All methods</option>
+                {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "ALL"].map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-xs text-muted-foreground">
+              Authentication
+              <select className={selectStyle} value={auth} onChange={(e) => update({ auth: e.target.value })}>
+                <option value="">All auth states</option>
+                <option value="true">Auth signal recorded</option>
+                <option value="false">No auth signal recorded</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-xs text-muted-foreground">
+              Linked evidence
+              <select
+                className={selectStyle}
+                value={exposure}
+                onChange={(e) => update({ evidence: e.target.value })}
+              >
+                <option value="">All evidence</option>
+                <option value="frontend">Frontend calls</option>
+                <option value="gateway">Gateway routes</option>
+                <option value="runtime">Runtime observations</option>
+                <option value="unlinked">No linked evidence</option>
+              </select>
+            </label>
+          </div>
+          <label className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={allRecords}
+              onChange={(e) => update({ all: e.target.checked ? "1" : "" })}
+            />
+            Include all scan records{current ? " (" + current.totalUnfiltered.toLocaleString() + ")" : ""}
+          </label>
+        </div>
+        {applied > 0 && (
+          <button
+            type="button"
+            onClick={reset}
+            className="mx-4 min-h-11 text-sm text-primary hover:underline sm:mx-5"
+          >
+            Clear filters
+          </button>
+        )}
+        {current === undefined ? (
+          <p className="p-5 text-sm text-muted-foreground" role="status">
+            Loading endpoints…
+          </p>
+        ) : current === null ? (
+          <div className="p-5" role="alert">
+            <p className="text-sm">Couldn’t load endpoint records.</p>
+            <button
+              className="min-h-11 text-sm font-medium text-primary hover:underline"
+              onClick={() => {
+                setResponse(null);
+                setAttempt((n) => n + 1);
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : !records.length ? (
+          <div className="space-y-1 p-5">
+            <h2 className="font-medium">
+              {filtering ? "No endpoints match these filters" : "No API routes recorded"}
+            </h2>
+            {query.trim() && applied === 0 && (
+              <button type="button" onClick={reset} className="min-h-11 text-sm text-primary hover:underline">
+                Clear search
+              </button>
             )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-pulse text-muted-foreground">Loading...</div>
+            {!filtering && (
+              <p className="text-sm text-muted-foreground">
+                {current.totalUnfiltered
+                  ? "Open Filters and include all scan records to see assets and internal routes."
+                  : "Routes recorded by repository scans appear here."}
+              </p>
+            )}
+          </div>
+        ) : view === "routes" ? (
+          <>
+            <div
+              aria-hidden
+              className={
+                "hidden gap-5 border-b bg-muted/50 px-5 py-2 text-xs font-medium text-muted-foreground @3xl/inventory:grid " +
+                columns
+              }
+            >
+              <span>Method and path</span>
+              <span>Source</span>
+              <span>Recorded evidence</span>
             </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <Globe className="h-12 w-12 mb-4 opacity-50" />
-              <p>{searchQuery ? "No endpoints match your search" : "No endpoints detected"}</p>
-              {!searchQuery && (
-                <p className="text-xs mt-1">
-                  Endpoints are detected from scans that include framework-specific route patterns
-                </p>
-              )}
-            </div>
-          ) : viewMode === "flat" ? (
-            /* Flat list view */
-            <div className="space-y-1">
-              <div className="grid grid-cols-[80px_1fr_180px_100px_140px_60px] gap-4 px-3 py-2 text-xs text-muted-foreground font-medium border-b border-border">
-                <span>Method</span>
-                <span>Path</span>
-                <span>Handler</span>
-                <span>Framework</span>
-                <span>Exposure evidence</span>
-                <span>Auth</span>
-              </div>
-              {filtered.map((ep) => (
-                <Link
-                  key={ep.id}
-                  href={`/endpoints/${ep.id}`}
-                  className="grid grid-cols-[80px_1fr_180px_100px_140px_60px] gap-4 px-3 py-2 rounded-md hover:bg-accent/30 items-center cursor-pointer"
+            <Routes records={records} />
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-x-4 border-b px-4 sm:px-5">
+              <span className="text-sm font-medium">
+                {files.length} {files.length === 1 ? "source group" : "source groups"}
+              </span>
+              <div className="flex gap-4 text-xs font-medium text-primary">
+                <button
+                  type="button"
+                  className="min-h-11 hover:underline"
+                  onClick={() => setExpanded(new Set(files.map(([id]) => id)))}
                 >
-                  <Badge
-                    className={`text-xs font-mono justify-center ${
-                      METHOD_COLORS[ep.method] || METHOD_COLORS.ALL
-                    }`}
-                  >
-                    {ep.method}
-                  </Badge>
-                  <span className="text-sm font-mono truncate">{ep.path}</span>
-                  <span className="text-xs font-mono text-muted-foreground truncate">
-                    {ep.handlerFunction}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {ep.framework || "-"}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    {ep.calledByFrontend && (
-                      <Badge variant="secondary" className="gap-1 text-[10px]">
-                        <MonitorSmartphone className="h-3 w-3" />
-                        UI {ep.frontendCallCount}
-                      </Badge>
-                    )}
-                    {ep.exposedViaGateway && (
-                      <Badge variant="outline" className="gap-1 text-[10px]">
-                        <Route className="h-3 w-3" />
-                        GW
-                      </Badge>
-                    )}
-                    {ep.runtimeObserved && (
-                      <Badge variant="outline" className="gap-1 text-[10px]">
-                        <Activity className="h-3 w-3" />
-                        RT {ep.runtimeObservationCount}
-                      </Badge>
-                    )}
-                    {!ep.calledByFrontend &&
-                      !ep.exposedViaGateway &&
-                      !ep.runtimeObserved && (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </span>
-                  <span>
-                    {ep.authRequired ? (
-                      <Shield className="h-4 w-4 text-[var(--status-fixed)]" />
-                    ) : (
-                      <ShieldOff className="h-4 w-4 text-muted-foreground/40" />
-                    )}
-                  </span>
-                </Link>
-              ))}
+                  Expand all
+                </button>
+                <button
+                  type="button"
+                  className="min-h-11 hover:underline"
+                  onClick={() => setExpanded(new Set())}
+                >
+                  Collapse all
+                </button>
+              </div>
             </div>
-          ) : (
-            /* Handler/File grouped view */
-            <div className="space-y-1">
-              {handlerGroups.map((group) => {
-                const isExpanded = expandedHandlers.has(group.filePath);
-                const groupAuthCount = group.endpoints.filter((e) => e.authRequired).length;
+            <ul className="divide-y" aria-label="Source groups">
+              {files.map(([id, entries]) => {
+                const first = entries[0];
+                const open = expanded.has(id);
+                const Icon = open ? ChevronDown : ChevronRight;
                 return (
-                  <div key={group.filePath} className="border border-border rounded-md">
+                  <li key={id}>
                     <button
-                      onClick={() => toggleHandler(group.filePath)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-accent/30 text-left"
+                      type="button"
+                      className="flex w-full min-w-0 items-center gap-2 px-4 py-3 text-left hover:bg-accent/50 sm:px-5"
+                      aria-expanded={open}
+                      onClick={() => toggleFile(id)}
                     >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">
-                            {shortFile(group.filePath)}
-                          </span>
-                          {group.framework && (
-                            <Badge variant="outline" className="text-[10px] shrink-0">
-                              {group.framework}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        {group.endpoints.some((e) => e.calledByFrontend) && (
-                          <MonitorSmartphone className="h-3.5 w-3.5 text-primary" />
-                        )}
-                        {group.endpoints.some((e) => e.exposedViaGateway) && (
-                          <Route className="h-3.5 w-3.5 text-primary" />
-                        )}
-                        {group.endpoints.some((e) => e.runtimeObserved) && (
-                          <Activity className="h-3.5 w-3.5 text-primary" />
-                        )}
-                        {groupAuthCount > 0 && (
-                          <span className="flex items-center gap-1 text-xs text-[var(--status-fixed)]">
-                            <Shield className="h-3 w-3" />
-                            {groupAuthCount}
-                          </span>
-                        )}
-                        <Badge variant="secondary" className="text-xs">
-                          {group.endpoints.length} endpoint{group.endpoints.length > 1 ? "s" : ""}
-                        </Badge>
-                      </div>
+                      <Icon aria-hidden className="size-4 shrink-0" />
+                      <FileCode aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-all font-mono text-sm">
+                          {first.filePath || first.handlerFunction || "Source unavailable"}
+                        </span>
+                        <span className="block break-all text-xs text-muted-foreground">
+                          {repository(first) || "Scan " + first.scan.id.slice(-8)}
+                        </span>
+                      </span>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {entries.length} {entries.length === 1 ? "route" : "routes"}
+                      </span>
                     </button>
-                    {isExpanded && (
-                      <div className="border-t border-border">
-                        {group.endpoints.map((ep) => (
-                          <Link
-                            key={ep.id}
-                            href={`/endpoints/${ep.id}`}
-                            className="grid grid-cols-[80px_1fr_160px_100px_50px] gap-3 px-3 pl-10 py-1.5 hover:bg-accent/30 items-center cursor-pointer text-sm"
-                          >
-                            <Badge
-                              className={`text-[10px] font-mono justify-center ${
-                                METHOD_COLORS[ep.method] || METHOD_COLORS.ALL
-                              }`}
-                            >
-                              {ep.method}
-                            </Badge>
-                            <span className="font-mono truncate text-xs">{ep.path}</span>
-                            <span className="text-[11px] font-mono text-muted-foreground truncate">
-                              {ep.handlerFunction}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              {ep.calledByFrontend && (
-                                <MonitorSmartphone className="h-3.5 w-3.5 text-primary" />
-                              )}
-                              {ep.exposedViaGateway && (
-                                <Route className="h-3.5 w-3.5 text-primary" />
-                              )}
-                              {ep.runtimeObserved && (
-                                <Activity className="h-3.5 w-3.5 text-primary" />
-                              )}
-                            </span>
-                            <span className="flex justify-center">
-                              {ep.authRequired ? (
-                                <Shield className="h-3.5 w-3.5 text-[var(--status-fixed)]" />
-                              ) : (
-                                <ShieldOff className="h-3.5 w-3.5 text-muted-foreground/40" />
-                              )}
-                            </span>
-                          </Link>
-                        ))}
+                    {open && (
+                      <div className="border-t bg-muted/20">
+                        <Routes records={entries} />
                       </div>
                     )}
-                  </div>
+                  </li>
                 );
               })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </ul>
+          </>
+        )}
+      </section>
     </div>
   );
 }

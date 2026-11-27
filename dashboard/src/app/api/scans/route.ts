@@ -1,13 +1,14 @@
 import { requireAccess, scanScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { boundedInteger } from "@/lib/finding-view";
 
 export async function GET(request: NextRequest) {
   const access = await requireAccess(request);
   if (access instanceof Response) return access;
   const url = new URL(request.url);
-  const page = parseInt(url.searchParams.get("page") || "1", 10);
-  const limit = parseInt(url.searchParams.get("limit") || "20", 10);
+  const page = boundedInteger(url.searchParams.get("page"), 1, 100_000);
+  const limit = boundedInteger(url.searchParams.get("limit"), 20, 100);
   const hasCallGraph = url.searchParams.get("hasCallGraph");
   const projectId = url.searchParams.get("projectId");
   const skip = (page - 1) * limit;
@@ -24,44 +25,37 @@ export async function GET(request: NextRequest) {
     where.graphNodes = { some: {} };
   }
 
-  const [scans, total] = await Promise.all([
-    prisma.scan.findMany({
-      where: { AND: [where, scanScope(access)] },
-      orderBy: { createdAt: "desc" },
+  const visible = { AND: [where, scanScope(access)] };
+  const { scans, total, counts } = await prisma.$transaction(async (tx) => {
+    const scans = await tx.scan.findMany({
+      where: visible,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip,
       take: limit,
-      include: {
-        _count: { select: { findings: true, graphNodes: true } },
-      },
-      // Include progress fields for running scans
-    }),
-    prisma.scan.count({ where: { AND: [where, scanScope(access)] } }),
-  ]);
+      include: { _count: { select: { findings: true, graphNodes: true } } },
+    });
+    const total = await tx.scan.count({ where: visible });
+    const counts = scans.length
+      ? await tx.finding.groupBy({
+          by: ["scanId", "severity"],
+          where: { scanId: { in: scans.map((scan) => scan.id) } },
+          _count: true,
+        })
+      : [];
+    return { scans, total, counts };
+  });
 
-  // Add severity breakdown for each scan
-  const enriched = await Promise.all(
-    scans.map(async (scan) => {
-      const severities = await prisma.finding.groupBy({
-        by: ["severity"],
-        where: { scanId: scan.id },
-        _count: true,
-      });
-      const severityMap: Record<string, number> = {};
-      for (const s of severities) {
-        severityMap[s.severity] = s._count;
-      }
-      return {
-        ...scan,
-        findingsCount: scan._count.findings,
-        severities: severityMap,
-        progressPhase: scan.progressPhase,
-        progressPhaseName: scan.progressPhaseName,
-        progressPercent: scan.progressPercent,
-        progressMessage: scan.progressMessage,
-        progressEta: scan.progressEta,
-      };
-    })
-  );
+  const severitiesByScan = new Map<string, Record<string, number>>();
+  for (const { scanId, severity, _count } of counts) {
+    const levels = severitiesByScan.get(scanId) ?? (Object.create(null) as Record<string, number>);
+    levels[severity] = _count;
+    severitiesByScan.set(scanId, levels);
+  }
+  const enriched = scans.map((scan) => ({
+    ...scan,
+    findingsCount: scan._count.findings,
+    severities: severitiesByScan.get(scan.id) ?? {},
+  }));
 
   return NextResponse.json({ scans: enriched, total, page, limit });
 }

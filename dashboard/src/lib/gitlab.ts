@@ -1,3 +1,4 @@
+import { repositoryPages } from "./repository-pages.ts";
 import { prisma } from "@/lib/prisma";
 
 interface GitLabProject {
@@ -18,30 +19,8 @@ export async function getGitLabToken(userId: string): Promise<string | null> {
   return account?.access_token || null;
 }
 
-export async function listGitLabProjects(accessToken: string): Promise<GitLabProject[]> {
-  const projects: GitLabProject[] = [];
-  let page = 1;
-
-  while (page <= 5) {
-    const res = await fetch(
-      `https://gitlab.com/api/v4/projects?membership=true&per_page=100&page=${page}&order_by=last_activity_at`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
-    );
-
-    if (!res.ok) break;
-
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) break;
-
-    projects.push(...data);
-    page++;
-  }
-
-  return projects;
+export function listGitLabProjects(accessToken: string, signal: AbortSignal) {
+  return repositoryPages<GitLabProject>((page) => `https://gitlab.com/api/v4/projects?membership=true&per_page=100&page=${page}&order_by=last_activity_at`, { Authorization: `Bearer ${accessToken}` }, signal);
 }
 
 export async function getGitLabFileContent(

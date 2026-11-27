@@ -1,7 +1,7 @@
 import { requireAccess, findingScope } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { boundedInteger } from "@/lib/finding-view";
+import { boundedInteger, queueConditions } from "@/lib/finding-view";
 
 export async function GET(request: NextRequest) {
   const access = await requireAccess(request);
@@ -73,16 +73,17 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const scoped = { AND: [where, findingScope(access), queueConditions(url.searchParams.get("queue"))] };
   const [findings, total] = await Promise.all([
     prisma.finding.findMany({
-      where: { AND: [where, findingScope(access)] },
+      where: scoped,
       orderBy: url.searchParams.get("sort") === "file" ? [{ filePath: "asc" }, { lineStart: "asc" }, { id: "asc" }]
         : url.searchParams.get("sort") === "rule" ? [{ ruleName: "asc" }, { id: "asc" }]
         : [{ createdAt: url.searchParams.get("sort") === "oldest" ? "asc" : "desc" }, { id: "asc" }],
       skip,
       take: limit,
     }),
-    prisma.finding.count({ where: { AND: [where, findingScope(access)] } }),
+    prisma.finding.count({ where: scoped }),
   ]);
 
   return NextResponse.json({ findings, total, page, limit });

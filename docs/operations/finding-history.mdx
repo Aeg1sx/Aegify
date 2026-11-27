@@ -3,6 +3,62 @@ title: "Finding identity and history"
 description: "Keep CI and worker triage attached to repository-qualified evidence across checkouts."
 ---
 
+## Open the next finding
+
+**Overview** opens the first unresolved critical or high finding in the queue. Use **Context** on any row to see its repository, branch, evidence state and owner. Select the filename to jump to that finding’s recorded evidence, or select the title to open the full record. **View queue** opens the full priority list. In **Workspace totals**, each count opens the corresponding list.
+
+Scan activity shows each repository and its scan status. A dash means the run has no recorded result yet. Completed and partial scans show their recorded counts, including zero. [Desktop overview](/assets/aegify-dashboard.png) · [Mobile overview](/assets/aegify-dashboard-mobile.png) · [Dark appearance](/assets/aegify-dashboard-dark.png)
+
+## Review a finding
+
+Open a finding to read the reported line beside the triage decision. On a narrow screen the source appears first. Select **Triage** to move directly to the decision. **Remediation** opens the scanner's suggested fix when one was recorded. **Flow** appears when the artifact contains steps or a flow parsing warning. Wrangler findings open on **Settings**. [Desktop](/assets/aegify-finding-review-desktop.png) · [Mobile](/assets/aegify-finding-review-mobile.png) · [Dark theme](/assets/aegify-finding-review-dark.png)
+
+In **Flow**, read the steps in order. A file heading appears each time the path enters a file. The left column shows the source line and the right column describes the step. Select a line with an arrow to open it in **Source**. In the subprocess example, line 12 supplies the argument and line 13 passes it to the subprocess. [Desktop flow](/assets/aegify-process-flow-desktop.png) · [Mobile flow](/assets/aegify-process-flow-mobile.png)
+
+When a SARIF step carries its own source excerpt, use the disclosure arrow or press **Enter** to expand it in place. This lets you inspect a helper and follow the return to the calling file. Plain line numbers indicate that only a location was recorded. [Cross-file example](/assets/aegify-flow-excerpt-desktop.png) · [Mobile](/assets/aegify-flow-excerpt-mobile.png) · [Dark theme](/assets/aegify-flow-excerpt-dark.png)
+
+Use **Save decision** to record status and rationale. **Save assignment** records the owner, priority, due date and tags. If someone saves another version first, the affected form keeps the draft and offers **Reload latest**. Reloading replaces both drafts with the current saved values. Viewers can read the decision and assignment and follow an existing Jira ticket.
+
+**Nearby calls** loads the part of the scan graph around the finding. The panel offers a retry if the request fails. **Finding history** shows the baseline change and, for tracked issues, the first and last observation, decision rationale and audit trail. **Scan details** links to the originating scan, detection rule and any recorded CWE. The example follows a directory-check finding across two scans and two triage decisions. [Desktop record](/assets/aegify-finding-details-desktop.png) · [Mobile record](/assets/aegify-finding-details-mobile.png)
+
+## Import a scan
+
+Open **Import scan** and choose a destination project. Choose a `.sarif` or `.json` report, or drop it onto the file field. The import starts as soon as you select the file. Your account needs maintainer or administrator access to the destination.
+
+The receipt shows the filename, project, scan status and finding count. A report with partial coverage can have zero findings. **Open scan** takes you to the saved record and its coverage details. If the dashboard cannot confirm whether it saved a report, **Open scan history** lets you check before sending it again. [Desktop receipt](/assets/aegify-import-desktop.png) · [Mobile receipt](/assets/aegify-import-mobile.png) · [Dark appearance](/assets/aegify-import-dark.png)
+
+## Find a scan
+
+Open **Scans** to compare repository runs in recording order. Desktop columns align the repository and revision, status, findings and timestamp. The severity counts run from critical to low. A running scan shows progress and any estimated time remaining. A partial scan shows its coverage status alongside the available results.
+
+The mobile view groups the same details by run. Select the repository name to open the record. **Auto-refresh** saves your preferred interval in this browser. [Desktop scan history](/assets/aegify-history-desktop.png) · [Mobile scan history](/assets/aegify-history-mobile.png)
+
+## Review a scan
+
+An active source scan shows its current attempt, pinned commit and last job
+heartbeat. **Retry scheduled** includes the next eligible time. **Waiting for
+recovery** includes the previous worker’s lease expiry when one was recorded.
+Open **Activity and evidence** for the newest 20 events. **Earlier activity**
+moves backward and **Latest activity** returns to the live end of the log.
+File count and duration appear when the record reaches a final state.
+[Desktop recovery view](/assets/aegify-worker-recovery-desktop.png) · [Mobile recovery view](/assets/aegify-worker-recovery-mobile.png)
+
+Open a record from **Scans** to see its repository, branch, commit, completion status, file count and duration. Findings appear in severity order. Each row shows the rule, file, line and evidence level. Select it to inspect the source. Search by rule, path or message, or select a severity or frequent rule to filter the scan. **Clear filters** restores all observations in that record.
+
+![Desktop scan record with findings and severity controls](/assets/aegify-scan-desktop.png)
+
+On a phone the search field and severity selector precede the findings. A partial or failed scan displays its coverage status even when it contains no findings. [Mobile scan view](/assets/aegify-scan-mobile.png)
+
+## Read and export a finding report
+
+From the finding detail, select **Report**. The triage section shows the decision scope, current owner, rationale, reviewer and any recorded decision date or expiry. An earlier default-branch observation still shows its own stored status, owner, source location, scan and commit. A branch-only observation shows the decision recorded on that observation. The author `aegify-system` identifies an automatic change such as a reopened issue.
+
+**Scan coverage** shows the originating scan’s status. New imports also retain the declared scope and counts of analyzed files, evaluated rules and recorded gaps when the artifact supplies them. A gap counts one diagnostic, which can affect several files. Older scans can show **Coverage inventory unavailable**. **View scan** opens the originating run.
+
+In **Recorded flow**, read the file headings in order. Each row pairs the reported line with the supplied excerpt when one exists. Markdown and PDF carry those same lines, including excerpts from another file. The source reader follows the dashboard theme and marks the reported range in its line-number margin.
+
+**Download Markdown** checks project access and the version on screen. If a teammate changes the decision while the report is open, **Reload report** shows the revision before downloading. **Print / PDF** prints the displayed record with source evidence and identifiers. [Desktop report](/assets/aegify-report-desktop.png) · [Mobile report](/assets/aegify-report-mobile.png) · [Dark theme](/assets/aegify-report-dark.png)
+
 ## What remains stable
 
 A scan stores observations. On a project's default branch, observations also
@@ -107,16 +163,19 @@ the write transaction. An unchanged rescan keeps the workflow version. Human
 changes, ticket linkage, an established absence or automatic reopening invalidate
 stale drafts; an outdated save returns `409` without changing stored data.
 
-False-positive and accepted-risk decisions require a rationale. Expired decisions
+On the finding detail page, choose a status, enter a rationale and select
+**Save decision**. The heading shows the saved status. False-positive and
+accepted-risk decisions require a rationale. Expired decisions
 reopen on the next observation and clear their active expiry, so later scans do
 not repeatedly expire the same decision. The prior decision remains in the event
 history. The importer does not run a wall-clock scheduler that expires decisions
 between scans.
 
-Findings without an identity, including feature-branch observations, have a local
-workflow only. Assignment and status updates affect that observation; they do not
-carry into another scan. Their decision rationale is retained in the audit event,
-and time-bounded triage is unavailable until there is a persistent identity.
+Findings without an identity, including feature-branch observations, keep their
+assignment and status on the individual observation. Opening it again restores
+the rationale from its latest recorded status decision. Editing just the
+rationale also changes the workflow version and protects it from stale drafts.
+Expiry dates are available for findings with a persistent identity.
 
 ### API compatibility
 

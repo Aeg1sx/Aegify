@@ -698,6 +698,7 @@ model AuditEvent {
 
   @@index([projectId, createdAt])
   @@index([actorId, createdAt])
+  @@index([targetId, action, projectId, createdAt])
 }
 
 model Account {

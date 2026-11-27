@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { authOrigin, emailAllowed, mailConfigured, normalizeEmail, normalizeUsername, passwordError, type AuthEnvironment } from "./auth-policy.ts";
+import { writeTransaction } from "./database-runtime.ts";
 import { hashPassword, verifyPassword } from "./password.ts";
 
 export type MailPurpose = "activate" | "reset";
@@ -66,7 +67,7 @@ export function createLocalAuthService(db: PrismaClient, environment: AuthEnviro
 }
 
 /** Durable fixed-window counters; atomically increments across workers/restarts. */
-export async function consumeAuthLimit(db: PrismaClient, environment: AuthEnvironment, scope: string, identity: string, maximum: number, windowMs: number, now = Date.now()): Promise<boolean> {
+export async function consumeAuthLimit(db: Pick<PrismaClient, "authRateLimit">, environment: AuthEnvironment, scope: string, identity: string, maximum: number, windowMs: number, now = Date.now()): Promise<boolean> {
   if (!environment.AUTH_SECRET) return false;
   const window = Math.floor(now / windowMs);
   const key = createHmac("sha256", environment.AUTH_SECRET).update(scope + ":" + window + ":" + identity.slice(0, 512)).digest("hex");
@@ -78,12 +79,16 @@ export function authClientKey(request: Request, environment: AuthEnvironment): s
   return environment.AUTH_TRUST_PROXY === "true" ? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim().slice(0, 128) || "shared" : "shared";
 }
 export async function limitAuthRequest(db: PrismaClient, environment: AuthEnvironment, request: Request, action: string, identity: string): Promise<boolean> {
-  const global = await consumeAuthLimit(db, environment, "global", "workspace", 1000, 3_600_000);
-  if (!global) return false;
-  await db.authRateLimit.deleteMany({ where: { expiresAt: { lt: new Date() } } });
-  const client = await consumeAuthLimit(db, environment, action + ":client", authClientKey(request, environment), 100, 900_000);
-  if (!client) return false;
-  return consumeAuthLimit(db, environment, action + ":identity", identity.trim().toLowerCase(), action === "email" ? 3 : 10, action === "email" ? 3_600_000 : 900_000);
+  if (!environment.AUTH_SECRET) return false;
+  return writeTransaction(db, async (tx) => {
+    const now = Date.now();
+    const global = await consumeAuthLimit(tx, environment, "global", "workspace", 1000, 3_600_000, now);
+    if (!global) return false;
+    await tx.authRateLimit.deleteMany({ where: { expiresAt: { lt: new Date(now) } } });
+    const client = await consumeAuthLimit(tx, environment, action + ":client", authClientKey(request, environment), 100, 900_000, now);
+    if (!client) return false;
+    return consumeAuthLimit(tx, environment, action + ":identity", identity.trim().toLowerCase(), action === "email" ? 3 : 10, action === "email" ? 3_600_000 : 900_000, now);
+  });
 }
 
 export function resendAuthMailer(environment: AuthEnvironment, transport: typeof fetch = fetch): SendAuthMail {

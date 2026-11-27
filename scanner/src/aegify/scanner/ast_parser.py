@@ -27,11 +27,37 @@ from aegify.models import (
     FunctionDef,
     ImportInfo,
     ParseDiagnostic,
+    PythonParameterKind,
 )
 from aegify.models import (
     Language as Lang,
 )
-from aegify.scanner import call_arguments, sql_queries
+from aegify.scanner import (
+    call_arguments,
+    credential_randomness,
+    flask_responses,
+    flask_sessions,
+    python_buffers,
+    python_code,
+    python_deserialization,
+    python_files,
+    python_hosts,
+    python_ldap,
+    python_literals,
+    python_process,
+    python_redirect,
+    python_requests,
+    python_scope,
+    python_signing_keys,
+    python_storage,
+    python_templates,
+    python_text,
+    python_tls,
+    python_values,
+    python_xml,
+    sql_queries,
+    wrangler,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +93,43 @@ UNSUPPORTED_SOURCE_EXTENSIONS = {
 @lru_cache(maxsize=1)
 def parser_fingerprint() -> str:
     """Invalidate serialized ASTs when extraction code or grammar packages change."""
-    packages = ["tree-sitter", *[f"tree-sitter-{lang.value}" for lang in Lang]]
+    packages = ["tree-sitter", "tree-sitter-toml"]
+    packages.extend(f"tree-sitter-{lang.value}" for lang in Lang if lang != Lang.WRANGLER)
     material = {
         "schema": 4,
         "extractor": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "wrangler": hashlib.sha256(Path(wrangler.__file__).read_bytes()).hexdigest(),
         "call_arguments": hashlib.sha256(Path(call_arguments.__file__).read_bytes()).hexdigest(),
         "sql_queries": hashlib.sha256(Path(sql_queries.__file__).read_bytes()).hexdigest(),
+        "flask_sessions": hashlib.sha256(Path(flask_sessions.__file__).read_bytes()).hexdigest(),
+        "flask_responses": hashlib.sha256(Path(flask_responses.__file__).read_bytes()).hexdigest(),
+        "python_signing_keys": hashlib.sha256(
+            Path(python_signing_keys.__file__).read_bytes()
+        ).hexdigest(),
+        "python_scope": hashlib.sha256(Path(python_scope.__file__).read_bytes()).hexdigest(),
+        "python_code": hashlib.sha256(Path(python_code.__file__).read_bytes()).hexdigest(),
+        "python_deserialization": hashlib.sha256(
+            Path(python_deserialization.__file__).read_bytes()
+        ).hexdigest(),
+        "python_hosts": hashlib.sha256(Path(python_hosts.__file__).read_bytes()).hexdigest(),
+        "python_files": hashlib.sha256(Path(python_files.__file__).read_bytes()).hexdigest(),
+        "python_ldap": hashlib.sha256(Path(python_ldap.__file__).read_bytes()).hexdigest(),
+        "python_redirect": hashlib.sha256(Path(python_redirect.__file__).read_bytes()).hexdigest(),
+        "python_text": hashlib.sha256(Path(python_text.__file__).read_bytes()).hexdigest(),
+        "python_requests": hashlib.sha256(Path(python_requests.__file__).read_bytes()).hexdigest(),
+        "python_storage": hashlib.sha256(Path(python_storage.__file__).read_bytes()).hexdigest(),
+        "python_templates": hashlib.sha256(
+            Path(python_templates.__file__).read_bytes()
+        ).hexdigest(),
+        "python_literals": hashlib.sha256(Path(python_literals.__file__).read_bytes()).hexdigest(),
+        "python_values": hashlib.sha256(Path(python_values.__file__).read_bytes()).hexdigest(),
+        "python_tls": hashlib.sha256(Path(python_tls.__file__).read_bytes()).hexdigest(),
+        "python_xml": hashlib.sha256(Path(python_xml.__file__).read_bytes()).hexdigest(),
+        "python_buffers": hashlib.sha256(Path(python_buffers.__file__).read_bytes()).hexdigest(),
+        "python_process": hashlib.sha256(Path(python_process.__file__).read_bytes()).hexdigest(),
+        "credential_randomness": hashlib.sha256(
+            Path(credential_randomness.__file__).read_bytes()
+        ).hexdigest(),
         "packages": {package: version(package) for package in packages},
     }
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
@@ -120,7 +177,9 @@ def _get_file_parser(lang: Lang, file_path: Path) -> Parser:
 
 
 def detect_language(file_path: Path) -> Lang | None:
-    """Detect programming language from file extension."""
+    """Detect supported source languages and named deployment manifests."""
+    if file_path.name in wrangler.MANIFEST_NAMES:
+        return Lang.WRANGLER
     ext_map: dict[str, Lang] = {
         ".py": Lang.PYTHON,
         ".js": Lang.JAVASCRIPT,
@@ -162,6 +221,21 @@ class ASTParser:
             logger.warning("Failed to read %s: %s", file_path, e)
             return None
 
+        if lang == Lang.WRANGLER:
+            ast = wrangler.parse_manifest(file_path, source)
+        else:
+            ast = self._parse_code(file_path, source, lang)
+        ast.source_digest = hashlib.sha256(source).hexdigest()
+        ast.parser_grammar = "tsx" if file_path.suffix.lower() == ".tsx" else lang.value
+        if repository_id or repository_root is not None:
+            self.apply_repository_context(
+                ast,
+                repository_id=repository_id,
+                repository_root=repository_root or file_path.parent,
+            )
+        return ast
+
+    def _parse_code(self, file_path: Path, source: bytes, lang: Lang) -> FileAST:
         parser = _get_file_parser(lang, file_path)
         tree = parser.parse(source)
 
@@ -169,8 +243,6 @@ class ASTParser:
         ast = extractor.extract(tree.root_node, source, str(file_path), lang)
         call_arguments.annotate_call_arguments(ast, tree.root_node, source)
         sql_queries.annotate_sql_queries(ast, tree.root_node, source)
-        ast.source_digest = hashlib.sha256(source).hexdigest()
-        ast.parser_grammar = "tsx" if file_path.suffix.lower() == ".tsx" else lang.value
         pending = [tree.root_node] if tree.root_node.has_error else []
         while pending:
             node = pending.pop()
@@ -202,12 +274,6 @@ class ASTParser:
                 )
             )
         self._apply_callable_identities(ast)
-        if repository_id or repository_root is not None:
-            self.apply_repository_context(
-                ast,
-                repository_id=repository_id,
-                repository_root=repository_root or file_path.parent,
-            )
         return ast
 
     @staticmethod
@@ -423,8 +489,19 @@ class _PythonExtractor(_BaseExtractor):
         self._extract_imports(root, source, imports)
         self._extract_functions(root, source, file_path, functions)
         self._extract_classes(root, source, file_path, classes, functions)
-        self._extract_calls(root, source, file_path, calls)
+        extensions, ldap_factories = self._extract_calls(root, source, file_path, calls)
 
+        stored_reads, config_reads = python_storage.storage_facts(source)
+        routers, responses = flask_responses.response_facts(source)
+        for call in calls:
+            if (call.line, call.column) in config_reads and call.callee in {
+                "get",
+                "getint",
+                "getfloat",
+                "getboolean",
+                "items",
+            }:
+                call.resolved_source = "configparser.file_value"
         return FileAST(
             file_path=file_path,
             language=lang,
@@ -432,6 +509,23 @@ class _PythonExtractor(_BaseExtractor):
             classes=classes,
             imports=imports,
             calls=calls,
+            python_stored_reads=stored_reads,
+            python_file_access_resolved=True,
+            python_process_resolved=True,
+            python_redirect_resolved=True,
+            python_custom_request_data=python_requests.custom_request_data(source),
+            python_host_checks=python_hosts.host_checks(source),
+            python_directory_checks=python_files.directory_checks(source),
+            python_read_limits=python_files.post_read_limits(source),
+            python_ldap_factories=ldap_factories,
+            python_deserialization_resolved=True,
+            python_yaml_extensions=extensions,
+            session_writes=flask_sessions.session_writes(source),
+            flask_routers=routers,
+            flask_responses=responses,
+            python_signing_keys=python_signing_keys.signing_keys(source),
+            credential_randomness=credential_randomness.credential_uses(source),
+            tls_settings=python_tls.tls_settings(source),
         )
 
     def _extract_imports(self, root: Node, source: bytes, imports: list[ImportInfo]) -> None:
@@ -490,17 +584,23 @@ class _PythonExtractor(_BaseExtractor):
     ) -> None:
         for node in self._find_nodes(root, "function_definition"):
             # Skip methods (they'll be captured via class extraction)
-            if node.parent and node.parent.type == "block":
-                grandparent = node.parent.parent
-                if grandparent and grandparent.type == "class_definition":
-                    continue
+            parent = node.parent
+            if parent and parent.type == "decorated_definition":
+                parent = parent.parent
+            if (
+                parent
+                and parent.type == "block"
+                and parent.parent
+                and parent.parent.type == "class_definition"
+            ):
+                continue
 
             name_node = node.child_by_field_name("name")
             if not name_node:
                 continue
             name = self._node_text(name_node, source)
 
-            params = self._extract_params(node, source)
+            params, kinds = self._extract_params(node, source)
             decorators = self._extract_decorators(node, source)
 
             functions.append(
@@ -511,6 +611,7 @@ class _PythonExtractor(_BaseExtractor):
                     line_start=node.start_point[0] + 1,
                     line_end=node.end_point[0] + 1,
                     parameters=params,
+                    python_parameter_kinds=kinds,
                     decorators=decorators,
                 )
             )
@@ -539,12 +640,20 @@ class _PythonExtractor(_BaseExtractor):
             decorators = self._extract_decorators(node, source)
 
             methods: list[FunctionDef] = []
-            for method_node in self._find_nodes(node, "function_definition"):
+            body = node.child_by_field_name("body")
+            for member in body.named_children if body else []:
+                method_node = (
+                    member.child_by_field_name("definition")
+                    if member.type == "decorated_definition"
+                    else member
+                )
+                if method_node is None or method_node.type != "function_definition":
+                    continue
                 mn = method_node.child_by_field_name("name")
                 if not mn:
                     continue
                 method_name = self._node_text(mn, source)
-                params = self._extract_params(method_node, source)
+                params, kinds = self._extract_params(method_node, source)
                 method_decorators = self._extract_decorators(method_node, source)
 
                 method = FunctionDef(
@@ -554,6 +663,7 @@ class _PythonExtractor(_BaseExtractor):
                     line_start=method_node.start_point[0] + 1,
                     line_end=method_node.end_point[0] + 1,
                     parameters=params,
+                    python_parameter_kinds=kinds,
                     decorators=method_decorators,
                     is_method=True,
                     class_name=class_name,
@@ -575,7 +685,18 @@ class _PythonExtractor(_BaseExtractor):
 
     def _extract_calls(
         self, root: Node, source: bytes, file_path: str, calls: list[CallSite]
-    ) -> None:
+    ) -> tuple[list[str], dict[str, str]]:
+        code_inputs = python_code.code_inputs(source)
+        processes = python_process.process_calls(source)
+        decoders, extensions = python_deserialization.decode_calls(source)
+        factories, searches = python_ldap.search_facts(source)
+        redirects = python_redirect.redirect_calls(source)
+        templates = python_templates.template_sources(source)
+        downloads = python_requests.download_urls(source)
+        xml = python_xml.xml_calls(source)
+        buffers = python_buffers.buffer_writes(source)
+        files = python_files.file_calls(source)
+        sanitizers = python_scope.assigned_sanitizers(source)
         for node in self._find_nodes(root, "call"):
             func_node = node.child_by_field_name("function")
             if not func_node:
@@ -595,10 +716,16 @@ class _PythonExtractor(_BaseExtractor):
             args_node = node.child_by_field_name("arguments")
             if args_node:
                 for child in args_node.children:
-                    if child.type not in ("(", ")", ","):
+                    if child.type not in ("(", ")", ",", "comment"):
                         args.append(self._node_text(child, source))
 
             enclosing = self._find_enclosing_function(node, source, ("function_definition",))
+            location = (
+                node.start_point[0] + 1,
+                node.start_point[1],
+                node.end_point[0] + 1,
+                node.end_point[1],
+            )
 
             calls.append(
                 CallSite(
@@ -607,27 +734,54 @@ class _PythonExtractor(_BaseExtractor):
                     line=node.start_point[0] + 1,
                     column=node.start_point[1],
                     arguments=args,
+                    xml_invocation=xml.get(location),
+                    python_deserialization=decoders.get(location),
+                    python_file_access=files.get(location),
+                    python_ldap_search=searches.get(location),
+                    python_redirect=redirects.get(location),
+                    python_template_source=templates.get(location),
+                    python_download_url=downloads.get(location),
+                    python_code_input=code_inputs.get(location),
+                    python_process_input=processes.get(location),
+                    python_assigned_sanitizer=sanitizers.get(location, ""),
+                    python_buffer_write=(node.start_point[0] + 1, node.start_point[1]) in buffers,
                     receiver=receiver,
                     in_function=enclosing,
                 )
             )
 
-    def _extract_params(self, func_node: Node, source: bytes) -> list[str]:
-        params: list[str] = []
-        params_node = func_node.child_by_field_name("parameters")
-        if params_node:
-            for child in params_node.children:
-                if child.type == "identifier":
-                    params.append(self._node_text(child, source))
-                elif child.type in (
-                    "default_parameter",
-                    "typed_parameter",
-                    "typed_default_parameter",
-                ):
-                    name_node = child.child_by_field_name("name")
-                    if name_node:
-                        params.append(self._node_text(name_node, source))
-        return params
+        return extensions, factories
+
+    def _extract_params(
+        self, func_node: Node, source: bytes
+    ) -> tuple[list[str], list[PythonParameterKind]]:
+        names: list[str] = []
+        kinds: list[PythonParameterKind] = []
+        parameters = func_node.child_by_field_name("parameters")
+        kind: PythonParameterKind = "regular"
+        for child in parameters.named_children if parameters else []:
+            if child.type == "positional_separator":
+                kinds = ["positional_only"] * len(names)
+                continue
+            if child.type == "keyword_separator":
+                kind = "keyword_only"
+                continue
+            if child.type == "typed_parameter" and child.named_children:
+                # The grammar names the annotation field, but not the parameter.
+                child = child.named_children[0]
+            name = child.child_by_field_name("name") or child
+            current = kind
+            if (
+                name.type in {"list_splat_pattern", "dictionary_splat_pattern"}
+                and name.named_children
+            ):
+                current = "varargs" if name.type == "list_splat_pattern" else "kwargs"
+                kind = "keyword_only"
+                name = name.named_children[0]
+            if name.type == "identifier":
+                names.append(self._node_text(name, source))
+                kinds.append(current)
+        return names, kinds
 
     def _extract_decorators(self, node: Node, source: bytes) -> list[str]:
         decorators: list[str] = []

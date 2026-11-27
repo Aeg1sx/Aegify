@@ -35,5 +35,5 @@ ENV NODE_ENV=production
 ENV PYTHONDONTWRITEBYTECODE=1
 USER 1001:1001
 RUN node --version && /opt/aegify/scanner/.venv/bin/python -I -m aegify.worker --help
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD ["node", "-e", "const fs=require('node:fs');process.exit(Date.now()-fs.statSync('/tmp/aegify-worker-health').mtimeMs<45000?0:1)"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD ["node", "-e", "const file=require('node:path').join(require('node:os').tmpdir(),'aegify-worker-health');process.exit(Date.now()-require('node:fs').statSync(file).mtimeMs<45000?0:1)"]
 CMD ["node", "scripts/scan-worker.mjs"]

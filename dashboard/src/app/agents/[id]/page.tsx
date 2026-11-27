@@ -1,27 +1,20 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   ArrowLeft,
-  ArrowRight,
   Check,
   CheckCircle2,
-  ChevronRight,
   CircleDashed,
   Clock3,
   Code2,
-  Database,
   FileJson,
-  Fingerprint,
   GitBranch,
   KeyRound,
   Network,
   PlayCircle,
-  Route,
-  ShieldCheck,
-  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -29,7 +22,7 @@ import {
 import { SECURITY_AGENTS } from "@/lib/agent-catalog";
 import { CodeHighlight } from "@/components/code-highlight";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface Reachability {
   findingId: string;
@@ -112,22 +105,13 @@ const ROLE_LABEL: Record<string, string> = {
   steward: "Quality review",
 };
 
-const ROLE_ACCENT: Record<string, string> = {
-  surface: "bg-cyan-500",
-  static: "bg-violet-500",
-  dynamic: "bg-orange-500",
-  cve: "bg-blue-500",
-  synthesis: "bg-emerald-500",
-  steward: "bg-amber-500",
-};
-
 export default function AgentRunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [run, setRun] = useState<AgentRun | null>(null);
-  const [activeRole, setActiveRole] = useState("surface");
+  const [activeRole, setActiveRole] = useState("");
   const [loading, setLoading] = useState(true);
-  const [note, setNote] = useState("");
-  const [evidenceJson, setEvidenceJson] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [evidenceDrafts, setEvidenceDrafts] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState("");
   const [acting, setActing] = useState(false);
 
@@ -145,10 +129,8 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
     return () => cancelAnimationFrame(frame);
   }, [refresh]);
 
-  const activeStage = useMemo(
-    () => run?.stages.find((stage) => stage.role === activeRole) || run?.stages[0],
-    [run, activeRole],
-  );
+  const preferredRole = activeRole || (run?.status === "completed" ? "synthesis" : "static");
+  const activeStage = run?.stages.find((stage) => stage.role === preferredRole) || run?.stages[0];
 
   const decide = async (approvalId: string, decision: "approved" | "rejected") => {
     setActing(true);
@@ -157,11 +139,11 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
       const response = await fetch(`/api/agent-runs/${id}/approvals/${approvalId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, note }),
+        body: JSON.stringify({ decision, note: notes[approvalId] || "" }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to update approval status.");
-      setNote("");
+      setNotes((previous) => ({ ...previous, [approvalId]: "" }));
       await refresh();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Approval update failed.");
@@ -174,7 +156,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
     setActing(true);
     setActionError("");
     try {
-      const parsed = JSON.parse(evidenceJson);
+      const parsed = JSON.parse(evidenceDrafts[approvalId] || "");
       const response = await fetch(`/api/agent-runs/${id}/evidence`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -182,7 +164,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to import evidence.");
-      setEvidenceJson("");
+      setEvidenceDrafts((previous) => ({ ...previous, [approvalId]: "" }));
       await refresh();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Evidence must be valid JSON.");
@@ -191,118 +173,112 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  if (loading) return <div className="grid h-[60vh] place-items-center text-sm text-muted-foreground">Loading agent evidence…</div>;
-  if (!run) return <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-600">{actionError || "Agent run not found"}</div>;
+  if (loading) return <p role="status" className="py-12 text-sm text-muted-foreground">Loading analysis…</p>;
+  if (!run) return (
+    <div className="space-y-4">
+      <Link href="/agents" className="text-sm text-primary">Back to AI agents</Link>
+      <p role="alert" className="text-sm text-destructive">{actionError || "Analysis run not found."}</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-6 pb-16">
-      <header className="relative overflow-hidden rounded-3xl border bg-[#07111f] px-7 py-7 text-white shadow-xl">
-        <div className="absolute inset-0 opacity-70 [background-image:radial-gradient(circle_at_85%_20%,rgba(99,102,241,.25),transparent_30%),radial-gradient(circle_at_15%_80%,rgba(6,182,212,.15),transparent_30%)]" />
-        <div className="relative">
-          <Link href="/agents" className="mb-5 inline-flex items-center gap-1.5 text-xs text-slate-400 transition hover:text-white">
-            <ArrowLeft className="h-3.5 w-3.5" /> Agent Operations
-          </Link>
-          <div className="flex flex-wrap items-start justify-between gap-5">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold">{run.scan.repository || "Security agent run"}</h1>
-                <StatusPill status={run.status} />
-                <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1 font-mono text-[10px] uppercase text-slate-300">{run.mode}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-400">
-                <span className="flex items-center gap-1.5"><GitBranch className="h-3.5 w-3.5" />{run.scan.branch || "default"} · {run.scan.commitSha?.slice(0, 12) || "snapshot"}</span>
-                <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{new Date(run.createdAt).toLocaleString("en-US")}</span>
-                <span className="flex items-center gap-1.5"><Fingerprint className="h-3.5 w-3.5" />{run.artifactDigest.slice(0, 24)}…</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <Metric label="Agents" value={`${run.stages.length}/6`} />
-              <Metric label="Approvals" value={String(run.approvals.length)} />
-              <Metric label="Evidence" value={String(run.evidence.length)} />
-            </div>
-          </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 pb-12">
+      <header className="space-y-3 border-b pb-5">
+        <Link href="/agents" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary">
+          <ArrowLeft aria-hidden className="size-4" /> AI agents
+        </Link>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="workbench-title break-all">{run.scan.repository || "Analysis run"}</h1>
+          <RunState status={run.status} />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+            <GitBranch aria-hidden className="size-3.5" />{run.scan.branch || "default"}
+            {run.scan.commitSha && <span>· {run.scan.commitSha.slice(0, 8)}</span>}
+          </span>
+          <time dateTime={run.createdAt} className="inline-flex items-center gap-1.5">
+            <Clock3 aria-hidden className="size-3.5" />{new Date(run.createdAt).toLocaleString()}
+          </time>
+          <span>{run.mode === "deep" ? "Deep review" : run.mode === "lite" ? "Quick review" : run.mode}</span>
         </div>
       </header>
 
-      {actionError && <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">{actionError}</div>}
+      {actionError && <p role="alert" className="border-l-2 border-destructive pl-3 text-sm text-destructive">{actionError}</p>}
 
-      <section className="rounded-2xl border bg-card p-3 shadow-sm">
-        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-          {run.stages.map((stage, index) => (
-            <button
-              key={stage.id}
-              type="button"
-              onClick={() => setActiveRole(stage.role)}
-              className={`relative rounded-xl border p-3 text-left transition ${activeRole === stage.role ? "border-primary/40 bg-primary/5 shadow-sm" : "border-transparent hover:bg-muted/60"}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[10px] text-muted-foreground">0{index + 1}</span>
-                <StageIcon status={stage.status} />
-              </div>
-              <p className="mt-3 text-sm font-semibold">{SECURITY_AGENTS.find((agent) => agent.role === stage.role)?.name || stage.agentCode}</p>
-              <p className="text-[10px] text-muted-foreground">{ROLE_LABEL[stage.role]}</p>
-              {index < run.stages.length - 1 && <ChevronRight className="absolute -right-2.5 top-1/2 z-10 hidden h-4 w-4 -translate-y-1/2 text-muted-foreground xl:block" />}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {activeStage && (
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="space-y-5">
-            <Card className="overflow-hidden">
-              <div className={`h-1 ${ROLE_ACCENT[activeStage.role] || "bg-blue-500"}`} />
-              <CardHeader className="pb-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[.18em] text-primary">{activeStage.agentCode}</p>
-                    <CardTitle className="mt-1 text-xl">{SECURITY_AGENTS.find((agent) => agent.role === activeStage.role)?.name || activeStage.agentCode} · {ROLE_LABEL[activeStage.role]}</CardTitle>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{activeStage.summary}</p>
-                  </div>
-                  <StatusPill status={activeStage.status} />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <StageContent
-                  stage={activeStage}
-                  approvals={run.approvals}
-                  note={note}
-                  setNote={setNote}
-                  evidenceJson={evidenceJson}
-                  setEvidenceJson={setEvidenceJson}
-                  decide={decide}
-                  importEvidence={importEvidence}
-                  acting={acting}
-                />
-              </CardContent>
-            </Card>
+      {activeStage ? (
+        <Tabs orientation="vertical" value={activeStage.role} onValueChange={setActiveRole}
+          className="grid items-start gap-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
+          <div>
+            <h2 className="mb-3 hidden text-sm font-semibold lg:block">Review stages</h2>
+            <TabsList variant="line" aria-label="Review stages" className="hidden h-auto w-full items-stretch gap-0 border-l p-0 lg:flex">
+              {run.stages.map((stage) => (
+                <TabsTrigger key={stage.id} value={stage.role}
+                  className="min-h-12 justify-start gap-2.5 whitespace-normal rounded-none border-0 px-3 text-left text-sm text-muted-foreground after:hidden hover:bg-muted data-[state=active]:border-l-2 data-[state=active]:border-primary data-[state=active]:bg-accent data-[state=active]:text-foreground">
+                  <StageIcon status={stage.status} />
+                  {ROLE_LABEL[stage.role] || stage.role}
+                  <span className="sr-only">, {stage.status.replaceAll("_", " ")}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <label className="flex items-center gap-3 text-sm font-medium lg:hidden">
+              Stage
+              <select className="workbench-select h-11 flex-1 bg-card px-3 text-sm" value={activeStage.role} onChange={(event) => setActiveRole(event.target.value)}>
+                {run.stages.map((stage) => <option key={stage.id} value={stage.role}>{ROLE_LABEL[stage.role] || stage.role}</option>)}
+              </select>
+            </label>
           </div>
+          {run.stages.map((stage) => (
+            <TabsContent key={stage.id} value={stage.role} aria-label={ROLE_LABEL[stage.role] || stage.role}
+              className="workbench-panel focus-visible:ring-2 focus-visible:ring-ring">
+              <header className="space-y-3 border-b px-4 py-4 sm:px-6 sm:py-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-xl font-semibold tracking-tight">{ROLE_LABEL[stage.role] || stage.role}</h2>
+                  <RunState status={stage.status} />
+                </div>
+                {stage.summary && <p className="max-w-prose text-sm leading-6 text-muted-foreground">{stage.summary}</p>}
+                {stage.errorMessage && <p role="alert" className="text-sm text-destructive">{stage.errorMessage}</p>}
+              </header>
+              <div className="min-w-0 p-4 sm:p-6">
+                <StageContent stage={stage} approvals={run.approvals} notes={notes} evidenceDrafts={evidenceDrafts}
+                  setNote={(id, value) => setNotes((previous) => ({ ...previous, [id]: value }))}
+                  setEvidenceJson={(id, value) => setEvidenceDrafts((previous) => ({ ...previous, [id]: value }))}
+                  decide={decide}
+                  importEvidence={importEvidence} acting={acting} />
+              </div>
+              <details className="border-t text-sm">
+                <summary className="cursor-pointer px-4 py-3 font-medium sm:px-6">Stage evidence · {stage.evidenceIds.length}</summary>
+                <div className="space-y-3 px-4 pb-5 sm:px-6">
+                  <dl className="grid gap-2 text-xs">
+                    <InfoRow label="Agent" value={stage.agentName || SECURITY_AGENTS.find((agent) => agent.role === stage.role)?.name || stage.agentCode} />
+                    {stage.promptDigest && <InfoRow label="Prompt digest" value={stage.promptDigest} mono />}
+                  </dl>
+                  {stage.evidenceIds.length > 0 && <ul aria-label="Evidence references" className="space-y-1 break-all font-mono text-xs">{stage.evidenceIds.map((ref) => <li key={ref}>{ref}</li>)}</ul>}
+                </div>
+              </details>
+            </TabsContent>
+          ))}
+        </Tabs>
+      ) : <p className="py-6 text-sm text-muted-foreground">This run has no recorded stages.</p>}
 
-          <aside className="space-y-4">
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Evidence contract</CardTitle></CardHeader>
-              <CardContent className="space-y-3 text-xs">
-                <InfoRow icon={<Fingerprint className="h-3.5 w-3.5" />} label="Prompt" value={`${activeStage.promptDigest.slice(0, 20)}…`} mono />
-                <InfoRow icon={<Database className="h-3.5 w-3.5" />} label="Evidence" value={`${activeStage.evidenceIds.length} linked`} />
-                <InfoRow icon={<ShieldCheck className="h-3.5 w-3.5" />} label="Authority" value="facts > model narrative" />
-                <InfoRow icon={<KeyRound className="h-3.5 w-3.5" />} label="Execution" value="explicit approval" />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Audit timeline</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                {run.events.slice(-8).reverse().map((event) => (
-                  <div key={event.id} className="relative border-l pl-3 text-xs">
-                    <span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-primary" />
-                    <p className="font-medium">{event.message}</p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">{event.actor} · {new Date(event.createdAt).toLocaleString("en-US")}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </aside>
-        </section>
-      )}
+      <details className="workbench-panel">
+        <summary className="cursor-pointer px-4 py-4 text-sm font-semibold sm:px-5">Run history · {run.events.length}</summary>
+        <div className="space-y-4 border-t p-4 sm:p-5">
+          <dl className="grid gap-x-6 gap-y-2 text-xs md:grid-cols-2">
+            {run.artifactDigest && <InfoRow label="Artifact digest" value={run.artifactDigest} mono />}
+            {run.provider && <InfoRow label="Provider" value={run.provider} />}
+            <InfoRow label="Approvals" value={String(run.approvals.length)} />
+            <InfoRow label="Evidence records" value={String(run.evidence.length)} />
+          </dl>
+          {run.events.length > 0 && <ol aria-label="Run events" className="divide-y border-t">
+            {run.events.slice().reverse().map((event) => (
+              <li key={event.id} className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1 py-3 text-sm">
+                <span className="break-words">{event.message}</span>
+                <span className="text-xs text-muted-foreground">{event.actor} · <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time></span>
+              </li>
+            ))}
+          </ol>}
+        </div>
+      </details>
     </div>
   );
 }
@@ -310,10 +286,10 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
 function StageContent(props: {
   stage: AgentStage;
   approvals: Approval[];
-  note: string;
-  setNote: (value: string) => void;
-  evidenceJson: string;
-  setEvidenceJson: (value: string) => void;
+  notes: Record<string, string>;
+  setNote: (id: string, value: string) => void;
+  evidenceDrafts: Record<string, string>;
+  setEvidenceJson: (id: string, value: string) => void;
   decide: (id: string, decision: "approved" | "rejected") => void;
   importEvidence: (id: string) => void;
   acting: boolean;
@@ -330,28 +306,23 @@ function StageContent(props: {
 function SurfacePanel({ facts }: { facts: Record<string, unknown> }) {
   const scenarios = Array.isArray(facts.threatScenarios) ? facts.threatScenarios as Array<Record<string, unknown>> : [];
   return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-x-5 gap-y-4 border-b pb-5 lg:grid-cols-4">
         <Fact label="Endpoints" value={facts.endpoints} />
-        <Fact label="No auth evidence" value={facts.endpointsWithoutDetectedAuth} tone="warning" />
+        <Fact label="Without auth evidence" value={facts.endpointsWithoutDetectedAuth} />
         <Fact label="Gateway exposed" value={facts.gatewayExposed} />
-        <Fact label="Runtime observed" value={facts.runtimeObserved} tone="success" />
+        <Fact label="Observed at runtime" value={facts.runtimeObserved} />
       </div>
       <div>
-        <h3 className="mb-3 text-sm font-semibold">Threat surface</h3>
-        <div className="grid gap-2 md:grid-cols-2">
-          {scenarios.slice(0, 12).map((scenario, index) => (
-            <div key={`${scenario.surface}-${index}`} className="flex items-center gap-3 rounded-xl border bg-muted/20 p-3">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-500/10 text-cyan-600"><Route className="h-4 w-4" /></div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-mono text-xs font-medium">{String(scenario.surface)}</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">external → application · auth {String(scenario.auth)}</p>
-              </div>
-              {scenario.runtimeObserved === true && <span className="h-2 w-2 rounded-full bg-emerald-500" title="runtime observed" />}
-            </div>
+        <h3 className="text-sm font-semibold">Endpoint evidence</h3>
+        {scenarios.length ? <ul className="mt-2 divide-y border-t">
+          {scenarios.map((scenario, index) => (
+            <li key={`${scenario.surface}-${index}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
+              <span className="break-all font-mono text-xs">{String(scenario.surface)}</span>
+              <span className="text-xs text-muted-foreground">Auth {String(scenario.auth)}{scenario.runtimeObserved === true && " · Observed at runtime"}</span>
+            </li>
           ))}
-          {scenarios.length === 0 && <Empty text="No endpoints are available for threat scenarios." />}
-        </div>
+        </ul> : <Empty text="No endpoint evidence was recorded." />}
       </div>
     </div>
   );
@@ -361,41 +332,36 @@ function ReachabilityPanel({ traces }: { traces: Reachability[] }) {
   return (
     <div className="space-y-6">
       {traces.map((trace) => (
-        <div key={trace.findingId} className="overflow-hidden rounded-2xl border">
+        <div key={trace.findingId} className="min-w-0 overflow-hidden rounded-md border">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/25 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Network className="h-4 w-4 text-violet-500" />
-              <span className="font-mono text-xs">{trace.findingId}</span>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Network aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="break-all font-mono text-xs">{trace.findingId}</span>
               <PathState trace={trace} />
             </div>
-            <span className="font-mono text-xs text-muted-foreground">{trace.method} {trace.endpoint || "unresolved endpoint"}</span>
+            <span className="break-all font-mono text-xs text-muted-foreground">{trace.method} {trace.endpoint || "unresolved endpoint"}</span>
           </div>
           <div className="p-4">
-            <div className="flex min-w-max items-center gap-2 overflow-x-auto pb-3">
-              <FlowNode label={trace.entryPoint || "Unknown entry"} caption="entry point" tone="cyan" />
+            <ol aria-label="Recorded code path" className="ml-1 border-l">
+              <FlowStep label={trace.entryPoint || "Unknown entry"} caption="Entry point" />
               {trace.hops.map((hop, index) => (
-                <div key={`${hop.function}-${index}`} className="flex items-center gap-2">
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <FlowNode label={hop.function} caption={`${hop.filePath}:${hop.line}`} tone="violet" />
-                </div>
+                <FlowStep key={`${hop.function}-${index}`} label={hop.function} caption={`${hop.filePath}:${hop.line}`} />
               ))}
-              <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <FlowNode label={trace.sink} caption="security sink" tone="red" />
-            </div>
+              <FlowStep label={trace.sink} caption="Sink" />
+            </ol>
             {trace.unresolvedLinks.length > 0 && (
               <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
-                <p className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-300"><AlertTriangle className="h-3.5 w-3.5" />Missing proof</p>
-                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                  {trace.unresolvedLinks.map((gap) => <li key={gap}>• {gap}</li>)}
+                <p className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-300"><AlertTriangle className="h-3.5 w-3.5" />Unresolved links</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                  {trace.unresolvedLinks.map((gap) => <li key={gap}>{gap}</li>)}
                 </ul>
               </div>
             )}
             {trace.hops.some((hop) => hop.snippet) && (
               <div className="mt-4">
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold"><Code2 className="h-3.5 w-3.5" />Vulnerable path snippet</div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold"><Code2 className="h-3.5 w-3.5" />Source excerpt</div>
                 {trace.hops.filter((hop) => hop.snippet).slice(-1).map((hop) => (
                   <div key={`${hop.filePath}:${hop.line}`}>
-                    <p className="mb-2 font-mono text-[10px] text-muted-foreground">{hop.filePath}:{hop.line}</p>
                     <CodeHighlight
                       code={hop.snippet}
                       filePath={hop.filePath}
@@ -416,19 +382,21 @@ function ReachabilityPanel({ traces }: { traces: Reachability[] }) {
 }
 
 function DynamicPanel(props: Parameters<typeof StageContent>[0]) {
-  const { stage, approvals, note, setNote, evidenceJson, setEvidenceJson, decide, importEvidence, acting } = props;
+  const { stage, approvals, notes, setNote, evidenceDrafts, setEvidenceJson, decide, importEvidence, acting } = props;
   return (
     <div className="space-y-4">
       {stage.dynamicPlans.map((plan) => {
         const approval = approvals.find((item) => item.resourceId === plan.id);
+        const note = approval ? notes[approval.id] || "" : "";
+        const evidenceJson = approval ? evidenceDrafts[approval.id] || "" : "";
         return (
-          <div key={plan.id} className="rounded-2xl border border-orange-500/20 bg-orange-500/[.035] p-4">
+          <div key={plan.id} className="rounded-md border p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="flex items-center gap-2 text-sm font-semibold"><PlayCircle className="h-4 w-4 text-orange-500" />{plan.requestTemplate}</p>
+                <p className="flex items-center gap-2 text-sm font-semibold"><PlayCircle className="size-4 text-muted-foreground" />{plan.requestTemplate}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{plan.targetScope} · {plan.targetOrigin} · {plan.harness}</p>
               </div>
-              <StatusPill status={approval?.status || "pending"} />
+              <RunState status={approval?.status || "pending"} />
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <Fact label="Safe payload" value={plan.payloadTemplate} mono />
@@ -437,11 +405,12 @@ function DynamicPanel(props: Parameters<typeof StageContent>[0]) {
               <Fact label="Scope digest" value={`${approval?.scopeDigest.slice(0, 28) || ""}…`} mono />
             </div>
             {approval?.status === "pending" && (
-              <div className="mt-4 rounded-xl border bg-background p-3">
-                <label className="text-xs font-medium">Approval scope and fixture ownership</label>
+              <div className="mt-4 border-t pt-3">
+                <label htmlFor={`note-${approval.id}`} className="text-sm font-medium">Approval scope and fixture ownership</label>
                 <textarea
+                  id={`note-${approval.id}`}
                   value={note}
-                  onChange={(event) => setNote(event.target.value)}
+                  onChange={(event) => setNote(approval.id, event.target.value)}
                   placeholder="Example: owned local fixture, test data only, remove the container after validation"
                   className="mt-2 min-h-20 w-full rounded-lg border bg-background p-2 text-xs outline-none focus:border-primary"
                 />
@@ -452,12 +421,13 @@ function DynamicPanel(props: Parameters<typeof StageContent>[0]) {
               </div>
             )}
             {approval?.status === "approved" && (
-              <div className="mt-4 rounded-xl border bg-background p-3">
-                <label className="flex items-center gap-2 text-xs font-medium"><FileJson className="h-3.5 w-3.5" />Aegify harness evidence JSON</label>
+              <div className="mt-4 border-t pt-3">
+                <label htmlFor={`evidence-${approval.id}`} className="flex items-center gap-2 text-sm font-medium"><FileJson className="h-3.5 w-3.5" />Aegify harness evidence JSON</label>
                 <p className="mt-1 text-[10px] text-muted-foreground">Bind the approved scope digest below to the recorded harness output.</p>
                 <textarea
+                  id={`evidence-${approval.id}`}
                   value={evidenceJson}
-                  onChange={(event) => setEvidenceJson(event.target.value)}
+                  onChange={(event) => setEvidenceJson(approval.id, event.target.value)}
                   placeholder={`{"contract_version":1,"executed":true,"approval_scope_sha256":"${approval.scopeDigest}",...}`}
                   className="mt-2 min-h-32 w-full rounded-lg border bg-[#0d1117] p-3 font-mono text-xs text-slate-200 outline-none focus:border-primary"
                 />
@@ -476,10 +446,10 @@ function CvePanel({ assessments }: { assessments: Array<Record<string, unknown>>
   return assessments.length === 0 ? <Empty text="No CVE candidates were supplied. Candidates can be included through the API or CLI." /> : (
     <div className="space-y-3">
       {assessments.map((item) => (
-        <div key={String(item.cveId)} className="rounded-xl border p-4">
+        <div key={String(item.cveId)} className="border-b pb-4 last:border-0">
           <div className="flex items-center justify-between gap-3">
             <p className="font-mono text-sm font-semibold">{String(item.cveId)}</p>
-            <StatusPill status={String(item.applicability)} />
+            <RunState status={String(item.applicability)} />
           </div>
           <p className="mt-2 text-sm text-muted-foreground">{String(item.rationale)}</p>
           {Array.isArray(item.missingEvidence) && item.missingEvidence.length > 0 && <p className="mt-2 text-xs text-amber-600">Missing: {item.missingEvidence.join(", ")}</p>}
@@ -491,14 +461,13 @@ function CvePanel({ assessments }: { assessments: Array<Record<string, unknown>>
 
 function ImprovementPanel({ proposals }: { proposals: Array<Record<string, unknown>> }) {
   return proposals.length === 0 ? <Empty text="No new improvement proposals were generated for this run." /> : (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="divide-y border-t">
       {proposals.map((item) => (
-        <div key={String(item.id)} className="rounded-2xl border bg-gradient-to-br from-amber-500/5 to-transparent p-4">
-          <div className="flex items-center justify-between"><Sparkles className="h-4 w-4 text-amber-500" /><StatusPill status="proposed" /></div>
-          <h3 className="mt-3 text-sm font-semibold">{String(item.title)}</h3>
+        <div key={String(item.id)} className="py-4">
+          <h3 className="text-sm font-semibold">{String(item.title)}</h3>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">{String(item.hypothesis)}</p>
-          <div className="mt-3 rounded-lg bg-muted/40 p-2 text-[11px]">Target: {String(item.targetMetric)}</div>
-          <p className="mt-2 text-[10px] text-muted-foreground">Minimum {String(item.minimumSamples)} samples · auto apply: false</p>
+          <div className="mt-3 text-xs">Target metric · {String(item.targetMetric)}</div>
+          <p className="mt-2 text-xs text-muted-foreground">Minimum {String(item.minimumSamples)} samples · Requires review</p>
         </div>
       ))}
     </div>
@@ -510,11 +479,11 @@ function SynthesisPanel({ facts }: { facts: Record<string, unknown> }) {
   return (
     <div className="space-y-3">
       {findings.map((finding) => (
-        <div key={String(finding.findingId)} className="rounded-2xl border p-4">
+        <div key={String(finding.findingId)} className="border-b pb-4 last:border-0 last:pb-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs font-semibold">{String(finding.ruleId)}</span>
-            <StatusPill status={String(finding.severity)} />
-            <StatusPill status={String(finding.likelihood)} />
+            <RunState status={String(finding.severity)} />
+            <RunState status={String(finding.likelihood)} />
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <Fact label="Attack surface" value={finding.attackSurface} mono />
@@ -527,48 +496,53 @@ function SynthesisPanel({ facts }: { facts: Record<string, unknown> }) {
   );
 }
 
-function FlowNode({ label, caption, tone }: { label: string; caption: string; tone: string }) {
-  const style = tone === "red" ? "border-red-500/25 bg-red-500/5" : tone === "cyan" ? "border-cyan-500/25 bg-cyan-500/5" : "border-violet-500/25 bg-violet-500/5";
-  return <div className={`min-w-40 rounded-xl border p-3 ${style}`}><p className="truncate font-mono text-xs font-medium">{label}</p><p className="mt-1 truncate text-[10px] text-muted-foreground">{caption}</p></div>;
+function FlowStep({ label, caption }: { label: string; caption: string }) {
+  return <li className="relative pb-3 pl-4 last:pb-0">
+    <span aria-hidden className="absolute -left-1 top-1.5 size-2 rounded-full border border-primary bg-card" />
+    <p className="break-all font-mono text-sm">{label}</p>
+    <p className="mt-0.5 break-all text-xs text-muted-foreground">{caption}</p>
+  </li>;
 }
 
 function PathState({ trace }: { trace: Reachability }) {
-  const label = trace.impactProven ? "impact proven" : trace.runtimeObserved ? "runtime observed" : trace.staticComplete ? "static reachable" : "partial";
-  return <StatusPill status={label} />;
+  const label = trace.impactProven ? "verified impact" : trace.runtimeObserved ? "observed at runtime" : trace.staticComplete ? "statically reachable" : "partial path";
+  return <RunState status={label} />;
 }
 
-function Fact({ label, value, tone, mono }: { label: string; value: unknown; tone?: string; mono?: boolean }) {
-  const color = tone === "warning" ? "text-amber-600" : tone === "success" ? "text-emerald-600" : "text-foreground";
-  return <div className="rounded-xl border bg-muted/20 p-3"><p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p><p className={`mt-1 text-sm font-semibold ${color} ${mono ? "font-mono text-xs" : ""}`}>{String(value ?? "—")}</p></div>;
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="min-w-20 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-center"><p className="text-lg font-semibold">{value}</p><p className="text-[9px] uppercase tracking-wider text-slate-400">{label}</p></div>;
+function Fact({ label, value, mono }: { label: string; value: unknown; mono?: boolean }) {
+  const display = typeof value === "boolean" ? (value ? "Yes" : "No") : String(value ?? "—");
+  return <dl className="min-w-0">
+    <dt className="text-xs text-muted-foreground">{label}</dt>
+    <dd className={`mt-1 break-words text-sm ${mono ? "break-all font-mono" : "font-medium"}`}>{display}</dd>
+  </dl>;
 }
 
 function StageIcon({ status }: { status: string }) {
-  if (status === "completed") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
-  if (status === "waiting_approval") return <KeyRound className="h-4 w-4 text-amber-500" />;
-  if (status === "partial") return <AlertTriangle className="h-4 w-4 text-orange-500" />;
-  return <CircleDashed className="h-4 w-4 text-blue-500" />;
+  if (status === "completed") return <CheckCircle2 aria-hidden className="size-4 text-primary" />;
+  if (status === "waiting_approval") return <KeyRound aria-hidden className="size-4 text-[var(--severity-medium)]" />;
+  if (status === "partial" || status === "failed") return <AlertTriangle aria-hidden className="size-4 text-destructive" />;
+  return <CircleDashed aria-hidden className="size-4 text-muted-foreground" />;
 }
 
-function StatusPill({ status }: { status: string }) {
-  const normalized = status.replaceAll("_", " ");
-  const style = /completed|passed|proven|observed|consumed/.test(status)
-    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-    : /waiting|pending|proposed|reachable|exposed/.test(status)
-      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      : /critical|failed|rejected|error/.test(status)
-        ? "bg-red-500/10 text-red-700 dark:text-red-300"
-        : "bg-blue-500/10 text-blue-700 dark:text-blue-300";
-  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${style}`}>{normalized}</span>;
+function RunState({ status }: { status: string }) {
+  const words = status.replaceAll("_", " ");
+  const label = words.charAt(0).toUpperCase() + words.slice(1);
+  const color = /failed|rejected|critical|error/.test(status) ? "text-destructive"
+    : /waiting|pending|partial/.test(status) ? "text-[var(--severity-medium)]"
+    : /completed|passed|proven|observed/.test(status) ? "text-primary"
+    : "text-muted-foreground";
+  return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${color}`}>
+    <span aria-hidden className="size-1.5 rounded-full bg-current" />{label}
+  </span>;
 }
 
-function InfoRow({ icon, label, value, mono }: { icon: React.ReactNode; label: string; value: string; mono?: boolean }) {
-  return <div className="flex items-start gap-2"><span className="mt-0.5 text-muted-foreground">{icon}</span><div><p className="text-[10px] text-muted-foreground">{label}</p><p className={mono ? "font-mono text-[10px]" : "text-xs"}>{value}</p></div></div>;
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return <div className="grid grid-cols-[6rem_minmax(0,1fr)] items-baseline gap-x-3">
+    <dt className="text-muted-foreground">{label}</dt>
+    <dd className={mono ? "break-all font-mono" : "break-words"}>{value}</dd>
+  </div>;
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="grid min-h-32 place-items-center rounded-xl border border-dashed text-center text-sm text-muted-foreground">{text}</div>;
+  return <p className="py-4 text-sm text-muted-foreground">{text}</p>;
 }

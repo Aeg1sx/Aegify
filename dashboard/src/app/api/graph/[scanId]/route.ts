@@ -17,7 +17,7 @@ async function findEdgesForNodes(scanId: string, nodeIds: string[]) {
     const chunk = nodeIds.slice(i, i + CHUNK_SIZE);
     const [sourceEdges, targetEdges] = await Promise.all([
       prisma.callGraphEdge.findMany({
-        where: { scanId, sourceNodeId: { in: chunk } },
+        where: { scanId, sourceNodeId: { in: chunk }, targetNode: { scanId } },
         select: {
           id: true,
           sourceNodeId: true,
@@ -26,7 +26,7 @@ async function findEdgesForNodes(scanId: string, nodeIds: string[]) {
         },
       }),
       prisma.callGraphEdge.findMany({
-        where: { scanId, targetNodeId: { in: chunk } },
+        where: { scanId, targetNodeId: { in: chunk }, sourceNode: { scanId } },
         select: {
           id: true,
           sourceNodeId: true,
@@ -47,7 +47,7 @@ async function findEdgesForNodes(scanId: string, nodeIds: string[]) {
   });
 }
 
-async function findNodesByIds(ids: string[]) {
+async function findNodesByIds(scanId: string, ids: string[]) {
   const allNodes: Array<{
     id: string;
     qualifiedName: string;
@@ -62,7 +62,7 @@ async function findNodesByIds(ids: string[]) {
   for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
     const chunk = ids.slice(i, i + CHUNK_SIZE);
     const nodes = await prisma.callGraphNode.findMany({
-      where: { id: { in: chunk } },
+      where: { scanId, id: { in: chunk } },
       select: {
         id: true,
         qualifiedName: true,
@@ -88,18 +88,35 @@ export async function GET(
   const access = await requireResource(request, "scan", scanId, "viewer");
   if (access instanceof Response) return access;
   const url = new URL(request.url);
+  if (url.searchParams.has("sourceNode")) {
+    const node = await prisma.callGraphNode.findFirst({
+      where: { scanId, id: url.searchParams.get("sourceNode") ?? "" },
+      select: { filePath: true, lineStart: true, lineEnd: true },
+    });
+    if (!node) return NextResponse.json({ error: "Symbol not found" }, { status: 404 });
+    const finding = node.filePath && node.lineStart > 0 && node.lineEnd >= node.lineStart
+      ? await prisma.finding.findFirst({
+        where: { scanId, filePath: node.filePath, lineStart: { lte: node.lineEnd },
+          lineEnd: { gte: node.lineStart }, codeSnippet: { not: "" } },
+        select: { id: true, ruleName: true, filePath: true, lineStart: true, lineEnd: true, codeSnippet: true, provenance: true },
+        orderBy: [{ lineStart: "asc" }, { id: "asc" }],
+      }) : null;
+    return NextResponse.json({ finding }, { headers: { "Cache-Control": "private, no-store" } });
+  }
   const mode = url.searchParams.get("mode") || "summary";
   const maxNodes = parseInt(url.searchParams.get("maxNodes") || "3000", 10);
 
-  const scan = await prisma.scan.findUnique({ where: { id: scanId } });
+  const scan = await prisma.scan.findUnique({
+    where: { id: scanId }, select: { repository: true, branch: true },
+  });
   if (!scan) {
     return NextResponse.json({ error: "Scan not found" }, { status: 404 });
   }
 
-  // Get total counts for the HUD
+  const graphEdges = { scanId, sourceNode: { scanId }, targetNode: { scanId } };
   const [totalNodeCount, totalEdgeCount] = await Promise.all([
     prisma.callGraphNode.count({ where: { scanId } }),
-    prisma.callGraphEdge.count({ where: { scanId } }),
+    prisma.callGraphEdge.count({ where: graphEdges }),
   ]);
 
   if (mode === "full") {
@@ -118,7 +135,7 @@ export async function GET(
         },
       }),
       prisma.callGraphEdge.findMany({
-        where: { scanId },
+        where: graphEdges,
         select: {
           id: true,
           sourceNodeId: true,
@@ -130,6 +147,7 @@ export async function GET(
 
     return NextResponse.json({
       scanId,
+      ...scan,
       mode: "full",
       nodeCount: nodes.length,
       edgeCount: edges.length,
@@ -189,7 +207,7 @@ export async function GET(
   const remainingBudget = Math.max(0, maxNodes - cappedImportant.length);
   const neighborIdsArray = [...neighborIds].slice(0, remainingBudget);
   const neighborNodes = neighborIdsArray.length > 0
-    ? await findNodesByIds(neighborIdsArray)
+    ? await findNodesByIds(scanId, neighborIdsArray)
     : [];
 
   const allNodes = [...cappedImportant, ...neighborNodes];
@@ -202,6 +220,7 @@ export async function GET(
 
   return NextResponse.json({
     scanId,
+    ...scan,
     mode: "summary",
     nodeCount: allNodes.length,
     edgeCount: filteredEdges.length,

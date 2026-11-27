@@ -2,19 +2,16 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo, use } from "react";
 import dynamic from "next/dynamic";
+import type { NodeObject } from "react-force-graph-2d";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
+import { graphSymbolName } from "@/lib/graph-path";
 import { StructureExplorer } from "@/components/structure-explorer";
 import {
   ArrowLeft,
-  Search,
   ZoomIn,
   ZoomOut,
   Maximize2,
-  GitBranch,
   Loader2,
 } from "lucide-react";
 
@@ -54,29 +51,18 @@ interface ForceLink {
 }
 
 const NODE_COLORS: Record<string, string> = {
-  entry_point: "#22c55e",
-  sink: "#ef4444",
-  module: "#6366f1",
-  function: "#64748b",
+  entry_point: "#458969",
+  sink: "#b66645",
+  module: "#6582a0",
+  function: "#72817e",
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#3b82f6",
+  critical: "#b94259",
+  high: "#bc6235",
+  medium: "#a47f22",
+  low: "#4a7fa2",
 };
-
-function getNodeColor(node: GraphNode): string {
-  if (node.hasFinding && node.findingSeverity) {
-    return (
-      SEVERITY_COLORS[node.findingSeverity] ||
-      NODE_COLORS[node.nodeType] ||
-      "#64748b"
-    );
-  }
-  return NODE_COLORS[node.nodeType] || "#64748b";
-}
 
 function getNodeRadius(node: GraphNode, baseScale: number = 1): number {
   const base = baseScale;
@@ -88,11 +74,8 @@ function getNodeRadius(node: GraphNode, baseScale: number = 1): number {
 }
 
 function getShortName(qualifiedName: string): string {
-  const moduleMatch = qualifiedName.match(/^<module:(.+)>$/);
-  if (moduleMatch) {
-    const parts = moduleMatch[1].split("/");
-    return parts[parts.length - 1];
-  }
+  const label = graphSymbolName(qualifiedName);
+  if (label !== qualifiedName) return label;
   if (qualifiedName === "<anonymous>") return "(anon)";
   const parts = qualifiedName.split(".");
   if (parts.length <= 2) return qualifiedName;
@@ -105,11 +88,16 @@ export default function CallGraphPage({
   params: Promise<{ scanId: string }>;
 }) {
   const { scanId } = use(params);
+  return <GraphWorkspace key={scanId} scanId={scanId} />;
+}
+
+function GraphWorkspace({ scanId }: { scanId: string }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [scan, setScan] = useState<{ repository: string; branch: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -130,13 +118,16 @@ export default function CallGraphPage({
     )
       .then((r) => { if (!r.ok) throw new Error("Unable to load the graph"); return r.json(); })
       .then((data) => {
-        if (!controller.signal.aborted && Array.isArray(data.nodes)) {
+        if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error("Graph data is unavailable.");
+        if (!controller.signal.aborted) {
+          setScan({ repository: data.repository ?? "", branch: data.branch ?? "" });
           setNodes(data.nodes);
           setEdges(data.edges || []);
           setTotalNodes(data.totalNodes || data.nodes.length);
           setTotalEdges(data.totalEdges || data.edges?.length || 0);
           setError("");
-          setSelectedNode(null);
+          setSelectedNode((current) => data.nodes.find((node: GraphNode) => node.id === current?.id)
+            ?? data.nodes.find((node: GraphNode) => node.hasFinding) ?? data.nodes[0] ?? null);
         }
       })
       .catch((e) => { if (!controller.signal.aborted) setError(e.message); })
@@ -164,7 +155,7 @@ export default function CallGraphPage({
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [loading, view]);
+  }, [loading, view, graphMode]);
 
   // Dynamic node scale based on graph size
   const nodeScale = useMemo(() => {
@@ -253,93 +244,48 @@ export default function CallGraphPage({
     };
   }, [graphData.nodes.length]);
 
-  // Custom node rendering - optimized
   const paintNode = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const n = node as ForceNode;
-      const r = getNodeRadius(n, nodeScale);
-      const color = getNodeColor(n);
-      const isSelected = selectedNode?.id === n.id;
-      const x = n.x ?? 0;
-      const y = n.y ?? 0;
-
-      // Draw node
-      if (n.nodeType === "module") {
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 0.85;
-        ctx.fillRect(x - r, y - r, r * 2, r * 2);
-        ctx.globalAlpha = 1;
-        if (isSelected) {
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2 / globalScale;
-          ctx.strokeRect(x - r - 1, y - r - 1, r * 2 + 2, r * 2 + 2);
-        }
-      } else {
+    (graphNode: NodeObject, ctx: CanvasRenderingContext2D, scale: number) => {
+      const node = graphNode as ForceNode;
+      const x = node.x ?? 0;
+      const y = node.y ?? 0;
+      const radius = getNodeRadius(node, nodeScale);
+      const dark = document.documentElement.classList.contains("dark");
+      function outline(padding: number) {
+        const r = radius + padding / scale;
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, 2 * Math.PI);
-        ctx.fillStyle = color;
-        ctx.globalAlpha = n.hasFinding ? 1 : 0.85;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // Glow ring for finding nodes
-        if (n.hasFinding) {
-          ctx.beginPath();
-          ctx.arc(x, y, r + 2, 0, 2 * Math.PI);
-          ctx.strokeStyle = color;
-          ctx.globalAlpha = 0.3;
-          ctx.lineWidth = 2 / globalScale;
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-        }
-
-        if (isSelected) {
-          ctx.beginPath();
-          ctx.arc(x, y, r + 1.5, 0, 2 * Math.PI);
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2 / globalScale;
-          ctx.stroke();
-        }
+        if (node.nodeType === "module") ctx.rect(x - r, y - r, r * 2, r * 2);
+        else ctx.arc(x, y, r, 0, 2 * Math.PI);
       }
 
-      // Labels: scale dynamically with zoom level
-      const labelThreshold = graphData.nodes.length > 500 ? 1.2 : 0.8;
-      if (globalScale > labelThreshold) {
-        const label = getShortName(n.qualifiedName);
-
-        // Font size grows with zoom: base 3 in graph-space, so it
-        // appears larger as the user zooms in and smaller when zoomed out.
-        // Clamp the *screen* size between 8px and 22px for readability.
-        const graphSpaceSize = 3;                       // constant in graph coords
-        const screenSize = graphSpaceSize * globalScale; // grows with zoom
-        const clampedScreen = Math.min(22, Math.max(8, screenSize));
-        const fontSize = clampedScreen / globalScale;    // back to graph coords
-
-        ctx.font = `${fontSize}px "SF Mono", "Fira Code", monospace`;
+      ctx.save();
+      outline(0);
+      ctx.fillStyle = NODE_COLORS[node.nodeType] ?? NODE_COLORS.function;
+      ctx.fill();
+      if (node.hasFinding) {
+        outline(2.5);
+        ctx.strokeStyle = SEVERITY_COLORS[node.findingSeverity ?? ""] ?? (dark ? "#c7d7ce" : "#485c52");
+        ctx.lineWidth = 1.7 / scale;
+        ctx.stroke();
+      }
+      if (node.id === selectedNode?.id) {
+        outline(node.hasFinding ? 6 : 3.5);
+        ctx.strokeStyle = dark ? "#ffffff" : "#172c25";
+        ctx.lineWidth = 1.5 / scale;
+        ctx.setLineDash([3 / scale, 2 / scale]);
+        ctx.stroke();
+      }
+      const count = graphData.nodes.length;
+      if (count <= 80 || scale > (count > 500 ? 1.2 : 0.8)) {
+        const screenSize = Math.min(20, Math.max(count <= 80 ? 12 : 10, 3 * scale));
+        ctx.font = (screenSize / scale) + 'px ui-monospace, monospace';
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-
-        // Fade labels in: fully opaque above 2x threshold, transparent near threshold
-        const fadeAlpha = Math.min(1, (globalScale - labelThreshold) / labelThreshold);
-
-        // Text shadow for readability
-        const isDark =
-          document.documentElement.classList.contains("dark");
-        ctx.globalAlpha = fadeAlpha * 0.6;
-        ctx.fillStyle = isDark
-          ? "rgba(0, 0, 0, 1)"
-          : "rgba(255, 255, 255, 1)";
-        ctx.fillText(label, x + 0.5, y + r + 3.5);
-        ctx.globalAlpha = fadeAlpha * 0.9;
-        ctx.fillStyle = isDark
-          ? "rgba(226, 232, 240, 1)"
-          : "rgba(30, 41, 59, 1)";
-        ctx.fillText(label, x, y + r + 3);
-        ctx.globalAlpha = 1;
+        ctx.fillStyle = dark ? "#e1e9e4" : "#253b31";
+        ctx.fillText(getShortName(node.qualifiedName), x, y + radius + 7 / scale);
       }
-    },
-    [selectedNode, nodeScale, graphData.nodes.length]
+      ctx.restore();
+    }, [selectedNode?.id, nodeScale, graphData.nodes.length]
   );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -347,430 +293,135 @@ export default function CallGraphPage({
     setSelectedNode(node as GraphNode);
   }, []);
 
-  const zoomIn = () => graphRef.current?.zoom(1.5, 300);
-  const zoomOut = () => graphRef.current?.zoom(0.67, 300);
-  const resetView = () => graphRef.current?.zoomToFit(400, 40);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 gap-3">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        <span className="text-muted-foreground">
-          Loading call graph...
-        </span>
-      </div>
-    );
+  const autoFitRef = useRef(true);
+  useEffect(() => { autoFitRef.current = true; }, [graphData, view]);
+  function zoom(factor: number) {
+    autoFitRef.current = false;
+    const graph = graphRef.current;
+    if (graph) graph.zoom(graph.zoom() * factor, 180);
   }
-
-  if (error) return <div role="alert" className="workbench-panel p-5">{error} <Link className="text-primary" href={`/scans/${scanId}`}>Return to scan</Link></div>;
-  if (nodes.length === 0) {
-    return (
-      <div className="space-y-4">
-        <Link
-          href={`/scans/${scanId}`}
-          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to scan
-        </Link>
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <GitBranch className="h-8 w-8 mx-auto mb-3 opacity-50" />
-            <p className="mb-2">No call graph data available for this scan.</p>
-            <p className="text-xs">
-              Ensure the SARIF report includes call graph data when uploading.
-            </p>
-          </CardContent>
-        </Card>
+  const choose = (id: string) => setSelectedNode(nodes.find((node) => node.id === id) ?? null);
+  const selected = selectedNode ?? nodes.find((node) => node.hasFinding) ?? nodes[0];
+  const entries = nodes.filter((node) => node.nodeType === "entry_point");
+  const sinks = nodes.filter((node) => node.nodeType === "sink");
+  return <div className="graph-workspace">
+    <Link className="inline-flex min-h-11 items-center gap-2 text-sm text-primary" href={"/scans/" + scanId}>
+      <ArrowLeft aria-hidden className="size-4" /> Back to scan
+    </Link>
+    <header className="graph-heading">
+      <div><h1 className="workbench-title">Call graph</h1>
+        {scan?.repository && <p className="mt-2 break-all text-sm text-muted-foreground"><strong className="font-medium text-foreground">{scan.repository}</strong>{scan.branch && " · " + scan.branch}</p>}
       </div>
-    );
-  }
-
-  const entryPoints = nodes.filter((n) => n.nodeType === "entry_point");
-  const sinks = nodes.filter((n) => n.nodeType === "sink");
-  const withFindings = nodes.filter((n) => n.hasFinding);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/scans/${scanId}`}
-            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Link>
-          <h1 className="text-lg font-semibold flex items-center gap-2">
-            <GitBranch className="h-4 w-4" />
-            Call Graph
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className={view === "network" ? "relative w-56" : "hidden"}>
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search nodes..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 h-7 text-xs"
-            />
-          </div>
-          <select
-            aria-label="Filter network node types"
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className={view === "network" ? "h-7 rounded-md border border-input bg-background px-2 text-xs" : "hidden"}
-          >
-            <option value="">All types</option>
-            <option value="entry_point">Entry points</option>
-            <option value="sink">Sinks</option>
-            <option value="function">Functions</option>
-            <option value="module">Modules</option>
-          </select>
-          <div className="h-7 rounded-md border border-input bg-background flex text-xs overflow-hidden">
-            <button
-              onClick={() => {
-                if (graphMode !== "summary") { setLoading(true); setGraphMode("summary"); }
-              }}
-              className={`px-2.5 transition-colors ${
-                graphMode === "summary"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted"
-              }`}
-            >
-              Summary
-            </button>
-            <button
-              onClick={() => {
-                if (graphMode !== "full") { setLoading(true); setGraphMode("full"); }
-              }}
-              className={`px-2.5 transition-colors border-l border-input ${
-                graphMode === "full"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted"
-              }`}
-            >
-              Full
-            </button>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={zoomIn}
-            className="h-7 w-7 p-0"
-          >
-            <ZoomIn className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={zoomOut}
-            className="h-7 w-7 p-0"
-          >
-            <ZoomOut className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={resetView}
-            className="h-7 w-7 p-0"
-          >
-            <Maximize2 className="h-3 w-3" />
-          </Button>
-        </div>
+      {scan && <dl className="graph-totals">
+        <div><dt>Symbols</dt><dd>{totalNodes.toLocaleString()}</dd></div>
+        <div><dt>Recorded calls</dt><dd>{totalEdges.toLocaleString()}</dd></div>
+      </dl>}
+    </header>
+    {scan && <div className="graph-view-bar">
+      <div role="group" aria-label="Graph view" className="graph-view-buttons">
+        {(["structure", "network"] as const).map((name) => <button type="button" key={name} aria-pressed={view === name}
+          onClick={() => setView(name)}>{name === "structure" ? "Structure & source" : "Network"}</button>)}
       </div>
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
-        {(["structure", "network"] as const).map((name) => <button key={name} type="button" aria-pressed={view === name} onClick={() => setView(name)} className={`rounded-md px-3 py-2 text-xs font-medium ${view === name ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent"}`}>{name === "structure" ? "Structure & source" : "Network canvas"}</button>)}
-        <span className="ml-auto text-xs text-muted-foreground">{nodes.length} / {totalNodes} nodes loaded · recorded calls, not runtime proof</span>
-      </div>
-      {view === "structure" ? <StructureExplorer nodes={nodes} edges={edges} scanId={scanId} /> : <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px] h-[calc(100vh-13rem)]">
-        {/* Graph */}
-        <div
-          ref={containerRef}
-          className="relative rounded-lg border border-border overflow-hidden bg-muted/50 h-full min-h-0"
-        >
-          <ForceGraph2D
-            ref={graphRef}
-            width={dimensions.width}
-            height={dimensions.height}
-            graphData={graphData}
-            nodeCanvasObject={paintNode}
-            nodePointerAreaPaint={(node, color, ctx) => {
-              const r = getNodeRadius(node as GraphNode, nodeScale) + 3;
-              ctx.fillStyle = color;
-              ctx.beginPath();
-              ctx.arc(
-                (node as ForceNode).x ?? 0,
-                (node as ForceNode).y ?? 0,
-                r,
-                0,
-                2 * Math.PI
-              );
-              ctx.fill();
-            }}
-            onNodeClick={handleNodeClick}
-            linkColor={() =>
-              document.documentElement.classList.contains("dark")
-                ? "rgba(148, 163, 184, 0.15)"
-                : "rgba(100, 116, 139, 0.2)"
-            }
-            linkWidth={0.5}
-            linkDirectionalArrowLength={3}
-            linkDirectionalArrowRelPos={1}
-            linkDirectionalArrowColor={() =>
-              document.documentElement.classList.contains("dark")
-                ? "rgba(148, 163, 184, 0.3)"
-                : "rgba(100, 116, 139, 0.35)"
-            }
-            backgroundColor="transparent"
-            d3AlphaDecay={physicsConfig.d3AlphaDecay}
-            d3VelocityDecay={physicsConfig.d3VelocityDecay}
-            warmupTicks={physicsConfig.warmupTicks}
-            cooldownTime={physicsConfig.cooldownTime}
-            cooldownTicks={physicsConfig.cooldownTicks}
-            enableNodeDrag={true}
-            enableZoomInteraction={true}
-            enablePanInteraction={true}
-            onEngineStop={() => graphRef.current?.zoomToFit(400, 30)}
-          />
-
-          {/* Legend */}
-          <div className="absolute bottom-2.5 left-2.5 bg-background/80 backdrop-blur-sm rounded-md px-2.5 py-2 text-xs space-y-1 pointer-events-none border border-border/50">
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: NODE_COLORS.entry_point }}
-              />
-              <span>Entry Point</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: NODE_COLORS.sink }}
-              />
-              <span>Sink</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: NODE_COLORS.function }}
-              />
-              <span>Function</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5"
-                style={{
-                  backgroundColor: NODE_COLORS.module,
-                  borderRadius: 1,
-                }}
-              />
-              <span>Module</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full ring-2 ring-orange-400/40"
-                style={{ backgroundColor: SEVERITY_COLORS.high }}
-              />
-              <span>Has Finding</span>
+      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground"><span className="hidden sm:inline">Show</span>
+        <select aria-label="Graph scope" className="workbench-select min-h-11" value={graphMode} onChange={(event) => {
+          setLoading(true); setGraphMode(event.target.value === "full" ? "full" : "summary");
+        }}><option value="summary">Summary</option><option value="full">Full graph</option></select>
+      </label>
+    </div>}
+    {error ? <p role="alert" className="py-5">{error}</p> : loading && !scan ?
+      <p role="status" className="flex items-center gap-2 py-5 text-sm text-muted-foreground"><Loader2 aria-hidden className="size-4 animate-spin" />Loading call graph…</p> :
+      <div aria-busy={loading}>
+        {loading && <p role="status" className="py-2 text-sm text-muted-foreground">Updating graph…</p>}
+        {!nodes.length ? <section className="border-t border-border py-5"><h2 className="font-semibold">
+          {totalNodes ? "No symbols in this summary" : "No call graph recorded"}</h2><p className="mt-2 text-sm text-muted-foreground">
+          {totalNodes ? "Choose Full graph to browse the scan’s other symbols." : "A scan report containing call graph data will show its symbols and calls here."}</p></section> :
+        view === "structure" ? <StructureExplorer scanId={scanId} nodes={nodes} edges={edges} selectedId={selected?.id} onSelect={choose} /> :
+        <section aria-label="Network" className="min-w-0">
+          <div className="graph-network-tools">
+            <input aria-label="Search network symbols" placeholder="Find a symbol or file" className="workbench-select min-h-11" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <select aria-label="Filter network node types" className="workbench-select min-h-11" value={filterType} onChange={(event) => setFilterType(event.target.value)}>
+              <option value="">All types</option><option value="entry_point">Entry points</option><option value="sink">Sinks</option>
+              <option value="function">Functions</option><option value="method">Methods</option><option value="module">Modules</option>
+            </select>
+            <div role="group" aria-label="Network zoom" className="graph-zoom">
+              <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoom(1 / 1.5)}><ZoomOut aria-hidden /></button>
+              <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoom(1.5)}><ZoomIn aria-hidden /></button>
+              <button type="button" aria-label="Fit graph" title="Fit graph" onClick={() => { autoFitRef.current = false; graphRef.current?.zoomToFit(200, 40); }}><Maximize2 aria-hidden /></button>
             </div>
           </div>
-
-          {/* HUD */}
-          <div className="absolute bottom-2.5 right-2.5 bg-background/80 backdrop-blur-sm rounded-md px-2 py-1 text-xs font-mono text-muted-foreground pointer-events-none border border-border/50">
-            {graphData.nodes.length.toLocaleString()} /{" "}
-            {totalNodes.toLocaleString()} nodes &middot;{" "}
-            {graphData.links.length.toLocaleString()} /{" "}
-            {totalEdges.toLocaleString()} edges
-            {graphMode === "summary" && (
-              <span className="ml-1 text-primary">(summary)</span>
-            )}
+          <div className="graph-network-layout">
+            <div className="min-w-0">
+              <div ref={containerRef} className="graph-canvas" aria-label="Network diagram">
+                {graphData.nodes.length ? <ForceGraph2D
+                  ref={graphRef}
+                  width={dimensions.width}
+                  height={dimensions.height}
+                  graphData={graphData}
+                  nodeCanvasObject={paintNode}
+                  nodePointerAreaPaint={(node, color, ctx) => {
+                    const r = getNodeRadius(node as GraphNode, nodeScale) + 3;
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(
+                      (node as ForceNode).x ?? 0,
+                      (node as ForceNode).y ?? 0,
+                      r,
+                      0,
+                      2 * Math.PI
+                    );
+                    ctx.fill();
+                  }}
+                  onNodeClick={handleNodeClick}
+                  linkColor={() =>
+                    document.documentElement.classList.contains("dark")
+                      ? "rgba(172, 191, 183, 0.54)"
+                      : "rgba(68, 91, 81, 0.49)"
+                  }
+                  linkWidth={1}
+                  linkDirectionalArrowLength={3}
+                  linkDirectionalArrowRelPos={1}
+                  linkDirectionalArrowColor={() =>
+                    document.documentElement.classList.contains("dark")
+                      ? "rgba(172, 191, 183, 0.75)"
+                      : "rgba(68, 91, 81, 0.77)"
+                  }
+                  backgroundColor="transparent"
+                  d3AlphaDecay={physicsConfig.d3AlphaDecay}
+                  d3VelocityDecay={physicsConfig.d3VelocityDecay}
+                  warmupTicks={physicsConfig.warmupTicks}
+                  cooldownTime={physicsConfig.cooldownTime}
+                  cooldownTicks={physicsConfig.cooldownTicks}
+                  enableNodeDrag={true}
+                  enableZoomInteraction={true}
+                  enablePanInteraction={true}
+                  onEngineStop={() => {
+                    if (autoFitRef.current) { graphRef.current?.zoomToFit(200, 40); autoFitRef.current = false; }
+                  }}
+                /> : <p className="p-5 text-sm text-muted-foreground">No symbols match these filters.</p>}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground" role="status">{graphData.nodes.length.toLocaleString()} of {totalNodes.toLocaleString()} symbols · {graphData.links.length.toLocaleString()} of {totalEdges.toLocaleString()} calls</p>
+              <ul aria-label="Network legend" className="graph-legend">
+                {Object.entries(NODE_COLORS).map(([type, color]) => <li key={type}><i aria-hidden style={{ backgroundColor: color, borderRadius: type === "module" ? "1px" : "50%" }} />{type.replace("_", " ")}</li>)}
+                <li><i aria-hidden className="rounded-full border-2 border-current" />Finding in file</li>
+                <li><i aria-hidden className="rounded-full border border-dashed border-current" />Selected</li>
+              </ul>
+            </div>
+            <aside className="graph-network-index" aria-label="Network symbols">
+              {selected && <section><h2>Selected symbol</h2><h3 className="mt-2 font-mono font-semibold [overflow-wrap:anywhere]" title={selected.qualifiedName}>{graphSymbolName(selected.qualifiedName)}</h3>
+                <p className="my-2 font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">{selected.filePath}{selected.lineStart > 0 && ":" + selected.lineStart}</p>
+                {selected.hasFinding && selected.findingSeverity && <div className="flex items-center gap-2 text-xs text-muted-foreground">File finding <SeverityBadge severity={selected.findingSeverity} /></div>}
+                <button type="button" className="block min-h-11 text-sm text-primary underline underline-offset-4" onClick={() => { choose(selected.id); setView("structure"); }}>Open in source structure</button>
+              </section>}
+              {[{ list: entries, label: "Entry points" }, { list: sinks, label: "Sinks" }].map(({ list, label }) => {
+                return list.length > 0 && <section key={label}><h2>{label} <span className="text-xs font-normal text-muted-foreground">{list.length}</span></h2>
+                  <ul className="max-h-52 overflow-auto">{list.slice(0, 30).map((node) => <li key={node.id}><button type="button" className="graph-call-row font-mono" aria-pressed={selected?.id === node.id}
+                    onClick={() => choose(node.id)}>{getShortName(node.qualifiedName)}</button></li>)}</ul>
+                  {list.length > 30 && <p className="text-xs text-muted-foreground">First 30 shown</p>}
+                </section>;
+              })}
+            </aside>
           </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-2.5 overflow-y-auto">
-          <Card>
-            <CardHeader className="py-2.5 px-3">
-              <CardTitle className="text-xs font-medium">
-                Graph Statistics
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 pb-2.5 space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Total Nodes</span>
-                <span className="font-mono text-xs">
-                  {totalNodes.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Total Edges</span>
-                <span className="font-mono text-xs">
-                  {totalEdges.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Visible</span>
-                <span className="font-mono text-xs">
-                  {graphData.nodes.length.toLocaleString()} nodes
-                </span>
-              </div>
-              <div className="border-t border-border/50 my-1" />
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Entry Points</span>
-                <span className="font-mono text-xs text-green-500">
-                  {entryPoints.length}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Sinks</span>
-                <span className="font-mono text-xs text-red-500">
-                  {sinks.length}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">With Findings</span>
-                <span className="font-mono text-xs text-orange-500">
-                  {withFindings.length}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {selectedNode && (
-            <Card className="border-primary/30">
-              <CardHeader className="py-2.5 px-3">
-                <CardTitle className="text-xs font-medium">
-                  Selected Node
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-3 pb-2.5 space-y-1.5">
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                    Name
-                  </span>
-                  <p className="text-xs font-mono break-all leading-tight">
-                    {selectedNode.qualifiedName}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                    File
-                  </span>
-                  <p className="text-xs font-mono break-all leading-tight text-muted-foreground">
-                    {selectedNode.filePath.split("/").slice(-3).join("/")}:
-                    {selectedNode.lineStart}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                    Type
-                  </span>
-                  <span
-                    className="text-xs capitalize px-1.5 py-0.5 rounded text-white"
-                    style={{
-                      backgroundColor:
-                        NODE_COLORS[selectedNode.nodeType] || "#64748b",
-                    }}
-                  >
-                    {selectedNode.nodeType.replace("_", " ")}
-                  </span>
-                </div>
-                {selectedNode.hasFinding && selectedNode.findingSeverity && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                      Finding
-                    </span>
-                    <SeverityBadge severity={selectedNode.findingSeverity} />
-                  </div>
-                )}
-                <div className="flex gap-3 text-xs font-mono pt-0.5">
-                  <span className="text-muted-foreground">
-                    {
-                      edges.filter(
-                        (e) => e.sourceNodeId === selectedNode.id
-                      ).length
-                    }{" "}
-                    out
-                  </span>
-                  <span className="text-muted-foreground">
-                    {
-                      edges.filter(
-                        (e) => e.targetNodeId === selectedNode.id
-                      ).length
-                    }{" "}
-                    in
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {entryPoints.length > 0 && (
-            <Card>
-              <CardHeader className="py-2.5 px-3">
-                <CardTitle className="text-xs font-medium">
-                  Entry Points ({entryPoints.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-3 pb-2.5">
-                <div className="space-y-0.5 max-h-36 overflow-y-auto">
-                  {entryPoints.slice(0, 30).map((n) => (
-                    <button
-                      key={n.id}
-                      onClick={() => setSelectedNode(n)}
-                      className={`block w-full text-left text-xs font-mono truncate py-0.5 px-1 rounded transition-colors ${
-                        selectedNode?.id === n.id
-                          ? "bg-primary/10 text-foreground"
-                          : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {getShortName(n.qualifiedName)}
-                    </button>
-                  ))}
-                  {entryPoints.length > 30 && (
-                    <p className="text-xs text-muted-foreground pt-1">
-                      +{entryPoints.length - 30} more...
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {sinks.length > 0 && (
-            <Card>
-              <CardHeader className="py-2.5 px-3">
-                <CardTitle className="text-xs font-medium">
-                  Sinks ({sinks.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-3 pb-2.5">
-                <div className="space-y-0.5 max-h-36 overflow-y-auto">
-                  {sinks.slice(0, 30).map((n) => (
-                    <button
-                      key={n.id}
-                      onClick={() => setSelectedNode(n)}
-                      className={`block w-full text-left text-xs font-mono truncate py-0.5 px-1 rounded transition-colors ${
-                        selectedNode?.id === n.id
-                          ? "bg-primary/10 text-foreground"
-                          : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {getShortName(n.qualifiedName)}
-                    </button>
-                  ))}
-                  {sinks.length > 30 && (
-                    <p className="text-xs text-muted-foreground pt-1">
-                      +{sinks.length - 30} more...
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        </section>}
       </div>}
-    </div>
-  );
+  </div>;
 }

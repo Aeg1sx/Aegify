@@ -3,6 +3,34 @@ import test from "node:test";
 
 import { fetchRepoCode, isPathSafe, isScannableFile, readBoundedProviderBody } from "./repo-fetcher.ts";
 
+test("deterministic imports admit Wrangler JSONC and historical model scans omit configuration bodies", async () => {
+  const original = globalThis.fetch;
+  const paths = ["src/wrangler.jsonc", "wrangler.json", "app/wrangler.toml"];
+  const reads: string[] = [];
+  const sha = "a".repeat(40);
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path.includes("/commits/")) return Response.json({ sha, commit: { tree: { sha } } });
+    if (path.includes("/git/trees/")) return Response.json({ tree: paths.map((p) => ({ path: p, mode: "100644", type: "blob" })) });
+    reads.push(path);
+    return new Response("owned-marker");
+  };
+  try {
+    const options = { provider: "github" as const, accessToken: "owned", ownerSlug: "owner/repo", providerRepoId: "", ref: "main" };
+    const scan = await fetchRepoCode(options);
+    assert.equal(reads.length, 3);
+    assert.deepEqual(scan.files.map((file) => file.path).sort(), [...paths].sort());
+    reads.length = 0;
+    const model = await fetchRepoCode({ ...options, withholdWranglerFromModel: true });
+    assert.equal(model.omittedFiles, 3);
+    assert.equal(model.truncated, true);
+    assert.equal(model.files.length, 0);
+    assert.deepEqual(reads, []);
+    assert.equal(isScannableFile("other.jsonc"), false);
+    assert.equal(isScannableFile("node_modules/demo/wrangler.jsonc"), false);
+  } finally { globalThis.fetch = original; }
+});
+
 test("pins GitHub tree and file reads to the resolved commit SHA", async () => {
   const originalFetch = globalThis.fetch;
   const urls: string[] = [];

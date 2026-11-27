@@ -21,9 +21,10 @@ Both containers use UID 1001 for the data volume. This deployment is a single-ho
 team installation; do not place SQLite on an NFS share or treat it as a multi-host
 database service.
 
-Readers and the worker share WAL snapshots; lock contention retries the entire
-rolled-back write transaction up to four times with jitter. A failed retry remains
-an error. See [SQLite's isolation contract](https://www.sqlite.org/isolation.html).
+Readers and workers share WAL snapshots. The dashboard retries a rolled-back
+write transaction with jitter until its wait budget expires. The default budget
+is five seconds. Login quota checks record the workspace, client and account
+counters in one transaction. See [SQLite's isolation contract](https://www.sqlite.org/isolation.html).
 Use the [operator backup CLI](/operations/backup-recovery), which captures a
 consistent live snapshot, or stop the dashboard and both workers before copying database files.
 Copying only the live `.db` file can omit committed WAL data.
@@ -120,7 +121,7 @@ rerun a saved input. Keep the original installation encryption key.
 
 ## Durable AI finding reviews
 
-Open **LLM Security Review** and choose a project scan. **Quick Review** uses
+Open **AI reviews** and choose a project scan. **Quick Review** uses
 finding excerpts; **Deep Analysis** adds bounded graph context. **Source
 Investigation** lets the agent list, read and search the retained repository
 snapshot. Choose up to 25 findings using the paginated selector. Completed and
@@ -172,8 +173,11 @@ Missing review records remain explicit omissions. These are resource bounds,
 not monetary quotas or measured precision/recall guarantees. A worker must be
 running to reconcile expired queued jobs; a maintainer can cancel them meanwhile.
 
-The job **Details** view exposes status, cancellation, heartbeat, budget
-reservations, provider-native usage counters, digests and an event history.
+Select a run in **Recent runs** to see its saved results. The **Run status**
+panel shows progress, the provider and the number of calls. Open **Budget
+and timing** for the deadline, heartbeat and token reservation. **Provider
+calls** contains usage counters and receipts. **Run events** lists recorded
+state changes. **View saved results** jumps to the retained findings.
 Missing usage and cost are **unknown**, never zero. Cache and reasoning counters
 have provider-specific meanings and must not be summed blindly. No raw provider
 body or hidden reasoning is kept in a receipt. A valid provider envelope and
@@ -210,7 +214,7 @@ with zero confidence and an explicit gap. Reading that line is a necessary
 grounding check, not proof that the reasoning is correct or the path is reachable.
 Missing context, truncated search and omitted files must be reviewed by a person.
 
-**Details** lists every provider turn and receipt. Source tool events contain
+The run panel lists every provider turn and receipt. Source tool events contain
 names, status, truncation and digests; source text is excluded from ordinary logs.
 Saved results show the catalog coverage, commit, tool activity and cited source
 excerpts with hashes and line numbers. Those excerpts remain encrypted in the
@@ -227,20 +231,23 @@ findings reduces the maximum work; it does not promise a particular token cost.
 
 ### Compare saved review results
 
-Choose a run's **Details** button to inspect its own saved results. A later review
-can replace the finding's current suggestion; it cannot rewrite the earlier run's
-retained narrative. The result panel shows the model verdict, explanation,
-remediation, supporting/contrary evidence, missing evidence and the source excerpt
-supplied to that run. **Download saved evidence** exports the verified record and
-its digest. Long summaries identify shortened metadata; the saved evidence keeps
-the bounded input actually supplied to the model.
+Choose a row in **Recent runs**. Pick a finding in the list or use the finding
+selector on mobile. The result pairs the saved verdict with the reviewed source
+location. The explanation, suggested fix and evidence gaps follow. Parsed
+Wrangler settings display their allowed fields. The stored review opens even
+if a later run has published a different suggestion.
 
-Current finding status and the current human AI-review decision appear separately
-and are labeled as current at load. The panel identifies a replaced suggestion,
-changed source evidence or a finding that has since been deleted. Use **Refresh
-results** to refresh that comparison. Removing project access prevents subsequent
-history reads; a scan transferred to another project does not transfer its prior
-project-bound review evidence.
+**Tracked finding status** gives the latest decision for the same project
+and finding identity. **Scan finding status** applies when the observation
+has no matching project identity. **Finding record** shows the acceptance
+state of the suggestion on that scan observation. Use **Refresh** to update
+the comparison after a decision or a source change. Removing project access
+prevents subsequent history reads. A scan transferred to another project
+keeps its prior review records scoped to the original project.
+
+**Review provenance** shows the provider, model and evidence digests.
+**Download saved evidence** exports the verified record and its digest.
+A shortened list entry links to the bounded input originally supplied.
 
 Every valid returned result is retained atomically with its call receipt, job
 counters and audit event. Results that would replace an accepted or rejected human
@@ -273,6 +280,40 @@ that seven-day input expires, the retained digests and per-finding excerpts do
 not reconstruct the entire original batch prompt or graph context. Retain a
 verified backup before expiry if full-input replay is required. Provider
 nondeterminism and uncalibrated model confidence remain separate evaluation work.
+
+## Find a project
+
+Open **Projects** and search for a name, repository or description. **Active**
+and **Archived** keep the search when you switch views. Each row shows how many
+scans belong to the project. **Latest findings** counts the observations in its
+most recent scan. Select the project name for its settings or the scan date and
+status for the corresponding scan record.
+
+Project administrators can **Archive** a project or **Restore** it from the
+archived list. Workspace administrators can also create a project. A failed
+creation keeps the entered fields for retry.
+[Desktop projects](/assets/aegify-projects-desktop.png) · [Mobile projects](/assets/aegify-projects-mobile.png) · [Dark appearance](/assets/aegify-projects-dark.png)
+
+## Review a project
+
+Select a project to see the repository, default branch and your project role.
+**Scan history** shows ten revisions at a time. Select a row for its scan record.
+The recorded time uses your browser’s locale. A scan still running shows
+**Awaiting results** until it records a finding. A partially completed scan
+keeps its observations and shows **Partial coverage**.
+
+**Current findings** counts the current observations across this project.
+Selecting a severity opens the findings list with both the project and severity
+filters applied. Each scan row includes all observations from that revision.
+The mobile view puts the severity summary above the history.
+[Desktop project record](/assets/aegify-project-record-desktop.png) · [Mobile project record](/assets/aegify-project-record-mobile.png) · [Dark appearance](/assets/aegify-project-record-dark.png)
+
+Administrators can connect a repository or open **Project settings** to manage
+members, CI tokens and archival. If a second administrator changes the connection
+while the repository picker is open, **Reload project** shows the latest settings.
+Archiving pauses new source scans and CI uploads. Readers retain access to
+earlier results. Administrators can still review members and revoke existing
+upload tokens. Restoring the project reopens token issuance.
 
 ## Scan a connected project
 

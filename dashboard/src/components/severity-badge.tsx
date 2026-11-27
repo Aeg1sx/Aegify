@@ -21,9 +21,9 @@ const severityConfig: Record<string, { color: string; label: string }> = {
 };
 
 export function SeverityBadge({ severity }: { severity: string }) {
-  const config = severityConfig[severity] || severityConfig.medium;
+  const config = Object.hasOwn(severityConfig, severity) ? severityConfig[severity] : { color: "text-muted-foreground", label: severity || "Unclassified" };
   return (
-    <Badge variant="outline" className={cn("text-xs font-medium", config.color)}>
+    <Badge variant="outline" className={cn("rounded-sm text-xs font-medium", config.color)}>
       {config.label}
     </Badge>
   );

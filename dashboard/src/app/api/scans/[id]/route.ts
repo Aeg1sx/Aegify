@@ -13,6 +13,7 @@ export async function GET(
   const scan = await prisma.scan.findUnique({
     where: { id },
     include: {
+      scanJob: { select: { id: true } },
       findings: {
         orderBy: [
           { severity: "asc" },
@@ -70,6 +71,7 @@ export async function GET(
     status: scan.status,
     progressMessage: scan.progressMessage,
     progressPhaseName: scan.progressPhaseName,
+    hasSourceJob: Boolean(scan.scanJob),
     filesScanned: scan.filesScanned,
     duration: scan.duration,
     createdAt: scan.createdAt,

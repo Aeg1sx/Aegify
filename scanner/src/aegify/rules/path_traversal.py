@@ -32,7 +32,6 @@ class PathTraversalRule(SecurityRule):
         owasp_category="A01:2021-Broken Access Control",
         requires_taint_path=True,
         llm_verify_threshold=0.6,
-        defense_patterns=["realpath", "abspath", "normalize", "sanitize_path"],
     )
 
     def get_detection_metadata(self) -> dict[str, Any]:
@@ -41,13 +40,12 @@ class PathTraversalRule(SecurityRule):
             "taint": {
                 "sink_types": ["file_access"],
                 "source_types": ["user_input", "request_param", "query_string"],
-                "sanitizers": self.definition.defense_patterns,
+                "sanitizers": [],
             },
             "description": (
-                "Traces data flow from user-controlled sources to file system operation "
-                "sinks (open, read, write, Path, etc.). "
-                "Reports when no path validation (realpath, abspath, normalize) "
-                "is found in the flow path."
+                "Traces unsanitized path operands from user-controlled sources to file "
+                "operations. Review whether the application enforces containment in the "
+                "intended directory after path normalization."
             ),
         }
 
@@ -154,3 +152,47 @@ class CodeExecutionRule(SecurityRule):
 
 register_rule(PathTraversalRule())
 register_rule(CodeExecutionRule())
+
+
+class DirectoryPrefixRule(SecurityRule):
+    definition = RuleDefinition(
+        id="AEG-PATH-003",
+        name="Directory check uses a character prefix",
+        description="A directory check compares the text prefix of its path operands.",
+        severity=Severity.MEDIUM,
+        default_confidence=0.85,
+        languages=[Language.PYTHON],
+        cwe_id=22,
+        requires_taint_path=False,
+    )
+
+    def get_detection_metadata(self) -> dict[str, Any]:
+        return {
+            "detection_method": "ast",
+            "apis": ["os.path.commonprefix", "posixpath.commonprefix", "ntpath.commonprefix"],
+        }
+
+    def evaluate(
+        self, file_asts: list[FileAST], call_graph: CodeGraph, taint_flows: list[TaintFlow]
+    ) -> list[Finding]:
+        findings = []
+        for ast in file_asts:
+            for check in ast.python_directory_checks:
+                finding = self._create_finding(
+                    ast.file_path,
+                    check.line,
+                    check.end_line,
+                    "",
+                    f"{check.api} compares path text character by character. Line "
+                    f"{check.comparison_line} uses its result in a directory check. "
+                    "Review the directory boundary and the origin of the candidate path.",
+                )
+                finding.remediation = (
+                    "Resolve the root and candidate according to the application's symlink policy. "
+                    "Use os.path.commonpath or Path.is_relative_to to compare path components."
+                )
+                findings.append(finding)
+        return findings
+
+
+register_rule(DirectoryPrefixRule())

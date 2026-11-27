@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # This is an executable support contract, not a marketing-only matrix.  The
 # regression suite builds and resolves at least one real parser-produced call
 # edge for every language in this set.
-HEURISTIC_CALL_GRAPH_LANGUAGES: frozenset[Language] = frozenset(Language)
+HEURISTIC_CALL_GRAPH_LANGUAGES: frozenset[Language] = frozenset(Language) - {Language.WRANGLER}
 
 
 @dataclass

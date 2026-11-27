@@ -1,8 +1,9 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { normalizeFindingClassification, normalizeFindingEvidence, normalizeSourceSnippet, scanHealthForRun, workspaceSnapshotForRun } from "./sarif-evidence.ts";
+import { flowLineExcerpt, normalizeFindingClassification, normalizeFindingEvidence, normalizeSourceSnippet, scanCoverageForRun, scanHealthForRun, workspaceSnapshotForRun } from "./sarif-evidence.ts";
 import { classifyFindingBaseline, findingIdentityScope, findingMessageDigest, legacyFindingFingerprint, relativeIdentityPath, stableFindingFingerprint } from "./finding-lifecycle.ts";
 import { migrateFindingIdentities, readFindingIdentities } from "./finding-identity-import.ts";
 import { findingManagement } from "./finding-workflow.ts";
+import { isWranglerManifest } from "./configuration-evidence.ts";
 import { publishScanImport } from "./scan-reconciliation.ts";
 import { writeTransaction } from "./database-runtime.ts";
 
@@ -68,7 +69,8 @@ interface SARIFResult {
         location: {
           physicalLocation?: {
             artifactLocation?: { uri: string };
-            region?: { startLine: number };
+            region?: { startLine: number; endLine?: number; snippet?: { text: string } };
+            contextRegion?: { startLine: number; endLine?: number; snippet?: { text: string } };
           };
           message?: { text: string };
         };
@@ -184,6 +186,7 @@ interface SARIFReport {
       artifactPathEncoding?: unknown;
       analysisStatus?: unknown;
       analysisGaps?: unknown;
+      taintAnalysis?: unknown;
       analysisScope?: unknown;
       evaluatedRules?: unknown;
       analyzedFiles?: unknown;
@@ -399,11 +402,14 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
       let taintFlow: string | null = null;
       if (result.codeFlows?.[0]?.threadFlows?.[0]?.locations) {
         taintFlow = JSON.stringify(
-          result.codeFlows[0].threadFlows[0].locations.map((loc) => ({
-            file: artifactSourcePath(loc.location.physicalLocation?.artifactLocation?.uri, run.properties?.artifactPathEncoding),
-            line: loc.location.physicalLocation?.region?.startLine || 0,
-            message: loc.location.message?.text || "",
-          }))
+          result.codeFlows[0].threadFlows[0].locations.map(({ location }, index) => {
+            const file = artifactSourcePath(location.physicalLocation?.artifactLocation?.uri, run.properties?.artifactPathEncoding);
+            return {
+              file, line: location.physicalLocation?.region?.startLine || 0, message: location.message?.text || "",
+              snippet: index < 200 && file && !isWranglerManifest(file) && result.properties?.provenance?.analysis_kind !== "configuration"
+                ? flowLineExcerpt(location.physicalLocation) : undefined,
+            };
+          })
         );
       }
 
@@ -760,7 +766,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
     await publishScanImport(tx, {
       scanId: scan.id, projectId, branch, publishBaseline,
       defaultBranch: project?.defaultBranch || "", health: scanHealth,
-      audit: { actorId: actorId, findings: findings.length },
+      audit: { actorId, findings: findings.length, coverage: scanCoverageForRun(scanHealth, run.properties, invocation?.properties) },
     });
 
 

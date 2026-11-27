@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "corpus": "python-web-xss-patches-v1",
+  "cwe": 79,
+  "labels": {
+    "before": "positive",
+    "after": "negative"
+  },
+  "modules": [
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/pgadmin-org/pgadmin4/commit/60d149864b5fdd99675754c7996637737a24fce3",
+      "repository": "pgadmin-org/pgadmin4",
+      "path": "web/pgadmin/misc/cloud/__init__.py",
+      "before": {
+        "commit": "9e370d3cb67b83b3945f82969c959fad3f926517",
+        "sha256": "76adc583a099aa6ec0feac4e461debb07c97c22823d218e2f7aa8a5496e57ad0",
+        "bytes": 6855
+      },
+      "after": {
+        "commit": "60d149864b5fdd99675754c7996637737a24fce3",
+        "sha256": "c53289c2fb289ed1264cb1536d699252e3d34232663b02eb65c9debe9e2134f6",
+        "bytes": 6966
+      },
+      "sites": [
+        {
+          "id": "cloud-deploy-error",
+          "scope": "Cloud deployment error passed to the JSON response for UI display.",
+          "before": [
+            131,
+            135
+          ],
+          "after": [
+            132,
+            136
+          ]
+        },
+        {
+          "id": "cloud-update-error",
+          "scope": "Cloud update error passed to the JSON response for UI display.",
+          "before": [
+            234,
+            236
+          ],
+          "after": [
+            235,
+            237
+          ]
+        }
+      ]
+    },
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/jupyter-server/jupyter_server/commit/35f32dd2da804d108a3a3585b69ec3295b2677ed",
+      "repository": "jupyter-server/jupyter_server",
+      "path": "notebook/notebookapp.py",
+      "before": {
+        "commit": "474a3bb04e1172e3e2f84cd6d146633f9a1b15ae",
+        "sha256": "9f9fc0b832d3e9cd437a1bdf1c23f24c5763b4e87a81eb0e0c5194270303af55",
+        "bytes": 43202
+      },
+      "after": {
+        "commit": "35f32dd2da804d108a3a3585b69ec3295b2677ed",
+        "sha256": "a72c8a416d07eea9aa5c8cad140bb8a86a8d60af208d95cff0e4b7a645bf491f",
+        "bytes": 43249
+      },
+      "sites": [
+        {
+          "id": "notebook-template-default",
+          "scope": "Default Jinja environment when the administrator supplies no overrides.",
+          "before": [
+            162,
+            163
+          ],
+          "after": [
+            162,
+            165
+          ]
+        }
+      ]
+    },
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/pallets-eco/flask-admin/commit/75e51ebca2c4ef236854cfe88a237177813d39c1",
+      "repository": "pallets-eco/flask-admin",
+      "path": "flask_admin/helpers.py",
+      "before": {
+        "commit": "6f570e334d274f1b0d355aa86fad2dd0efecec35",
+        "sha256": "e805b1b024d536184b461d9b72e2cccf182e156049b3bb1da4cdae4a19c8d3a9",
+        "bytes": 3622
+      },
+      "after": {
+        "commit": "75e51ebca2c4ef236854cfe88a237177813d39c1",
+        "sha256": "76648d602cbb5176d130b82f6084114e55c4f48a8c2febaf6ddb4e291cc015af",
+        "bytes": 3916
+      },
+      "sites": [
+        {
+          "id": "admin-url-normalization",
+          "scope": "URL normalization and scheme validation in the helper fixed by the maintainer.",
+          "before": [
+            135,
+            139
+          ],
+          "after": [
+            141,
+            145
+          ]
+        }
+      ]
+    }
+  ]
+}

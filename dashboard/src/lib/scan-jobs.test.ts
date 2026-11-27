@@ -11,6 +11,10 @@ import { authorizeProject, resolvePrincipal } from "./project-access.ts";
 import { assertJobLease, cancelScanJob, claimScanJob, enqueueScan, failScanJob, heartbeatScanJob, LeaseLost } from "./scan-jobs.ts";
 import { makeSourceSnapshot, pinJobCommit, runClaimedScan, runPythonSnapshot } from "./scan-worker.ts";
 import { configureDatabase } from "./database-runtime.ts";
+import { freezeFinding, reviewFindingSelect } from "./ai-review-contract.ts";
+import { captureReviewSources } from "./ai-source-tools.ts";
+import { decrypt } from "./crypto.ts";
+import { buildFindingPrompt } from "./llm.ts";
 
 test("durable jobs fence stale workers, preserve commits, recover, cancel and respect revocation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "aegify-jobs-"));
@@ -57,6 +61,13 @@ test("durable jobs fence stale workers, preserve commits, recover, cancel and re
     await assert.rejects(heartbeatScanJob(db, recovered, env), LeaseLost);
     assert.equal((await db.scan.findUniqueOrThrow({ where: { id: queued.scanId } })).status, "cancelled");
 
+    const orphan = await enqueueScan(db, alice, project.id, "main", env);
+    await db.scanJob.update({ where: { id: orphan.id }, data: { status: "running", attempts: 1, leaseExpiresAt: null } });
+    const replacement = await claimScanJob(db, "worker-c", env);
+    assert.equal(replacement?.id, orphan.id);
+    assert.equal(replacement?.attempts, 2);
+    await cancelScanJob(db, alice, orphan.id, env);
+
     const revoked = await enqueueScan(db, alice, project.id, "main", env);
     await db.projectMember.update({ where: { projectId_userId: { projectId: project.id, userId: "alice" } }, data: { role: "viewer" } });
     assert.equal(await claimScanJob(db, "worker-c", env), null);
@@ -96,8 +107,10 @@ test("owned source snapshot runs through the real Python engine and publishes pa
     assert.equal(new URL(url).origin, "https://api.github.com", "Only intercepted fixture-provider requests are permitted");
     assert.equal(init?.redirect, "manual");
     if (url.includes("/commits/main")) return Response.json({ sha: commit, commit: { tree: { sha: tree } } });
-    if (url.includes("/git/trees/")) return Response.json({ tree: [{ path: "app.py", type: "blob", mode: "100644" }, { path: "unsupported.php", type: "blob", mode: "100644" }] });
+    if (url.includes("/git/trees/")) return Response.json({ tree: ["app.py", "signing.py", "unsupported.php", "wrangler.jsonc"].map((path) => ({ path, type: "blob", mode: "100644" })) });
+    if (url.includes("/contents/wrangler.jsonc")) return new Response('{"vars":{"API_TOKEN":"owned-configuration-canary"}}');
     if (url.includes("/contents/app.py")) return new Response("from flask import request\ndef read_document():\n    value = request.args.get('path')\n    return open(value)\n");
+    if (url.includes("/contents/signing.py")) return new Response("from jwt import encode\nmaterial = 'marker-signing-review-only'\ndef issue(data): return encode(data,material)\n");
     if (url.includes("/contents/unsupported.php")) return new Response("<?php // Synthetic unsupported source\n");
     throw new Error("Unexpected fixture request");
   };
@@ -134,6 +147,36 @@ test("owned source snapshot runs through the real Python engine and publishes pa
     assert.match(scan.progressMessage, /unsupported/);
     const findings = await db.finding.findMany({ where: { scanId: job.scanId } });
     assert.ok(findings.some((finding) => finding.ruleId === "AEG-PATH-001" && finding.filePath === "app.py"));
+    const signing = findings.find((finding) => finding.ruleId === "AEG-A02-001" && finding.filePath === "signing.py");
+    assert.equal(signing?.lineStart, 2);
+    assert.ok(!JSON.stringify([saved, findings]).includes("marker-signing-review-only"));
+    const retained = JSON.parse(decrypt(saved.sourceCiphertext!));
+    const review = captureReviewSources(retained, retained, [], JSON.parse(saved.resultManifest).signingKeyReviewV1);
+    const signingSource = review.files.find((file) => file.path === "signing.py");
+    assert.equal(signingSource?.content.split("\n")[1], "[REDACTED_SIGNING_KEY]");
+    assert.match(signingSource?.content || "", /return encode\(data,material\)/);
+    const configuration = findings.find((finding) => finding.ruleId === "AEG-CF-001");
+    assert.ok(configuration);
+    assert.equal(configuration.filePath, "wrangler.jsonc");
+    assert.equal(JSON.parse(configuration.provenance).analysis_kind, "configuration");
+    assert.match(configuration.codeSnippet, /vars\.API_TOKEN = \[withheld\]/);
+    const fields = await db.finding.findUniqueOrThrow({ where: { id: configuration.id }, select: reviewFindingSelect });
+    assert.equal(freezeFinding(fields).data.codeSnippet, configuration.codeSnippet);
+    assert.equal(JSON.parse(buildFindingPrompt(fields)).finding.codeSnippet, configuration.codeSnippet);
+    const raw = "owned-configuration-canary";
+    const imported = { ...fields, filePath: "app\\wrangler.toml", modulePath: "", message: raw,
+      codeSnippet: 'SIGNING_KEY = "' + raw + '"', ruleName: raw, callChain: JSON.stringify([raw]) };
+    for (const context of [imported, { ...imported, filePath: "archived.txt", modulePath: "src/wrangler.jsonc" }]) {
+      const prompt = buildFindingPrompt(context, JSON.stringify([raw]));
+      assert.ok(!prompt.includes(raw));
+      assert.equal(JSON.parse(prompt).finding.lineStart, fields.lineStart);
+    }
+    const code = { ...fields, filePath: "app.ts", modulePath: "app.ts", callChain: null, codeSnippet: "const value = 1" };
+    assert.match(buildFindingPrompt(code, '["recordedCaller"]'), /recordedCaller/);
+    assert.match(buildFindingPrompt(code), /const value = 1/);
+    const legacy = freezeFinding({ ...fields, codeSnippet: "value = 'owned-configuration-canary'", message: "owned-configuration-canary" });
+    assert.ok(!JSON.stringify(legacy).includes("owned-configuration-canary"));
+    assert.ok(!JSON.stringify([saved, ...findings]).includes("owned-configuration-canary"));
     assert.ok(findings.every((finding) => !finding.filePath.startsWith("/") && !finding.filePath.includes("../")));
     assert.ok((await db.scanJobEvent.findMany({ where: { jobId: job.id } })).some((event) => event.code === "published"));
   } finally {

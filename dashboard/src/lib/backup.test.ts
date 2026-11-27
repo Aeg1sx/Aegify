@@ -74,6 +74,12 @@ test("encrypted WAL snapshot restores history while invalidating accounts, crede
   let restored: PrismaClient | undefined;
   try {
     assert.equal((await owned.db.user.findUniqueOrThrow({ where: { id: "legacy" } })).sessionEpoch, "", "Legacy migration preserves sessions until recovery");
+    const interruptedScan = await owned.db.scan.create({ data: { projectId: "project", status: "completed" } });
+    const partialReview = await owned.db.llmJob.create({ data: { scanId: interruptedScan.id, mode: "quick", status: "running", activeKey: interruptedScan.id, reviewedCount: 1, totalFindings: 2 } });
+    const waiting = await owned.db.agentRun.create({ data: { scanId: interruptedScan.id, status: "awaiting_evidence",
+      stages: { create: { sequence: 1, role: "static", agentCode: "record-review", agentName: "Record review", status: "waiting_approval" } },
+      approvals: { create: { resourceId: "review-receipt", status: "approved", scopeDigest: "fixture-receipt" } },
+    } });
     assert.ok((await stat(owned.databasePath + "-wal")).size > 0);
     const manifest = await createEncryptedBackup({ ...owned.keys, databasePath: owned.databasePath, outputPath: owned.archivePath });
     assert.equal(manifest.encryptionKeyCheck, "stored_ciphertext");
@@ -112,7 +118,16 @@ test("encrypted WAL snapshot restores history while invalidating accounts, crede
     await assert.rejects(restored.llmReview.update({ where: { id: savedReview.id }, data: { confidence: 1 } }), "Restored history keeps its append-only constraint");
     assert.ok(await restored.llmJobEvent.count({ where: { code: "recovered_cancelled" } }));
     assert.equal((await restored.agentRun.findUniqueOrThrow({ where: { id: "agent" } })).status, "cancelled");
-    assert.equal((await restored.agentApproval.findFirstOrThrow()).status, "expired");
+    const partial = await restored.llmJob.findUniqueOrThrow({ where: { id: partialReview.id } });
+    assert.equal(partial.status, "partial");
+    assert.equal(partial.reviewedCount, 1);
+    assert.equal(partial.activeKey, null);
+    assert.equal((await restored.agentRun.findUniqueOrThrow({ where: { id: waiting.id } })).status, "cancelled");
+    assert.equal(await restored.agentEvent.count({ where: { runId: waiting.id, type: "recovered_cancelled" } }), 1);
+    assert.equal((await owned.db.agentRun.findUniqueOrThrow({ where: { id: waiting.id } })).status, "awaiting_evidence");
+    assert.equal((await restored.agentStage.findFirstOrThrow({ where: { runId: waiting.id } })).status, "failed");
+    assert.equal((await owned.db.agentApproval.findFirstOrThrow({ where: { runId: waiting.id } })).status, "approved");
+    assert.equal(await restored.agentApproval.count({ where: { status: "expired" } }), 2);
     assert.equal(await restored.user.count({ where: { disabled: true } }), 3);
     const legacy = await restored.user.findUniqueOrThrow({ where: { id: "legacy" } });
     assert.equal(legacy.sessionVersion, 7); assert.ok(legacy.sessionEpoch.length >= 32);

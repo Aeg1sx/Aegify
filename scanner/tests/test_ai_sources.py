@@ -231,6 +231,7 @@ def test_iterative_review_follows_search_to_source_and_preserves_executor_citati
             "confidence": 0.8,
             "citations": [citation],
             "reasoning": "The supplied source returns its argument.",
+            "evidence_against": ["The cited lines contain a string return."],
         }
 
     finding = _finding()
@@ -425,6 +426,8 @@ def test_workspace_cli_persists_source_evidence_and_usage_in_sarif(
                 "verdict": "likely_false_positive",
                 "confidence": 0.7,
                 "citations": [citation],
+                "reasoning": "The cited lines return the supplied text.",
+                "evidence_against": ["Only a string is returned."],
                 "remediation_summary": "Unaccepted model suggestion",
             }
         return httpx2.Response(
@@ -463,3 +466,49 @@ def test_digest_bound_admission_requires_parser_hash(tmp_path: Path) -> None:
     assert catalog.gap_counts["unbound_source"] == 1
     assert not catalog.files
     assert catalog.manifest_digest.startswith("sha256:")
+
+
+@pytest.mark.parametrize("include_origin", [False, True])
+def test_positive_flow_review_reads_origin_and_finding(tmp_path, include_origin):
+    from aegify.models import TaintFlow, TaintSink, TaintSource
+
+    catalog = SourceCatalog.capture(
+        [
+            _ast(tmp_path, "src/app.py", "def save(value):\n    return store(value)\n"),
+            _ast(tmp_path, "src/input.py", "value = request.args.get('name')\n"),
+        ],
+        {"service": tmp_path},
+    )
+    item = _finding()
+    item.taint_flow = TaintFlow(
+        source=TaintSource(
+            variable="value", file_path="src/input.py", line=1, source_type="http_param"
+        ),
+        sink=TaintSink(function="store", file_path="src/app.py", line=2, sink_type="test"),
+    )
+
+    def model(_system, prompt):
+        context = json.loads(prompt)
+        assert context["flow_origin"] == {
+            "repository_id": "service",
+            "path": "src/input.py",
+            "line": 1,
+        }
+        results = context.get("tool_results", [])
+        if not results:
+            paths = ["src/app.py", "src/input.py"] if include_origin else ["src/app.py"]
+            return {
+                "tool_requests": [
+                    {"name": "source_read", "arguments": {"repository_id": "service", "path": path}}
+                    for path in paths
+                ]
+            }
+        return {
+            "verdict": "likely_true_positive",
+            "reasoning": "Review of recorded flow",
+            "evidence_for": ["The stored value is drawn from the request."],
+            "citations": [r["output"]["citation"]["citation_id"] for r in results],
+        }
+
+    review = AISTASTOrchestrator().review_finding(item, model, sources=catalog)
+    assert review.verdict == ("likely_true_positive" if include_origin else "needs_review")

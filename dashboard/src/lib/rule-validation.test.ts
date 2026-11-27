@@ -71,6 +71,8 @@ test("rejects ignored or malformed taint selectors instead of validating a broad
     "{source_types: []}", "{sink_pattern: ''}", "{sink_pattern: false}",
     "{sink_types: [sql_query], propagation: [{through: assignment}]}",
     "{sink_types: [sql_query], ignore_sanitizers: 'false'}",
+    "{sink_types: [file_access], disposition: false}",
+    "{sink_types: [file_access], disposition: ignored}",
     `{sink_pattern: '${"x".repeat(4097)}'}`,
   ]) {
     assert.equal(validateRuleYaml(base + `taint: ${taint}\n`).valid, false, taint.slice(0, 120));
@@ -87,7 +89,20 @@ taint:
   sink_types: [sql_query]
   sink_pattern: '(?i:execute|query)'
   ignore_sanitizers: false
+  disposition: advisory
 message: Review this static flow
 `);
   assert.equal(result.valid, true);
+});
+
+test("accepts built-in semantic detectors and rejects ignored options", () => {
+  const rule = "id: AEG-DATA-001\nname: Review the data reader\nseverity: high\nlanguages: [python]\nmessage: Review the input\n";
+  for (const kind of ["python_yaml_loader", "python_pickle_input", "credential_randomness", "python_xml_configuration"]) {
+    const result = validateRuleYaml(rule + "semantic: {kind: " + kind + "}");
+    assert.equal(result.valid, true);
+    assert.deepEqual(result.diagnostics, []);
+  }
+  for (const value of ["true", "{kind: custom_reader}", "{kind: python_yaml_loader, source: any}"]) {
+    assert.equal(validateRuleYaml(rule + "semantic: " + value).valid, false);
+  }
 });

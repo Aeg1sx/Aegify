@@ -1,0 +1,8 @@
+{
+  "baselineWheelSha256": "44ae081743c024f821a68c773006518d16bb3f8fc82904ab140b98c5d94fbc92",
+  "candidateWheelSha256": "fc4888b833497b2f8fef8daaafb71667e9d952ac7e04a2523d0ff996a5567f6c",
+  "baselineReportSha256": "aa8b7b520b877acc64f42d4d495aacfd538fc7178da9b25a5a75e5e32a616e5b",
+  "candidateReportSha256": "41a16d1e80e13114363128c8d6832c3564b76e2082ea447028d16f8fabfc82e5",
+  "secondProcessReportSha256": "41a16d1e80e13114363128c8d6832c3564b76e2082ea447028d16f8fabfc82e5",
+  "python": "3.14.7"
+}

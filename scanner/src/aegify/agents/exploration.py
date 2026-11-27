@@ -220,14 +220,7 @@ class AgentSourceExplorer:
                 trace.covered_finding_ids = [
                     finding.id
                     for finding in findings
-                    if (location := sources.finding_location(finding))
-                    and any(
-                        citation.repository_id == location["repository_id"]
-                        and citation.path == location["path"]
-                        and citation.line_start <= finding.line_start
-                        and citation.line_end >= finding.line_end
-                        for citation in trace.citations
-                    )
+                    if sources.covers_finding(finding, trace.citations)
                 ]
                 if stage.role in {AgentRole.STATIC, AgentRole.SYNTHESIS} and any(
                     finding.id not in trace.covered_finding_ids for finding in findings

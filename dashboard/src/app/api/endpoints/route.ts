@@ -104,10 +104,10 @@ export async function GET(request: NextRequest) {
 
   const allEndpoints = await prisma.endpoint.findMany({
     where: { AND: [where, { scan: scanScope(access) }] },
-    orderBy: { path: "asc" },
+    orderBy: [{ path: "asc" }, { method: "asc" }, { id: "asc" }],
     include: {
       scan: {
-        select: { id: true, repository: true, createdAt: true },
+        select: { id: true, projectId: true, repository: true, createdAt: true },
       },
     },
   });
@@ -123,7 +123,8 @@ export async function GET(request: NextRequest) {
   if (quality === "api") {
     const bestByKey = new Map<string, typeof endpoints[number]>();
     for (const ep of endpoints) {
-      const key = `${ep.repositoryId}:${ep.method}:${ep.path}`;
+      const repository = ep.repositoryId || ep.scan.repository || ep.scan.projectId || ep.scanId;
+      const key = JSON.stringify([ep.scan.projectId, repository, ep.method, ep.path]);
       const existing = bestByKey.get(key);
       if (!existing) {
         bestByKey.set(key, ep);

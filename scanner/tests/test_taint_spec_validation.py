@@ -31,6 +31,8 @@ from aegify.rules.yaml_rule import TaintSpec, load_yaml_rules
         {"sink_pattern": "(" * 800},
         {"sink_types": ["sql_query"], "propagation": [{"through": "assignment"}]},
         {"sink_types": ["sql_query"], "ignore_sanitizers": "false"},
+        {"sink_types": ["file_access"], "disposition": False},
+        {"sink_types": ["file_access"], "disposition": "ignored"},
     ],
 )
 def test_invalid_taint_cannot_be_loaded_or_pass_strict_audit(tmp_path: Path, taint):
@@ -65,6 +67,7 @@ def test_supported_selector_compilation_and_sanitizer_flag():
     assert spec._sink_pattern_re.search("cursor.EXECUTE")
     assert spec._source_types_set == {"http_param"}
     assert spec.ignore_sanitizers is False
+    assert spec.disposition == "blocking"
 
 
 def test_dashboard_taint_template_passes_actual_audit(tmp_path: Path):

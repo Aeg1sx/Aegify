@@ -73,6 +73,56 @@ def test_artifact_and_flow_uris_encode_paths_without_changing_evidence(path, exp
     assert result["partialFingerprints"]["aegifyFingerprint/v2"] == fingerprint
 
 
+@pytest.mark.parametrize("shape", ["direct", "intermediate", "full"])
+def test_code_flow_preserves_source_and_sink_roles_across_files(shape):
+    source = TaintSource(variable="value", file_path="input.py", line=4, source_type="input")
+    sink = TaintSink(function="consume", file_path="output.py", line=11, sink_type="output")
+    path = []
+    if shape == "full":
+        path.append(
+            TaintPropagation(
+                variable="value", file_path="input.py", line=4, propagation_type="source"
+            )
+        )
+    if shape != "direct":
+        path.append(
+            TaintPropagation(
+                variable="arg", file_path="output.py", line=9, propagation_type="argument"
+            )
+        )
+    if shape == "full":
+        path.append(
+            TaintPropagation(
+                variable="consume", file_path="output.py", line=11, propagation_type="sink"
+            )
+        )
+    finding = Finding(
+        rule_id="DEMO",
+        rule_name="Flow",
+        severity=Severity.LOW,
+        confidence=0.5,
+        file_path="output.py",
+        line_start=11,
+        line_end=11,
+        taint_flow=TaintFlow(source=source, sink=sink, path=path),
+    )
+    result = SARIFReporter().generate(ScanResult(findings=[finding]))["runs"][0]["results"][0]
+    locations = result["codeFlows"][0]["threadFlows"][0]["locations"]
+    records = [
+        (
+            item.get("kinds"),
+            item["location"]["physicalLocation"]["artifactLocation"]["uri"],
+            item["location"]["physicalLocation"]["region"]["startLine"],
+        )
+        for item in locations
+    ]
+    expected = [(["source"], "input.py", 4)]
+    if shape != "direct":
+        expected.append((None, "output.py", 9))
+    assert records == [*expected, (["sink"], "output.py", 11)]
+    assert result["locations"][0]["physicalLocation"]["region"]["startLine"] == 11
+
+
 def test_context_snippet_retains_its_source_offset(tmp_path):
     source = tmp_path / "context.py"
     source.write_text("\n".join(f"line_{i}" for i in range(1, 21)))

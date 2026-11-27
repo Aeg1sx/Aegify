@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "dataset": "owned-receipt-projections-v1",
+  "label_count": 3,
+  "agreed": 3,
+  "disagreed": 0,
+  "unscored": 0,
+  "agreement_over_all_labels": 1.0,
+  "observed_verdicts": {
+    "likely_true_positive": 1,
+    "likely_false_positive": 1,
+    "needs_review": 1
+  },
+  "complete": true,
+  "scan_status": "completed",
+  "analysis_gap_count": 0,
+  "scan_digest": "sha256:d60bdb7d7f9b87c5c072894da89fc3ebf99db2142217092d2cbfe64cd0a45a86",
+  "labels_digest": "sha256:76131802fc22f0866c91bc7deb30ce0200cd19a2c15eb3691d12b2674be6ce5e",
+  "cases": [
+    {
+      "repository_id": "receipts",
+      "path": "receipts.py",
+      "source_digest": "sha256:ec341dd17da6b83ae33f9100f95e8c355522e13f8c9e9e955e885473377f88bc",
+      "rule_id": "FIXTURE-EMAIL-PROJECTION",
+      "line_start": 1,
+      "line_end": 2,
+      "expected": "likely_true_positive",
+      "observed": "likely_true_positive",
+      "outcome": "agree",
+      "gap": ""
+    },
+    {
+      "repository_id": "receipts",
+      "path": "receipts.py",
+      "source_digest": "sha256:ec341dd17da6b83ae33f9100f95e8c355522e13f8c9e9e955e885473377f88bc",
+      "rule_id": "FIXTURE-EMAIL-PROJECTION",
+      "line_start": 5,
+      "line_end": 6,
+      "expected": "likely_false_positive",
+      "observed": "likely_false_positive",
+      "outcome": "agree",
+      "gap": ""
+    },
+    {
+      "repository_id": "receipts",
+      "path": "receipts.py",
+      "source_digest": "sha256:ec341dd17da6b83ae33f9100f95e8c355522e13f8c9e9e955e885473377f88bc",
+      "rule_id": "FIXTURE-EMAIL-PROJECTION",
+      "line_start": 9,
+      "line_end": 10,
+      "expected": "needs_review",
+      "observed": "needs_review",
+      "outcome": "agree",
+      "gap": ""
+    }
+  ]
+}

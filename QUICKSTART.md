@@ -57,6 +57,8 @@ Wait until you see "Initializing done" in logs.
 
 ### Upload Scan Results
 
+Use the HTTPS base URL for a remote DefectDojo installation. The CLI also accepts direct HTTP to localhost, 127.0.0.1 or [::1] for the local setup below. Configure the final URL, including any installation path, because authenticated uploads reject redirects.
+
 **Option A: CLI**
 ```bash
 # Set env vars

@@ -12,8 +12,10 @@ import { resolvePrincipal } from "./project-access.ts";
 import { configureDatabase } from "./database-runtime.ts";
 import { AiLeaseLost, cancelLlmJob, claimLlmJob, enqueueLlmJob, heartbeatLlmJob, loadReviewSnapshot, publishLlmBatch, recordDiscardedLlmCall, startLlmCall } from "./llm-jobs.ts";
 import { runClaimedLlmJob, runLlmWorkerOnce } from "./llm-worker.ts";
-import { callProviderDetailed } from "./provider-receipt.ts";
+import { callProviderDetailed, sha256 } from "./provider-receipt.ts";
+import { encrypt } from "./crypto.ts";
 import { parseReviewResults, REVIEW_LIMITS } from "./ai-review-contract.ts";
+import { buildFindingPrompt, parseFindingReview } from "./llm.ts";
 import { listReviewHistory, readReviewHistory } from "./ai-review-history.ts";
 import type { ProviderTransport } from "./public-https.ts";
 
@@ -50,6 +52,42 @@ async function fixture(count = 2) {
   const alice = await resolvePrincipal(db, "alice", env); const bob = await resolvePrincipal(db, "bob", env);
   return { db, url, scan, project, alice, bob, queue: () => enqueueLlmJob(db, alice, scan.id, "deep", false, env), close: async () => { await db.$disconnect(); await rm(directory, { recursive: true, force: true }); } };
 }
+
+test("a restored manifest review withholds its original fields from the provider and published review history", async () => {
+  const f = await fixture(1);
+  try {
+    const id = "finding-0000";
+    const marker = "owned-previous-manifest";
+    await f.db.finding.update({ where: { id }, data: {
+      filePath: "app/wrangler.toml", ruleName: marker, codeSnippet: 'API_TOKEN = "' + marker + '"', message: marker,
+    } });
+    const job = await f.queue();
+    const snapshot = loadReviewSnapshot(await f.db.llmJob.findUniqueOrThrow({ where: { id: job.id } }));
+    assert.ok(!JSON.stringify(snapshot).includes(marker));
+    const item = snapshot.findings[0];
+    Object.assign(item.data, { message: marker, codeSnippet: marker });
+    item.apiContractContext = marker;
+    snapshot.graphContext = { data: marker, omitted: 0 };
+    const legacy = JSON.stringify(snapshot);
+    await f.db.llmJob.update({ where: { id: job.id }, data: { inputCiphertext: encrypt(legacy), inputDigest: sha256(legacy) } });
+    let calls = 0;
+    await runLlmWorkerOnce(f.db, "worker", env, new AbortController().signal, { transport: async (request) => {
+      calls++;
+      assert.ok(!request.body.includes(marker));
+      return responseFor(request);
+    } });
+    assert.equal(calls, 1);
+    const row = await f.db.llmReview.findFirstOrThrow({ where: { jobId: job.id } });
+    const saved = await readReviewHistory(f.db, f.alice, job.id, row.id);
+    assert.equal(saved.record.finding.data.filePath, "app/wrangler.toml");
+    assert.ok(saved.record.finding.omittedFields.includes("apiContractContext"));
+    assert.ok(!JSON.stringify(saved.record).includes(marker));
+    const finding = await f.db.finding.findUniqueOrThrow({ where: { id } });
+    assert.ok(finding.llmAnalysis);
+    assert.ok(!finding.llmAnalysis.includes(marker));
+    assert.ok(JSON.parse(finding.llmAnalysis).graphContextWithheld);
+  } finally { await f.close(); }
+});
 
 test("review reconnects, claims once, fences stale workers, binds receipts and preserves workflow", async () => {
   const f = await fixture();
@@ -200,6 +238,15 @@ test("independent reviews retain immutable encrypted narratives after replacemen
     const id = history.reviews[0].id;
     const original = await readReviewHistory(f.db, f.bob, first.id, id);
     assert.equal(original.current?.state, "current");
+    assert.deepEqual(original.current?.triage, { scope: "observation", status: "triaged" });
+    const identity = await f.db.findingIdentity.create({ data: { projectId: f.project.id, fingerprint: "review-history", ruleId: "OWNED", filePath: "fixture.py", status: "fixed" } });
+    await f.db.finding.update({ where: { id: original.record.finding.id }, data: { identityId: identity.id } });
+    const tracked = await readReviewHistory(f.db, f.bob, first.id, id);
+    assert.equal(tracked.current?.status, "triaged");
+    assert.deepEqual(tracked.current?.triage, { scope: "identity", status: "fixed" });
+    const other = await f.db.project.create({ data: { name: "Separate directory" } });
+    await f.db.findingIdentity.update({ where: { id: identity.id }, data: { projectId: other.id } });
+    assert.deepEqual((await readReviewHistory(f.db, f.bob, first.id, id)).current?.triage, { scope: "observation", status: "triaged" });
     const stored = await f.db.llmReview.findUniqueOrThrow({ where: { id } });
     assert.ok(!stored.payloadCiphertext.includes("Static fixture evidence"));
     assert.ok(!JSON.stringify(history).includes("payloadCiphertext"));
@@ -370,4 +417,42 @@ test("the production AI worker entry reconciles an expired queue in a separate p
     assert.equal(await f.db.llmCall.count(), 0); assert.equal(await f.db.llmWorker.count(), 0);
     assert.ok(await readFile(join(directory, "aegify-ai-worker-health"), "utf8"));
   } finally { await f.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("excerpt reviews abstain on unsupported verdicts and preserve independently supported batch peers", () => {
+  const falsePositive = { ...result("a"), verdict: "likely_false_positive", adjustedSeverity: "low", confidence: 1, evidenceFor: ["An input exists."], evidenceAgainst: ["  "] };
+  const positive = { ...falsePositive, findingId: "b", verdict: "likely_true_positive" };
+  const [unsupported, supported] = parseReviewResults(JSON.stringify([falsePositive, positive]), ["a", "b"]);
+  assert.deepEqual([unsupported.verdict, unsupported.confidence, unsupported.adjustedSeverity], ["needs_review", 0, null]);
+  assert.match(unsupported.evidenceGaps[0], /no contrary evidence/);
+  assert.equal(supported.verdict, "likely_true_positive");
+});
+
+test("single-finding reviews retain the opposing evidence and clear unsupported risk", () => {
+  const review = {
+    verdict: "likely_false_positive", analysis: "The runtime configuration is unknown.",
+    confidence: 0.9, riskAssessment: "LOW", evidenceFor: ["The call reads a request field."],
+    evidenceAgainst: ["  "], evidenceGaps: ["Deployment configuration is unavailable."],
+  };
+  const deferred = parseFindingReview(JSON.stringify(review));
+  assert.deepEqual([deferred.verdict, deferred.riskAssessment, deferred.confidence], ["needs_review", "UNKNOWN", 0]);
+  assert.equal(deferred.evidenceAgainst.length, 0);
+  assert.match(deferred.evidenceGaps.join(" "), /no contrary evidence.*Deployment configuration/i);
+  const supported = parseFindingReview(JSON.stringify({ ...review, evidenceAgainst: ["The template source is a literal."] }));
+  assert.deepEqual([supported.verdict, supported.confidence], ["likely_false_positive", 0.9]);
+});
+
+test("single-finding prompts keep adjacent calls distinct and flag incomplete stored flows", async () => {
+  const f = await fixture(1);
+  try {
+    const finding = await f.db.finding.findUniqueOrThrow({ where: { id: "finding-0000" } });
+    const prompt = buildFindingPrompt({
+      ...finding, callChain: JSON.stringify(["router.preview", "templates.compile"]),
+      taintFlow: JSON.stringify([{ file: "views.py", line: 7, message: "source: title" }, { line: 0 }]),
+    }, JSON.stringify([{ name: "templates.compile", calledBy: [{ source: "router.alternate" }] }]));
+    assert.match(prompt, /views\.py:7 - source: title/);
+    assert.match(prompt, /Flow evidence is incomplete/);
+    assert.match(prompt, /Recorded call chain[\s\S]*router\.preview[\s\S]*Adjacent recorded calls[\s\S]*router\.alternate/);
+    assert.doesNotMatch(prompt, /undefined/);
+  } finally { await f.close(); }
 });

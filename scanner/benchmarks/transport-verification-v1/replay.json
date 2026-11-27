@@ -1,0 +1,13 @@
+{
+  "corpus": "transport-verification-v1",
+  "manifest_sha256": "9a701975478595a4e84222fe19ff5c8b257e51ef28a38976e8605a661fb1cce7",
+  "evaluator_sha256": "854f1c2f2981bc15e2a3bd2112149980f344ab62ae44c98ebf82c0c42c64495f",
+  "previous_wheel_sha256": "64d4899a404316e0c737ccdd5788aefcf028a466acce540f3f579d372a49cdee",
+  "candidate_wheel_sha256": "44ae081743c024f821a68c773006518d16bb3f8fc82904ab140b98c5d94fbc92",
+  "previous_report_sha256": "2b8e073767af1a04ab0494c9d8b028c963980e10ed26251aef10f3dd88af399c",
+  "candidate_report_sha256": "dae3a95aa66221fb54b62b6e0d3d5bd795c83917a3ae4b59a27b49fab78b0850",
+  "separate_process_replay_sha256": "dae3a95aa66221fb54b62b6e0d3d5bd795c83917a3ae4b59a27b49fab78b0850",
+  "completed_source_versions_per_run": 14,
+  "scored_sites_per_run": 16,
+  "changed_cached_byte_control": "source identity rejected before grading"
+}

@@ -1,0 +1,291 @@
+{
+  "wrangler": "4.166.0",
+  "bundleSha256": "0d064b8bde1073900f1337aec71c76732007fe1408a2654dda99f9ffe51bd873",
+  "scriptSha256": "94335f13ecc0b4092a38d9e4caa4bce96a436d05c2a17bee87dbccee171ccaf0",
+  "fixtureSha256": "a260bb34ae4feb058b6fa981486bee61fc20573c5e4e152506ac313de1a9897d",
+  "cases": 42,
+  "environmentsRead": 67,
+  "expectedAdvisories": 17,
+  "observedAdvisories": 17,
+  "exactAgreement": 42,
+  "results": [
+    {
+      "name": "kv_namespaces-shared",
+      "expected": [
+        "AEG-CF-004|15|default.previews.kv_namespaces[0].id (line 15) matches default.kv_namespaces[0].id (line 8)"
+      ],
+      "observed": [
+        "AEG-CF-004|15|default.previews.kv_namespaces[0].id (line 15) matches default.kv_namespaces[0].id (line 8)"
+      ]
+    },
+    {
+      "name": "kv_namespaces-isolated",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "kv_namespaces-absent",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "kv_namespaces-named-preview",
+      "expected": [
+        "AEG-CF-004|16|env.branch.previews.kv_namespaces[0].id (line 16) matches env.branch.kv_namespaces[0].id (line 9)"
+      ],
+      "observed": [
+        "AEG-CF-004|16|env.branch.previews.kv_namespaces[0].id (line 16) matches env.branch.kv_namespaces[0].id (line 9)"
+      ]
+    },
+    {
+      "name": "kv_namespaces-inherited-preview",
+      "expected": [
+        "AEG-CF-004|10|default.previews.kv_namespaces[0].id (line 10) matches env.branch.kv_namespaces[0].id (line 20)"
+      ],
+      "observed": [
+        "AEG-CF-004|10|default.previews.kv_namespaces[0].id (line 10) matches env.branch.kv_namespaces[0].id (line 20)"
+      ]
+    },
+    {
+      "name": "kv_namespaces-empty-override",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "kv_namespaces-sibling-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "kv_namespaces-unbound-named-worker",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "kv_namespaces-dev-selector-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "kv_namespaces-dedicated-dev-selector",
+      "expected": [
+        "AEG-CF-004|14|default.previews.kv_namespaces[0].id (line 14) matches default.kv_namespaces[0].id (line 7)"
+      ],
+      "observed": [
+        "AEG-CF-004|14|default.previews.kv_namespaces[0].id (line 14) matches default.kv_namespaces[0].id (line 7)"
+      ]
+    },
+    {
+      "name": "d1_databases-shared",
+      "expected": [
+        "AEG-CF-004|16|default.previews.d1_databases[0].database_id (line 16) matches default.d1_databases[0].database_id (line 8)"
+      ],
+      "observed": [
+        "AEG-CF-004|16|default.previews.d1_databases[0].database_id (line 16) matches default.d1_databases[0].database_id (line 8)"
+      ]
+    },
+    {
+      "name": "d1_databases-isolated",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "d1_databases-absent",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "d1_databases-named-preview",
+      "expected": [
+        "AEG-CF-004|17|env.branch.previews.d1_databases[0].database_id (line 17) matches env.branch.d1_databases[0].database_id (line 9)"
+      ],
+      "observed": [
+        "AEG-CF-004|17|env.branch.previews.d1_databases[0].database_id (line 17) matches env.branch.d1_databases[0].database_id (line 9)"
+      ]
+    },
+    {
+      "name": "d1_databases-inherited-preview",
+      "expected": [
+        "AEG-CF-004|10|default.previews.d1_databases[0].database_id (line 10) matches env.branch.d1_databases[0].database_id (line 21)"
+      ],
+      "observed": [
+        "AEG-CF-004|10|default.previews.d1_databases[0].database_id (line 10) matches env.branch.d1_databases[0].database_id (line 21)"
+      ]
+    },
+    {
+      "name": "d1_databases-empty-override",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "d1_databases-sibling-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "d1_databases-unbound-named-worker",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "d1_databases-dev-selector-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "d1_databases-dedicated-dev-selector",
+      "expected": [
+        "AEG-CF-004|15|default.previews.d1_databases[0].database_id (line 15) matches default.d1_databases[0].database_id (line 7)"
+      ],
+      "observed": [
+        "AEG-CF-004|15|default.previews.d1_databases[0].database_id (line 15) matches default.d1_databases[0].database_id (line 7)"
+      ]
+    },
+    {
+      "name": "r2_buckets-shared",
+      "expected": [
+        "AEG-CF-004|15|default.previews.r2_buckets[0].bucket_name (line 15) matches default.r2_buckets[0].bucket_name (line 8)"
+      ],
+      "observed": [
+        "AEG-CF-004|15|default.previews.r2_buckets[0].bucket_name (line 15) matches default.r2_buckets[0].bucket_name (line 8)"
+      ]
+    },
+    {
+      "name": "r2_buckets-isolated",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "r2_buckets-absent",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "r2_buckets-named-preview",
+      "expected": [
+        "AEG-CF-004|16|env.branch.previews.r2_buckets[0].bucket_name (line 16) matches env.branch.r2_buckets[0].bucket_name (line 9)"
+      ],
+      "observed": [
+        "AEG-CF-004|16|env.branch.previews.r2_buckets[0].bucket_name (line 16) matches env.branch.r2_buckets[0].bucket_name (line 9)"
+      ]
+    },
+    {
+      "name": "r2_buckets-inherited-preview",
+      "expected": [
+        "AEG-CF-004|10|default.previews.r2_buckets[0].bucket_name (line 10) matches env.branch.r2_buckets[0].bucket_name (line 20)"
+      ],
+      "observed": [
+        "AEG-CF-004|10|default.previews.r2_buckets[0].bucket_name (line 10) matches env.branch.r2_buckets[0].bucket_name (line 20)"
+      ]
+    },
+    {
+      "name": "r2_buckets-empty-override",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "r2_buckets-sibling-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "r2_buckets-unbound-named-worker",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "r2_buckets-dev-selector-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "r2_buckets-dedicated-dev-selector",
+      "expected": [
+        "AEG-CF-004|14|default.previews.r2_buckets[0].bucket_name (line 14) matches default.r2_buckets[0].bucket_name (line 7)"
+      ],
+      "observed": [
+        "AEG-CF-004|14|default.previews.r2_buckets[0].bucket_name (line 14) matches default.r2_buckets[0].bucket_name (line 7)"
+      ]
+    },
+    {
+      "name": "r2_buckets-jurisdiction-different",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "r2_buckets-jurisdiction-equal",
+      "expected": [
+        "AEG-CF-004|15|default.previews.r2_buckets[0].bucket_name (line 15) matches default.r2_buckets[0].bucket_name (line 7)"
+      ],
+      "observed": [
+        "AEG-CF-004|15|default.previews.r2_buckets[0].bucket_name (line 15) matches default.r2_buckets[0].bucket_name (line 7)"
+      ]
+    },
+    {
+      "name": "queues.producers-shared",
+      "expected": [
+        "AEG-CF-004|18|default.previews.queues.producers[0].queue (line 18) matches default.queues.producers[0].queue (line 9)"
+      ],
+      "observed": [
+        "AEG-CF-004|18|default.previews.queues.producers[0].queue (line 18) matches default.queues.producers[0].queue (line 9)"
+      ]
+    },
+    {
+      "name": "queues.producers-isolated",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "queues.producers-absent",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "queues.producers-named-preview",
+      "expected": [
+        "AEG-CF-004|19|env.branch.previews.queues.producers[0].queue (line 19) matches env.branch.queues.producers[0].queue (line 10)"
+      ],
+      "observed": [
+        "AEG-CF-004|19|env.branch.previews.queues.producers[0].queue (line 19) matches env.branch.queues.producers[0].queue (line 10)"
+      ]
+    },
+    {
+      "name": "queues.producers-inherited-preview",
+      "expected": [
+        "AEG-CF-004|11|default.previews.queues.producers[0].queue (line 11) matches env.branch.queues.producers[0].queue (line 23)"
+      ],
+      "observed": [
+        "AEG-CF-004|11|default.previews.queues.producers[0].queue (line 11) matches env.branch.queues.producers[0].queue (line 23)"
+      ]
+    },
+    {
+      "name": "queues.producers-empty-override",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "queues.producers-sibling-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "queues.producers-unbound-named-worker",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "queues.producers-consumer-only",
+      "expected": [],
+      "observed": []
+    },
+    {
+      "name": "queues.producers-preview-vars",
+      "expected": [
+        "AEG-CF-001|6|default.previews.vars.SIGNING_KEY = [withheld]"
+      ],
+      "observed": [
+        "AEG-CF-001|6|default.previews.vars.SIGNING_KEY = [withheld]"
+      ]
+    }
+  ]
+}

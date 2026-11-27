@@ -14,22 +14,31 @@ import hashlib
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from aegify.config import DEFAULT_TAINT_CONTEXT_LIMIT
 from aegify.modelpacks import JvmLibraryModel, JvmModelPack, load_jvm_model_pack
 from aegify.models import (
     CallSite,
     FileAST,
+    FlaskBodyPart,
     FunctionDef,
     Language,
+    PythonProcessPart,
+    PythonStoredRead,
+    SessionWrite,
     TaintAnalysisSummary,
     TaintFlow,
     TaintPropagation,
     TaintSink,
     TaintSource,
 )
+from aegify.scanner.flask_responses import linked_response_facts, project_routers, registered_import
 from aegify.scanner.import_bindings import declared_import_names
+from aegify.scanner.python_ldap import LDAPConnections
+from aegify.scanner.python_scope import SANITIZER_DOMAINS, PythonModules
 from aegify.scanner.python_values import assignment as python_assignment
 from aegify.scanner.python_values import expression_accesses as python_accesses
 from aegify.text import scrub_quoted_strings
@@ -54,6 +63,9 @@ class _Statement:
     line_end: int
     code: str
     syntax_kind: str
+    defaulted_name: str = ""
+    selected_value: str = ""
+    columns: tuple[int, int] | None = None
 
 
 @dataclass
@@ -63,6 +75,13 @@ class _FunctionContext:
     ast: FileAST
     statements: list[_Statement] = field(default_factory=list)
     calls: list[CallSite] = field(default_factory=list)
+    statement_calls: dict[str, list[tuple[CallSite, list[str]]]] = field(default_factory=dict)
+    session_writes: dict[int, list[SessionWrite]] = field(default_factory=dict)
+    response_parts: dict[int, list[tuple[int, FlaskBodyPart]]] = field(default_factory=dict)
+    response_sinks: dict[int, TaintSink] = field(default_factory=dict)
+    response_constructions: dict[int, int] = field(default_factory=dict)
+    storage_writes: dict[int, list[PythonStoredRead]] = field(default_factory=dict)
+    process_parts: dict[int, list[tuple[int, PythonProcessPart]]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -142,7 +161,7 @@ class StructuredTaintAnalyzer:
         *,
         max_iterations: int = 64,
         context_depth: int = 2,
-        max_contexts: int = 10_000,
+        max_contexts: int = DEFAULT_TAINT_CONTEXT_LIMIT,
         jvm_model_pack: JvmModelPack | None = None,
     ) -> None:
         if context_depth < 1 or context_depth > 4:
@@ -154,9 +173,13 @@ class StructuredTaintAnalyzer:
         self.context_depth = context_depth
         self.max_contexts = max_contexts
         self.jvm_model_pack = jvm_model_pack or load_jvm_model_pack()
+        # Multiple call contexts evaluate the same source expressions. Cache only
+        # syntax within this analysis; taint and heap facts remain context-specific.
+        self._expression_accesses = lru_cache(maxsize=4096)(self._accesses)
         self.summary = TaintAnalysisSummary(
             enabled=True,
             context_depth=context_depth,
+            context_limit=max_contexts,
             library_model_pack=self.jvm_model_pack.pack_version,
             library_models_loaded=len(self.jvm_model_pack.models),
         )
@@ -168,7 +191,7 @@ class StructuredTaintAnalyzer:
         self._context_for_call: dict[int, str] = {}
         self._edge_targets: dict[tuple[str, str, int, int], set[str]] = defaultdict(set)
         self._source_traces: dict[tuple[str, int], _TraceMap] = defaultdict(dict)
-        self._sink_events: list[_SinkEvent] = []
+        self._sink_events: dict[int, list[_SinkEvent]] = {}
         self._heap_objects: set[str] = set()
         self._argument_events: set[tuple[str, str, str, int]] = set()
         self._return_events: set[tuple[str, str, int]] = set()
@@ -191,8 +214,18 @@ class StructuredTaintAnalyzer:
         self._declared_imports = {
             (ast.file_path, name) for ast in file_asts for name in declared_import_names(ast)
         }
-        self._build_contexts(file_asts)
+        modules = PythonModules(file_asts)
+        self._build_contexts(file_asts, modules)
         self._index_call_targets()
+        # Ownership and target resolution depend on the indexed graphs, not on
+        # caller taint, heap state or fixed-point iteration.
+        for context in self._contexts.values():
+            for call in context.calls:
+                statement = self._statement_for_call(context.statements, call)
+                if statement is not None:
+                    context.statement_calls.setdefault(statement.node_id, []).append(
+                        (call, self._resolve_call_targets(context, call))
+                    )
 
         parameter_taints: dict[tuple[str, _CallString, str], _TraceMap] = defaultdict(dict)
         parameter_points: dict[tuple[str, _CallString, str], set[str]] = defaultdict(set)
@@ -200,7 +233,7 @@ class StructuredTaintAnalyzer:
         return_points: dict[tuple[str, _CallString], set[str]] = defaultdict(set)
         heap_taints: dict[str, _TraceMap] = defaultdict(dict)
         heap_points: dict[str, set[str]] = defaultdict(set)
-        self._seed_sources_and_sinks(parameter_taints)
+        self._seed_sources_and_sinks(parameter_taints, file_asts, modules)
         active_contexts: set[tuple[str, _CallString]] = set()
         for function_id in sorted(self._contexts):
             self._activate_context(active_contexts, function_id, ())
@@ -210,17 +243,19 @@ class StructuredTaintAnalyzer:
             self.max_iterations,
             max(8, len(self._contexts) * 4 + 8),
         )
+        self.summary.iteration_limit = limit
+        before = self._state_signature(
+            parameter_taints,
+            parameter_points,
+            return_taints,
+            return_points,
+            heap_taints,
+            heap_points,
+            active_contexts,
+        )
         for iteration in range(1, limit + 1):
-            before = self._state_signature(
-                parameter_taints,
-                parameter_points,
-                return_taints,
-                return_points,
-                heap_taints,
-                heap_points,
-                active_contexts,
-            )
             current_flows: dict[tuple[str, str, int, str, _CallString], TaintFlow] = {}
+            self.summary.contexts_analyzed = len(active_contexts)
             for function_id, call_string in sorted(active_contexts):
                 context = self._contexts[function_id]
                 self._evaluate_function(
@@ -248,8 +283,10 @@ class StructuredTaintAnalyzer:
             )
             if after == before:
                 break
+            before = after
         else:
             self.summary.truncated = True
+            self.summary.limits_reached.append("iterations")
             self.summary.warnings.append(
                 f"global taint fixed point hit the {limit}-iteration bound"
             )
@@ -262,18 +299,74 @@ class StructuredTaintAnalyzer:
         self.summary.field_writes = len(self._field_writes)
         self.summary.heap_strong_updates = len(self._strong_update_events)
         self.summary.heap_objects = len(self._heap_objects)
-        self.summary.contexts_analyzed = len(active_contexts)
+        self.summary.contexts_admitted = len(active_contexts)
         self.summary.sources = len(self._source_ids)
         self.summary.sinks = len(self._sink_ids)
         self.summary.library_summary_applications = len(self._library_applications)
         return list(flows.values()), self.summary
 
-    def _build_contexts(self, file_asts: list[FileAST]) -> None:
+    def _build_contexts(self, file_asts: list[FileAST], modules: PythonModules) -> None:
+        self._graph_statements: dict[str, list[_Statement]] = defaultdict(list)
+        self._selected_functions: set[str] = set()
+        if self._program_graph is not None:
+            for node_id, attrs in self._program_graph.nodes(data=True):
+                kind = str(attrs.get("syntax_kind", ""))
+                if attrs.get("selected_arm"):
+                    self._selected_functions.add(str(attrs.get("function")))
+                    continue
+                if predicate := attrs.get("python_predicate"):
+                    first, left, last, right, code = predicate
+                    self._graph_statements[str(attrs["function"])].append(
+                        _Statement(
+                            f"{node_id}::test",
+                            first,
+                            last,
+                            code,
+                            "python_predicate",
+                            columns=(left, right),
+                        )
+                    )
+                binding_kind = (
+                    "value_iteration" if "value_iteration" in attrs else "request_iteration"
+                )
+                if iteration := attrs.get(binding_kind):
+                    names, collection = iteration
+                    line = int(attrs["line_start"])
+                    for name in names:
+                        self._graph_statements[str(attrs["function"])].append(
+                            _Statement(
+                                node_id=f"{node_id}::binding:{name}",
+                                line_start=line,
+                                line_end=line,
+                                code=f"{name} = {collection}",
+                                syntax_kind=binding_kind,
+                                defaulted_name=name if binding_kind == "value_iteration" else "",
+                            )
+                        )
+                if attrs.get("kind") == "statement" and kind not in self._CONTROL_STATEMENTS:
+                    self._graph_statements[str(attrs.get("function"))].append(
+                        _Statement(
+                            node_id=str(node_id),
+                            line_start=int(attrs.get("line_start", 0)),
+                            line_end=int(attrs.get("line_end", 0)),
+                            code=str(attrs.get("code", "")),
+                            syntax_kind=kind,
+                            defaulted_name=str(attrs.get("defaulted_name", "")),
+                            selected_value=str(attrs.get("selected_value", "")),
+                        )
+                    )
         self._contexts = {}
+        linked_responses = linked_response_facts(file_asts)
+        routers = project_routers(file_asts, linked_responses)
         self._functions_by_name = defaultdict(list)
         self._context_for_call = {}
         for ast in file_asts:
             seen: set[str] = set()
+            responses = linked_responses.get(
+                (ast.repository_id, ast.file_path), ([], ast.flask_responses)
+            )[1]
+            if responses and not modules.external(ast, "flask"):
+                responses = []
             for definition in ast.functions:
                 node_id = definition.symbol_id or definition.qualified_name
                 if node_id in seen:
@@ -298,6 +391,47 @@ class StructuredTaintAnalyzer:
                     statements=statements,
                     calls=sorted(calls, key=lambda call: (call.line, call.column)),
                 )
+                for write in ast.session_writes:
+                    if write.function_line == definition.line_start:
+                        context.session_writes.setdefault(write.line, []).append(write)
+                        self._sink_ids.add((ast.file_path, write.line, 0, "session_" + write.field))
+                for response in responses:
+                    if response.function_line != definition.line_start or (
+                        response.binding == "imported"
+                        and not registered_import(ast, response.router, routers)
+                    ):
+                        continue
+                    kind = (
+                        "flask_injected_html"
+                        if response.binding == "injected"
+                        else "flask_html_body"
+                    )
+                    context.response_sinks[response.return_line] = TaintSink(
+                        function="flask.view.return",
+                        file_path=ast.file_path,
+                        line=response.return_line,
+                        sink_type=kind,
+                        in_function=definition.qualified_name,
+                    )
+                    self._sink_ids.add((ast.file_path, response.return_line, 0, kind))
+                    if response.construction_line:
+                        context.response_constructions[response.return_line] = (
+                            response.construction_line
+                        )
+                    for part in response.parts:
+                        if part.substitution_lines:
+                            if not modules.external(ast, "re"):
+                                part = part.model_copy(
+                                    update={"html_text_filter_line": 0, "substitution_lines": []}
+                                )
+                            elif part.html_text_filter_line and part.text_context:
+                                continue
+                        context.response_parts.setdefault(part.line, []).append(
+                            (response.return_line, part)
+                        )
+                for read in ast.python_stored_reads:
+                    if read.function_line == definition.line_start:
+                        context.storage_writes.setdefault(read.write_line, []).append(read)
                 self._contexts[node_id] = context
                 for key in {definition.name, definition.qualified_name}:
                     if node_id not in self._functions_by_name[key]:
@@ -306,28 +440,16 @@ class StructuredTaintAnalyzer:
                     self._context_for_call[id(call)] = node_id
 
     def _statements_for(self, node_id: str, definition: FunctionDef) -> list[_Statement]:
-        statements: list[_Statement] = []
-        if self._program_graph is not None:
-            for graph_node, attributes in self._program_graph.nodes(data=True):
-                if (
-                    attributes.get("kind") != "statement"
-                    or attributes.get("function") != node_id
-                    or attributes.get("syntax_kind") in self._CONTROL_STATEMENTS
-                ):
-                    continue
-                statements.append(
-                    _Statement(
-                        node_id=str(graph_node),
-                        line_start=int(attributes.get("line_start", 0)),
-                        line_end=int(attributes.get("line_end", 0)),
-                        code=str(attributes.get("code", "")),
-                        syntax_kind=str(attributes.get("syntax_kind", "")),
-                    )
-                )
-        if statements:
+        statements = self._graph_statements.get(node_id, [])
+        if statements or node_id in self._selected_functions:
             return sorted(
                 statements,
-                key=lambda item: (item.line_start, item.line_end, item.node_id),
+                key=lambda item: (
+                    item.line_start,
+                    item.syntax_kind not in {"request_iteration", "value_iteration"},
+                    item.line_end,
+                    item.node_id,
+                ),
             )
         try:
             lines = Path(definition.file_path).read_text(encoding="utf-8").splitlines()
@@ -368,7 +490,10 @@ class StructuredTaintAnalyzer:
     def _seed_sources_and_sinks(
         self,
         parameter_taints: dict[tuple[str, _CallString, str], _TraceMap],
+        file_asts: list[FileAST],
+        modules: PythonModules,
     ) -> None:
+        ldap = LDAPConnections(file_asts, modules)
         for context in self._contexts.values():
             is_entry = self._is_entry_point(context)
             if is_entry:
@@ -394,7 +519,9 @@ class StructuredTaintAnalyzer:
             sink_patterns = self.config.sinks.get(context.ast.language, [])
             for statement in context.statements:
                 for pattern in source_patterns:
-                    if not self._pattern_matches(pattern.pattern, statement.code):
+                    if pattern.resolved_only or not self._pattern_matches(
+                        pattern.pattern, statement.code
+                    ):
                         continue
                     source = TaintSource(
                         variable=pattern.pattern.removesuffix("("),
@@ -413,7 +540,11 @@ class StructuredTaintAnalyzer:
             for call in context.calls:
                 call_text = self._call_text(call)
                 for pattern in source_patterns:
-                    if self._call_matches_pattern(pattern.pattern, call):
+                    if (
+                        call.resolved_source == pattern.pattern
+                        if pattern.resolved_only
+                        else self._call_matches_pattern(pattern.pattern, call)
+                    ):
                         if self._line_has_source_type(
                             call.file_path, call.line, pattern.source_type
                         ):
@@ -435,7 +566,9 @@ class StructuredTaintAnalyzer:
                         break
                 for argument in call.arguments:
                     for pattern in source_patterns:
-                        if self._pattern_matches(pattern.pattern, argument):
+                        if not pattern.resolved_only and self._pattern_matches(
+                            pattern.pattern, argument
+                        ):
                             if self._line_has_source_type(
                                 call.file_path, call.line, pattern.source_type
                             ):
@@ -455,7 +588,26 @@ class StructuredTaintAnalyzer:
                                 {origin: trace},
                             )
                             break
+                selections: list[tuple[str, int]] = []
+                function = call_text
                 for pattern in sink_patterns:
+                    if pattern.has_python_operand:
+                        if operand := pattern.select_operand(call, context.ast, modules, ldap):
+                            function, index = operand
+                            selections = [(pattern.sink_type, index)]
+                            if pattern.python_process and call.python_process_input:
+                                for part in call.python_process_input.command_parts:
+                                    context.process_parts.setdefault(part.line, []).append(
+                                        (id(call), part)
+                                    )
+                            break
+                        continue
+                    if pattern.python_files:
+                        if operation := pattern.file_operation(call, context.ast):
+                            function = operation.api
+                            selections = [(operation.sink_type, i) for i in operation.path_indices]
+                            break
+                        continue
                     matches = (
                         call_text == pattern.pattern
                         if pattern.exact
@@ -463,23 +615,38 @@ class StructuredTaintAnalyzer:
                     )
                     if not matches:
                         continue
-                    key = (call.file_path, call.line, call.column, pattern.sink_type)
-                    if key not in self._sink_ids:
-                        self._sink_ids.add(key)
-                        self._sink_events.append(
-                            _SinkEvent(
-                                sink=TaintSink(
-                                    function=call_text,
-                                    file_path=call.file_path,
-                                    line=call.line,
-                                    sink_type=pattern.sink_type,
-                                    argument_index=pattern.argument_index,
-                                    in_function=context.definition.qualified_name,
-                                ),
-                                call=call,
-                            )
-                        )
+                    selections = [(pattern.sink_type, pattern.argument_index)]
                     break
+                xml = call.xml_invocation
+                if (
+                    xml
+                    and not xml.fixed_input
+                    and not xml.quoted_value_constrained
+                    and xml.mode in {"xpath", "entities_enabled"}
+                ):
+                    function = xml.api
+                    selections = [
+                        (
+                            "xpath_query" if xml.mode == "xpath" else "xml_external_input",
+                            xml.argument_index,
+                        )
+                    ]
+                for sink_type, index in selections:
+                    self._sink_ids.add((call.file_path, call.line, call.column, sink_type))
+                    # Nested calls may start on the same byte (e.g. factory().xpath()).
+                    self._sink_events.setdefault(id(call), []).append(
+                        _SinkEvent(
+                            TaintSink(
+                                function=function,
+                                file_path=call.file_path,
+                                line=call.line,
+                                sink_type=sink_type,
+                                argument_index=index,
+                                in_function=context.definition.qualified_name,
+                            ),
+                            call,
+                        )
+                    )
         self.summary.sources = len(self._source_ids)
         self.summary.sinks = len(self._sink_ids)
 
@@ -497,6 +664,8 @@ class StructuredTaintAnalyzer:
         active_contexts: set[tuple[str, _CallString]],
     ) -> None:
         locals_taint: dict[str, _TraceMap] = defaultdict(dict)
+        stored_values: dict[tuple[int, str], _TraceMap] = {}
+        process_values: dict[int, _TraceMap] = defaultdict(dict)
         local_points: dict[str, set[str]] = defaultdict(set)
         object_return_sites: dict[str, tuple[str, int]] = {}
         for parameter in context.definition.parameters:
@@ -518,30 +687,52 @@ class StructuredTaintAnalyzer:
             local_points["self"].update(local_points["this"])
             self._heap_objects.update(local_points["this"])
 
-        calls_by_statement: dict[str, list[CallSite]] = defaultdict(list)
-        for call in context.calls:
-            statement = self._statement_for_call(context.statements, call)
-            if statement is not None:
-                calls_by_statement[statement.node_id].append(call)
-
-        sink_by_call = {
-            (event.call.file_path, event.call.line, event.call.column): event
-            for event in self._sink_events
-            if event.call.file_path == context.definition.file_path
-            and context.definition.line_start <= event.call.line <= context.definition.line_end
-        }
-
+        bodies: dict[int, _TraceMap] = defaultdict(dict)
         for statement in context.statements:
+            for destination, command_part in context.process_parts.get(statement.line_start, []):
+                captured = self._expression_traces(
+                    command_part.expression,
+                    context,
+                    statement,
+                    locals_taint,
+                    local_points,
+                    heap_taints,
+                    heap_points,
+                    call_string,
+                    object_return_sites,
+                    include_line_sources=True,
+                )
+                self._merge_traces(
+                    process_values[destination],
+                    self._append_step(
+                        captured,
+                        variable="shell command argument",
+                        file_path=context.ast.file_path,
+                        line=command_part.line,
+                        propagation_type="command-argument",
+                        function=context.definition.qualified_name,
+                        call_context=call_string,
+                    ),
+                )
+            for read in context.storage_writes.get(statement.line_start, []):
+                stored_values[(read.read_line, read.target)] = self._append_step(
+                    locals_taint.get(read.value_name, {}),
+                    variable=read.value_name,
+                    file_path=context.ast.file_path,
+                    line=read.write_line,
+                    propagation_type="keyed-store",
+                    function=context.definition.qualified_name,
+                    call_context=call_string,
+                )
             assignment = self._assignment(statement.code, context.ast.language)
             lhs = assignment[0] if assignment else None
-            rhs = assignment[1] if assignment else statement.code
-            calls = calls_by_statement.get(statement.node_id, [])
+            rhs = statement.selected_value or (assignment[1] if assignment else statement.code)
+            resolved_calls = context.statement_calls.get(statement.node_id, [])
             call_returns: _TraceMap = {}
             call_return_points: set[str] = set()
             internal_call_on_rhs = False
 
-            for call in calls:
-                targets = self._resolve_call_targets(context, call)
+            for call, targets in resolved_calls:
                 argument_states = [
                     self._expression_traces(
                         argument,
@@ -557,6 +748,17 @@ class StructuredTaintAnalyzer:
                     )
                     for argument in call.arguments
                 ]
+                if call.python_buffer_write and call.receiver and len(argument_states) == 1:
+                    saved = self._append_step(
+                        argument_states[0],
+                        variable=call.receiver,
+                        file_path=call.file_path,
+                        line=call.line,
+                        propagation_type="buffer-write",
+                        function=context.definition.qualified_name,
+                        call_context=call_string,
+                    )
+                    self._merge_traces(locals_taint[call.receiver], saved)
                 argument_points = [
                     self._expression_points(
                         argument,
@@ -630,9 +832,9 @@ class StructuredTaintAnalyzer:
                     internal_call_on_rhs = internal_call_on_rhs or self._call_in_expression(
                         call, rhs
                     )
-                    for index, parameter in enumerate(target_context.definition.parameters):
-                        if index >= len(argument_states):
-                            break
+                    for index, parameter in self._parameter_bindings(
+                        call, target_context.definition, context.ast.language
+                    ):
                         propagated = self._append_step(
                             argument_states[index],
                             variable=parameter,
@@ -643,7 +845,9 @@ class StructuredTaintAnalyzer:
                             call_context=target_call_string,
                         )
                         target_parameter = (target, target_call_string, parameter)
-                        if self._merge_traces(parameter_taints[target_parameter], propagated):
+                        if propagated and self._merge_traces(
+                            parameter_taints[target_parameter], propagated
+                        ):
                             self._argument_events.add(
                                 (context.node_id, target, parameter, call.line)
                             )
@@ -685,8 +889,11 @@ class StructuredTaintAnalyzer:
                             )
                         self._object_return_events.add((target, context.node_id, call.line))
 
-                sink_event = sink_by_call.get((call.file_path, call.line, call.column))
-                if sink_event is not None:
+                for sink_event in self._sink_events.get(id(call), []):
+                    if sink_event.sink.sink_type == "os_command" and id(call) in process_values:
+                        self._save_flows(
+                            sink_event.sink, process_values[id(call)], flows, call_string
+                        )
                     self._record_sink_flows(
                         sink_event,
                         argument_states,
@@ -694,6 +901,101 @@ class StructuredTaintAnalyzer:
                         flows,
                         call_string,
                     )
+
+            for destination, part in context.response_parts.get(statement.line_start, []):
+                if part.request_source:
+                    states: _TraceMap = {}
+                    for pattern in self.config.sources.get(Language.PYTHON, []):
+                        if pattern.pattern == part.request_source:
+                            origin = TaintSource(
+                                variable=part.request_source,
+                                file_path=context.ast.file_path,
+                                line=part.source_line,
+                                source_type=pattern.source_type,
+                                in_function=context.definition.qualified_name,
+                            )
+                            key = self._origin_id(origin)
+                            self._source_ids.add(key)
+                            states[key] = self._source_trace(origin)
+                            break
+                else:
+                    states = self._expression_traces(
+                        part.expression,
+                        context,
+                        statement,
+                        locals_taint,
+                        local_points,
+                        heap_taints,
+                        heap_points,
+                        call_string,
+                        object_return_sites,
+                        include_line_sources=True,
+                    )
+                visible = {
+                    key: trace
+                    for key, trace in states.items()
+                    if trace.source.source_type
+                    in {
+                        "http_param",
+                        "http_header",
+                        "http_cookie",
+                        "http_body",
+                        "http_query",
+                        "form_input",
+                    }
+                    and not (part.text_context and "xss" in trace.sanitized_for)
+                }
+                for line in part.substitution_lines:
+                    visible = self._append_step(
+                        visible,
+                        variable="re.sub",
+                        file_path=context.ast.file_path,
+                        line=line,
+                        propagation_type="string-substitution",
+                        function=context.definition.qualified_name,
+                        call_context=call_string,
+                    )
+                self._merge_traces(
+                    bodies[destination],
+                    self._append_step(
+                        visible,
+                        variable=(
+                            f"<response body filtered on line {part.html_text_filter_line}>"
+                            if part.html_text_filter_line
+                            else "<response body>"
+                        ),
+                        file_path=context.ast.file_path,
+                        line=part.substitution_lines[-1]
+                        if part.substitution_lines
+                        else statement.line_start,
+                        propagation_type="filtered-response-body"
+                        if part.html_text_filter_line
+                        else "response-body",
+                        function=context.definition.qualified_name,
+                        call_context=call_string,
+                    ),
+                )
+            for write in context.session_writes.get(statement.line_start, []):
+                traces = self._expression_traces(
+                    write.expression,
+                    context,
+                    statement,
+                    locals_taint,
+                    local_points,
+                    heap_taints,
+                    heap_points,
+                    call_string,
+                    object_return_sites,
+                    include_line_sources=True,
+                )
+                sink = TaintSink(
+                    function="flask.session",
+                    file_path=context.ast.file_path,
+                    line=write.line,
+                    sink_type="session_" + write.field,
+                    in_function=context.definition.qualified_name,
+                )
+                self._save_flows(sink, traces, flows, call_string)
 
             if assignment is not None and lhs is not None:
                 allocation = self._allocation_type(rhs)
@@ -757,10 +1059,25 @@ class StructuredTaintAnalyzer:
                         include_line_sources=True,
                     )
                     self._merge_traces(assigned, call_returns)
-                sanitizer = self._sanitizer(rhs, context.ast)
-                if sanitizer:
+                selected_storage = stored_values.get((statement.line_start, lhs))
+                if selected_storage is not None:
+                    assigned = dict(selected_storage)
+                sanitizer = self._sanitizer(rhs, context.ast, [call for call, _ in resolved_calls])
+                if (
+                    sanitizer
+                    and context.ast.language == Language.PYTHON
+                    and sanitizer in SANITIZER_DOMAINS
+                ):
+                    assigned = self._mark_sanitized_for(
+                        assigned, sanitizer, SANITIZER_DOMAINS[sanitizer]
+                    )
+                elif sanitizer:
                     assigned = self._mark_sanitized(assigned, sanitizer)
+                if lhs == statement.defaulted_name:
+                    self._merge_traces(assigned, locals_taint.get(lhs, {}))
                 propagation_type = "field-store" if "." in lhs else "assignment"
+                if statement.syntax_kind == "value_iteration":
+                    propagation_type = "iteration"
                 assigned = self._append_step(
                     assigned,
                     variable=lhs,
@@ -783,6 +1100,19 @@ class StructuredTaintAnalyzer:
 
             return_expression = self._return_expression(statement.code)
             if return_expression is not None:
+                if response_sink := context.response_sinks.get(statement.line_start):
+                    body = bodies[statement.line_start]
+                    if construction := context.response_constructions.get(statement.line_start):
+                        body = self._append_step(
+                            body,
+                            variable="<response object>",
+                            file_path=context.ast.file_path,
+                            line=construction,
+                            propagation_type="response-construction",
+                            function=context.definition.qualified_name,
+                            call_context=call_string,
+                        )
+                    self._save_flows(response_sink, body, flows, call_string)
                 returned_traces = self._expression_traces(
                     return_expression,
                     context,
@@ -805,7 +1135,10 @@ class StructuredTaintAnalyzer:
                     function=context.definition.qualified_name,
                     call_context=call_string,
                 )
-                self._merge_traces(return_taints[(context.node_id, call_string)], returned_traces)
+                if returned_traces:
+                    self._merge_traces(
+                        return_taints[(context.node_id, call_string)], returned_traces
+                    )
                 returned_points = self._expression_points(
                     return_expression,
                     context,
@@ -822,7 +1155,8 @@ class StructuredTaintAnalyzer:
                     )
                     self._heap_objects.add(object_id)
                     returned_points.add(object_id)
-                return_points[(context.node_id, call_string)].update(returned_points)
+                if returned_points:
+                    return_points[(context.node_id, call_string)].update(returned_points)
 
     def _apply_library_model(
         self,
@@ -969,28 +1303,37 @@ class StructuredTaintAnalyzer:
             return
         else:
             states = argument_states[index]
+        self._save_flows(event.sink, states, flows, call_string)
+
+    def _save_flows(
+        self,
+        sink: TaintSink,
+        states: _TraceMap,
+        flows: dict[tuple[str, str, int, str, _CallString], TaintFlow],
+        call_string: _CallString,
+    ) -> None:
         for origin, trace in states.items():
-            sanitized = trace.sanitized or event.sink.sink_type in trace.sanitized_for
+            sanitized = trace.sanitized or sink.sink_type in trace.sanitized_for
             sink_step = TaintPropagation(
-                variable=event.sink.function,
-                file_path=event.sink.file_path,
-                line=event.sink.line,
+                variable=sink.function,
+                file_path=sink.file_path,
+                line=sink.line,
                 propagation_type="sink",
-                function=event.sink.in_function,
+                function=sink.in_function,
                 call_context=list(call_string),
             )
             flow = TaintFlow(
                 source=trace.source,
-                sink=event.sink,
+                sink=sink,
                 path=[*trace.path, sink_step],
                 sanitized=sanitized,
                 sanitizer=trace.sanitizer if sanitized else None,
             )
             key = (
                 origin,
-                event.sink.file_path,
-                event.sink.line,
-                event.sink.sink_type,
+                sink.file_path,
+                sink.line,
+                sink.sink_type,
                 call_string,
             )
             existing = flows.get(key)
@@ -1012,7 +1355,7 @@ class StructuredTaintAnalyzer:
         include_line_sources: bool,
     ) -> _TraceMap:
         traces: _TraceMap = {}
-        for access in self._accesses(expression, context.ast.language):
+        for access in self._expression_accesses(expression, context.ast.language):
             if "." in access:
                 base = access.split(".", 1)[0]
                 base_traces = self._append_step(
@@ -1093,7 +1436,7 @@ class StructuredTaintAnalyzer:
         call_string: _CallString,
     ) -> set[str]:
         points: set[str] = set()
-        for access in self._accesses(expression, context.ast.language):
+        for access in self._expression_accesses(expression, context.ast.language):
             if "." not in access:
                 points.update(local_points.get(access, set()))
                 continue
@@ -1123,9 +1466,12 @@ class StructuredTaintAnalyzer:
             if not key.startswith("heap:"):
                 continue
             if strong_update:
-                heap_taints[key] = dict(traces)
+                if traces:
+                    heap_taints[key] = dict(traces)
+                else:
+                    heap_taints.pop(key, None)
                 self._strong_update_events.add((context.node_id, line, lhs))
-            else:
+            elif traces:
                 self._merge_traces(heap_taints[key], traces)
             self._field_writes.add((context.node_id, line, lhs))
 
@@ -1174,6 +1520,60 @@ class StructuredTaintAnalyzer:
         for key in list(keys):
             objects.update(heap_points.get(key, set()))
         return keys
+
+    @staticmethod
+    def _parameter_bindings(
+        call: CallSite, target: FunctionDef, language: Language
+    ) -> list[tuple[int, str]]:
+        parameters = target.parameters
+        arguments = call.structured_arguments
+        if (
+            language != Language.PYTHON
+            or arguments is None
+            or len(arguments) != len(call.arguments)
+            or len(target.python_parameter_kinds) != len(parameters)
+        ):
+            return list(enumerate(parameters[: len(call.arguments)]))
+        kinds = dict(zip(parameters, target.python_parameter_kinds, strict=True))
+        positional = [
+            name for name, kind in kinds.items() if kind in {"regular", "positional_only"}
+        ]
+        keywords = {name for name, kind in kinds.items() if kind in {"regular", "keyword_only"}}
+        if (
+            target.is_method
+            and call.receiver
+            and positional
+            and "@staticmethod" not in target.decorators
+        ):
+            if (
+                "@classmethod" in target.decorators
+                or call.receiver.rsplit(".", 1)[-1] != target.class_name
+            ):
+                keywords.discard(positional.pop(0))
+        varargs = [name for name, kind in kinds.items() if kind == "varargs"]
+        kwargs = [name for name, kind in kinds.items() if kind == "kwargs"]
+        explicit = {arg.name for arg in arguments if arg.kind == "keyword"}
+        bindings: list[tuple[int, str]] = []
+        uncertain_position = False
+        position = 0
+        for index, argument in enumerate(arguments):
+            names: list[str] = []
+            if argument.kind == "keyword":
+                names = [argument.name] if argument.name in keywords else kwargs
+            elif argument.kind == "keyword_spread":
+                names = sorted(keywords - explicit - set(positional[:position])) + kwargs
+            elif argument.kind in {"positional", "spread"}:
+                uncertain_position |= argument.kind == "spread"
+                if uncertain_position:
+                    names = [
+                        name for name in positional[position:] if name not in explicit
+                    ] + varargs
+                else:
+                    names = positional[position : position + 1] or varargs
+                if argument.kind == "positional":
+                    position += 1
+            bindings.extend((index, name) for name in names)
+        return bindings
 
     def _resolve_call_targets(self, context: _FunctionContext, call: CallSite) -> list[str]:
         exact = self._edge_targets.get(
@@ -1232,7 +1632,8 @@ class StructuredTaintAnalyzer:
         if len(active_contexts) >= self.max_contexts:
             self.summary.truncated = True
             warning = f"global taint hit the {self.max_contexts}-context bound"
-            if warning not in self.summary.warnings:
+            if "contexts" not in self.summary.limits_reached:
+                self.summary.limits_reached.append("contexts")
                 self.summary.warnings.append(warning)
             return False
         active_contexts.add(key)
@@ -1311,9 +1712,13 @@ class StructuredTaintAnalyzer:
                 accesses.append(value)
         return accesses
 
-    def _sanitizer(self, expression: str, ast: FileAST) -> str | None:
+    def _sanitizer(self, expression: str, ast: FileAST, calls: list[CallSite]) -> str | None:
         lowered = expression.lower()
         for sanitizer in self.config.sanitizers.get(ast.language, []):
+            if ast.language == Language.PYTHON and sanitizer in SANITIZER_DOMAINS:
+                if any(call.python_assigned_sanitizer == sanitizer for call in calls):
+                    return str(sanitizer)
+                continue
             if sanitizer.lower() in lowered:
                 return str(sanitizer)
         return None
@@ -1405,12 +1810,20 @@ class StructuredTaintAnalyzer:
             statement
             for statement in statements
             if statement.line_start <= call.line <= statement.line_end
+            and (
+                statement.columns is None
+                or (statement.line_start, statement.columns[0])
+                <= (call.line, call.column)
+                < (statement.line_end, statement.columns[1])
+            )
         ]
         if not candidates:
             return None
         return min(
             candidates,
             key=lambda statement: (
+                statement.columns is None,
+                statement.syntax_kind in {"request_iteration", "value_iteration"},
                 statement.line_end - statement.line_start,
                 len(statement.code),
             ),

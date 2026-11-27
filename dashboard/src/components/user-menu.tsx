@@ -1,26 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { LogOut, User } from "lucide-react";
-import { signOut } from "next-auth/react";
-
-interface SessionUser {
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-}
+import { signOut, useSession } from "next-auth/react";
 
 export function UserMenu() {
-  const [user, setUser] = useState<SessionUser | null>(null);
-
-  useEffect(() => {
-    fetch("/api/auth/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.user) setUser(data.user);
-      })
-      .catch(() => {});
-  }, []);
+  const { data } = useSession();
+  const user = data?.user;
 
   if (!user) return null;
 
@@ -37,12 +22,13 @@ export function UserMenu() {
         <User className="h-4 w-4 text-muted-foreground" />
       )}
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium truncate">{user.name || user.email}</p>
+        <p className="text-sm font-medium truncate">{user.name || user.email || "Signed in"}</p>
       </div>
         <button
           type="button"
           onClick={() => signOut({ callbackUrl: "/auth/signin" })}
-          className="text-muted-foreground hover:text-foreground transition-colors"
+          className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label="Sign out"
           title="Sign out"
         >
           <LogOut className="h-3.5 w-3.5" />

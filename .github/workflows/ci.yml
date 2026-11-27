@@ -145,6 +145,35 @@ jobs:
             --labels benchmarks/core-v1/ground-truth.json \
             --repeats 2 --timeout 120 --output performance-report.json
 
+      - name: Build and install the wheel with the locked dependencies
+        run: |
+          uv build --wheel
+          uv pip install --offline --no-deps --reinstall --python .venv/bin/python dist/*.whl
+
+      - name: Check Python code operands and literal grammar
+        run: .venv/bin/python -I benchmarks/python-code-inputs-v1/verify.py .venv/bin/aegify > python-code-inputs.json
+
+      - name: Check process inputs at their exact source lines
+        run: |
+          .venv/bin/aegify benchmark benchmarks/python-process-arguments-v1/sources \
+            --ground-truth benchmarks/python-process-arguments-v1/ground-truth.json \
+            --line-tolerance 0 --min-precision 1 --min-recall 1 \
+            --output-file python-process-arguments.json
+
+      - name: Check reader inputs and cross-file session flows
+        run: |
+          .venv/bin/aegify benchmark benchmarks/python-reader-flows-v1/sources \
+            --ground-truth benchmarks/python-reader-flows-v1/ground-truth.json \
+            --line-tolerance 0 --min-precision 1 --min-recall 1 \
+            --output-file python-reader-flows.json
+
+      - name: Grade saved AI reviews against their frozen source
+        run: |
+          .venv/bin/aegify benchmark-reviews benchmarks/source-review-v1/codex-reviews.json \
+            --labels benchmarks/source-review-v1/labels.json \
+            --source-root receipts=benchmarks/source-review-v1/sources \
+            --output-file source-review-report.json
+
       - name: Upload precision and performance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -154,11 +183,12 @@ jobs:
             scanner/benchmark-report.json
             scanner/benchmark-repeat.json
             scanner/performance-report.json
+            scanner/python-code-inputs.json
+            scanner/python-process-arguments.json
+            scanner/python-reader-flows.json
+            scanner/source-review-report.json
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Build wheel
-        run: uv build --wheel
 
       - name: Upload wheel
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

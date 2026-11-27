@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import Link from "next/link";
 import type { SavedReview } from "@/lib/ai-review-history";
 import { normalizeAIReviewEvidence } from "@/lib/ai-review-evidence";
 import { AIToolEvidence } from "./finding/ai-tool-evidence";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
+import { ArrowDownToLine, ArrowUpRight, RefreshCw } from "lucide-react";
+import { CodeHighlight } from "./code-highlight";
+import { ConfigurationEvidence } from "./finding/configuration-evidence";
+import { isConfigurationEvidence, snippetStart, sourceLine } from "@/lib/code-evidence";
+import { isWranglerManifest } from "@/lib/configuration-evidence";
 import { Button } from "./ui/button";
 import { SeverityBadge } from "./severity-badge";
 import type { AiReviewJob } from "./ai-review-job-card";
 
 interface Summary {
   id: string; findingId: string; ruleId: string; ruleName: string; severity: string;
-  filePath: string; lineStart: number; verdict: string; confidence: number;
-  publication: string; metadataTruncated: boolean;
+  filePath: string; lineStart: number; verdict: string; metadataTruncated: boolean;
 }
 interface HistoryPage {
   historyVersion: number; saved: number; totalFindings: number; published: number;
@@ -23,7 +25,10 @@ interface HistoryPage {
 }
 interface HistoryDetail {
   record: SavedReview; payloadDigest: string;
-  current: { findingId: string; status: string; aiReviewStatus: string; state: string } | null;
+  current: {
+    findingId: string; status: string; aiReviewStatus: string; state: string;
+    triage: { scope: string; status: string };
+  } | null;
 }
 const verdicts: Record<string, string> = {
   likely_true_positive: "Likely true positive", likely_false_positive: "Likely false positive", needs_review: "Needs review",
@@ -34,6 +39,79 @@ async function readJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
+function SavedSource({ record }: { record: SavedReview }) {
+  const data = record.finding.data;
+  const filePath = typeof data.filePath === "string" ? data.filePath : "";
+  const codeSnippet = typeof data.codeSnippet === "string" ? data.codeSnippet : "";
+  const start = sourceLine(data.lineStart), end = sourceLine(data.lineEnd);
+  const configuration = isConfigurationEvidence(data.provenance) ||
+    [filePath, data.modulePath].some((path) => typeof path === "string" && isWranglerManifest(path));
+  if (configuration) {
+    if (!start) return <p className="text-sm text-muted-foreground">This review has no located configuration evidence.</p>;
+    return <ConfigurationEvidence finding={{ filePath, lineStart: start, lineEnd: end ?? start, codeSnippet }} />;
+  }
+  if (!codeSnippet) return <p className="text-sm text-muted-foreground">This review was saved without a source excerpt.</p>;
+  const offset = start ? snippetStart({ provenance: typeof data.provenance === "string" ? data.provenance : undefined, codeSnippet, lineStart: start, lineEnd: end ?? start }) : null;
+  return <CodeHighlight code={codeSnippet} filePath={filePath} lineStart={offset} highlightStart={start ?? undefined} highlightEnd={end ?? undefined} />;
+}
+
+function SavedResult({ detail, root }: { detail: HistoryDetail; root: string }) {
+  const { record, current } = detail;
+  const { result, finding } = record;
+  const title = String(finding.data.ruleName || finding.data.ruleId || "Untitled finding");
+  return <article className="min-w-0 space-y-5 [overflow-wrap:anywhere]">
+    <header>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <SeverityBadge severity={String(finding.data.severity || "unknown")} />
+        {finding.data.ruleId && <span className="font-mono">{finding.data.ruleId}</span>}
+      </div>
+      <h3 className="mt-2 text-xl font-semibold leading-tight tracking-tight sm:text-2xl">{title}</h3>
+      <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-y py-3 text-sm" aria-label="Review decisions">
+        <div><p className="text-xs text-muted-foreground">Model verdict</p><p className="mt-1 font-semibold">{verdicts[result.verdict]}</p>
+          {result.verdict !== "needs_review" && <p className="mt-1 text-xs text-muted-foreground">{Math.round(result.confidence * 100)}% model estimate</p>}</div>
+        {current && <div><p className="text-xs text-muted-foreground">{current.triage.scope === "identity" ? "Tracked finding status" : "Scan finding status"}</p>
+          <p className="mt-1 font-medium capitalize">{current.triage.status.replaceAll("_", " ")}</p></div>}
+      </div>
+    </header>
+    <section aria-label="Evidence supplied to this review">
+      <h4 className="mb-2 text-sm font-semibold">Reviewed source</h4>
+      <SavedSource record={record} />
+      {finding.omittedFields.length > 0 && <details className="mt-1 text-xs text-muted-foreground"><summary className="w-fit cursor-pointer py-2">Input limits ({finding.omittedFields.length} fields)</summary><p className="pb-2">{finding.omittedFields.join(", ")}</p></details>}
+    </section>
+    <section><h4 className="text-sm font-semibold">Analysis</h4><p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{result.reasoning}</p></section>
+    {result.evidenceGaps.length > 0 && <section className="border-l-2 border-input pl-3"><h4 className="text-sm font-semibold">Evidence gaps</h4>
+      <ul className="mt-1 space-y-1 text-sm leading-6">{result.evidenceGaps.map((value, index) => <li className="whitespace-pre-wrap" key={index}>{value}</li>)}</ul></section>}
+    {result.remediation && <section><h4 className="text-sm font-semibold">Suggested fix</h4><p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{result.remediation}</p></section>}
+    {result.adjustedSeverity && <p className="text-sm">Suggested severity · <strong>{result.adjustedSeverity}</strong></p>}
+    {([["Supporting evidence", result.evidenceFor], ["Contrary evidence", result.evidenceAgainst]] as const).filter(([, values]) => values.length > 0).map(([label, values]) =>
+      <details key={label} className="text-sm"><summary className="cursor-pointer font-medium">{label} ({values.length})</summary><ul className="mt-2 list-disc space-y-1 pl-5 leading-6">{values.map((value, index) => <li className="whitespace-pre-wrap" key={index}>{value}</li>)}</ul></details>)}
+    {record.sourceEvidence && <section className="space-y-3">
+      <p className="text-xs leading-5 text-muted-foreground">{record.sourceEvidence.catalog.files} files in the review snapshot · commit <span className="break-all font-mono">{record.sourceEvidence.catalog.commit}</span>. {record.sourceEvidence.catalog.truncated ? `The review omitted ${record.sourceEvidence.catalog.omittedFiles} additional files. The original fetch may also be incomplete.` : "Coverage is limited to the stored provider snapshot."}</p>
+      {!!record.sourceEvidence.catalog.unverifiedSigningKeyFiles && <p className="text-xs leading-5 text-muted-foreground">
+        The review excluded {record.sourceEvidence.catalog.unverifiedSigningKeyFiles} {record.sourceEvidence.catalog.unverifiedSigningKeyFiles === 1 ? "Python file" : "Python files"} because it could not verify signing-key redaction.
+      </p>}
+      <AIToolEvidence evidence={normalizeAIReviewEvidence({ ...record.sourceEvidence })} />
+    </section>}
+    <section className="space-y-1 border-t pt-4 text-sm">
+      <h4 className="font-semibold">Finding record</h4>
+      <p className="text-sm leading-6">{record.publication === "human_decision_preserved" ? "An existing human decision was preserved when this review was saved." : "Published as a suggestion when this batch completed."}</p>
+      {current ? <>
+        {current.state === "superseded" && <p className="text-muted-foreground">The finding currently displays a different suggestion.</p>}
+        {current.state === "source_changed" && <p className="text-muted-foreground">The source evidence has changed since this review.</p>}
+        <dl className="mt-2 flex flex-wrap gap-x-2 text-xs"><dt className="text-muted-foreground">Suggestion on this observation</dt><dd className="capitalize">{current.aiReviewStatus}</dd></dl>
+        <Link href={`/findings/${encodeURIComponent(current.findingId)}`} className="inline-flex min-h-11 items-center gap-1 font-medium text-primary underline underline-offset-4">Open finding <ArrowUpRight aria-hidden className="size-3.5" /></Link>
+      </> : <p className="text-muted-foreground">The original scan finding has been removed.</p>}
+    </section>
+    <footer className="border-t text-xs">
+      <details><summary className="w-fit cursor-pointer py-3.5 font-medium">Review provenance</summary>
+        <p className="mb-3 leading-5">{record.provider} · {record.model} · {new Date(record.createdAt).toLocaleString()}</p>
+        <dl className="space-y-2 break-all pb-3">{Object.entries({ "Saved record": detail.payloadDigest, "Input snapshot": record.inputDigest, "Finding evidence": finding.evidenceDigest, "Source scan": record.scanDigest, Prompt: record.promptDigest, "Provider response": record.responseDigest, Call: record.callId }).map(([key, value]) => <div key={key}><dt className="text-muted-foreground">{key}</dt><dd className="font-mono">{value}</dd></div>)}</dl>
+      </details>
+      <a className="inline-flex min-h-11 items-center gap-2 text-primary underline underline-offset-4" href={`${root}/${encodeURIComponent(record.id)}`} download={`aegify-review-${record.id}.json`}><ArrowDownToLine aria-hidden className="size-3.5" />Download saved evidence</a>
+    </footer>
+  </article>;
+}
+
 export function AiReviewHistory({ job }: { job: AiReviewJob }) {
   const [page, setPage] = useState<HistoryPage | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -42,7 +120,7 @@ export function AiReviewHistory({ job }: { job: AiReviewJob }) {
   const [detail, setDetail] = useState<HistoryDetail | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const error = pageError || detailError;
+  const chooser = useId();
   const [revision, setRevision] = useState(0);
   const root = `/api/llm-jobs/${encodeURIComponent(job.id)}/reviews`;
 
@@ -72,73 +150,52 @@ export function AiReviewHistory({ job }: { job: AiReviewJob }) {
   }, [root, selected, revision, job.currentBatch, job.status]);
 
   const currentDetail = detail?.record.id === selected ? detail : null;
-  const record = currentDetail?.record;
   const changePage = (next: string | null) => { setCursor(next); setPage(null); setSelected(null); setDetail(null); setDetailError(null); setPageError(null); };
-
-  return <Card aria-label="Saved AI review history">
-    <CardHeader><CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
-      <span>Saved review results</span>
-      <Button variant="outline" size="sm" onClick={() => { setDetail(null); setRevision((value) => value + 1); }}>Refresh results</Button>
-    </CardTitle></CardHeader>
-    <CardContent className="space-y-4">
-      <p className="text-xs text-muted-foreground">Each result belongs to this run. Model suggestions and confidence estimates do not change human triage decisions.</p>
-      {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
-      {!page && !error && <p role="status" className="text-sm">Loading saved results…</p>}
-      {page && <>
-        <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-live="polite">
-          <p><strong>{page.saved}</strong> saved results / {page.totalFindings} input findings</p>
-          <p>{page.published} published suggestions</p>
-          <p>{page.preservedHumanDecisions} human decisions preserved</p>
-        </div>
-        {(page.historyVersion === 0 || page.missingReviewHistory > 0) && <p className="rounded-md border p-3 text-sm text-muted-foreground">This run predates complete retained history. {page.missingReviewHistory} earlier reviewed findings have no saved record. Current finding contents cannot reconstruct them.</p>}
-        {!page.reviews.length && <p className="text-sm text-muted-foreground">No saved result is available for this run yet. Inspect its status and call receipts for omitted or failed reviews.</p>}
-        {page.reviews.length > 0 && <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
-          <div className="min-w-0 space-y-2" aria-label="Saved review list">
-            {page.reviews.map((row) => <button key={row.id} type="button" aria-pressed={selected === row.id} onClick={() => { if (selected === row.id) return; setSelected(row.id); setDetail(null); setDetailError(null); setPageError(null); }} className={`block w-full min-w-0 rounded-md border p-3 text-left ${selected === row.id ? "border-primary bg-primary/5" : "border-border hover:bg-accent/30"}`}>
-              <div className="mb-2 flex flex-wrap items-center gap-2"><SeverityBadge severity={row.severity} /><Badge variant="outline">{verdicts[row.verdict] || "Unrecognized verdict"}</Badge></div>
-              <p className="break-words text-sm font-medium">{row.ruleName}</p>
-              <p className="mt-1 break-all text-xs text-muted-foreground">{row.filePath}:{row.lineStart}</p>
-              <p className="mt-2 text-xs">{Math.round(row.confidence * 100)}% model estimate</p>
-              {row.publication === "human_decision_preserved" && <p className="mt-1 text-xs text-muted-foreground">Saved without replacing the human decision</p>}
-              {row.metadataTruncated && <p className="mt-1 text-xs text-muted-foreground">Summary shortened; inspect saved evidence.</p>}
-            </button>)}
-          </div>
-          <section aria-label="Saved review detail" className="min-w-0 rounded-md border p-4 text-sm">
-            {!record && !error && <p role="status">Loading saved evidence…</p>}
-            {record && currentDetail && <div className="space-y-4">
-              <div><p className="font-medium">{verdicts[record.result.verdict]}</p><p className="mt-1 text-xs text-muted-foreground">{record.provider} · {record.model} · {new Date(record.createdAt).toLocaleString()}</p></div>
-              <div className="rounded-md bg-muted/50 p-3 text-xs">
-                <p>{record.publication === "human_decision_preserved" ? "This result was saved without replacing an accepted or rejected human decision." : "This result was published as a suggestion when the run completed this batch."}</p>
-                {currentDetail.current ? <>
-                  <p className="mt-2">Current finding at load: {currentDetail.current.status} · AI review decision: {currentDetail.current.aiReviewStatus}</p>
-                  {currentDetail.current.state === "superseded" && <p className="mt-2">The finding currently displays a different suggestion. This saved result is unchanged.</p>}
-                  {currentDetail.current.state === "source_changed" && <p className="mt-2">Source evidence has changed since this review. Inspect the current finding before applying this advice.</p>}
-                  <Link className="mt-2 inline-block underline" href={`/findings/${encodeURIComponent(currentDetail.current.findingId)}`}>Open current finding</Link>
-                </> : <p className="mt-2">The finding is no longer present in this scan. Its saved review remains available until the scan is removed.</p>}
-              </div>
-              <div><h3 className="font-medium">Analysis</h3><p className="mt-2 whitespace-pre-wrap break-words">{record.result.reasoning}</p></div>
-              <div><h3 className="font-medium">Remediation</h3><p className="mt-2 whitespace-pre-wrap break-words">{record.result.remediation || "No remediation was returned."}</p></div>
-              {record.result.adjustedSeverity && <p>Suggested severity: {record.result.adjustedSeverity}. The finding severity has not been changed.</p>}
-              {([['Supporting evidence', record.result.evidenceFor], ['Contrary evidence', record.result.evidenceAgainst], ['Evidence gaps', record.result.evidenceGaps]] as const).map(([label, values]) => <details key={label} open={label === "Evidence gaps" && values.length > 0}><summary className="cursor-pointer font-medium">{label} ({values.length})</summary><ul className="mt-2 list-disc space-y-2 pl-5">{values.map((value, index) => <li key={index} className="whitespace-pre-wrap break-words">{value}</li>)}</ul></details>)}
-              <details><summary className="cursor-pointer font-medium">Evidence supplied to this review</summary>
-                <p className="mt-2 break-all text-xs">{String(record.finding.data.filePath)}:{String(record.finding.data.lineStart)}</p>
-                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">{String(record.finding.data.codeSnippet || "No code excerpt was supplied.")}</pre>
-                {record.finding.omittedFields.length > 0 && <p className="mt-2 text-xs">Input fields shortened before review: {record.finding.omittedFields.join(", ")}</p>}
-              </details>
-              <details><summary className="cursor-pointer font-medium">Evidence identities</summary><dl className="mt-2 space-y-2 break-all font-mono text-xs">{Object.entries({ "Saved record": currentDetail.payloadDigest, "Input snapshot": record.inputDigest, "Finding evidence": record.finding.evidenceDigest, "Source scan": record.scanDigest, Prompt: record.promptDigest, "Provider response": record.responseDigest, Call: record.callId }).map(([key, value]) => <div key={key}><dt className="font-medium">{key}</dt><dd>{value}</dd></div>)}</dl></details>
-              {record.sourceEvidence && <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">Admitted source: {record.sourceEvidence.catalog.files} files · commit <span className="break-all font-mono">{record.sourceEvidence.catalog.commit}</span>. {record.sourceEvidence.catalog.truncated ? `Coverage is incomplete (${record.sourceEvidence.catalog.omittedFiles} additional files omitted from review; the original fetch may also be incomplete).` : "All files in the stored provider snapshot were admitted; this does not establish whole-repository coverage."}</p>
-                <AIToolEvidence evidence={normalizeAIReviewEvidence({ ...record.sourceEvidence })} />
-              </div>}
-              <a className="inline-block text-xs underline" href={`${root}/${encodeURIComponent(record.id)}`} download={`aegify-review-${record.id}.json`}>Download saved evidence</a>
+  const selectResult = (id: string) => {
+    if (id === selected) return;
+    setSelected(id); setDetail(null); setDetailError(null);
+  };
+  const first = previous.length * 20 + 1;
+  return <section aria-label="Saved AI review history" className="workbench-panel @container scroll-mt-4">
+    <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-b px-4 py-2.5 sm:px-5">
+      <h2 className="text-lg font-semibold tracking-tight">Review results</h2>
+      <Button variant="ghost" size="sm" className="min-h-11" aria-label="Refresh results" onClick={() => { setDetail(null); setRevision((value) => value + 1); }}><RefreshCw aria-hidden className="size-3.5" />Refresh</Button>
+      {page && <p className="col-span-2 pb-1 text-xs leading-5 text-muted-foreground" aria-live="polite">{page.saved} of {page.totalFindings} findings have a saved review{page.preservedHumanDecisions > 0 && ` · ${page.published} published · ${page.preservedHumanDecisions} human decisions preserved`}</p>}
+    </header>
+    {pageError && <p role="alert" className="p-5 text-sm text-destructive">{pageError}</p>}
+    {!page && !pageError && <p role="status" className="p-5 text-sm text-muted-foreground">Loading saved results…</p>}
+    {page && <>
+      {(page.historyVersion === 0 || page.missingReviewHistory > 0) && <p className="border-b px-5 py-3 text-sm text-muted-foreground">This run predates complete retained history. {page.missingReviewHistory} earlier reviewed findings have no saved record.</p>}
+      {!page.reviews.length ? <p className="p-5 text-sm text-muted-foreground">No saved results yet. The run status and call receipts show which reviews completed.</p> :
+        <div className="grid min-w-0 @min-[44rem]:grid-cols-[minmax(14rem,30%)_minmax(0,1fr)]">
+          <div className="min-w-0 border-b bg-muted/25 @min-[44rem]:border-r @min-[44rem]:border-b-0" aria-label="Saved review list">
+            <div className="hidden @min-[44rem]:block">
+              <p className="border-b px-4 py-2.5 text-xs font-medium text-muted-foreground">Findings in this run</p>
+              {page.reviews.map((row) => <button key={row.id} type="button" aria-pressed={selected === row.id} onClick={() => selectResult(row.id)} className="group block w-full border-b border-l-2 border-l-transparent px-4 py-3.5 text-left hover:bg-accent/50 aria-pressed:border-l-primary aria-pressed:bg-accent/60 focus-visible:-outline-offset-2">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><SeverityBadge severity={row.severity} /><span className="text-xs text-muted-foreground">{verdicts[row.verdict] || "Unknown verdict"}</span></span>
+                <span className="mt-2 block text-sm font-semibold leading-snug [overflow-wrap:anywhere]">{row.ruleName || row.ruleId}</span>
+                <span className="mt-1 block break-all font-mono text-[11px] leading-4 text-muted-foreground">{row.filePath}:{row.lineStart}</span>
+                {row.metadataTruncated && <span className="mt-1 block text-xs text-muted-foreground">Summary shortened</span>}
+              </button>)}
+            </div>
+            <div className="px-4 py-3 @min-[44rem]:hidden">
+              <label htmlFor={chooser} className="mb-1.5 block text-xs font-medium text-muted-foreground">Finding in this run</label>
+              <select id={chooser} value={selected ?? ""} onChange={(event) => selectResult(event.target.value)} className="h-11 w-full min-w-0 max-w-full rounded-md border border-input bg-card px-2 text-sm">
+                {page.reviews.map((row, index) => <option key={row.id} value={row.id}>{first + index}. {row.ruleName || row.ruleId} · {row.filePath}:{row.lineStart}</option>)}
+              </select>
+            </div>
+            {(previous.length > 0 || page.nextCursor) && <div className="flex flex-wrap items-center gap-1 px-3 py-2 text-xs">
+              <Button size="sm" variant="ghost" className="min-h-11" disabled={!previous.length} onClick={() => { const next = previous[previous.length - 1]; setPrevious((values) => values.slice(0, -1)); changePage(next); }}>Previous results</Button>
+              <Button size="sm" variant="ghost" className="min-h-11" disabled={!page.nextCursor} onClick={() => { setPrevious((values) => [...values, cursor]); changePage(page.nextCursor); }}>Next results</Button>
+              <span className="text-muted-foreground">{first}–{first + page.reviews.length - 1} of {page.saved}</span>
             </div>}
+          </div>
+          <section aria-label="Saved review detail" aria-busy={!currentDetail && !detailError} className="min-w-0 p-4 @min-[44rem]:p-6">
+            {detailError ? <p role="alert" className="text-sm text-destructive">{detailError}</p> : currentDetail
+              ? <SavedResult key={currentDetail.record.id} detail={currentDetail} root={root} />
+              : <p role="status" className="text-sm text-muted-foreground">Loading saved evidence…</p>}
           </section>
         </div>}
-        {(previous.length > 0 || page.nextCursor) && <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={!previous.length} onClick={() => { const next = previous[previous.length - 1]; setPrevious((values) => values.slice(0, -1)); changePage(next); }}>Previous results</Button>
-          <Button size="sm" variant="outline" disabled={!page.nextCursor} onClick={() => { setPrevious((values) => [...values, cursor]); changePage(page.nextCursor); }}>Next results</Button>
-        </div>}
-      </>}
-    </CardContent>
-  </Card>;
+    </>}
+  </section>;
 }

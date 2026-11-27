@@ -1,6 +1,7 @@
 import { requireAccess, scanScope, findingScope } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { queueConditions } from "@/lib/finding-view";
 
 export async function GET(request: Request) {
   const access = await requireAccess(request);
@@ -23,7 +24,8 @@ export async function GET(request: Request) {
         where: scanScope(access),
         orderBy: { createdAt: "desc" },
         take: 10,
-        include: { _count: { select: { findings: true } } },
+        select: { id: true, repository: true, project: { select: { name: true } }, branch: true, status: true, filesScanned: true,
+          duration: true, createdAt: true, _count: { select: { findings: true } } },
       }),
       prisma.finding.groupBy({
         by: ["ruleId", "ruleName", "severity"],
@@ -34,12 +36,12 @@ export async function GET(request: Request) {
       }),
       prisma.finding.groupBy({ by: ["evidenceState"], where: { ...findingScope(access), isCurrent: true }, _count: true }),
       prisma.finding.findMany({
-        where: { ...findingScope(access), isCurrent: true, severity: { in: ["critical", "high"] }, status: { in: ["open", "triaged", "confirmed", "in_progress"] } },
+        where: { ...findingScope(access), ...queueConditions("priority") },
         orderBy: [{ severity: "asc" }, { createdAt: "desc" }, { id: "asc" }], take: 8,
-        select: { id: true, ruleName: true, severity: true, filePath: true, lineStart: true, evidenceState: true, owner: true, baselineState: true },
+        select: { id: true, ruleId: true, ruleName: true, severity: true, filePath: true, lineStart: true, evidenceState: true, owner: true, baselineState: true, scan: { select: { repository: true, branch: true } } },
       }),
-      prisma.finding.count({ where: { ...findingScope(access), isCurrent: true, baselineState: "regressed", status: { notIn: ["fixed", "false_positive", "accepted_risk"] } } }),
-      prisma.finding.count({ where: { ...findingScope(access), isCurrent: true, dueAt: { lt: new Date() }, status: { notIn: ["fixed", "false_positive", "accepted_risk"] } } }),
+      prisma.finding.count({ where: { ...findingScope(access), ...queueConditions("regressed") } }),
+      prisma.finding.count({ where: { ...findingScope(access), ...queueConditions("overdue") } }),
     ]);
 
   const severityMap: Record<string, number> = {

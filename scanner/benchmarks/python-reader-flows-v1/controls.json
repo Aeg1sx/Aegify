@@ -1,0 +1,105 @@
+{
+  "previous": {
+    "line_tolerance": 0,
+    "metrics": {
+      "true_positives": 7,
+      "false_positives": 3,
+      "false_negatives": 1,
+      "precision": 0.7,
+      "recall": 0.875,
+      "f1": 0.7777777777777778
+    },
+    "unmatched_actual": [
+      "AEG-A05-004:readers.py:14",
+      "AEG-DESER-001:readers.py:33",
+      "AEG-XEE-002:readers.py:14"
+    ],
+    "unmatched_expected": [
+      "AEG-SESS-501:accounts.py:9"
+    ],
+    "outcomes_digest": "sha256:29131815aa4c40920dae2225c4b2e4f608809f6482394794f2687098beb01b86",
+    "ground_truth_digest": "sha256:6ae30e287dfcdae47e787f6f37c64d22dea93908a5c529d8b7a2809d6467e901"
+  },
+  "candidate": {
+    "line_tolerance": 0,
+    "metrics": {
+      "true_positives": 8,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "unmatched_actual": [],
+    "unmatched_expected": [],
+    "outcomes_digest": "sha256:8681f3c3e78f6aae40e4c63085d9c2a4f564f70c138896dec403c0badecdcedc",
+    "ground_truth_digest": "sha256:6ae30e287dfcdae47e787f6f37c64d22dea93908a5c529d8b7a2809d6467e901"
+  },
+  "shifted_expected_session_line": 8,
+  "shifted_result": {
+    "line_tolerance": 0,
+    "metrics": {
+      "true_positives": 7,
+      "false_positives": 1,
+      "false_negatives": 1,
+      "precision": 0.875,
+      "recall": 0.875,
+      "f1": 0.875
+    },
+    "unmatched_actual": [
+      "AEG-SESS-501:accounts.py:9"
+    ],
+    "unmatched_expected": [
+      "AEG-SESS-501:accounts.py:8"
+    ],
+    "outcomes_digest": "sha256:2bbe8f27961c483375ed70c45943022d5d7fc98924eb8efd08b2fbada7a95604",
+    "ground_truth_digest": "sha256:4b54c71ef191745868a88ce51047fa3b9614f9f8991e852c46944e010710f073"
+  },
+  "session_steps": [
+    {
+      "file": "accounts.py",
+      "line": 7,
+      "message": "source: request.query_string"
+    },
+    {
+      "file": "accounts.py",
+      "line": 7,
+      "message": "assignment: submitted"
+    },
+    {
+      "file": "labels.py",
+      "line": 1,
+      "message": "argument: text"
+    },
+    {
+      "file": "labels.py",
+      "line": 3,
+      "message": "iteration: char"
+    },
+    {
+      "file": "labels.py",
+      "line": 5,
+      "message": "assignment: label"
+    },
+    {
+      "file": "labels.py",
+      "line": 6,
+      "message": "return: <return>"
+    },
+    {
+      "file": "accounts.py",
+      "line": 8,
+      "message": "return: label"
+    },
+    {
+      "file": "accounts.py",
+      "line": 8,
+      "message": "assignment: label"
+    },
+    {
+      "file": "accounts.py",
+      "line": 9,
+      "message": "sink: flask.session"
+    }
+  ]
+}

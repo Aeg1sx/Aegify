@@ -16,7 +16,8 @@ export interface RuleValidationResult {
 const RULE_ID = /^AEG-[A-Z0-9][A-Z0-9_-]{2,80}$/;
 const SEVERITIES = new Set(["critical", "high", "medium", "low"]);
 const MAX_RULE_BYTES = 1_000_000;
-const TAINT_FIELDS = new Set(["source_types", "sink_types", "source_pattern", "sink_pattern", "ignore_sanitizers"]);
+const FIXED_SEMANTICS = new Set(["credential_randomness", "python_xml_configuration", "python_yaml_loader", "python_pickle_input"]);
+const TAINT_FIELDS = new Set(["source_types", "sink_types", "source_pattern", "sink_pattern", "ignore_sanitizers", "disposition"]);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -52,6 +53,9 @@ function taintShapeErrors(value: unknown): string[] {
   }
   if (Object.hasOwn(taint, "ignore_sanitizers") && typeof taint.ignore_sanitizers !== "boolean") {
     errors.push("ignore_sanitizers must be a YAML boolean.");
+  }
+  if (Object.hasOwn(taint, "disposition") && taint.disposition !== "advisory" && taint.disposition !== "blocking") {
+    errors.push("Taint disposition must be advisory or blocking.");
   }
   if (!selector) errors.push("Taint needs at least one source or sink selector.");
   return errors;
@@ -158,8 +162,17 @@ export function validateRuleYaml(
     if (typeof rule.message !== "string" || !rule.message.trim()) {
       diagnostics.push({ level: "warning", message: "Add a finding message for actionable output.", line, ruleId: id || undefined });
     }
-    if (!rule.patterns && !rule.taint && !rule.pattern && !rule.dependencies && !rule.dependency_patterns) {
-      diagnostics.push({ level: "warning", message: "No pattern, taint, or dependency detector is declared.", line, ruleId: id || undefined });
+    if (Object.hasOwn(rule, "semantic")) {
+      const semantic = asRecord(rule.semantic);
+      const kind = semantic?.kind;
+      if (!semantic || typeof kind !== "string" || (!FIXED_SEMANTICS.has(kind) && kind !== "database_race")) {
+        diagnostics.push({ level: "error", message: "Choose a supported semantic detector kind.", line, ruleId: id || undefined });
+      } else if (FIXED_SEMANTICS.has(kind) && Object.keys(semantic).some((key) => key !== "kind")) {
+        diagnostics.push({ level: "error", message: "This semantic detector accepts only its kind.", line, ruleId: id || undefined });
+      }
+    }
+    if (!rule.semantic && !rule.patterns && !rule.taint && !rule.pattern && !rule.dependencies && !rule.dependency_patterns) {
+      diagnostics.push({ level: "warning", message: "No detector is declared.", line, ruleId: id || undefined });
     }
     if (rule.confidence !== undefined && (typeof rule.confidence !== "number" || !Number.isFinite(rule.confidence) || rule.confidence < 0 || rule.confidence > 1)) {
       diagnostics.push({ level: "error", message: "Confidence must be a finite number between 0 and 1.", line, ruleId: id || undefined });
