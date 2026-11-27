@@ -12,7 +12,11 @@ import networkx as nx
 
 from aegify.graph_types import CodeGraph
 from aegify.models import CallSite, FileAST, FunctionDef, Language
-from aegify.scanner.import_bindings import declared_import_names, shares_call_runtime
+from aegify.scanner.import_bindings import (
+    declared_import_names,
+    javascript_targets,
+    shares_call_runtime,
+)
 from aegify.semantic.signatures import (
     jvm_overload_score,
     normalize_jvm_type,
@@ -41,6 +45,7 @@ class CallGraphNode:
     decorators: list[str] = field(default_factory=list)
     symbol_id: str = ""
     repository_id: str = ""
+    framework: str = ""
 
 
 class CallGraphBuilder:
@@ -521,7 +526,9 @@ class CallGraphBuilder:
 
     def _resolve_callee(self, call: CallSite) -> str | None:
         """Resolve one overload using locality, arity, and source type evidence."""
-        if call.receiver_type == "builtins.dict" and call.callee == "get":
+        if call.javascript_dynamic_call or (
+            call.receiver_type == "builtins.dict" and call.callee == "get"
+        ):
             return None
         callee_full = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
         candidate_tiers: list[list[str]] = []
@@ -572,6 +579,8 @@ class CallGraphBuilder:
                 language, self._file_languages[self._function_index[candidate].file_path]
             )
         ]
+        if language in {Language.JAVASCRIPT, Language.TYPESCRIPT}:
+            functions = javascript_targets(call, functions)
         if repository_id:
             local = [function for function in functions if function.repository_id == repository_id]
             if local or language not in {Language.JAVA, Language.KOTLIN} or not call.receiver_type:

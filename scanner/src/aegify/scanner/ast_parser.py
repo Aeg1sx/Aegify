@@ -44,6 +44,7 @@ from aegify.scanner import (
     java_randomness,
     java_sql,
     java_types,
+    javascript_functions,
     javascript_regex,
     python_buffers,
     python_code,
@@ -135,6 +136,9 @@ def parser_fingerprint() -> str:
         "python_hosts": hashlib.sha256(Path(python_hosts.__file__).read_bytes()).hexdigest(),
         "python_files": hashlib.sha256(Path(python_files.__file__).read_bytes()).hexdigest(),
         "python_ldap": hashlib.sha256(Path(python_ldap.__file__).read_bytes()).hexdigest(),
+        "javascript_functions": hashlib.sha256(
+            Path(javascript_functions.__file__).read_bytes()
+        ).hexdigest(),
         "javascript_regex": hashlib.sha256(
             Path(javascript_regex.__file__).read_bytes()
         ).hexdigest(),
@@ -363,16 +367,26 @@ class ASTParser:
                 function
                 for function in functions
                 if function.line_start <= call.line <= function.line_end
+                and (
+                    function.source_columns is None
+                    or (function.line_start, function.source_columns[0])
+                    <= (call.line, call.column)
+                    < (function.line_end, function.source_columns[1])
+                )
             ]
             if candidates:
                 caller = min(
                     candidates,
                     key=lambda item: (
                         item.line_end - item.line_start,
-                        item.line_start,
+                        -item.line_start,
+                        -(item.source_columns or (0, 0))[0],
+                        (item.source_columns or (0, 0))[1],
                     ),
                 )
                 call.caller_symbol_id = caller.symbol_id
+                if caller.source_columns is not None:
+                    call.in_function = caller.qualified_name
 
     @staticmethod
     def apply_repository_context(
@@ -893,9 +907,9 @@ class _JavaScriptExtractor(_BaseExtractor):
         calls: list[CallSite] = []
 
         self._extract_imports(root, source, imports)
-        self._extract_functions(root, source, file_path, functions)
+        names = self._extract_functions(root, source, file_path, functions)
         self._extract_classes(root, source, file_path, classes, functions)
-        self._extract_calls(root, source, file_path, calls)
+        self._extract_calls(root, source, file_path, calls, names)
 
         return FileAST(
             file_path=file_path,
@@ -939,31 +953,73 @@ class _JavaScriptExtractor(_BaseExtractor):
 
     def _extract_functions(
         self, root: Node, source: bytes, file_path: str, functions: list[FunctionDef]
-    ) -> None:
-        for type_name in ("function_declaration", "arrow_function", "function"):
-            for node in self._find_nodes(root, type_name):
+    ) -> dict[Node, str]:
+        names: dict[Node, str] = {}
+        pending = [(root, "", root)]
+        while pending:
+            node, owner, scope = pending.pop()
+            if node.type == "method_definition":
+                method_name = node.child_by_field_name("name")
+                owner = self._node_text(method_name, source) if method_name else ""
+                class_node = node.parent.parent if node.parent else None
+                if class_node and (name_node := class_node.child_by_field_name("name")):
+                    owner = f"{self._node_text(name_node, source)}.{owner}"
+            elif node.type in {"function_declaration", "arrow_function", "function_expression"}:
                 name_node = node.child_by_field_name("name")
+                parent = node.parent
+                assigned = parent is not None and parent.type == "variable_declarator"
+                if assigned and parent is not None:
+                    name_node = parent.child_by_field_name("name")
+                line, col = node.start_point
                 name = self._node_text(name_node, source) if name_node else "<anonymous>"
-
-                # For variable-assigned arrow functions
-                if not name_node and node.parent:
-                    if node.parent.type == "variable_declarator":
-                        vn = node.parent.child_by_field_name("name")
-                        if vn:
-                            name = self._node_text(vn, source)
-
-                params = self._extract_params(node, source)
-
+                segment = name if name_node else f"<anonymous@{line + 1}:{col}>"
+                # Local binding names can repeat in disjoint blocks of the same function.
+                local = scope != root or (not assigned and node.type == "function_expression")
+                if local and name_node:
+                    segment += f"@{line + 1}:{col}"
+                qualified = f"{owner}.{segment}" if owner else segment
+                visible = scope
+                if (
+                    assigned
+                    and parent is not None
+                    and parent.parent is not None
+                    and parent.parent.type == "variable_declaration"
+                ):
+                    while (
+                        visible.parent is not None
+                        and visible.type not in javascript_functions.CALLABLES
+                    ):
+                        visible = visible.parent
+                if not assigned and node.type == "function_expression":
+                    visible = node  # The expression's own name is private to its body.
                 functions.append(
                     FunctionDef(
                         name=name,
-                        qualified_name=name,
+                        qualified_name=qualified,
                         file_path=file_path,
-                        line_start=node.start_point[0] + 1,
+                        line_start=line + 1,
                         line_end=node.end_point[0] + 1,
-                        parameters=params,
+                        source_columns=(col, node.end_point[1]),
+                        javascript_scope=(
+                            (
+                                visible.start_point[0] + 1,
+                                visible.start_point[1],
+                                visible.end_point[0] + 1,
+                                visible.end_point[1],
+                            )
+                            if visible != root
+                            else None
+                        ),
+                        parameters=self._extract_params(node, source),
+                        javascript_constant_return=javascript_functions.constant_return(node),
                     )
                 )
+                names[node] = qualified
+                owner = qualified
+            if node.type == "statement_block":
+                scope = node
+            pending.extend((child, owner, scope) for child in reversed(node.named_children))
+        return names
 
     def _extract_classes(
         self,
@@ -999,6 +1055,7 @@ class _JavaScriptExtractor(_BaseExtractor):
                     file_path=file_path,
                     line_start=method_node.start_point[0] + 1,
                     line_end=method_node.end_point[0] + 1,
+                    source_columns=(method_node.start_point[1], method_node.end_point[1]),
                     parameters=params,
                     is_method=True,
                     class_name=class_name,
@@ -1018,9 +1075,15 @@ class _JavaScriptExtractor(_BaseExtractor):
             )
 
     def _extract_calls(
-        self, root: Node, source: bytes, file_path: str, calls: list[CallSite]
+        self,
+        root: Node,
+        source: bytes,
+        file_path: str,
+        calls: list[CallSite],
+        names: dict[Node, str],
     ) -> None:
         regex_calls = javascript_regex.pattern_calls(root, source)
+        dynamic_calls = javascript_functions.dynamic_calls(root, source)
         nodes = self._find_nodes(root, "call_expression")
         nodes.extend(
             sorted(
@@ -1053,15 +1116,37 @@ class _JavaScriptExtractor(_BaseExtractor):
                         receiver_type = "RegExp"
 
             args: list[str] = []
+            eager_args: dict[int, str] = {}
+            argument_calls: dict[int, tuple[int, int]] = {}
             args_node = node.child_by_field_name("arguments")
             if args_node:
-                for child in args_node.children:
-                    if child.type not in ("(", ")", ",", "comment"):
-                        args.append(self._node_text(child, source))
+                for child in args_node.named_children:
+                    if child.type == "comment":
+                        continue
+                    if (
+                        child.type == "call_expression"
+                        and (inner := child.child_by_field_name("function")) is not None
+                        and inner.type == "identifier"
+                    ):
+                        argument_calls[len(args)] = (child.start_point[0] + 1, child.start_point[1])
+                    raw = self._node_text(child, source)
+                    value = javascript_functions.eager_text(child, source)
+                    if value != raw:
+                        eager_args[len(args)] = value
+                    args.append(raw)
 
-            enclosing = self._find_enclosing_function(
-                node, source, ("function_declaration", "arrow_function", "method_definition")
-            )
+            handler = None
+            if (
+                receiver in {"app", "router"}
+                and callee in {"get", "post", "put", "patch", "delete", "head", "options", "all"}
+                and args_node
+            ):
+                operands = [arg for arg in args_node.named_children if arg.type != "comment"]
+                if len(operands) >= 2:
+                    last = operands[-1]
+                    handler = names.get(last) or (
+                        self._node_text(last, source) if last.type == "identifier" else ""
+                    )
 
             calls.append(
                 CallSite(
@@ -1073,7 +1158,10 @@ class _JavaScriptExtractor(_BaseExtractor):
                     receiver=receiver,
                     receiver_type=receiver_type,
                     javascript_regex_pattern=node in regex_calls if callee == "RegExp" else None,
-                    in_function=enclosing,
+                    javascript_handler=handler,
+                    javascript_dynamic_call=node in dynamic_calls,
+                    javascript_eager_arguments=eager_args,
+                    javascript_argument_calls=argument_calls,
                 )
             )
 
@@ -1081,7 +1169,9 @@ class _JavaScriptExtractor(_BaseExtractor):
         params: list[str] = []
         params_node = node.child_by_field_name("parameters")
         if not params_node:
-            params_node = node.child_by_field_name("formal_parameters")
+            parameter = node.child_by_field_name("parameter")
+            if parameter is not None and parameter.type == "identifier":
+                return [self._node_text(parameter, source)]
         if params_node:
             for child in params_node.children:
                 if child.type == "identifier":

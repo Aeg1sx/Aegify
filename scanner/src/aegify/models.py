@@ -306,6 +306,9 @@ class FunctionDef(BaseModel):
     line_start: int
     line_end: int
     parameters: list[str] = Field(default_factory=list)
+    source_columns: tuple[int, int] | None = None
+    javascript_scope: tuple[int, int, int, int] | None = None
+    javascript_constant_return: bool = False
     python_parameter_kinds: list[PythonParameterKind] = Field(default_factory=list)
     parameter_types: list[str] = Field(default_factory=list)
     parameter_defaults: list[bool] = Field(default_factory=list)
@@ -490,6 +493,10 @@ class CallSite(BaseModel):
     python_redirect: PythonRedirect | None = None
     python_code_input: PythonCodeInput | None = None
     python_template_source: PythonCallOperand | None = None
+    javascript_handler: str | None = None
+    javascript_dynamic_call: bool = False
+    javascript_argument_calls: dict[int, tuple[int, int]] = Field(default_factory=dict)
+    javascript_eager_arguments: dict[int, str] = Field(default_factory=dict)
     javascript_regex_pattern: bool | None = None
     python_regex_pattern: PythonRegexPattern | None = None
     python_download_url: PythonCallOperand | None = None
@@ -503,6 +510,12 @@ class CallSite(BaseModel):
     in_function: str | None = None  # enclosing function
     caller_symbol_id: str = ""
     repository_id: str = ""
+
+    @property
+    def evaluated_arguments(self) -> list[str]:
+        if not self.javascript_eager_arguments:
+            return self.arguments
+        return [self.javascript_eager_arguments.get(i, arg) for i, arg in enumerate(self.arguments)]
 
 
 class QueryExpression(BaseModel):

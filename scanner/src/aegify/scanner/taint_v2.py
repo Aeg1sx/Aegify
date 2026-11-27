@@ -37,7 +37,11 @@ from aegify.models import (
     inferred_process_field,
 )
 from aegify.scanner.flask_responses import linked_response_facts, project_routers, registered_import
-from aegify.scanner.import_bindings import declared_import_names, shares_call_runtime
+from aegify.scanner.import_bindings import (
+    declared_import_names,
+    javascript_targets,
+    shares_call_runtime,
+)
 from aegify.scanner.python_ldap import LDAPConnections
 from aegify.scanner.python_requests import body_accesses
 from aegify.scanner.python_scope import SANITIZER_DOMAINS, PythonModules
@@ -314,6 +318,8 @@ class StructuredTaintAnalyzer:
         if self._program_graph is not None:
             for node_id, attrs in self._program_graph.nodes(data=True):
                 kind = str(attrs.get("syntax_kind", ""))
+                if attrs.get("kind") == "function" and attrs.get("javascript_callable"):
+                    self._selected_functions.add(str(node_id))
                 if attrs.get("selected_arm"):
                     self._selected_functions.add(str(attrs.get("function")))
                     continue
@@ -356,6 +362,7 @@ class StructuredTaintAnalyzer:
                             syntax_kind=kind,
                             defaulted_name=str(attrs.get("defaulted_name", "")),
                             selected_value=str(attrs.get("selected_value", "")),
+                            columns=attrs.get("columns"),
                         )
                     )
         self._contexts = {}
@@ -382,9 +389,14 @@ class StructuredTaintAnalyzer:
                     if definition.line_start <= call.line <= definition.line_end
                     and (
                         call.caller_symbol_id == node_id
-                        or call.in_function == definition.name
-                        or call.in_function == definition.qualified_name
-                        or definition.qualified_name.endswith(f".{call.in_function or ''}")
+                        or (
+                            definition.source_columns is None
+                            and (
+                                call.in_function == definition.name
+                                or call.in_function == definition.qualified_name
+                                or definition.qualified_name.endswith(f".{call.in_function or ''}")
+                            )
+                        )
                     )
                 ]
                 context = _FunctionContext(
@@ -450,6 +462,7 @@ class StructuredTaintAnalyzer:
                 key=lambda item: (
                     item.line_start,
                     item.syntax_kind not in {"request_iteration", "value_iteration"},
+                    item.columns[0] if item.columns else 0,
                     item.line_end,
                     item.node_id,
                 ),
@@ -508,7 +521,13 @@ class StructuredTaintAnalyzer:
         for context in self._contexts.values():
             is_entry = self._is_entry_point(context)
             if is_entry:
-                for parameter in context.definition.parameters:
+                parameters = context.definition.parameters
+                if self._call_graph is not None and context.node_id in self._call_graph:
+                    entry = self._call_graph.nodes[context.node_id].get("data")
+                    if getattr(entry, "framework", "") == "Express":
+                        # Express passes (req, res, next) or (err, req, res, next).
+                        parameters = parameters[1:2] if len(parameters) == 4 else parameters[:1]
+                for parameter in parameters:
                     if parameter in {"self", "this"}:
                         continue
                     source = TaintSource(
@@ -578,7 +597,7 @@ class StructuredTaintAnalyzer:
                             {origin: trace},
                         )
                         break
-                for argument in call.arguments:
+                for argument in call.evaluated_arguments:
                     for pattern in source_patterns:
                         if (
                             not pattern.resolved_only
@@ -751,12 +770,17 @@ class StructuredTaintAnalyzer:
             lhs = assignment[0] if assignment else None
             rhs = statement.selected_value or (assignment[1] if assignment else statement.code)
             resolved_calls = context.statement_calls.get(statement.node_id, [])
+            direct_calls = {
+                (inner.line, inner.column): (inner, targets[0])
+                for inner, targets in resolved_calls
+                if len(targets) == 1 and not inner.receiver
+            }
             call_returns: _TraceMap = {}
             call_return_points: set[str] = set()
             internal_call_on_rhs = False
 
             for call, targets in resolved_calls:
-                values = call.arguments
+                values = call.evaluated_arguments
                 if context.ast.language == Language.PYTHON and call.structured_arguments:
                     values = list(values)
                     for i, (raw, arg) in enumerate(
@@ -781,6 +805,25 @@ class StructuredTaintAnalyzer:
                     )
                     for argument in values
                 ]
+                for index, location in call.javascript_argument_calls.items():
+                    if index >= len(argument_states) or location not in direct_calls:
+                        continue
+                    inner, target = direct_calls[location]
+                    definition = self._contexts[target].definition
+                    if definition.javascript_constant_return:
+                        argument_states[index] = {}
+                    else:
+                        nested = self._next_call_string(call_string, context, inner)
+                        traces = self._append_step(
+                            return_taints.get((target, nested), {}),
+                            variable=self._call_text(inner),
+                            file_path=inner.file_path,
+                            line=inner.line,
+                            propagation_type="return",
+                            function=context.definition.qualified_name,
+                            call_context=call_string,
+                        )
+                        self._merge_traces(argument_states[index], traces)
                 if call.python_buffer_write and call.receiver and len(argument_states) == 1:
                     saved = self._append_step(
                         argument_states[0],
@@ -1460,6 +1503,10 @@ class StructuredTaintAnalyzer:
                     origin: trace
                     for origin, trace in line_sources.items()
                     if (
+                        context.definition.source_columns is None
+                        or trace.source.in_function == context.definition.qualified_name
+                    )
+                    and (
                         trace.source.variable in body_accesses(expression)
                         if origin in self._request_body_origins
                         else self._source_occurs_in_expression(trace.source.variable, expression)
@@ -1617,7 +1664,9 @@ class StructuredTaintAnalyzer:
         return bindings
 
     def _resolve_call_targets(self, context: _FunctionContext, call: CallSite) -> list[str]:
-        if call.receiver_type == "builtins.dict" and call.callee == "get":
+        if call.javascript_dynamic_call or (
+            call.receiver_type == "builtins.dict" and call.callee == "get"
+        ):
             return []
         exact = self._edge_targets.get(
             (context.node_id, call.file_path, call.line, call.column), set()
@@ -1656,6 +1705,9 @@ class StructuredTaintAnalyzer:
             if self._contexts[target].ast.repository_id == context.ast.repository_id
             and shares_call_runtime(context.ast.language, self._contexts[target].ast.language)
         ]
+        if context.ast.language in {Language.JAVASCRIPT, Language.TYPESCRIPT}:
+            visible = javascript_targets(call, [self._contexts[c].definition for c in candidates])
+            candidates = [c for c in candidates if self._contexts[c].definition in visible]
         return candidates if len(candidates) == 1 else []
 
     def _next_call_string(

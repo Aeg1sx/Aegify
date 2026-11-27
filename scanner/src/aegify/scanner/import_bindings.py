@@ -1,6 +1,26 @@
 """Source-declared import identities shared by graph and taint resolution."""
 
-from aegify.models import FileAST, Language
+from aegify.models import CallSite, FileAST, FunctionDef, Language
+
+
+def javascript_targets(call: CallSite, candidates: list[FunctionDef]) -> list[FunctionDef]:
+    """A nested binding is visible only in its own source scope."""
+    visible = []
+    for function in candidates:
+        scope = function.javascript_scope
+        if scope is None:
+            continue
+        row, col, last, right = scope
+        if (
+            not call.receiver
+            and function.file_path == call.file_path
+            and ((row, col) <= (call.line, call.column) < (last, right))
+        ):
+            visible.append(function)
+    if not visible:
+        return [function for function in candidates if function.javascript_scope is None]
+    inner = max(function.javascript_scope for function in visible if function.javascript_scope)
+    return [function for function in visible if function.javascript_scope == inner]
 
 
 def shares_call_runtime(caller: Language, target: Language) -> bool:

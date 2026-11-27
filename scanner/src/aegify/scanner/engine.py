@@ -716,7 +716,10 @@ class ScanEngine:
         self._emit_progress(3, "Detecting endpoints", start_time)
         from aegify.models import EndpointInfo, EndpointParam
 
-        detected_endpoints = self.endpoint_detector.detect(file_asts)
+        express_handlers: set[tuple[str, str]] = set()
+        detected_endpoints = self.endpoint_detector.detect(
+            file_asts, express_handlers=express_handlers
+        )
         result.endpoints = [
             EndpointInfo(
                 path=ep.path,
@@ -808,6 +811,11 @@ class ScanEngine:
         # Enrich call graph with endpoint info (both detected and OpenAPI)
         from aegify.scanner.call_graph import CallGraphNode as CGNode
 
+        for _, node_data in call_graph.nodes(data="data"):
+            if node_data and (node_data.file_path, node_data.qualified_name) in express_handlers:
+                node_data.is_entry_point = True
+                node_data.framework = "Express"
+
         ep_count = 0
         for ep in detected_endpoints:
             # Try to match handler function to call graph node
@@ -816,6 +824,7 @@ class ScanEngine:
                 node_data = call_graph.nodes[ep.handler_function].get("data")
                 if node_data:
                     node_data.is_entry_point = True
+                    node_data.framework = ep.framework
                     matched = True
 
             # Workspace graphs use repository-qualified node IDs while endpoint
@@ -830,6 +839,7 @@ class ScanEngine:
                         and node_data.file_path == ep.file_path
                     ):
                         node_data.is_entry_point = True
+                        node_data.framework = ep.framework
                         matched = True
                         break
 
