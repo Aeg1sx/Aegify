@@ -825,17 +825,29 @@ async function checkProjectRecord(page, viewer, db, origin) {
     const base = globalThis.fetch;
     let listing = 0;
     globalThis.fetch = (path, init) => {
+      if (String(path) === "/api/repos?provider=github&start=6")
+        return Promise.resolve(globalThis.Response.json({
+          repos: [{ id: "gh-501", provider: "github", fullName: "payments/ledger-core", url: "https://github.com/payments/ledger-core", isPrivate: true, defaultBranch: "release" }],
+          providers: { github: true, gitlab: false }, next: {}, warnings: [],
+        }));
       if (String(path) !== "/api/repos") return base(path, init);
       listing++;
       return Promise.resolve(listing === 1 ? new globalThis.Response(null, { status: 503 }) : globalThis.Response.json({
-        repos: [{ id: "gh-56", provider: "github", fullName: "payments/ledger-core", url: "https://github.com/payments/ledger-core", isPrivate: true, defaultBranch: "release" }],
-        providers: { github: true, gitlab: false }, warnings: [],
+        repos: [{ id: "gh-1", provider: "github", fullName: "payments/storefront", url: "https://github.com/payments/storefront", isPrivate: true, defaultBranch: "main" }],
+        providers: { github: true, gitlab: false }, next: { github: 6 }, warnings: [],
       }));
     };
   });
   await (await button("Connect repository")).click(); await waitText(page, "Your repositories could not be loaded.");
   await (await elementWithText(page, '[role="dialog"] button', "Retry listing")).click();
   await page.waitForSelector('[role="dialog"] input[type="search"]');
+  const nextGitHub = () => elementWithText(page, '[role="dialog"] button', "Next GitHub repositories");
+  await (await nextGitHub()).click();
+  await page.waitForSelector('button[aria-label="Connect payments/ledger-core"]');
+  await (await elementWithText(page, '[role="dialog"] button', "Previous repositories")).click();
+  await page.waitForSelector('button[aria-label="Connect payments/storefront"]');
+  await (await nextGitHub()).click();
+  await page.waitForSelector('button[aria-label="Connect payments/ledger-core"]');
   await page.type('[role="dialog"] input[type="search"]', "ledger");
   const choose = 'button[aria-label="Connect payments/ledger-core"]';
   await page.waitForSelector(choose);

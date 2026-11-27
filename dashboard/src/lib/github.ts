@@ -20,8 +20,8 @@ export async function getGitHubToken(userId: string): Promise<string | null> {
   return account?.access_token || null;
 }
 
-export function listGitHubRepos(accessToken: string, signal: AbortSignal) {
-  return repositoryPages<GitHubRepo>((page) => `https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&type=all`, { Authorization: `Bearer ${accessToken}`, Accept: "application/vnd.github.v3+json" }, signal);
+export function listGitHubRepos(accessToken: string, signal: AbortSignal, start = 1) {
+  return repositoryPages<GitHubRepo>((page) => `https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&type=all`, { Authorization: `Bearer ${accessToken}`, Accept: "application/vnd.github.v3+json" }, signal, start);
 }
 
 export async function getGitHubFileContent(
