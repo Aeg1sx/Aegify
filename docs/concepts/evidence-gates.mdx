@@ -85,6 +85,13 @@ describes source-root and relative URI requirements for other producers.
 - `blocking` results can fail CI when their severity meets the configured
   threshold.
 
+For Python HTTP body findings, the parser records the actual property read and the
+scanner checks that the selected operand uses it. Supported receivers include
+Flask's imported request proxy, typed Flask, Werkzeug and Django REST framework
+request parameters, the first argument of a Django REST framework `@api_view`,
+and `.json()` on a typed Starlette or FastAPI request. An untyped parameter in an
+ordinary helper needs additional caller evidence. [Flask request API](https://flask.palletsprojects.com/en/stable/api/#flask.Request.json) · [Django REST framework requests](https://www.django-rest-framework.org/api-guide/requests/) · [Starlette request bodies](https://www.starlette.io/requests/#body)
+
 Native and YAML lexical patterns default to `candidate/advisory`. Taint paths
 and structured semantic detectors may emit `reachable/blocking` only when their
 required evidence is satisfied.

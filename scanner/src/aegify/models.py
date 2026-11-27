@@ -94,6 +94,13 @@ class SessionWrite(BaseModel):
     field: Literal["key", "identity"]
 
 
+class PythonRequestBodyRead(BaseModel):
+    function_line: int
+    line: int
+    expression: str
+    pattern: str
+
+
 class FlaskBodyPart(BaseModel):
     """A selected body operand at the statement where Python reads its value."""
 
@@ -237,6 +244,7 @@ class FileAST(BaseModel):
     classes: list[ClassDef] = Field(default_factory=list)
     imports: list[ImportInfo] = Field(default_factory=list)
     calls: list[CallSite] = Field(default_factory=list)
+    python_request_body_reads: list[PythonRequestBodyRead] | None = None
     python_host_checks: list[PythonHostCheck] = Field(default_factory=list)
     python_directory_checks: list[PythonDirectoryCheck] = Field(default_factory=list)
     python_read_limits: list[PythonReadLimit] = Field(default_factory=list)

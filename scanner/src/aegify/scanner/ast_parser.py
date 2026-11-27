@@ -560,6 +560,7 @@ class _PythonExtractor(_BaseExtractor):
             calls=calls,
             python_stored_reads=stored_reads,
             python_stdin_resolved=True,
+            python_request_body_reads=python_requests.body_reads(source),
             python_file_access_resolved=True,
             python_process_resolved=True,
             python_redirect_resolved=True,

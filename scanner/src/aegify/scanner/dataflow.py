@@ -26,6 +26,7 @@ from aegify.scanner.python_deserialization import sink_operand
 from aegify.scanner.python_ldap import LDAPConnections
 from aegify.scanner.python_process import process_input
 from aegify.scanner.python_redirect import redirect_operand
+from aegify.scanner.python_requests import body_accesses
 from aegify.scanner.python_scope import PythonModules
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,29 @@ class TaintConfig:
     sources: dict[Language, list[SourcePattern]] = field(default_factory=dict)
     sinks: dict[Language, list[SinkPattern]] = field(default_factory=dict)
     sanitizers: dict[Language, list[str]] = field(default_factory=dict)
+
+    def source_patterns_for(self, file: FileAST) -> list[SourcePattern]:
+        patterns = self.sources.get(file.language, [])
+        if file.python_request_body_reads is None:
+            return patterns
+        return [p for p in patterns if not p.python_request_body]
+
+    def request_body_sources(self, file: FileAST) -> list[TaintSource]:
+        if not file.python_request_body_reads:
+            return []
+        patterns = {p.pattern for p in self.sources.get(file.language, []) if p.python_request_body}
+        functions = {fn.line_start: fn.qualified_name for fn in file.functions}
+        return [
+            TaintSource(
+                variable=read.expression,
+                file_path=file.file_path,
+                line=read.line,
+                source_type="http_body",
+                in_function=functions.get(read.function_line),
+            )
+            for read in file.python_request_body_reads
+            if read.pattern in patterns
+        ]
 
     @classmethod
     def default(cls) -> TaintConfig:
@@ -351,6 +375,16 @@ class SourcePattern:
     source_type: str
     resolved_only: bool = False
 
+    @property
+    def python_request_body(self) -> bool:
+        return self.source_type == "http_body" and self.pattern in {"request.json", "request.data"}
+
+    def accepts_source_text(self, file: FileAST, expression: str) -> bool:
+        # Older serialized ASTs have calls but no framework binding facts.
+        if file.language == Language.PYTHON and self.python_request_body:
+            return self.pattern in body_accesses(expression)
+        return True
+
     def resolved_call(self, call: CallSite, file: FileAST) -> bool:
         if self.pattern == "python.file_open":
             if call.python_file_access:
@@ -489,8 +523,8 @@ class DataflowAnalyzer:
 
     def _find_sources(self, ast: FileAST) -> list[TaintSource]:
         """Find taint sources in a file."""
-        sources: list[TaintSource] = []
-        patterns = self.config.sources.get(ast.language, [])
+        sources = self.config.request_body_sources(ast)
+        patterns = self.config.source_patterns_for(ast)
 
         for call in ast.calls:
             for pattern in patterns:
@@ -499,6 +533,7 @@ class DataflowAnalyzer:
                     pattern.resolved_call(call, ast)
                     if pattern.resolved_only
                     else pattern.pattern in call_text
+                    and pattern.accepts_source_text(ast, call_text)
                 ):
                     sources.append(
                         TaintSource(
@@ -514,7 +549,11 @@ class DataflowAnalyzer:
             # Also check arguments for source patterns
             for arg in call.arguments:
                 for pattern in patterns:
-                    if not pattern.resolved_only and pattern.pattern in arg:
+                    if (
+                        not pattern.resolved_only
+                        and pattern.pattern in arg
+                        and pattern.accepts_source_text(ast, arg)
+                    ):
                         sources.append(
                             TaintSource(
                                 variable=arg,

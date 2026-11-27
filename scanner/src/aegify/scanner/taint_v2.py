@@ -39,6 +39,7 @@ from aegify.models import (
 from aegify.scanner.flask_responses import linked_response_facts, project_routers, registered_import
 from aegify.scanner.import_bindings import declared_import_names, shares_call_runtime
 from aegify.scanner.python_ldap import LDAPConnections
+from aegify.scanner.python_requests import body_accesses
 from aegify.scanner.python_scope import SANITIZER_DOMAINS, PythonModules
 from aegify.scanner.python_values import assignment as python_assignment
 from aegify.scanner.python_values import expression_accesses as python_accesses
@@ -201,6 +202,7 @@ class StructuredTaintAnalyzer:
         self._field_writes: set[tuple[str, int, str]] = set()
         self._strong_update_events: set[tuple[str, int, str]] = set()
         self._source_ids: set[str] = set()
+        self._request_body_origins: set[str] = set()
         self._sink_ids: set[tuple[str, int, int, str]] = set()
         self._library_applications: set[tuple[str, str, _CallString, int, int]] = set()
 
@@ -495,6 +497,14 @@ class StructuredTaintAnalyzer:
         modules: PythonModules,
     ) -> None:
         ldap = LDAPConnections(file_asts, modules)
+        for file in file_asts:
+            for source in self.config.request_body_sources(file):
+                origin = self._origin_id(source)
+                self._source_ids.add(origin)
+                self._request_body_origins.add(origin)
+                self._source_traces[(file.file_path, source.line)][origin] = self._source_trace(
+                    source
+                )
         for context in self._contexts.values():
             is_entry = self._is_entry_point(context)
             if is_entry:
@@ -516,12 +526,14 @@ class StructuredTaintAnalyzer:
                         {origin: trace},
                     )
 
-            source_patterns = self.config.sources.get(context.ast.language, [])
+            source_patterns = self.config.source_patterns_for(context.ast)
             sink_patterns = self.config.sinks.get(context.ast.language, [])
             for statement in context.statements:
                 for pattern in source_patterns:
-                    if pattern.resolved_only or not self._pattern_matches(
-                        pattern.pattern, statement.code
+                    if (
+                        pattern.resolved_only
+                        or not self._pattern_matches(pattern.pattern, statement.code)
+                        or not pattern.accepts_source_text(context.ast, statement.code)
                     ):
                         continue
                     source = TaintSource(
@@ -545,6 +557,7 @@ class StructuredTaintAnalyzer:
                         pattern.resolved_call(call, context.ast)
                         if pattern.resolved_only
                         else self._call_matches_pattern(pattern.pattern, call)
+                        and pattern.accepts_source_text(context.ast, call_text)
                     ):
                         if self._line_has_source_type(
                             call.file_path, call.line, pattern.source_type
@@ -567,8 +580,10 @@ class StructuredTaintAnalyzer:
                         break
                 for argument in call.arguments:
                     for pattern in source_patterns:
-                        if not pattern.resolved_only and self._pattern_matches(
-                            pattern.pattern, argument
+                        if (
+                            not pattern.resolved_only
+                            and self._pattern_matches(pattern.pattern, argument)
+                            and pattern.accepts_source_text(context.ast, argument)
                         ):
                             if self._line_has_source_type(
                                 call.file_path, call.line, pattern.source_type
@@ -1434,7 +1449,11 @@ class StructuredTaintAnalyzer:
                 matching = {
                     origin: trace
                     for origin, trace in line_sources.items()
-                    if self._source_occurs_in_expression(trace.source.variable, expression)
+                    if (
+                        trace.source.variable in body_accesses(expression)
+                        if origin in self._request_body_origins
+                        else self._source_occurs_in_expression(trace.source.variable, expression)
+                    )
                 }
                 self._merge_traces(traces, matching)
         return traces
