@@ -1,8 +1,6 @@
+import { publishWorkerHeartbeat } from "../src/lib/worker-heartbeat.ts";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { setInterval, clearInterval } from "node:timers";
 import { log, error } from "node:console";
@@ -28,7 +26,7 @@ function register() {
   if (registration) return registration;
   registration = (async () => {
     await recordWorkerHeartbeat(prisma, "source", workerId);
-    await writeFile(join(tmpdir(), "aegify-worker-health"), new Date().toISOString(), { mode: 0o600 });
+    await publishWorkerHeartbeat("scan", "/tmp");
   })().finally(() => { registration = undefined; });
   return registration;
 }
