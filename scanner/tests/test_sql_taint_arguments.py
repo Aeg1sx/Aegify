@@ -32,6 +32,8 @@ def analyze(path: Path, config: TaintConfig | None = None, *, clear_facts: bool 
     ("statement", "expected"),
     [
         ('db.execute({sql: "INSERT INTO t VALUES (?)", args: [value]});', 0),
+        ('db.execute({sql: "VACUUM main INTO ?", args: [value]});', 0),
+        ('db.execute({sql: "VACUUM main INTO " + value, args: []});', 1),
         ('db.query({text: "SELECT * FROM t WHERE id=$1", values: [value]});', 0),
         ('db.execute("SELECT * FROM t WHERE id=?", [value]);', 0),
         ('const q={sql: "SELECT ?", args:[value]};\n  const alias=q;\n  db.execute(alias);', 0),
