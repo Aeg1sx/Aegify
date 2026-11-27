@@ -83,6 +83,40 @@ class WorkspaceRepository(BaseModel):
     runtime_artifacts: list[RuntimeArtifact] = Field(default_factory=list)
     jvm_classpath_snapshots: list[JvmClasspathArtifact] = Field(default_factory=list)
 
+    service_names: list[str] = Field(default_factory=list, max_length=256)
+    gateway_configs: list[str] = Field(default_factory=list, max_length=128)
+
+    @field_validator("service_names")
+    @classmethod
+    def validate_service_names(cls, values: list[str]) -> list[str]:
+        from aegify.scanner.gateway_inventory import canonical_host
+
+        names = set()
+        for value in values:
+            name = canonical_host(value)
+            if name is None:
+                raise ValueError("service names must be literal DNS host names")
+            names.add(name)
+        return sorted(names)
+
+    @field_validator("gateway_configs")
+    @classmethod
+    def validate_gateway_configs(cls, values: list[str]) -> list[str]:
+        for value in values:
+            path = Path(value)
+            if (
+                path.is_absolute()
+                or len(value) > 4096
+                or {"..", ".git"} & set(path.parts)
+                or "\\" in value
+                or not value.isprintable()
+                or path.suffix.lower() not in {".yml", ".yaml", ".json", ".properties"}
+            ):
+                raise ValueError(
+                    "gateway config must be a repository-relative YAML, JSON or properties file"
+                )
+        return sorted({Path(value).as_posix() for value in values})
+
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:

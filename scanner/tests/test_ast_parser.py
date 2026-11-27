@@ -1,5 +1,6 @@
 """Tests for the AST parser module."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -101,9 +102,43 @@ class TestASTParser:
         assert ast.parser_grammar == "typescript"
         assert ast.parse_error_count == 0
 
-    def test_recovered_ast_records_error_location_and_source_digest(self, parser, tmp_path):
-        import hashlib
+    @pytest.mark.parametrize("suffix", [".ts", ".tsx"])
+    def test_typed_tag_locations(self, parser, tmp_path, suffix):
+        path = tmp_path / ("tags" + suffix)
+        path.write_text(
+            "export async function read() {\n"
+            "  const rows = await library.records<{ café: string }[]>\n"
+            "    `items ${label()}`;\n"
+            "  const note = format<Row[]> /* captured */ `report`;\n"
+            "  return [rows, note];\n"
+            "}\n"
+        )
+        ast = parser.parse_file(path)
+        assert ast is not None and ast.parse_error_count == 0
+        assert {(call.callee, call.line) for call in ast.calls} >= {
+            ("records", 2),
+            ("label", 3),
+            ("format", 4),
+        }
+        assert ast.source_digest == hashlib.sha256(path.read_bytes()).hexdigest()
 
+    @pytest.mark.parametrize(
+        "broken",
+        [
+            "const value = ;",
+            "const value = tag<Row[> `x`;",
+            "const value = tag<Row[]> `unfinished",
+        ],
+    )
+    def test_typed_tag_keeps_syntax_errors(self, parser, tmp_path, broken):
+        source = tmp_path / "tags.ts"
+        source.write_text("function read() { return tag<{ name: string }[]>`ok`; }\n" + broken)
+        ast = parser.parse_file(source)
+        assert ast is not None and ast.parse_diagnostics
+        assert all(gap.line_start == 2 for gap in ast.parse_diagnostics)
+        assert any(call.callee == "tag" and call.line == 1 for call in ast.calls)
+
+    def test_recovered_ast_records_error_location_and_source_digest(self, parser, tmp_path):
         path = tmp_path / "broken.py"
         path.write_text("value = 1\ndef broken(:\n    return value\n")
         ast = parser.parse_file(path)

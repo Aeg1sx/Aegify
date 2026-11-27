@@ -3,6 +3,34 @@ import test from "node:test";
 
 import { fetchRepoCode, isPathSafe, isScannableFile, readBoundedProviderBody } from "./repo-fetcher.ts";
 
+test("deterministic scans read declared configuration and historical model scans skip those bodies before download", async () => {
+  const original = globalThis.fetch;
+  const paths = ["src/wrangler.jsonc", "wrangler.json", "app/wrangler.toml", "config/application-prod.properties", "spring/bootstrap.yml", "deploy/kong.json"];
+  const reads: string[] = [];
+  const sha = "a".repeat(40);
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path.includes("/commits/")) return Response.json({ sha, commit: { tree: { sha } } });
+    if (path.includes("/git/trees/")) return Response.json({ tree: paths.map((p) => ({ path: p, mode: "100644", type: "blob" })) });
+    reads.push(path);
+    return new Response("owned-marker");
+  };
+  try {
+    const options = { provider: "github" as const, accessToken: "owned", ownerSlug: "owner/repo", providerRepoId: "", ref: "main" };
+    const scan = await fetchRepoCode(options);
+    assert.equal(reads.length, paths.length);
+    assert.deepEqual(scan.files.map((file) => file.path).sort(), [...paths].sort());
+    reads.length = 0;
+    const model = await fetchRepoCode({ ...options, withholdConfigFromModel: true });
+    assert.equal(model.omittedFiles, paths.length);
+    assert.equal(model.truncated, true);
+    assert.equal(model.files.length, 0);
+    assert.deepEqual(reads, []);
+    assert.equal(isScannableFile("other.jsonc"), false);
+    assert.equal(isScannableFile("node_modules/demo/wrangler.jsonc"), false);
+  } finally { globalThis.fetch = original; }
+});
+
 test("pins GitHub tree and file reads to the resolved commit SHA", async () => {
   const originalFetch = globalThis.fetch;
   const urls: string[] = [];
@@ -214,4 +242,13 @@ test("a commit is pinned before tree download and provider errors omit response 
 test("source inventory admits module extensions and rejects ambiguous writable paths", () => {
   for (const path of ["src/app.mts", "src/app.cts"]) assert.equal(isScannableFile(path), true);
   for (const path of ["../app.py", "/app.py", "src//app.py", "src/./app.py", "src/\u0001app.py", ".git/config"]) assert.equal(isPathSafe(path), false);
+});
+
+test("provider snapshots admit conventional Spring properties within source selection", () => {
+  for (const name of ["application.properties", "src/main/resources/application-prod.properties", "conf/bootstrap.properties"]) {
+    assert.equal(isScannableFile(name), true);
+  }
+  for (const name of ["credentials.properties", "node_modules/demo/application.properties", "application.properties.bak"]) {
+    assert.equal(isScannableFile(name), false);
+  }
 });

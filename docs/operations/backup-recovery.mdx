@@ -24,7 +24,7 @@ separate protected copy of the installation configuration available for recovery
 | Metadata | Header includes timestamps, database/schema hashes and counts; it is authenticated but readable |
 | Publication | Private staging, mode `0600` files, atomic creation without replacing an existing destination |
 | Access after restore | Every account disabled; old sessions and CI credentials invalidated |
-| Interrupted work | Queued/running scans and AI jobs cancelled or failed; saved approvals expired |
+| Interrupted work | Source jobs close on the restored copy. AI reviews with saved results become partial. Unfinished AI reviews with no saved results become failed. Pending and approved agent permissions expire. |
 | Activation | Operator reviews and enables existing admitted accounts individually |
 
 The snapshot uses [SQLite `VACUUM INTO`](https://www.sqlite.org/lang_vacuum.html),
@@ -124,6 +124,10 @@ findings and completed scans are retained. Inspect the account list and compare
 the preserved project roles with current access approvals before enabling anyone.
 The account list is limited to 1,000 entries and reports truncation.
 
+A restored AI job keeps each published review and its provider receipt. An
+in-flight call with no saved response is marked `unknown`. An agent run waiting
+for evidence closes as cancelled and records the restore ID in its activity.
+
 Select an existing administrator whose exact email is in `AUTH_ADMIN_EMAILS` and
 also meets the current `AUTH_ALLOWED_EMAILS` or `AUTH_ALLOWED_DOMAINS` policy.
 For an SSO-only account:
@@ -174,6 +178,66 @@ other accounts remain disabled until reviewed.
 Rolling back is a separate operator decision: stop the dashboard and both workers, restore the
 previous `DATABASE_URL` configuration and reconcile writes made after promotion.
 Do not run two installations against divergent copies and expect automatic merging.
+
+## Rehearse worker interruption
+
+From a development checkout with dashboard dependencies, the generated Prisma
+client and the scanner installed in `scanner/.venv`, run the following command
+from the repository root. Allow at least two minutes for the original leases to
+expire.
+
+```bash
+node --experimental-strip-types dashboard/scripts/measure-worker-recovery.mjs
+```
+
+The rehearsal creates a private temporary database with 24,000 audit events.
+Two source workers scan the checkout’s dashboard components and a sample Wrangler
+manifest. Two AI workers review synthetic findings through a scripted transport.
+A fifth process writes pairs of audit events while the backup runs.
+
+Three additional workers are stopped after committing specific operations.
+
+| Interruption | What the rehearsal checks |
+| --- | --- |
+| Source job claimed | A replacement reuses the pinned snapshot and publishes one scan after lease expiry. |
+| AI job claimed before a request | A replacement sends the first request once. |
+| Second AI request dispatched | The original 50 saved reviews remain available. The second call becomes unknown and is never replayed by recovery. |
+
+The JSON output includes observed transport entries, source and scanner digests,
+per-process claim counts and timings. For the restored database it checks complete
+pairs of concurrent writes, audit markers on either side of the backup, saved review
+identities, disabled accounts and terminal jobs. Timing applies to the host and
+workload recorded in the output. [SQLite transaction isolation](https://sqlite.org/isolation.html)
+and [consistent snapshots with VACUUM INTO](https://sqlite.org/lang_vacuum.html#vacuum_with_an_into_clause).
+
+## Rehearse a dashboard cutover
+
+With the locked dashboard dependencies, generated Prisma client, optimized
+dashboard build and local Python scanner available, run this from the repository root.
+
+```bash
+node --experimental-strip-types dashboard/scripts/measure-restore-cutover.mjs --runs 2
+```
+
+Each run creates new local credentials, a database and a loopback listening port.
+The operator signs in, grants viewer access, issues a project CI token, imports a
+scanner-produced finding and saves a triage decision. The CLI creates and verifies
+an encrypted backup while the dashboard and both workers are running. A second
+project created after the backup marks the boundary of recorded changes.
+
+The rehearsal stops all three processes, restores into a new file and starts the
+production dashboard on the same port. It checks that both accounts start
+disabled, then reactivates the operator with a fresh password. The previous browser
+sessions and CI credential must fail. The new session must read the original
+evidence and decision. A fresh CI credential must publish a second scan to the same
+project. The restored workers must register, and the source worker must finish a new
+rule evaluation with the expected positive and negative cases.
+
+The JSON receipt measures elapsed time from the start of shutdown to the first
+authorized project read, the first replacement CI upload and the first verified
+worker result. It also records snapshot size and age. These checkpoints include
+the local operator CLI, migrations and login. An installation drill also needs
+its actual backup transport, identity provider, operator response and workload.
 
 ## Native CLI and acceptance limits
 

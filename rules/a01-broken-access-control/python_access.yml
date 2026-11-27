@@ -121,31 +121,20 @@ rules:
     message: "SQLAlchemy query does not include a tenant scope filter. In multi-tenant applications, every query must be scoped to the current tenant to prevent cross-tenant data access."
 
   - id: "AEG-AC-PY-006"
-    name: "Unsafe file path construction from user input"
+    name: "Request-controlled filesystem path"
     description: >
-      A file path is constructed using user-supplied input (query parameters, form
-      data, URL path segments) concatenated or formatted directly into an os.path.join,
-      open(), or pathlib.Path call without proper sanitization. An attacker can inject
-      path traversal sequences (../) to read or write files outside the intended
-      directory, potentially accessing sensitive system files or overwriting critical
-      application data.
-    severity: critical
+      HTTP input reaches the path of a filesystem operation. Review the
+      application's authorization and directory restrictions for this path.
+    severity: high
     confidence: 0.88
     languages: [python]
     cwe_id: 22
     owasp_category: "A01:2021-Broken Access Control"
-    patterns:
-      - taint:
-          source: "(request\\.GET|request\\.POST|request\\.args|request\\.form|request\\.FILES)"
-          sink: "(os\\.path\\.join|open\\(|pathlib\\.Path|shutil\\.(copy|move)|send_file)"
-          missing_sanitizer: "(os\\.path\\.abspath|os\\.path\\.realpath|secure_filename|\\.resolve\\(\\)\\.relative_to)"
-      - regex_match: "os\\.path\\.join\\(.*request\\.(GET|POST|args|form)\\["
-    defense_patterns:
-      - "secure_filename(filename)"
-      - "os.path.realpath(path).startswith(allowed_dir)"
-      - "Path(path).resolve().relative_to(base_dir)"
-      - "os.path.abspath(path).startswith(UPLOAD_DIR)"
-    message: "File path constructed from user input without path traversal protection. Use secure_filename(), realpath validation, or Path.resolve().relative_to() to constrain file access."
+    taint:
+      source_types: [http_param, http_query, http_body, http_header, http_cookie, form_input]
+      sink_types: [file_access, file_metadata]
+      disposition: advisory
+    message: "Request input from {source} reaches a path used by {sink}. Check the allowed directory and the caller's access to the selected file."
 
   - id: "AEG-AC-PY-007"
     name: "Missing CSRF protection on state-changing view"

@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "command": "node --experimental-strip-types dashboard/scripts/measure-worker-recovery.mjs",
+  "runs": [
+    {
+      "version": 1,
+      "testedAt": "2026-11-21T14:40:38.646Z",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "node": "v26.7.0",
+      "implementation": {
+        "rehearsalSha256": "76bd380102d265ef6e1fe55f8d61f2b7f9518123816f8d0872c546e295fd77c1",
+        "scanner": {
+          "version": "0.3.0b1",
+          "python": "3.14.7",
+          "treeSitter": "0.26.0",
+          "engineDigest": "sha256:8c338fe7a2805ba7099273197ab3eb707b4690a26205149e1269d18fa3579ac1",
+          "rulesDigest": "sha256:37f5c1e0dd8b1c2e81e612ca255c26640b3d62b60e4099616120d9026a21fcac"
+        }
+      },
+      "workload": {
+        "ordinaryProjects": 24,
+        "drainProcesses": 4,
+        "terminatedProcesses": 3,
+        "source": "Aegify dashboard TypeScript components and a synthetic Wrangler manifest",
+        "filesPerSource": 41,
+        "sourceBytesPerJob": 210250,
+        "sourceSha256": "5db8fba81759acfb66637c8a0ba99e847868986bcbd5aae6a49b65dcee6f41d8",
+        "fixtureCommit": "7936a0fd4de567ad72a210109387c121baf98aae",
+        "historicalAuditEvents": 24000,
+        "provider": "scripted in-process transport"
+      },
+      "ordinary": {
+        "source": {
+          "claimsPerProcess": [
+            12,
+            12
+          ],
+          "claim": {
+            "samples": 24,
+            "medianMs": 3.87,
+            "p95Ms": 1624.75,
+            "maxMs": 3088.92
+          },
+          "service": {
+            "samples": 24,
+            "medianMs": 4205.27,
+            "p95Ms": 4859.5,
+            "maxMs": 4940.26
+          }
+        },
+        "ai": {
+          "claimsPerProcess": [
+            14,
+            10
+          ],
+          "claim": {
+            "samples": 24,
+            "medianMs": 73,
+            "p95Ms": 146.41,
+            "maxMs": 446.27
+          },
+          "service": {
+            "samples": 24,
+            "medianMs": 164.87,
+            "p95Ms": 1372.59,
+            "maxMs": 1732.6
+          }
+        }
+      },
+      "drainMs": 54992,
+      "totalMs": 129245,
+      "source": {
+        "published": 25,
+        "redactedConfigurationFindings": 25,
+        "interruptedAttempts": 2,
+        "leaseMs": 120000,
+        "afterExpiryMs": 14
+      },
+      "ai": {
+        "jobs": 26,
+        "leaseMs": 120000,
+        "resumedBeforeDispatchAttempts": 2,
+        "afterExpiryMs": 143,
+        "interruptedAfterDispatch": "partial",
+        "publishedBeforeInterruption": 50,
+        "transportEntries": 27,
+        "unresolvedDispatches": 1,
+        "replayedDispatches": 0
+      },
+      "backup": {
+        "snapshotMs": 58,
+        "archiveMs": 308,
+        "verifyMs": 157,
+        "restoreMs": 421,
+        "archiveBytes": 23216896,
+        "auditTransactions": 82,
+        "copiedAuditTransactions": 15,
+        "auditTransactionsWhollyInsideSnapshot": 10,
+        "restoredSourceJobs": 25,
+        "restoredReviewJobs": 26,
+        "restoredReviews": 74,
+        "bothBoundaryMarkersChecked": true,
+        "activeRestoredJobs": 0,
+        "interruptedReviewsPreserved": 50,
+        "restoredAccountDisabled": true
+      }
+    },
+    {
+      "version": 1,
+      "testedAt": "2026-11-21T14:42:45.381Z",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "node": "v26.7.0",
+      "implementation": {
+        "rehearsalSha256": "76bd380102d265ef6e1fe55f8d61f2b7f9518123816f8d0872c546e295fd77c1",
+        "scanner": {
+          "version": "0.3.0b1",
+          "python": "3.14.7",
+          "treeSitter": "0.26.0",
+          "engineDigest": "sha256:8c338fe7a2805ba7099273197ab3eb707b4690a26205149e1269d18fa3579ac1",
+          "rulesDigest": "sha256:37f5c1e0dd8b1c2e81e612ca255c26640b3d62b60e4099616120d9026a21fcac"
+        }
+      },
+      "workload": {
+        "ordinaryProjects": 24,
+        "drainProcesses": 4,
+        "terminatedProcesses": 3,
+        "source": "Aegify dashboard TypeScript components and a synthetic Wrangler manifest",
+        "filesPerSource": 41,
+        "sourceBytesPerJob": 210250,
+        "sourceSha256": "5db8fba81759acfb66637c8a0ba99e847868986bcbd5aae6a49b65dcee6f41d8",
+        "fixtureCommit": "7936a0fd4de567ad72a210109387c121baf98aae",
+        "historicalAuditEvents": 24000,
+        "provider": "scripted in-process transport"
+      },
+      "ordinary": {
+        "source": {
+          "claimsPerProcess": [
+            12,
+            12
+          ],
+          "claim": {
+            "samples": 24,
+            "medianMs": 3.7,
+            "p95Ms": 21.83,
+            "maxMs": 698.14
+          },
+          "service": {
+            "samples": 24,
+            "medianMs": 4071.06,
+            "p95Ms": 4235.75,
+            "maxMs": 4333.06
+          }
+        },
+        "ai": {
+          "claimsPerProcess": [
+            13,
+            11
+          ],
+          "claim": {
+            "samples": 24,
+            "medianMs": 70.16,
+            "p95Ms": 151.99,
+            "maxMs": 500.62
+          },
+          "service": {
+            "samples": 24,
+            "medianMs": 142.65,
+            "p95Ms": 2250.71,
+            "maxMs": 2695.86
+          }
+        }
+      },
+      "drainMs": 50181,
+      "totalMs": 126522,
+      "source": {
+        "published": 25,
+        "redactedConfigurationFindings": 25,
+        "interruptedAttempts": 2,
+        "leaseMs": 120000,
+        "afterExpiryMs": 130
+      },
+      "ai": {
+        "jobs": 26,
+        "leaseMs": 120000,
+        "resumedBeforeDispatchAttempts": 2,
+        "afterExpiryMs": 130,
+        "interruptedAfterDispatch": "partial",
+        "publishedBeforeInterruption": 50,
+        "transportEntries": 27,
+        "unresolvedDispatches": 1,
+        "replayedDispatches": 0
+      },
+      "backup": {
+        "snapshotMs": 59,
+        "archiveMs": 239,
+        "verifyMs": 143,
+        "restoreMs": 253,
+        "archiveBytes": 23184128,
+        "auditTransactions": 12,
+        "copiedAuditTransactions": 7,
+        "auditTransactionsWhollyInsideSnapshot": 0,
+        "restoredSourceJobs": 25,
+        "restoredReviewJobs": 26,
+        "restoredReviews": 71,
+        "bothBoundaryMarkersChecked": true,
+        "activeRestoredJobs": 0,
+        "interruptedReviewsPreserved": 50,
+        "restoredAccountDisabled": true
+      }
+    }
+  ]
+}

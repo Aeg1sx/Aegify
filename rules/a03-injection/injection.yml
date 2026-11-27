@@ -2,10 +2,9 @@ rules:
   - id: AEG-A03-001
     name: LDAP Injection
     description: >
-      User-controlled input flows into an LDAP query filter without
-      sanitization. An attacker can manipulate the LDAP filter to bypass
-      authentication, enumerate directory entries, or extract sensitive
-      attributes from the directory service.
+      An external input reaches the filter passed to a directory search.
+      Check which part of the filter it controls and how the application
+      encodes assertion values.
     severity: high
     confidence: 0.8
     languages: [python, javascript, typescript, java, go, kotlin]
@@ -13,13 +12,13 @@ rules:
     owasp_category: "A03:2021-Injection"
     defense_patterns: ["ldap_escape", "escape_filter_chars", "parameterized_filter", "ldap_sanitize"]
     taint:
-      source_types: [http_param, http_body]
-      sink_pattern: "(ldap\\.search|ldap_search|search_s|search_ext_s|LdapConnection\\.search|DirContext\\.search|ldap\\.Search)"
-      sink_types: [ldap_query]
+      source_types: [http_param, http_body, http_query, http_header, http_cookie, form_input]
+      sink_pattern: "(ldap3\\.Connection\\.search|ldap\\.ldapobject\\.LDAPObject\\.search|ldap\\.search|ldap_search|search_s|search_ext_s|LdapConnection\\.search|DirContext\\.search|ldap\\.Search)"
+      sink_types: [ldap_query, ldap_search_filter]
     message: >
-      Potential LDAP injection: user input from '{source}' (line
-      {source_line}) flows into LDAP query '{sink}' (line {sink_line})
-      without proper escaping or parameterization.
+      Input from '{source}' on line {source_line} reaches the LDAP search filter
+      in '{sink}' on line {sink_line}. Keep filter syntax fixed and encode each
+      external assertion value for the LDAP filter.
 
   - id: AEG-A03-002
     name: XPath Injection
@@ -30,7 +29,7 @@ rules:
       structure.
     severity: high
     confidence: 0.8
-    languages: [python, javascript, typescript, java, go, kotlin]
+    languages: [javascript, typescript, java, go, kotlin]
     cwe_id: 643
     owasp_category: "A03:2021-Injection"
     defense_patterns: ["xpath_escape", "parameterized_xpath", "XPathExpression", "precompiled_xpath"]
@@ -118,7 +117,7 @@ rules:
       expressions.
 
   - id: AEG-A03-006
-    name: OS Command Injection via shell=True
+    name: Untrusted OS command input
     description: >
       User-controlled input is passed to a system command executed with
       shell=True or through a shell interpreter. An attacker can chain
@@ -135,8 +134,6 @@ rules:
       sink_pattern: "(subprocess\\.(call|run|Popen|check_output|check_call)|os\\.(system|popen|exec)|child_process\\.(exec|execSync)|Runtime\\.getRuntime\\(\\)\\.exec|exec\\.Command)"
       sink_types: [os_command]
     patterns:
-      - callee_match: "(subprocess\\.(call|run|Popen|check_output|check_call))"
-        args_match: "shell\\s*=\\s*True"
       - callee_match: "(os\\.system|os\\.popen|child_process\\.exec|child_process\\.execSync)"
         args_match: "(request|req|input|user|param|arg|query|\\+|f['\"]|format|%s|\\.join)"
     message: >
@@ -246,7 +243,7 @@ rules:
       sink_pattern: "(etree\\.parse|etree\\.fromstring|minidom\\.parse|xml\\.sax\\.parse|SAXParser|DocumentBuilder|XMLReader|parseString|DOMParser|xml\\.NewDecoder|xml\\.Unmarshal)"
       sink_types: [xml_parse]
     patterns:
-      - callee_match: "(etree\\.(parse|fromstring|iterparse)|minidom\\.parse(String)?|xml\\.sax\\.(parse|make_parser)|pulldom\\.parse)"
+      - callee_match: "etree\\.(parse|fromstring|iterparse)"
         missing_check: "(defusedxml|resolve_entities\\s*=\\s*False|forbid_dtd|forbid_entities)"
       - callee_match: "(DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|XMLReader)"
         missing_check: "(FEATURE_SECURE_PROCESSING|disallow-doctype-decl|SUPPORT_DTD.*false|IS_SUPPORTING_EXTERNAL_ENTITIES.*false)"

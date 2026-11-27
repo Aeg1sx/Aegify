@@ -7,6 +7,40 @@ AI review in Aegify is an enrichment layer. It cannot close, confirm, suppress,
 or raise the evidence state of a finding. A deterministic scanner result and a
 human triage decision remain authoritative.
 
+## Trace a conclusion back to its source
+
+Open the agent run, select the static review or final assessment, and expand
+**Review handoff**. A cited evidence ID opens its record in the preceding stage.
+The handoff retains up to 16 references per stage along with its completion
+status, omitted counts and unresolved questions.
+
+In scanner runs with source tools enabled, an upstream citation also carries
+the repository, file and inclusive line range verified by the source reader.
+The next reviewer can reopen those lines and cite its own read. If a gateway
+configuration has several possible owners or only partial coverage, the final
+assessment records that gap. The stored scan keeps every finding. A provider
+synthesis request includes up to 25 finding summaries and the count omitted.
+
+## Configure the review provider
+
+Workspace administrators can open **Settings → AI review** to choose a service preset, check the request URL and edit credentials. The **Saved connection** panel shows the saved protocol and model while you edit. On a phone, select **Saved connection** beside the form heading to jump there. [Desktop settings](/assets/aegify-workspace-settings-desktop.png) · [Mobile settings](/assets/aegify-workspace-settings-mobile.png) · [Dark theme](/assets/aegify-workspace-settings-dark.png)
+
+**Save changes** applies to the selected section. You can switch sections with the arrow keys and return to an unfinished draft. Saving or discarding a connection draft makes its test available. The test asks for confirmation before contacting the service.
+
+## Start a review
+
+In **AI reviews**, choose a project and a scan. **Quick Review** uses findings
+and excerpts. **Deep Analysis** adds call graph context. **Source
+Investigation** uses selected findings and a retained repository snapshot.
+The method selector uses **Quick**, **Deep** and **Source** on small screens.
+
+**Review options and limits** includes the optional API contract context and
+the provider limits for the selected method. Start the review to see its run
+status. After a batch finishes, **View saved results** moves to the findings.
+[Desktop setup](/assets/aegify-review-setup-desktop.png) · [Mobile setup](/assets/aegify-review-setup-mobile.png)
+
+**Recent runs** lists each repository, review method, outcome and the time the review was requested. Select a run to read its saved results. **Back to recent runs** returns focus to that run. On a phone, the **Recent runs** link beside the page title jumps past the setup form.
+
 ## Structured review contract
 
 AI finding reviews record one of `likely_true_positive`,
@@ -15,13 +49,27 @@ confidence estimate, remediation advice, supplied evidence for/against the
 conclusion and explicit evidence gaps. Dashboard jobs bind these suggestions
 to their provider, model, input and prompt identities.
 
+For a source-backed positive or false-positive suggestion, validated citations
+must cover the entire reported line range in the same repository and file.
+Several adjacent citations can cover a multi-line finding. A missing line,
+missing directional evidence or a mismatched source leaves the suggestion at
+`needs_review`. Saved scanner reviews can be graded offline against separately
+supplied source-bound labels with `aegify benchmark-reviews`. The example in
+`scanner/benchmarks/source-review-v1` includes positive, negative and
+insufficient-evidence cases.
+
 The scanner-side review schema additionally supports corrected code, ordered
 fix steps, bounded scenario/fixture guidance and retained tool evidence. These
 fields do not imply runtime observation or execution, and their presence in
 that schema does not mean every provider or dashboard review supplies them.
 
-The dashboard stores this as a suggestion. A user must separately accept or
-reject the suggestion through the finding lifecycle.
+In Findings, open a row to see its source location and recorded evidence.
+The full finding shows the model's reasoning, supporting evidence, contrary
+evidence and unresolved questions. A reviewer records the disposition separately.
+This workflow draws on Cloudflare's use of bounded code investigation and
+HackerOne's practice of presenting recommendations for human triage.
+[Cloudflare Managed Defense](https://blog.cloudflare.com/vulnerability-discovery-remediation/)
+and [HackerOne signal enrichment](https://docs.hackerone.com/en/articles/13603896-agentic-signal-enrichment).
 
 Dashboard AI review is a durable `LlmJob` executed by the separate AI worker.
 The web process queues work; renewable leases, deadlines and permission checks
@@ -38,9 +86,20 @@ The database also holds a nullable unique key for each active scan review, so
 concurrent requests cannot enqueue duplicate active work. Valid review output,
 its call receipt and retained narrative publish in one transaction. Accepted
 or rejected human decisions are preserved while the new review is saved in
-history. Choose a run's **Details** to inspect its retained results and compare
-them with the current finding. See [saved review operations](/operations/self-hosted-workers#compare-saved-review-results)
-for migration, project access, bounded retrieval, backup and retention behavior.
+history. In **Recent runs**, select a run to open its results. Each finding
+opens with the saved model verdict, the current triage status and the source
+excerpt used by that run. A known excerpt offset highlights the reported
+lines. Longer excerpts without a recorded offset use relative line numbers.
+
+On a narrow screen, use **Finding in this run** to switch between results.
+**Needs review** displays an explanation and the available evidence gaps.
+Directional verdicts also display the model's estimate. **Review provenance**
+contains the provider, model and digests. The evidence download includes the
+verified record. [Saved review operations](/operations/self-hosted-workers#compare-saved-review-results)
+
+![Saved review with the cited source and the tracked finding status](/assets/aegify-saved-review-desktop.png)
+
+[Mobile review with the finding selector](/assets/aegify-saved-review-mobile.png) · [Dark appearance](/assets/aegify-saved-review-dark.png)
 
 The dashboard's **Source Investigation** mode uses an iterative source-tool loop
 over the stored repository snapshot. It supports selected findings, encrypted
@@ -75,6 +134,11 @@ engine used by the CLI. A separate worker fetches and seals a source snapshot,
 records progress and publishes results atomically. See
 [worker operations](/operations/self-hosted-workers) for installation, recovery,
 resource bounds and source retention. Source scanning does not require an AI key.
+
+Wrangler manifests are analyzed by the deterministic scanner. The inspector
+shows value-free settings, and dashboard model prompts omit raw configuration
+excerpts, including those in older imported findings.
+[Cloudflare configuration audit](/analysis/cloudflare-configuration).
 
 ## Historical repository AI candidates
 
@@ -175,6 +239,17 @@ line numbers remain tied to the original file. Redaction is not a general-purpos
 data-loss-prevention guarantee: configure providers permitted to receive the
 selected project source.
 
+When Aegify traces a literal Python key to an HMAC JWT signing call, it masks
+the literal in finding excerpts and CLI source reads. For dashboard reviews,
+the worker records the affected lines and the digest of the masked file. The
+dashboard requires at least one redacted range and verifies that digest before
+sharing the source with the model. If a signing key comes from configuration
+and the worker finds no literal to mask, the dashboard omits that file.
+Start a new review to replace a saved job that used the older signing-key
+redaction check.
+Review history shows how many candidate Python files it omitted when the
+saved scan lacked a verifiable redaction record.
+
 Source reads issue citation IDs bound to repository, relative path, original
 source digest, line range and redacted excerpt digest. The model selects these
 IDs; it cannot supply a new location. The executor checks them against retained
@@ -183,7 +258,31 @@ covering the supplied finding's repository and entire range. A valid reference
 establishes which code was read; it does not establish that the model's reasoning
 is correct or that runtime impact occurred.
 
+### Inspect a recorded analysis
+
+Open a run from **AI agents**. A completed run opens its final assessment when
+available. Select **Static analysis** to follow the recorded entry point, source
+locations and sink. **Stage evidence** contains the agent, prompt digest and
+evidence references. **Run history** contains the artifact digest and the
+sequence of recorded events. On desktop, use the up and down arrow keys to move
+between stages. On a phone, use the **Stage** selector.
+
+The following views use sample billing data.
+[Desktop analysis](/assets/aegify-agent-analysis-desktop.png) ·
+[Mobile analysis](/assets/aegify-agent-analysis-mobile.png)
+
+### Read a finding’s saved model review
+
+Open a finding and scroll to **Model review**. Select a review language and choose **Run review**, or **Run again** when a previous review is available. A current review shows the model’s recorded verdict and supporting evidence. Older batch records that only contain a false-positive flag show **Likely false positive** when the flag was set and **Needs human review** when it was clear. The branch decision is recorded separately in **Triage decision**.
+
 ### Review activity in the dashboard
+
+On **AI reviews**, **Run status** shows how many findings the worker has saved,
+the current worker attempt and any recovery in progress. **Waiting for recovery**
+means the job’s own lease has expired or is missing. Another worker can still be
+online. A replacement checks the saved calls before it resumes. If a request
+was sent and its outcome is unknown, open **View saved results** for the batches
+that finished. [Worker interruption and restore](/operations/backup-recovery#rehearse-worker-interruption)
 
 SARIF uploads preserve source references and tool spans with the AI suggestion.
 The finding page shows retained excerpts with line numbers, source and excerpt

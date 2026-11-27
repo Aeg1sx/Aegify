@@ -1,7 +1,9 @@
+import { WORKER_FRESH_MS } from "@/lib/worker-registry";
 import { accessError, requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { cancelLlmJob, llmCallMetadata, llmJobMetadata } from "@/lib/llm-jobs";
+import { observeJob } from "@/lib/job-observation";
 import { readAuthBody } from "@/lib/auth-request";
 import { AccessDenied, authorizeProject } from "@/lib/project-access";
 
@@ -9,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const access = await requireResource(request, "llmJob", id, "viewer");
   if (access instanceof Response) return access;
-  const job = await prisma.llmJob.findUnique({ where: { id }, select: { ...llmJobMetadata,
+  const job = await prisma.llmJob.findUnique({ where: { id }, select: { ...llmJobMetadata, leaseExpiresAt: true,
     scan: { select: { id: true, repository: true, branch: true, status: true } },
     calls: { orderBy: [{ batchIndex: "asc" }, { roundIndex: "asc" }], take: 20, select: llmCallMetadata },
     events: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100, select: { id: true, code: true, message: true, details: true, createdAt: true } },
@@ -18,8 +20,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   let canCancel = false;
   try { if (job.projectId) { await authorizeProject(prisma, access, job.projectId, "maintainer"); canCancel = true; } }
   catch (error) { if (!(error instanceof AccessDenied)) throw error; }
-  const workerReady = (await prisma.llmWorker.count({ where: { lastSeenAt: { gt: new Date(Date.now() - 45_000) } } })) > 0;
-  return NextResponse.json({ ...job, workerReady, permissions: { canCancel } }, { headers: { "Cache-Control": "no-store" } });
+  const workerReady = (await prisma.llmWorker.count({ where: { lastSeenAt: { gt: new Date(Date.now() - WORKER_FRESH_MS) } } })) > 0;
+  const { leaseExpiresAt, ...detail } = job;
+  return NextResponse.json({ ...detail, observation: observeJob({ ...detail, leaseExpiresAt }), workerReady, permissions: { canCancel } }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

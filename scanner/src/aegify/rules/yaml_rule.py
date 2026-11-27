@@ -22,6 +22,10 @@ from aegify.models import (
 )
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
 from aegify.rules.call_options import BooleanOptionSpec
+from aegify.scanner.python_deserialization import extended_loaders, reader
+from aegify.scanner.python_process import process_input
+from aegify.scanner.python_scope import PythonModules
+from aegify.scanner.python_signing_keys import REDACTED_SIGNING_KEY, protected_lines
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +97,21 @@ class YAMLRule(SecurityRule):
     def _eval_semantic(self, file_asts: list[FileAST]) -> list[Finding]:
         """Evaluate normalized same-function semantic evidence."""
         semantic = self.spec.semantic
+        if semantic is not None and semantic.kind in {
+            "python_tls_verification",
+            "python_http_verify_option",
+        }:
+            return self._eval_tls(file_asts, http_only=semantic.kind == "python_http_verify_option")
+        if semantic is not None and semantic.kind == "python_jinja_autoescape":
+            return self._eval_jinja_autoescape(file_asts)
+        if semantic is not None and semantic.kind == "python_jwt_signing_key":
+            return self._eval_signing_keys(file_asts)
+        if semantic is not None and semantic.kind == "credential_randomness":
+            return self._eval_credential_randomness(file_asts)
+        if semantic is not None and semantic.kind in {"python_yaml_loader", "python_pickle_input"}:
+            return self._eval_deserialization(file_asts, semantic.kind)
+        if semantic is not None and semantic.kind == "python_xml_configuration":
+            return self._eval_xml_configuration(file_asts)
         if semantic is None or semantic.kind != "database_race":
             return []
 
@@ -174,12 +193,286 @@ class YAMLRule(SecurityRule):
                     break
         return findings
 
+    def _eval_deserialization(self, files: list[FileAST], kind: str) -> list[Finding]:
+        findings = []
+        extensions = extended_loaders(files)
+        for file in files:
+            if file.language != Language.PYTHON or (
+                self.definition.languages and file.language not in self.definition.languages
+            ):
+                continue
+            count = 0
+            for call in file.calls:
+                fact = reader(call, file)
+                if not fact or (kind == "python_pickle_input") != (fact.mode == "pickle"):
+                    continue
+                registrations = extensions[file.repository_id]
+                changed = fact.mode != "pickle" and (
+                    fact.loader in registrations or "*" in registrations
+                )
+                if changed:
+                    detail = (
+                        "This repository extends the loader. "
+                        "Review the registered constructors and resolvers."
+                    )
+                elif fact.mode == "restricted" or (fact.passive_input and fact.mode != "unknown"):
+                    continue
+                elif fact.mode == "unknown":
+                    detail = (
+                        "The loader could not be established. "
+                        "Check the installed version and the loader supplied here."
+                    )
+                elif fact.mode == "full":
+                    detail = (
+                        "FullLoader supports additional Python types. "
+                        "Review whether the input and enabled types are appropriate."
+                    )
+                elif fact.mode == "object":
+                    detail = (
+                        f"{fact.loader} permits Python object construction. "
+                        "Verify the source of the input."
+                    )
+                else:
+                    detail = (
+                        "Pickle can reconstruct Python objects. "
+                        "Verify the source and integrity of the input."
+                    )
+                if fact.deferred:
+                    detail += " The stream is read when the returned iterator is consumed."
+                if count >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
+                    break
+                findings.append(
+                    self._create_finding(
+                        file_path=file.file_path,
+                        line_start=call.line,
+                        line_end=call.line,
+                        code_snippet="",
+                        message=f"{fact.api} on line {call.line}. {detail}",
+                        evidence_state=EvidenceState.CANDIDATE,
+                        disposition=FindingDisposition.ADVISORY,
+                    )
+                )
+                count += 1
+        return findings
+
+    def _eval_jinja_autoescape(self, files: list[FileAST]) -> list[Finding]:
+        modules = PythonModules(files)
+        findings = []
+        for file in files:
+            if (
+                file.language != Language.PYTHON
+                or (self.definition.languages and file.language not in self.definition.languages)
+                or not modules.external(file, "jinja2")
+            ):
+                continue
+            count = 0
+            for fact in file.jinja_environments:
+                if fact.use == "web_settings":
+                    if not modules.external(file, "tornado"):
+                        continue
+                    context = "supplies the template environment in the web application's settings"
+                else:
+                    context = "loads an HTML template"
+                if count >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
+                    break
+                condition = " when the caller omits its options" if fact.optional_options else ""
+                finding = self._create_finding(
+                    file.file_path,
+                    fact.line,
+                    fact.line,
+                    "",
+                    f"This Jinja environment leaves automatic HTML escaping off{condition} and "
+                    f"{context} on line {fact.use_line}. Check how template values are supplied.",
+                    evidence_state=EvidenceState.CANDIDATE,
+                    disposition=FindingDisposition.ADVISORY,
+                )
+                finding.remediation = (
+                    "Use select_autoescape or autoescape=True when rendering HTML templates."
+                )
+                findings.append(finding)
+                count += 1
+        return findings
+
+    def _eval_signing_keys(self, file_asts: list[FileAST]) -> list[Finding]:
+        modules = PythonModules(file_asts)
+        findings = []
+        for file in file_asts:
+            seen = set()
+            for key in file.python_signing_keys:
+                if key.line in seen or not modules.external(file, key.api):
+                    continue
+                seen.add(key.line)
+                findings.append(
+                    self._create_finding(
+                        file.file_path,
+                        key.line,
+                        key.end_line,
+                        "",
+                        f"A literal in source supplies the {key.algorithm} signing key for "
+                        f"{key.api} on line {key.use_line}. Load the key from secret storage "
+                        "and plan rotation if it was distributed.",
+                        evidence_state=EvidenceState.REACHABLE,
+                        disposition=FindingDisposition.ADVISORY,
+                    )
+                )
+        return findings
+
+    def _eval_tls(self, files: list[FileAST], *, http_only: bool) -> list[Finding]:
+        modules = PythonModules(files)
+        findings = []
+        for file in files:
+            if file.language != Language.PYTHON or (
+                self.definition.languages and file.language not in self.definition.languages
+            ):
+                continue
+            count = 0
+            for fact in file.tls_settings:
+                if http_only and (fact.mode != "http_option" or fact.option != "verify"):
+                    continue
+                if not modules.external(file, fact.api) or (
+                    fact.mode == "unverified_context" and not modules.external(file, "ssl")
+                ):
+                    continue
+                if count >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
+                    break
+                if fact.mode == "https_default":
+                    message = (
+                        "The standard library's default HTTPS context factory is assigned "
+                        "ssl._create_unverified_context."
+                    )
+                    fix = "Remove the global override so HTTPS clients use the verified default."
+                elif fact.mode == "http_option":
+                    message = (
+                        f"{fact.api} sets {fact.option}=False, disabling certificate "
+                        "verification for HTTPS."
+                    )
+                    fix = (
+                        f"Remove the explicit `{fact.option}=False` override. For a private "
+                        "certificate authority, configure the client to trust its CA certificate."
+                    )
+                else:
+                    message = (
+                        f"{fact.api} receives an explicitly unverified TLS context."
+                        if fact.mode == "unverified_context"
+                        else f"{fact.api} uses the standard library's implicit mail-client "
+                        "TLS context, which leaves the server certificate unverified."
+                    )
+                    fix = (
+                        "Pass `context=ssl.create_default_context()` to validate the mail "
+                        "server's certificate and hostname. Supply your CA file if required."
+                    )
+                finding = self._create_finding(
+                    file_path=file.file_path,
+                    line_start=fact.line,
+                    line_end=fact.line,
+                    code_snippet="",
+                    message=message,
+                    evidence_state=EvidenceState.CANDIDATE,
+                    disposition=FindingDisposition.ADVISORY,
+                )
+                finding.remediation = fix
+                findings.append(finding)
+                count += 1
+        return findings
+
+    def _eval_xml_configuration(self, file_asts: list[FileAST]) -> list[Finding]:
+        findings = []
+        for file in file_asts:
+            if file.language != Language.PYTHON or (
+                self.definition.languages and file.language not in self.definition.languages
+            ):
+                continue
+            count = 0
+            for call in file.calls:
+                xml = call.xml_invocation
+                if (
+                    not xml
+                    or xml.fixed_input
+                    or xml.mode not in {"entities_enabled", "parser_unknown"}
+                ):
+                    continue
+                if count >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
+                    break
+                if xml.mode == "entities_enabled":
+                    detail = (
+                        f"External general entities were enabled on line {xml.configuration_line}."
+                    )
+                else:
+                    detail = (
+                        "The supplied parser's external-entity configuration could not be resolved."
+                    )
+                findings.append(
+                    self._create_finding(
+                        file_path=file.file_path,
+                        line_start=call.line,
+                        line_end=call.line,
+                        code_snippet="",
+                        message=(
+                            f"{xml.api} on line {call.line} consumes XML. {detail} "
+                            "Review the input and parser configuration."
+                        ),
+                        evidence_state=EvidenceState.CANDIDATE,
+                        disposition=FindingDisposition.ADVISORY,
+                    )
+                )
+                count += 1
+        return findings
+
+    def _eval_credential_randomness(self, file_asts: list[FileAST]) -> list[Finding]:
+        findings = []
+        for file in file_asts:
+            if file.language != Language.PYTHON or (
+                self.definition.languages and file.language not in self.definition.languages
+            ):
+                continue
+            facts = file.credential_randomness
+            if len(facts) > self._MAX_FINDINGS_PER_FILE:
+                self.evaluation_limited = True
+            for fact in facts[: self._MAX_FINDINGS_PER_FILE]:
+                comparison = (
+                    f" The comparison is on line {fact.comparison_line}."
+                    if fact.comparison_line
+                    else ""
+                )
+                findings.append(
+                    self._create_finding(
+                        file_path=file.file_path,
+                        line_start=fact.use_line,
+                        line_end=fact.use_line,
+                        code_snippet="",
+                        message=(
+                            f"{fact.generator} on line {fact.generator_line} supplies the "
+                            f"{fact.use} on line {fact.use_line}.{comparison} "
+                            "Use the secrets module for credential values."
+                        ),
+                        evidence_state=EvidenceState.REACHABLE,
+                        disposition=FindingDisposition.ADVISORY,
+                    )
+                )
+        return findings
+
     def _eval_taint(self, taint_flows: list[TaintFlow], file_asts: list[FileAST]) -> list[Finding]:
         """Evaluate taint-based rules."""
         findings: list[Finding] = []
         taint = self.spec.taint
         if not taint:
             return findings
+
+        shell_states: dict[tuple[str, int, str], set[bool | None]] = {}
+        if taint.subprocess_shell:
+            modules = PythonModules(file_asts)
+            for file in file_asts:
+                if file.language == Language.PYTHON:
+                    for call in file.calls:
+                        if fact := process_input(call, file, modules):
+                            key = (file.file_path, call.line, fact.api)
+                            # An explicit interpreter can consume command text with shell=False.
+                            mode = True if fact.command_parts else fact.shell
+                            shell_states.setdefault(key, set()).add(mode)
 
         # Build file_path -> FileAST index for O(1) lookup (replaces O(n) linear scan)
         fp_index: dict[str, FileAST] = {a.file_path: a for a in file_asts}
@@ -215,6 +508,12 @@ class YAMLRule(SecurityRule):
                 if not taint._sink_pattern_re.search(flow.sink.function):
                     continue
 
+            # Only suppress when every matching invocation on this line proves shell=False.
+            if taint.subprocess_shell and shell_states.get(
+                (flow.sink.file_path, flow.sink.line, flow.sink.function)
+            ) == {False}:
+                continue
+
             # Check source pattern (pre-compiled regex)
             if taint._source_pattern_re:
                 if not taint._source_pattern_re.search(flow.source.variable):
@@ -246,7 +545,7 @@ class YAMLRule(SecurityRule):
                     ),
                     taint_flow=flow,
                     evidence_state=EvidenceState.REACHABLE,
-                    disposition=FindingDisposition.BLOCKING,
+                    disposition=taint.disposition,
                 )
             )
 
@@ -343,11 +642,16 @@ class YAMLRule(SecurityRule):
 
         findings: list[Finding] = []
         lines = source.splitlines()
+        hidden = protected_lines(ast.python_signing_keys)
         for base_line, segment in self._source_segments(ast, source, pattern.scope):
             matches = pattern.find_source_matches(segment)
             for start, matched_text in matches:
                 line_num = base_line + segment.count("\n", 0, start)
                 snippet = lines[max(0, line_num - 1 - 5) : min(len(lines), line_num + 5)]
+                if hidden and any(
+                    line_num <= n <= line_num + matched_text.count("\n") for n in hidden
+                ):
+                    matched_text = REDACTED_SIGNING_KEY
                 msg = self._safe_format(
                     self.spec.message,
                     callee=matched_text[:80],
@@ -473,7 +777,11 @@ class YAMLRule(SecurityRule):
                 callee=callee_full,
                 line=call.line,
                 file=ast.file_path,
-                source=(" ".join(call.arguments)[:80] or callee_full),
+                source=(
+                    REDACTED_SIGNING_KEY
+                    if ast.python_signing_keys
+                    else " ".join(call.arguments)[:80] or callee_full
+                ),
                 source_line=call.line,
                 sink=callee_full,
                 sink_line=call.line,
@@ -993,7 +1301,9 @@ class TaintSpec:
         self.source_types: list[str] = data.get("source_types", [])
         self.sink_pattern: str | None = data.get("sink_pattern")
         self.source_pattern: str | None = data.get("source_pattern")
+        self.subprocess_shell: bool = data.get("subprocess_shell", False)
         self.ignore_sanitizers: bool = data.get("ignore_sanitizers", False)
+        self.disposition = FindingDisposition(data.get("disposition", "blocking"))
         # Pre-compile regex patterns for performance
         self._sink_pattern_re: re.Pattern[str] | None = (
             re.compile(self.sink_pattern, re.IGNORECASE) if self.sink_pattern else None
@@ -1015,6 +1325,8 @@ class TaintSpec:
             "sink_pattern",
             "source_pattern",
             "ignore_sanitizers",
+            "subprocess_shell",
+            "disposition",
         }
         errors = []
         if any(key not in supported for key in data):
@@ -1051,8 +1363,12 @@ class TaintSpec:
                 errors.append(f"{key} is not a valid regular expression")
             else:
                 selectors = True
+        if "subprocess_shell" in data and type(data["subprocess_shell"]) is not bool:
+            errors.append("subprocess_shell must be a boolean")
         if "ignore_sanitizers" in data and type(data["ignore_sanitizers"]) is not bool:
             errors.append("ignore_sanitizers must be a YAML boolean")
+        if data.get("disposition", "blocking") not in ("blocking", "advisory"):
+            errors.append("taint disposition must be advisory or blocking")
         if not selectors:
             errors.append("taint needs at least one source or sink selector")
         return errors
@@ -1061,10 +1377,20 @@ class TaintSpec:
 class SemanticSpec:
     """Normalized structured evidence detector configuration."""
 
-    _SUPPORTED_KINDS = {"database_race"}
+    FIXED_KINDS = {
+        "python_tls_verification",
+        "python_http_verify_option",
+        "credential_randomness",
+        "python_jwt_signing_key",
+        "python_jinja_autoescape",
+        "python_xml_configuration",
+        "python_yaml_loader",
+        "python_pickle_input",
+    }
 
     def __init__(self, data: dict[str, Any]) -> None:
         self.kind = str(data.get("kind") or "")
+        self._fixed_spec = self.kind in self.FIXED_KINDS and set(data) == {"kind"}
         self.same_receiver = bool(data.get("same_receiver", True))
         self.max_lines_between = int(data.get("max_lines_between") or 20)
         self.read_callee = str(data.get("read_callee") or "")
@@ -1080,8 +1406,8 @@ class SemanticSpec:
 
     @property
     def is_executable(self) -> bool:
-        return bool(
-            self.kind in self._SUPPORTED_KINDS
+        return self._fixed_spec or bool(
+            self.kind == "database_race"
             and self.read_callee
             and self.write_callee
             and self.receiver_match

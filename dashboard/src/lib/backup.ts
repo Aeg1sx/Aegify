@@ -277,8 +277,13 @@ export async function restoreEncryptedBackup(options: BackupKeys & { archivePath
           { sql: 'UPDATE "LlmJob" SET leaseToken = NULL, leaseExpiresAt = NULL, cancelRequestedAt = ?, errorCode = \'recovered_cancelled\' WHERE status IN (\'pending\', \'running\')', args: [now] },
           'DELETE FROM "LlmWorker"',
         ] : []),
-        { sql: 'UPDATE "LlmJob" SET status = \'failed\', activeKey = NULL, errorMessage = ?, completedAt = ? WHERE status IN (\'pending\', \'running\')', args: ["Interrupted by backup recovery; start a new review", now] },
-        { sql: 'UPDATE "AgentRun" SET status = \'cancelled\', errorMessage = ?, completedAt = ? WHERE status IN (\'running\', \'awaiting_approval\')', args: ["Cancelled during backup recovery", now] },
+        { sql: `UPDATE "LlmJob" SET status = CASE WHEN reviewedCount > 0 THEN 'partial' ELSE 'failed' END,
+          activeKey = NULL, errorMessage = ?, completedAt = ? WHERE status IN ('pending', 'running')`, args: ["Interrupted by backup recovery. Review saved results before starting another review.", now] },
+        { sql: `INSERT INTO "AgentEvent" (id, runId, type, actor, message, payload, createdAt)
+          SELECT ? || id, id, 'recovered_cancelled', 'operator:recovery', ?, ?, ? FROM "AgentRun"
+          WHERE status IN ('running', 'awaiting_approval', 'awaiting_evidence')`, args: [restoreId + "-agent-", "Cancelled during backup recovery", JSON.stringify({ restoreId }), now] },
+        { sql: `UPDATE "AgentRun" SET status = 'cancelled', errorMessage = ?, completedAt = ?
+          WHERE status IN ('running', 'awaiting_approval', 'awaiting_evidence')`, args: ["Cancelled during backup recovery", now] },
         { sql: 'UPDATE "AgentStage" SET status = \'failed\', errorMessage = ?, completedAt = ? WHERE status IN (\'pending\', \'running\', \'waiting_approval\')', args: ["Interrupted by backup recovery", now] },
         { sql: 'UPDATE "AgentApproval" SET status = \'expired\', decisionNote = ?, decidedAt = ? WHERE status IN (\'pending\', \'approved\')', args: ["Invalidated during backup recovery", now] },
         { sql: 'INSERT INTO "Setting" (key, value, encrypted, updatedAt) VALUES (?, ?, 0, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, encrypted=0, updatedAt=excluded.updatedAt', args: [RESTORE_SETTING, JSON.stringify(receipt), now] },

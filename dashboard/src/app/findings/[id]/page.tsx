@@ -1,30 +1,31 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
-import { StatusBadge } from "@/components/status-badge";
-import { Separator } from "@/components/ui/separator";
+import { findingStatusOptions, StatusBadge } from "@/components/status-badge";
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUpRight,
+  Download,
   ExternalLink,
-  Bot,
   Loader2,
   AlertCircle,
-  Network,
   ZoomIn,
   ZoomOut,
   Maximize2,
   Focus,
   Search,
   TicketCheck,
-  Save,
 } from "lucide-react";
 import { EvidenceWorkbench } from "@/components/finding/evidence-workbench";
+import { EVIDENCE_LABELS, isConfigurationEvidence } from "@/lib/code-evidence";
+import { isWranglerManifest } from "@/lib/configuration-evidence";
+import { filterQuery, findingFilters } from "@/lib/finding-view";
 import { ApiContractPanel, type ApiContractContextView } from "@/components/finding/api-contract-panel";
 import { AIEvidencePanel, type AIReviewView } from "@/components/finding/ai-evidence-panel";
 import { normalizeAIReviewEvidence } from "@/lib/ai-review-evidence";
@@ -39,7 +40,7 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
 
 interface BatchReviewAnalysis {
   isFalsePositive: boolean;
-  confidence: number;
+  confidence: number | null;
   reasoning: string;
   remediation: string;
   adjustedSeverity?: string;
@@ -186,18 +187,41 @@ function normalizeAIReview(value: Record<string, unknown>): AIReviewView {
   };
 }
 
+function assignmentTags(value: string | undefined): string | null {
+  try {
+    const items: unknown = JSON.parse(value || "[]");
+    return Array.isArray(items) && items.every((item) => typeof item === "string") ? items.join(", ") : null;
+  } catch { return null; }
+}
+
+function WorkflowError({ message, busy, reload }: { message: string; busy: boolean; reload: () => void }) {
+  return <div role="alert" className="mt-3 space-y-2 text-sm">
+    <p className="text-destructive">{message}</p>
+    <p className="text-muted-foreground">Reloading replaces unsaved triage and assignment drafts.</p>
+    <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={busy} onClick={reload}>Reload latest</Button>
+  </div>;
+}
+
 export default function FindingDetailPage() {
-  const params = useParams();
-  const router = useRouter();
+  const { id } = useParams<{ id: string }>();
+  return <FindingDetailRecord key={id} id={id} />;
+}
+
+function FindingDetailRecord({ id }: { id: string }) {
+  const search = useSearchParams();
   const [finding, setFinding] = useState<FindingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [updating, setUpdating] = useState(false);
+  const [triageStatus, setTriageStatus] = useState("");
   const [triageReason, setTriageReason] = useState("");
   const [triageVersion, setTriageVersion] = useState("");
   const [managementVersion, setManagementVersion] = useState("");
   const [triageExpiresAt, setTriageExpiresAt] = useState("");
   const [triageError, setTriageError] = useState("");
+  const [triageNotice, setTriageNotice] = useState("");
+  const [assignmentNotice, setAssignmentNotice] = useState("");
+  const [assignmentError, setAssignmentError] = useState("");
   const [owner, setOwner] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [priority, setPriority] = useState("");
@@ -217,6 +241,7 @@ export default function FindingDetailPage() {
   const [graphCapped, setGraphCapped] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState(false);
   const [selectedGraphNode, setSelectedGraphNode] = useState<GraphNode | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [graphQuery, setGraphQuery] = useState("");
@@ -229,7 +254,7 @@ export default function FindingDetailPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/findings/${params.id}`, { signal: controller.signal })
+    fetch(`/api/findings/${id}`, { signal: controller.signal })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !data.scan) throw new Error(data.error || "Unable to load finding.");
@@ -240,6 +265,7 @@ export default function FindingDetailPage() {
         setLoadError("");
         setFinding(data);
         const workflow = data.workflow || data;
+        setTriageStatus(workflow.status);
         setTriageVersion(workflow.version || "");
         setManagementVersion(workflow.version || "");
         setTriageReason(workflow.reason || data.identity?.triageReason || "");
@@ -247,23 +273,25 @@ export default function FindingDetailPage() {
         setOwner(workflow.owner || "");
         setDueAt(workflow.dueAt?.slice(0, 10) || "");
         setPriority(workflow.priority || "");
-        try {
-          setTags(Array.isArray(JSON.parse(workflow.tags || "[]")) ? JSON.parse(workflow.tags || "[]").join(", ") : "");
-        } catch {
-          setTags("");
-        }
+        setTags(assignmentTags(workflow.tags) ?? "");
         // Load saved LLM analysis (two possible formats)
         if (data.llmAnalysis) {
           try {
             const parsed = JSON.parse(data.llmAnalysis);
-            if (parsed && typeof parsed === "object" && (
-              parsed.analysis || parsed.reasoning || parsed.verdict || parsed.proof
-            )) {
-              // Structured evidence-bound review format
-              setLlmResult(normalizeAIReview(parsed));
-            } else if (parsed && typeof parsed === "object" && "isFalsePositive" in parsed) {
-              // Batch review format
-              setBatchResult(parsed);
+            if (parsed && typeof parsed === "object") {
+              if (typeof parsed.isFalsePositive === "boolean" && !parsed.verdict && !parsed.analysis && !parsed.proof) {
+                setBatchResult({
+                  isFalsePositive: parsed.isFalsePositive,
+                  confidence: typeof parsed.confidence === "number" && parsed.confidence >= 0 && parsed.confidence <= 1 ? parsed.confidence : null,
+                  reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
+                  remediation: typeof parsed.remediation === "string" ? parsed.remediation : "",
+                  adjustedSeverity: typeof parsed.adjustedSeverity === "string" ? parsed.adjustedSeverity : undefined,
+                  mode: typeof parsed.mode === "string" ? parsed.mode : undefined,
+                  reviewedAt: typeof parsed.reviewedAt === "string" && Number.isFinite(Date.parse(parsed.reviewedAt)) ? parsed.reviewedAt : undefined,
+                });
+              } else if (parsed.analysis || parsed.reasoning || parsed.verdict || parsed.proof) {
+                setLlmResult(normalizeAIReview(parsed));
+              }
             }
           } catch {
             // ignore
@@ -273,7 +301,7 @@ export default function FindingDetailPage() {
       .catch((error) => { if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : "Unable to load finding."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [params.id]);
+  }, [id]);
 
   // Observe container size for graph
   useEffect(() => {
@@ -298,13 +326,13 @@ export default function FindingDetailPage() {
     setFinding(data);
     const workflow = data.workflow || data;
     const before = finding.workflow;
-    let previousTags = "";
-    try { previousTags = JSON.parse(before?.tags || "[]").join(", "); } catch { /* malformed legacy tags stay visible for review */ }
-    const untouchedTriage = triageVersion === before?.version && triageReason === before.reason
+    const previousTags = assignmentTags(before?.tags) ?? "";
+    const untouchedTriage = triageVersion === before?.version && triageStatus === before.status && triageReason === before.reason
       && triageExpiresAt === (before.expiresAt?.slice(0, 10) || "");
     const untouchedManagement = managementVersion === before?.version && owner === before.owner
       && dueAt === (before.dueAt?.slice(0, 10) || "") && priority === before.priority && tags === previousTags;
     if (saved === "all" || saved === "triage" || untouchedTriage) {
+      setTriageStatus(workflow.status);
       setTriageReason(workflow.reason || "");
       setTriageExpiresAt(workflow.expiresAt?.slice(0, 10) || "");
       setTriageVersion(workflow.version || "");
@@ -313,22 +341,23 @@ export default function FindingDetailPage() {
       setOwner(workflow.owner || "");
       setDueAt(workflow.dueAt?.slice(0, 10) || "");
       setPriority(workflow.priority || "");
-      try { setTags(JSON.parse(workflow.tags || "[]").join(", ")); } catch { setTags(""); }
+      setTags(assignmentTags(workflow.tags) ?? "");
       setManagementVersion(workflow.version || "");
     }
     setTriageError("");
   };
 
-  const updateStatus = async (newStatus: string) => {
+  const saveTriage = async () => {
     if (!finding?.permissions?.canTriage) return;
     setUpdating(true);
     setTriageError("");
+    setTriageNotice("");
     try {
       const res = await fetch(`/api/findings/${finding.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status: newStatus,
+          status: triageStatus,
           expectedVersion: triageVersion,
           reason: triageReason,
           expiresAt: triageExpiresAt || null,
@@ -336,6 +365,7 @@ export default function FindingDetailPage() {
       });
       if (res.ok) {
         await refreshWorkflow("triage");
+        setTriageNotice("Decision saved.");
       } else {
         const error = await res.json();
         setTriageError(error.error || "Triage update failed");
@@ -350,7 +380,8 @@ export default function FindingDetailPage() {
   const saveManagement = async () => {
     if (!finding?.permissions?.canTriage) return;
     setUpdating(true);
-    setTriageError("");
+    setAssignmentError("");
+    setAssignmentNotice("");
     try {
       const response = await fetch(`/api/findings/${finding.id}`, {
         method: "PATCH",
@@ -367,8 +398,9 @@ export default function FindingDetailPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Management update failed");
       await refreshWorkflow("management");
+      setAssignmentNotice("Assignment saved.");
     } catch (error) {
-      setTriageError(error instanceof Error ? error.message : "Management update failed");
+      setAssignmentError(error instanceof Error ? error.message : "Management update failed");
     } finally {
       setUpdating(false);
     }
@@ -377,14 +409,15 @@ export default function FindingDetailPage() {
   const createJiraTicket = async () => {
     if (!finding?.permissions?.canTriage) return;
     setJiraCreating(true);
-    setTriageError("");
+    setAssignmentError("");
+    setAssignmentNotice("");
     try {
       const response = await fetch(`/api/findings/${finding.id}/jira`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Jira ticket creation failed");
       await refreshWorkflow("ticket");
     } catch (error) {
-      setTriageError(error instanceof Error ? error.message : "Jira ticket creation failed");
+      setAssignmentError(error instanceof Error ? error.message : "Jira ticket creation failed");
     } finally {
       setJiraCreating(false);
     }
@@ -414,15 +447,20 @@ export default function FindingDetailPage() {
   };
 
   const loadGraph = async () => {
-    if (!finding) return;
+    if (!finding || graphLoading) return;
     setGraphLoading(true);
+    setGraphError(false);
     try {
       const res = await fetch(`/api/findings/${finding.id}/graph`);
+      if (!res.ok) throw new Error("Graph request failed");
       const data = await res.json();
-      setGraphNodes(data.nodes || []);
-      setGraphEdges(data.edges || []);
+      if (!Array.isArray(data?.nodes) || !Array.isArray(data.edges)) throw new Error("Incomplete graph");
+      setGraphNodes(data.nodes);
+      setGraphEdges(data.edges);
       setGraphCapped(!!data.capped);
       setShowGraph(true);
+    } catch {
+      setGraphError(true);
     } finally {
       setGraphLoading(false);
     }
@@ -680,152 +718,147 @@ export default function FindingDetailPage() {
     evidenceProvenance = {};
   }
 
+  const configuration = isConfigurationEvidence(finding.provenance);
+  const reasonRequired = triageStatus === "false_positive" || triageStatus === "accepted_risk";
+  const mayTriage = Boolean(finding.permissions?.canTriage);
+  const canEditTriage = mayTriage && !updating;
+  const listQuery = search.size ? "?" + filterQuery(findingFilters(new URLSearchParams(search.toString()))) : "";
+  const assignment = finding.workflow ?? finding;
+  const savedTags = assignmentTags(assignment.tags);
+  const reloadWorkflow = async () => {
+    setUpdating(true);
+    try {
+      await refreshWorkflow();
+      setTriageNotice("");
+      setAssignmentNotice("");
+      setTriageError("");
+      setAssignmentError("");
+    } finally {
+      setUpdating(false);
+    }
+  };
   return (
     <div className="space-y-6">
-      <div className="flex items-start gap-3">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="text-muted-foreground hover:text-foreground mt-1"
-          aria-label="Back to findings"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <SeverityBadge severity={finding.severity} />
-            <StatusBadge status={finding.workflow?.status || finding.status} />
-            <span
-              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                finding.disposition === "advisory"
-                  ? "bg-amber-500/10 text-amber-600"
-                  : "bg-red-500/10 text-red-600"
-              }`}
-            >
-              {finding.disposition}
-            </span>
-            <span className="text-[10px] uppercase text-muted-foreground">
-              {finding.evidenceState}
-            </span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {finding.ruleId}
-            </span>
+      <header>
+        <div className="finding-record-tools no-print">
+          <Link href={"/findings" + listQuery} aria-label="Back to findings">
+            <ArrowLeft aria-hidden className="size-4" />Findings
+          </Link>
+          <div className="flex items-center gap-x-3 sm:gap-x-5">
+            <Link href={`/findings/${finding.id}/report`} aria-label="Open finding report">
+              Report<ArrowUpRight aria-hidden className="size-3.5" />
+            </Link>
+            <a href={`/api/findings/${finding.id}/report`} aria-label="Download Markdown">
+              <Download aria-hidden className="size-3.5" />Markdown
+            </a>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">{finding.ruleName}</h1>
-          <p className="text-muted-foreground mt-1">{finding.message}</p>
         </div>
+        <div className="space-y-3 py-4 sm:py-5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <SeverityBadge severity={finding.severity} />
+            <Link href={`/rules/${encodeURIComponent(finding.ruleId)}`} className="min-w-0 break-all font-mono text-primary hover:underline">{finding.ruleId}</Link>
+          </div>
+          <h1 className="workbench-title max-w-4xl break-words">{finding.ruleName}</h1>
+          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{finding.message}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <StatusBadge status={finding.workflow?.status || finding.status} />
+          <span className="border-l pl-3">{EVIDENCE_LABELS[finding.evidenceState] || "Unclassified evidence"}</span>
+          {finding.disposition && <span className="capitalize">{finding.disposition}</span>}
+          <a href="#triage-heading" className="ml-auto inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary hover:underline xl:hidden">Triage<ArrowDown aria-hidden className="size-3.5" /></a>
+        </div>
+      </header>
+
+      <div className="finding-review">
+      <EvidenceWorkbench key={finding.id} finding={{ ...finding, owner: finding.workflow?.owner ?? finding.owner }} />
+
+      <section className="finding-decision" aria-labelledby="triage-heading">
+        <h2 id="triage-heading" tabIndex={-1} className="scroll-mt-4 text-lg font-semibold tracking-tight">Triage decision</h2>
+        {!finding.isCurrent && finding.workflow?.scope === "identity" && <p className="mt-3 text-sm text-muted-foreground">This earlier scan recorded {finding.status.replaceAll("_", " ")} with {finding.owner || "no assigned owner"}. The decision below applies to the current issue.</p>}
+        {mayTriage ? <form className="mt-4 space-y-4" onChange={() => setTriageNotice("")} onSubmit={(event) => { event.preventDefault(); void saveTriage(); }}>
+          <div className="finding-decision-fields">
+            <label className="grid gap-1.5 text-sm font-medium">Status
+              <select aria-label="Triage status" className="workbench-select min-h-11 w-full font-normal" disabled={!canEditTriage} value={triageStatus} onChange={(event) => setTriageStatus(event.target.value)}>
+                {findingStatusOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            {finding.workflow?.scope === "identity" && <label className="grid gap-1.5 text-sm font-medium">Expiry date
+              <input type="date" aria-label="Triage expiry" className="workbench-select min-h-11 w-full min-w-0 font-normal" disabled={!canEditTriage} value={triageExpiresAt} onChange={(event) => setTriageExpiresAt(event.target.value)} />
+            </label>}
+          </div>
+          <label className="grid max-w-3xl gap-1.5 text-sm font-medium">Decision rationale{reasonRequired ? " (required)" : ""}
+            <textarea aria-label="Triage rationale" className="min-h-16 w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-base font-normal sm:text-sm" disabled={!canEditTriage} required={reasonRequired} maxLength={4000} rows={2} value={triageReason} onChange={(event) => setTriageReason(event.target.value)} />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" className="min-h-11" disabled={!canEditTriage}>Save decision</Button>
+            <span role="status" className="text-sm text-muted-foreground">{triageNotice}</span>
+          </div>
+          {triageError && <WorkflowError message={triageError} busy={updating} reload={() => reloadWorkflow().catch((error) => setTriageError(error instanceof Error ? error.message : "Unable to reload finding."))} />}
+        </form> : <>
+          <p className="mt-1 text-xs text-muted-foreground">Read-only access</p>
+          <dl className="saved-workflow mt-4 grid gap-4">
+            <div><dt>Status</dt><dd><StatusBadge status={assignment.status} /></dd></div>
+            <div><dt>Decision rationale</dt><dd className="whitespace-pre-wrap">{finding.workflow?.reason || finding.identity?.triageReason || "No rationale recorded"}</dd></div>
+            {finding.workflow?.expiresAt && <div><dt>Expires</dt><dd><time dateTime={finding.workflow.expiresAt}>{finding.workflow.expiresAt.slice(0, 10)}</time></dd></div>}
+          </dl>
+        </>}
+      </section>
       </div>
 
-      <div className="flex gap-4 text-xs text-primary no-print"><Link href={`/findings/${finding.id}/report`}>Open vulnerability report →</Link><a href={`/api/findings/${finding.id}/report`}>Download Markdown</a></div>
-
-      <Card>
-        <CardContent className="space-y-3 py-4">
-          {!finding.permissions?.canTriage && <p className="text-xs text-muted-foreground">You have read-only access to this finding.</p>}
-          {!finding.isCurrent && finding.workflow?.scope === "identity" && <p className="text-xs text-muted-foreground">This is a historical observation. Its saved status is {finding.status.replaceAll("_", " ")} and saved owner is {finding.owner || "unassigned"}. The controls below show the current issue; changes preserve this scan&apos;s source evidence.</p>}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground mr-2">Triage:</span>
-            {["open", "triaged", "confirmed", "in_progress", "false_positive", "accepted_risk", "fixed"].map((s) => (
-              <Button
-                key={s}
-                variant={(finding.workflow?.status || finding.status) === s ? "default" : "outline"}
-                size="sm"
-                onClick={() => updateStatus(s)}
-                disabled={updating || !finding.permissions?.canTriage || (finding.workflow?.status || finding.status) === s}
-              >
-                {s === "false_positive"
-                  ? "False Positive"
-                  : s === "accepted_risk"
-                  ? "Accepted Risk"
-                  : s === "in_progress"
-                  ? "In Progress"
-                  : s.charAt(0).toUpperCase() + s.slice(1)}
-              </Button>
-            ))}
-          </div>
-          <div className="grid gap-2 md:grid-cols-[1fr_180px]">
-            <input
-              value={triageReason}
-              disabled={updating || !finding.permissions?.canTriage}
-              maxLength={4000}
-              aria-label="Triage rationale"
-              onChange={(event) => setTriageReason(event.target.value)}
-              placeholder="Decision rationale (required for false positive / accepted risk)"
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            />
-            <input
-              type="date"
-              value={triageExpiresAt}
-              disabled={updating || !finding.permissions?.canTriage || finding.workflow?.scope !== "identity"}
-              onChange={(event) => setTriageExpiresAt(event.target.value)}
-              aria-label="Triage expiry"
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
-          <Button size="sm" variant="outline" onClick={() => updateStatus(finding.workflow?.status || finding.status)} disabled={updating || !finding.permissions?.canTriage}>Save decision</Button>
-          {triageError && <div role="alert" className="space-y-2 text-xs text-destructive"><p>{triageError}</p><p className="text-muted-foreground">Reloading replaces unsaved triage and assignment drafts.</p><Button size="sm" variant="outline" disabled={updating} onClick={() => refreshWorkflow().catch((error) => setTriageError(error instanceof Error ? error.message : "Unable to reload finding."))}>Reload latest</Button></div>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="space-y-4 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold">Vulnerability ownership &amp; delivery</p>
-              <p className="text-xs text-muted-foreground">Assign remediation, SLA priority, tags, and an auditable Jira ticket.</p>
-            </div>
-            {(finding.workflow ? finding.workflow.ticketUrl : finding.ticketUrl) ? (
-              <a href={finding.workflow ? finding.workflow.ticketUrl : finding.ticketUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-medium hover:bg-accent">
-                <TicketCheck className="h-3.5 w-3.5" />{finding.workflow ? finding.workflow.ticketKey : finding.ticketKey}<ExternalLink className="h-3 w-3" />
+      <section className="finding-assignment" aria-labelledby="assignment-heading">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="assignment-heading" className="text-lg font-semibold tracking-tight">Assignment</h2>
+            {assignment.ticketUrl ? (
+              <a href={assignment.ticketUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 text-sm text-primary hover:underline">
+                <TicketCheck aria-hidden className="size-4" />{assignment.ticketKey || "Open Jira ticket"}<ExternalLink aria-hidden className="size-3.5" />
               </a>
-            ) : (
-              <Button variant="outline" size="sm" onClick={createJiraTicket} disabled={jiraCreating || !finding.permissions?.canTriage}>
-                {jiraCreating ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <TicketCheck className="mr-1 h-3.5 w-3.5" />}
+            ) : mayTriage && (
+              <Button variant="ghost" size="sm" className="min-h-11 text-primary" onClick={createJiraTicket} disabled={!canEditTriage || jiraCreating}>
+                {jiraCreating ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <TicketCheck aria-hidden className="size-4" />}
                 Create Jira ticket
               </Button>
             )}
           </div>
-          {finding.workflow?.needsReview && <p role="status" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">Historical assignments need review. Check the previous scan records, choose the current owner and delivery details, then save the reviewed assignment below.</p>}
-          <div className="grid gap-2 md:grid-cols-[1fr_140px_160px_1fr_auto]">
-            <input value={owner} disabled={updating || !finding.permissions?.canTriage} maxLength={200} onChange={(event) => setOwner(event.target.value)} placeholder="Owner / team" aria-label="Finding owner" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
-            <select value={priority} disabled={updating || !finding.permissions?.canTriage} onChange={(event) => setPriority(event.target.value)} aria-label="Remediation priority" className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Priority</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option><option value="p3">P3</option>
-            </select>
-            <input type="date" value={dueAt} disabled={updating || !finding.permissions?.canTriage} onChange={(event) => setDueAt(event.target.value)} aria-label="Remediation due date" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
-            <input value={tags} disabled={updating || !finding.permissions?.canTriage} onChange={(event) => setTags(event.target.value)} placeholder="internet-facing, auth" aria-label="Finding tags" className="h-9 rounded-md border border-input bg-background px-3 text-sm" />
-            <Button size="sm" className="h-9" onClick={saveManagement} disabled={updating || !finding.permissions?.canTriage}><Save className="mr-1 h-3.5 w-3.5" />{finding.workflow?.needsReview ? "Save reviewed assignment" : "Save"}</Button>
-          </div>
-        </CardContent>
-      </Card>
+          {finding.workflow?.needsReview && <p role="status" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">Historical assignments need review.{mayTriage && " Check the previous scans before saving the current owner and delivery details."}</p>}
+          {mayTriage ? <form onChange={() => setAssignmentNotice("")} onSubmit={(event) => { event.preventDefault(); void saveManagement(); }}>
+            <div className="assignment-fields">
+              <label>Owner or team<input value={owner} disabled={!canEditTriage} maxLength={200} onChange={(event) => setOwner(event.target.value)} aria-label="Finding owner" /></label>
+              <label>Priority<select value={priority} disabled={!canEditTriage} onChange={(event) => setPriority(event.target.value)} aria-label="Remediation priority">
+                <option value="">Unspecified</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option><option value="p3">P3</option>
+              </select></label>
+              <label>Due date<input type="date" value={dueAt} disabled={!canEditTriage} onChange={(event) => setDueAt(event.target.value)} aria-label="Remediation due date" /></label>
+              <label>Tags <span className="sr-only" id="tag-format">Separate tags with commas.</span><input value={tags} disabled={!canEditTriage} placeholder="api, auth" onChange={(event) => setTags(event.target.value)} aria-label="Finding tags" aria-describedby="tag-format" /></label>
+              <Button type="submit" variant="outline" className="min-h-11 justify-self-start" disabled={!canEditTriage || jiraCreating}>{finding.workflow?.needsReview ? "Save reviewed assignment" : "Save assignment"}</Button>
+            </div>
+            <p aria-live="polite" className="mt-2 text-sm text-muted-foreground empty:mt-0">{assignmentNotice}</p>
+            {assignmentError && <WorkflowError message={assignmentError} busy={updating || jiraCreating} reload={() => reloadWorkflow().catch((error) => setAssignmentError(error instanceof Error ? error.message : "Unable to reload finding."))} />}
+          </form> : <dl className="saved-workflow grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div><dt>Owner or team</dt><dd>{assignment.owner || "Unassigned"}</dd></div>
+            <div><dt>Priority</dt><dd>{assignment.priority?.toUpperCase() || "Unspecified"}</dd></div>
+            <div><dt>Due date</dt><dd>{assignment.dueAt ? <time dateTime={assignment.dueAt}>{assignment.dueAt.slice(0, 10)}</time> : "No due date"}</dd></div>
+            <div><dt>Tags</dt><dd>{savedTags === null ? "Unavailable" : savedTags || "None"}</dd></div>
+          </dl>}
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <EvidenceWorkbench key={finding.id} finding={{ ...finding, owner: finding.workflow?.owner ?? finding.owner }} />
-          <ApiContractPanel contexts={finding.apiContractContext || []} scanId={finding.scanId} />
-
-          {/* Per-finding Call Graph */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Network className="h-4 w-4" />
-                  Call Graph Context
-                </CardTitle>
-                {!showGraph ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadGraph}
-                    disabled={graphLoading}
-                  >
-                    {graphLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    ) : (
-                      <Network className="h-4 w-4 mr-1" />
-                    )}
-                    Load Graph
-                  </Button>
-                ) : (
-                  <div className="flex items-center gap-1">
+      <div className="finding-support">
+        <div className="finding-analysis" data-expanded={Boolean((showGraph && graphNodes.length) || llmResult || batchResult)}>
+          {!configuration && <ApiContractPanel contexts={finding.apiContractContext || []} scanId={finding.scanId} />}
+          {!configuration && <section aria-labelledby="nearby-calls-heading">
+            <header className="finding-section-heading">
+              <h2 id="nearby-calls-heading">Nearby calls</h2>
+              <button type="button" className="finding-action" aria-controls="nearby-calls" aria-expanded={showGraph}
+                onClick={() => showGraph ? setShowGraph(false) : void loadGraph()} aria-disabled={graphLoading}>
+                {graphLoading ? "Loading calls…" : showGraph ? "Hide calls" : graphError ? "Retry calls" : "Load calls"}
+              </button>
+            </header>
+            {graphError && <p role="alert" className="mt-2 text-sm text-destructive">Nearby calls could not be loaded.</p>}
+            <div id="nearby-calls" hidden={!showGraph}>
+              {showGraph && graphNodes.length === 0 && (
+                <p role="status" className="mt-3 text-sm text-muted-foreground">No call graph nodes recorded for this file.</p>
+              )}
+              {showGraph && graphNodes.length > 0 && (
+                <div className="space-y-2">
+                  <div className="graph-zoom mt-2 flex w-fit" role="group" aria-label="Graph zoom">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -851,37 +884,21 @@ export default function FindingDetailPage() {
                       <Maximize2 className="h-4 w-4" />
                     </Button>
                   </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {!showGraph && !graphLoading && (
-                <p className="text-sm text-muted-foreground">
-                  View the call graph centered on this finding to understand caller/callee relationships.
-                </p>
-              )}
-              {showGraph && graphNodes.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No call graph data available for this finding.
-                </p>
-              )}
-              {showGraph && graphNodes.length > 0 && (
-                <div className="space-y-2">
-                  <div className="grid gap-2 rounded-lg border bg-muted/30 p-2 md:grid-cols-[1fr_150px_auto]">
-                    <label className="relative">
-                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+                    <label className="relative min-w-0 flex-[1_1_12rem]">
+                      <Search aria-hidden className="absolute left-3 top-3.5 size-4 text-muted-foreground" />
                       <input
                         value={graphQuery}
                         onChange={(event) => setGraphQuery(event.target.value)}
                         placeholder="Search symbol or file"
                         aria-label="Search graph symbols or files"
-                        className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs"
+                        className="workbench-select min-h-11 w-full pl-9 text-sm"
                       />
                     </label>
                     <select
                       value={graphType}
                       onChange={(event) => setGraphType(event.target.value)}
-                      className="h-8 rounded-md border bg-background px-2 text-xs"
+                      className="workbench-select min-h-11 max-w-full text-sm"
                       aria-label="Filter graph by node type"
                     >
                       <option value="all">All node types</option>
@@ -894,12 +911,13 @@ export default function FindingDetailPage() {
                       size="sm"
                       variant={focusEvidencePath ? "default" : "outline"}
                       onClick={() => setFocusEvidencePath((value) => !value)}
-                      className="h-8 gap-1 text-xs"
+                      aria-pressed={focusEvidencePath}
+                      className="min-h-11 gap-1 text-sm"
                     >
                       <Focus className="h-3.5 w-3.5" />Evidence path
                     </Button>
                   </div>
-                <div ref={containerRef} className="relative rounded-md border border-border overflow-hidden bg-muted">
+                <div ref={containerRef} className="relative min-w-0 overflow-hidden border border-border bg-card">
                   <ForceGraph2D
                     ref={graphRef as React.MutableRefObject<never>}
                     graphData={graphData}
@@ -940,7 +958,7 @@ export default function FindingDetailPage() {
                       <p className="capitalize text-muted-foreground">{selectedGraphNode.nodeType.replace("_", " ")}</p>
                     </div>
                   )}
-                  <div className="flex items-center gap-4 px-3 py-2 text-xs text-muted-foreground border-t border-border bg-background/50">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs text-muted-foreground border-t border-border">
                     <span className="flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
                       Finding
@@ -969,79 +987,54 @@ export default function FindingDetailPage() {
                 </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+            <Link href={`/graph/${finding.scanId}`} className="finding-action">Full scan graph<ArrowUpRight aria-hidden className="size-3.5" /></Link>
+          </section>}
 
-          {/* LLM Analysis */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Bot className="h-4 w-4" />
-                  AI Analysis
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={analysisLang}
-                    onChange={(e) => setAnalysisLang(e.target.value)}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                  >
-                    <option value="en">English</option>
-                    <option value="ko">한국어</option>
-                    <option value="ja">日本語</option>
-                    <option value="zh">中文</option>
-                  </select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={runAnalysis}
-                    disabled={analyzing}
-                  >
-                    {analyzing ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    ) : (
-                      <Bot className="h-4 w-4 mr-1" />
-                    )}
-                    {llmResult ? "Re-analyze" : "Analyze with LLM"}
-                  </Button>
-                </div>
+          <section aria-labelledby="model-review-heading">
+            <header className="finding-section-heading">
+              <h2 id="model-review-heading">Model review</h2>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <select
+                  aria-label="Review language"
+                  value={analysisLang}
+                  onChange={(event) => setAnalysisLang(event.target.value)}
+                  className="workbench-select min-h-11"
+                >
+                  <option value="en">English</option>
+                  <option value="ko">한국어</option>
+                  <option value="ja">日本語</option>
+                  <option value="zh">中文</option>
+                </select>
+                <Button variant="outline" size="sm" className="min-h-11" onClick={runAnalysis} disabled={analyzing}>
+                  {analyzing && <Loader2 aria-hidden className="size-4 animate-spin" />}
+                  {analyzing ? "Reviewing…" : llmResult || batchResult ? "Run again" : "Run review"}
+                </Button>
               </div>
-            </CardHeader>
-            <CardContent>
+            </header>
+            <div className="min-w-0 py-3 [overflow-wrap:anywhere]">
               {llmError && (
-                <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm mb-4">
+                <div role="alert" className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm mb-4">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>{llmError}</span>
                 </div>
               )}
 
               {analyzing && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Analyzing finding with LLM...
+                <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                  Waiting for the model’s review…
                 </div>
               )}
 
               {/* Batch review result (from LLM Scan page) */}
               {batchResult && !llmResult && (
                 <div className="space-y-3 mb-4 p-3 rounded-md border border-border bg-muted/30">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-medium">Batch Review Result</span>
-                    <span
-                      className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                        batchResult.isFalsePositive
-                          ? "bg-[var(--status-false-positive-bg)] text-[var(--status-fixed)]"
-                          : "bg-destructive/10 text-destructive"
-                      }`}
-                    >
-                      {batchResult.isFalsePositive ? "False Positive" : "True Positive"}
-                    </span>
-                    {batchResult.adjustedSeverity && (
-                      <SeverityBadge severity={batchResult.adjustedSeverity} />
-                    )}
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      {(batchResult.confidence * 100).toFixed(0)}% confidence
-                      {batchResult.mode && ` \u00B7 ${batchResult.mode} mode`}
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+                    <span className="font-semibold">{batchResult.isFalsePositive ? "Likely false positive" : "Needs human review"}</span>
+                    {batchResult.adjustedSeverity && <SeverityBadge severity={batchResult.adjustedSeverity} />}
+                    <span className="text-xs text-muted-foreground">
+                      Legacy batch review{batchResult.mode && ` · ${batchResult.mode}`}
+                      {batchResult.isFalsePositive && batchResult.confidence !== null && ` · ${Math.round(batchResult.confidence * 100)}% model estimate`}
                     </span>
                   </div>
                   {batchResult.reasoning && (
@@ -1066,172 +1059,52 @@ export default function FindingDetailPage() {
 
               {!llmResult && !batchResult && !analyzing && !llmError && (
                 <p className="text-sm text-muted-foreground">
-                  Use AI to get detailed vulnerability analysis, risk assessment, and remediation guidance.
-                  Configure your LLM provider in Settings first.
+                  No model review recorded.
                 </p>
               )}
 
               {llmResult && (
                 <AIEvidencePanel
                   review={llmResult}
+                  original={configuration || [finding.filePath, finding.modulePath].some(isWranglerManifest) ? "" : finding.codeSnippet || ""}
                   language={finding.filePath.split(".").pop()}
                 />
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         </div>
 
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Finding lifecycle</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FindingLifecyclePanel
-                baselineState={finding.baselineState}
-                identity={finding.identity}
-              />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Confidence</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-2 rounded-full bg-muted">
-                    <div
-                      className="h-2 rounded-full bg-primary"
-                      style={{ width: `${finding.confidence * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-mono">
-                    {(finding.confidence * 100).toFixed(0)}%
-                  </span>
-                </div>
-              </div>
-
-              <Separator />
-
-              {finding.cweId && (
-                <div>
-                  <p className="text-xs text-muted-foreground">CWE</p>
-                  <a
-                    href={`https://cwe.mitre.org/data/definitions/${finding.cweId}.html`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline flex items-center gap-1"
-                  >
-                    CWE-{finding.cweId}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
-
-              {finding.owaspCategory && (
-                <div>
-                  <p className="text-xs text-muted-foreground">OWASP</p>
-                  <p className="text-sm">{finding.owaspCategory}</p>
-                </div>
-              )}
-
-              <Separator />
-
-              <div>
-                <p className="text-xs text-muted-foreground">Scan</p>
-                <Link
-                  href={`/scans/${finding.scanId}`}
-                  className="text-sm text-primary hover:underline"
-                >
-                  {finding.scan.repository || finding.scanId.slice(0, 8)}
-                </Link>
-              </div>
-
-              {finding.scan.commitSha && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Commit</p>
-                  <p className="text-sm font-mono">
-                    {finding.scan.commitSha.slice(0, 7)}
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <p className="text-xs text-muted-foreground">Rule</p>
-                <Link
-                  href={`/rules/${finding.ruleId}`}
-                  className="text-sm text-primary hover:underline font-mono"
-                >
-                  {finding.ruleId}
-                </Link>
-              </div>
-
-              {(finding.repositoryId || finding.modulePath) && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Evidence location</p>
-                  <p className="text-sm font-mono break-all">
-                    {[finding.repositoryId, finding.modulePath]
-                      .filter(Boolean)
-                      .join(":")}
-                  </p>
-                </div>
-              )}
-
-              {finding.evidenceId && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Evidence ID</p>
-                  <p className="text-sm font-mono break-all">{finding.evidenceId}</p>
-                </div>
-              )}
-
-              {finding.scan.workspaceSnapshot && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Workspace snapshot</p>
-                  <p
-                    className="text-sm font-mono break-all"
-                    title={finding.scan.workspaceSnapshot}
-                  >
-                    {finding.scan.workspaceSnapshot.slice(0, 23)}…
-                  </p>
-                </div>
-              )}
-
-              {evidenceProvenance.producer && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Evidence producer</p>
-                  <p className="text-sm font-mono break-all">
-                    {evidenceProvenance.producer}
-                    {evidenceProvenance.producer_version
-                      ? `@${evidenceProvenance.producer_version}`
-                      : ""}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {[
-                      evidenceProvenance.analysis_kind,
-                      evidenceProvenance.fidelity,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </div>
-              )}
-
-              <Separator />
-
-              <div>
-                <p className="text-xs text-muted-foreground">Full Call Graph</p>
-                <Link
-                  href={`/graph/${finding.scanId}`}
-                  className="text-sm text-primary hover:underline flex items-center gap-1"
-                >
-                  View scan graph
-                  <ExternalLink className="h-3 w-3" />
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="finding-reference">
+          <section aria-labelledby="finding-history-heading">
+            <header className="finding-section-heading"><h2 id="finding-history-heading">Finding history</h2></header>
+            <FindingLifecyclePanel baselineState={finding.baselineState} identity={finding.identity} />
+          </section>
+          <section aria-labelledby="scan-details-heading">
+            <header className="finding-section-heading"><h2 id="scan-details-heading">Scan details</h2></header>
+            <dl className="finding-facts">
+              <div><dt>Scanner confidence</dt><dd className="tabular-nums">{(finding.confidence * 100).toFixed(0)}%</dd></div>
+              {finding.cweId && <div><dt>CWE</dt><dd>
+                <a href={`https://cwe.mitre.org/data/definitions/${finding.cweId}.html`} target="_blank" rel="noopener noreferrer">
+                  CWE-{finding.cweId}<ExternalLink aria-hidden className="ml-1 inline-block size-3" />
+                </a>
+              </dd></div>}
+              {finding.owaspCategory && <div><dt>OWASP</dt><dd>{finding.owaspCategory}</dd></div>}
+              <div><dt>Scan</dt><dd><Link href={`/scans/${finding.scanId}`}>{finding.scan.repository || finding.scanId.slice(0, 8)}</Link></dd></div>
+              {finding.scan.commitSha && <div><dt>Commit</dt><dd><code title={finding.scan.commitSha}>{finding.scan.commitSha.slice(0, 7)}</code></dd></div>}
+              <div><dt>Rule</dt><dd><Link className="font-mono" href={`/rules/${encodeURIComponent(finding.ruleId)}`}>{finding.ruleId}</Link></dd></div>
+              {(finding.repositoryId || finding.modulePath) && <div>
+                <dt>Evidence location</dt><dd><code>{[finding.repositoryId, finding.modulePath].filter(Boolean).join(":")}</code></dd>
+              </div>}
+              {finding.evidenceId && <div><dt>Evidence ID</dt><dd><code>{finding.evidenceId}</code></dd></div>}
+              {finding.scan.workspaceSnapshot && <div><dt>Workspace snapshot</dt><dd><code>{finding.scan.workspaceSnapshot}</code></dd></div>}
+              {evidenceProvenance.producer && <div>
+                <dt>Evidence producer</dt><dd>
+                  <code>{evidenceProvenance.producer}{evidenceProvenance.producer_version && `@${evidenceProvenance.producer_version}`}</code>
+                  <p className="text-xs text-muted-foreground">{[evidenceProvenance.analysis_kind, evidenceProvenance.fidelity].filter(Boolean).join(" · ")}</p>
+                </dd>
+              </div>}
+            </dl>
+          </section>
         </div>
       </div>
     </div>

@@ -261,6 +261,7 @@ rules:
     patterns:
       - pattern: "(res\\.redirect|response\\.redirect|redirect|sendRedirect|http\\.Redirect)\\s*\\("
         args_match: "(req\\.(query|params|body)|request\\.(args|form|GET|POST|json)|r\\.URL\\.Query|getParameter|c\\.(Query|Param))"
+        languages: [javascript, typescript, java, go]
         description: "HTTP redirect with user-controlled URL"
       - pattern: "Location\\s*[=:]"
         args_match: "(req\\.|request\\.|params|query|body|input|user|getParameter)"
@@ -270,6 +271,7 @@ rules:
         description: "Location header via setHeader with user input"
       - pattern: "(HttpResponseRedirect|RedirectResponse|RedirectView)\\s*\\("
         args_match: "(request\\.(GET|POST|args|form|json)|req\\.(query|params|body)|getParameter)"
+        languages: [javascript, typescript, java, go]
         description: "Framework redirect response with user-controlled URL"
     taint:
       source_types: [http_param, http_body, http_header]

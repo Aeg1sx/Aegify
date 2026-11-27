@@ -1,27 +1,13 @@
-import { callProvider } from "@/lib/provider-client";
-import { getLLMConfig } from "@/lib/settings";
+import { callProvider } from "./provider-client.ts";
+import { getLLMConfig } from "./settings.ts";
+import { freezeFinding, isConfigFinding, verdictEvidenceGap, type ReviewFinding } from "./ai-review-contract.ts";
+import { parseEvidenceSteps } from "./code-evidence.ts";
 import {
   sanitizeLLMRecord,
   sanitizeLLMStrings,
   sanitizeLLMText,
   sanitizeProofTemplate,
-} from "@/lib/llm-safety";
-
-interface FindingContext {
-  ruleId: string;
-  ruleName: string;
-  severity: string;
-  message: string;
-  filePath: string;
-  lineStart: number;
-  lineEnd: number;
-  codeSnippet: string;
-  cweId: number | null;
-  owaspCategory: string | null;
-  taintFlow: string | null;
-  callChain: string | null;
-  defenseContext: string | null;
-}
+} from "./llm-safety.ts";
 
 export interface LLMResponse {
   verdict: "likely_true_positive" | "likely_false_positive" | "needs_review";
@@ -76,11 +62,11 @@ Your response must be in the following JSON format:
     "safety": "owned_fixture_only",
     "requiresApproval": true,
     "preconditions": ["explicit authorization and fixture requirements"],
-    "requestTemplate": "request with placeholders, no secrets",
-    "payloadTemplate": "non-destructive payload with placeholders",
+    "requestTemplate": "",
+    "payloadTemplate": "",
     "expectedSignal": "observable success signal",
     "negativeControl": "control that must not produce the signal",
-    "harnessPlan": {"mode": "plan_only", "tool": "http|browser|proxy|container"}
+    "harnessPlan": {"mode": "plan_only", "tool": "static_regression_test"}
   }
 }
 
@@ -95,15 +81,19 @@ Guidelines:
 - Consider the language and framework context when suggesting fixes.
 - Keep analysis concise but thorough (max 3-4 paragraphs for analysis, max 2-3 paragraphs with code for remediation).
 - If defense context is provided, use it to assess whether the vulnerability is mitigated.
-- If a structured call chain with file paths and code snippets is provided, trace the full data flow.
+- Distinguish recorded calls from data propagation. Give a supporting or contrary fact for each likely verdict.
 - Name the specific missing evidence instead of inventing it.
 - If auth is present on the endpoint, factor this into your risk assessment.
-- PoC/payload guidance is allowed only as a non-destructive template for an owned or explicitly authorized fixture. Require approval and include a negative control.
+- Use a fixed source example and a corrected control for regression-test guidance. Leave requestTemplate and payloadTemplate empty.
 
 IMPORTANT - Output language: ${langInstruction}`;
 }
 
-function buildUserPrompt(finding: FindingContext): string {
+export function buildFindingPrompt(finding: ReviewFinding, graphContext: string | null = null): string {
+  if (isConfigFinding(finding)) {
+    const { data, omittedFields } = freezeFinding(finding);
+    return JSON.stringify({ boundary: "untrusted_static_configuration", finding: data, omittedFields });
+  }
   let prompt = `Analyze this security finding:
 
 **Rule**: ${finding.ruleId} - ${finding.ruleName}
@@ -119,42 +109,20 @@ function buildUserPrompt(finding: FindingContext): string {
   }
 
   if (finding.taintFlow) {
-    try {
-      const flow = JSON.parse(finding.taintFlow);
-      if (Array.isArray(flow) && flow.length > 0) {
-        prompt += "\n\n**Taint Flow**:";
-        for (const step of flow) {
-          prompt += `\n- ${step.file}:${step.line} - ${step.message}`;
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
+    const { steps, warning } = parseEvidenceSteps(finding.taintFlow);
+    if (steps.length) prompt += "\n\nRecorded data flow\n" + steps.map(
+      (step) => `${step.file}:${step.line} - ${step.message}`,
+    ).join("\n");
+    if (warning) prompt += "\nFlow evidence is incomplete. " + warning;
   }
 
   if (finding.callChain) {
-    try {
-      const chain = JSON.parse(finding.callChain);
-      if (Array.isArray(chain) && chain.length > 0) {
-        prompt += "\n\n**Call Chain** (entry point -> vulnerability):";
-        for (let i = 0; i < chain.length; i++) {
-          const node = chain[i];
-          if (typeof node === "string") {
-            // Legacy format: plain function name strings
-            prompt += `\n${i + 1}. ${node}`;
-          } else {
-            // Rich format: { function, filePath, line, snippet }
-            const label = i === 0 ? " <- entry point" : i === chain.length - 1 ? " <- SINK" : "";
-            prompt += `\n${i + 1}. ${node.function} (${node.filePath || "?"}:${node.line || "?"})${label}`;
-            if (node.snippet) {
-              prompt += `\n   \`${node.snippet.trim()}\``;
-            }
-          }
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
+    prompt += "\n\nRecorded call chain (static scanner evidence):\n" + finding.callChain;
+  }
+  if (graphContext) {
+    prompt += "\n\nAdjacent recorded calls for symbols containing the finding. "
+      + "Each entry lists independent incoming and outgoing edges. A call edge alone does not prove data flow.\n"
+      + graphContext;
   }
 
   if (finding.defenseContext) {
@@ -192,24 +160,34 @@ function extractJson(raw: string): string {
   return raw;
 }
 
-function parseResponse(raw: string): LLMResponse {
+export function parseFindingReview(raw: string): LLMResponse {
   const jsonStr = extractJson(raw);
 
   try {
     const parsed = JSON.parse(jsonStr);
     const verdicts = new Set(["likely_true_positive", "likely_false_positive", "needs_review"]);
     const proof = parsed.proof && typeof parsed.proof === "object" ? parsed.proof : {};
+    const reported = verdicts.has(parsed.verdict) ? parsed.verdict : "needs_review";
+    const analysis = sanitizeLLMText(parsed.analysis);
+    const facts = (value: unknown) => sanitizeLLMStrings(value, 20).map((item) => item.trim()).filter(Boolean);
+    const evidenceFor = facts(parsed.evidenceFor);
+    const evidenceAgainst = facts(parsed.evidenceAgainst);
+    const evidenceGaps = facts(parsed.evidenceGaps);
+    const confidence = parsed.confidence;
+    const validConfidence = typeof confidence === "number" && Number.isFinite(confidence)
+      && confidence >= 0 && confidence <= 1;
+    const gap = !verdicts.has(parsed.verdict) || !validConfidence
+      ? "The model returned an invalid verdict or confidence."
+      : verdictEvidenceGap(reported, analysis, evidenceFor, evidenceAgainst);
+    const verdict = gap ? "needs_review" : reported;
     return {
-      verdict: verdicts.has(parsed.verdict) ? parsed.verdict : "needs_review",
-      analysis: sanitizeLLMText(parsed.analysis),
+      verdict, analysis,
       remediation: sanitizeLLMText(parsed.remediation),
-      riskAssessment: ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"].includes(parsed.riskAssessment)
+      riskAssessment: verdict !== "needs_review" && ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"].includes(parsed.riskAssessment)
         ? parsed.riskAssessment : "UNKNOWN",
-      confidence: typeof parsed.confidence === "number"
-        ? Math.max(0, Math.min(parsed.confidence, 1)) : 0,
-      evidenceFor: sanitizeLLMStrings(parsed.evidenceFor),
-      evidenceAgainst: sanitizeLLMStrings(parsed.evidenceAgainst),
-      evidenceGaps: sanitizeLLMStrings(parsed.evidenceGaps),
+      confidence: verdict === "needs_review" ? 0 : confidence,
+      evidenceFor, evidenceAgainst,
+      evidenceGaps: gap ? [gap, ...evidenceGaps].slice(0, 20) : evidenceGaps,
       attackScenario: sanitizeLLMText(parsed.attackScenario),
       fixedCode: sanitizeLLMText(parsed.fixedCode, 40_000),
       remediationSteps: sanitizeLLMStrings(parsed.remediationSteps),
@@ -252,18 +230,18 @@ function parseResponse(raw: string): LLMResponse {
   }
 }
 
-export async function analyzeFinding(finding: FindingContext, languageOverride?: string): Promise<LLMResponse> {
+export async function analyzeFinding(finding: ReviewFinding, languageOverride?: string, graphContext: string | null = null): Promise<LLMResponse> {
   const config = await getLLMConfig();
 
   if (!config.enabled) {
     throw new Error("LLM analysis is not enabled. Configure it in Settings.");
   }
 
-  const userPrompt = buildUserPrompt(finding);
+  const userPrompt = buildFindingPrompt(finding, graphContext);
   const systemPrompt = getSystemPrompt(languageOverride || config.language);
   const rawResponse = await callProvider(config, systemPrompt, userPrompt, 2048);
 
-  return parseResponse(rawResponse);
+  return parseFindingReview(rawResponse);
 }
 
 export async function testLLMConnection(): Promise<{ success: boolean; message: string }> {

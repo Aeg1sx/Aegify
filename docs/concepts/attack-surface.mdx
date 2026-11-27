@@ -4,8 +4,7 @@ description: "Correlate frontend HTTP calls, Gateway transformations, Spring end
 icon: "route"
 ---
 
-Aegify models an attack surface as evidence-linked nodes rather than a flat list
-of controller annotations.
+Each endpoint record connects the route to its handler, related findings and available observations.
 
 ```text
 frontend call
@@ -15,6 +14,16 @@ frontend call
   -> finding
   -> optional runtime observation
 ```
+
+## Review endpoint records
+
+Open **Endpoints** to review the method, path, handler, source location and recorded evidence together. A route can have frontend, gateway and runtime records. The header counts each route with linked evidence once. An authentication signal indicates a pattern found in the scanned source. Confirm enforcement in the application.
+
+Search by path, handler, source file, repository or framework. **Filters** narrows the list by method, framework, authentication signal or kind of evidence. **Include all scan records** also shows repeated observations, assets and internal routes. **By file** groups records by repository and source. Opening a record and using the browser's Back button restores the search and filters.
+
+![Endpoint inventory showing the same route in two repositories with separate source evidence](/assets/aegify-endpoints-desktop.png)
+
+On a smaller screen the source location and evidence appear below each path. [Mobile endpoint inventory](/assets/aegify-endpoints-mobile.png)
 
 ## Frontend calls
 

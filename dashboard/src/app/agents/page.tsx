@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-import { ArrowUpRight, Play, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Play, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SECURITY_AGENTS } from "@/lib/agent-catalog";
@@ -81,14 +81,14 @@ export default function AgentsPage() {
 
   const waiting = runs.filter((run) => ["awaiting_approval", "awaiting_evidence"].includes(run.status));
   return <div className="space-y-6 pb-8">
-    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow mb-2">Agent operations</p><h1 className="text-3xl font-semibold tracking-tight">Analysis operations</h1><p className="mt-2 text-sm text-muted-foreground">Track runs, pending approvals, and collected evidence in one workspace.</p></div><Button variant="outline" size="sm" onClick={() => { setLoading(true); setRefresh((n) => n + 1); }} disabled={loading}><RefreshCw className={"mr-2 h-3.5 w-3.5 " + (loading ? "animate-spin" : "")} />Refresh</Button></header>
+    <header className="flex flex-wrap items-center justify-between gap-4"><h1 className="workbench-title">AI agents</h1><Button variant="outline" onClick={() => { setLoading(true); setRefresh((n) => n + 1); }} disabled={loading}><RefreshCw aria-hidden className={"size-4 " + (loading ? "animate-spin" : "")} />Refresh</Button></header>
     {error && <p role="alert" className="rounded-md border border-destructive/30 p-4 text-sm text-destructive">{error}</p>}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-5">
-        <section className="grid grid-cols-3 divide-x divide-border border-y border-border bg-card py-5">
-          {[["Recent runs", runs.length], ["Needs attention", waiting.length], ["Evidence records", runs.reduce((sum, run) => sum + run._count.evidence, 0)]].map(([label, count]) => <div key={label} className="px-5"><p className="eyebrow">{label}</p><p className="mt-2 font-mono text-3xl tabular-nums">{loading ? "…" : count}</p></div>)}
-        </section>
-        <section className="workbench-panel"><div className="workbench-heading"><div><h2 className="text-sm font-semibold">Run history</h2><p className="mt-1 text-xs text-muted-foreground">Latest 50 runs · inspect evidence and approval status per run</p></div></div>
+        <dl className="grid grid-cols-3 divide-x border-y py-4" aria-label="Recent analysis activity">
+          {[["Recent runs", runs.length], ["Needs attention", waiting.length], ["Evidence records", runs.reduce((sum, run) => sum + run._count.evidence, 0)]].map(([label, count]) => <div key={label} className="px-3 sm:px-5"><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-2 font-mono text-2xl tabular-nums">{loading ? "…" : count}</dd></div>)}
+        </dl>
+        <section className="workbench-panel"><div className="workbench-heading"><h2 className="text-base font-semibold">Run history</h2><span className="text-xs text-muted-foreground">Latest 50 runs</span></div>
           <div className="overflow-auto"><table className="data-table"><thead><tr><th>Repository / snapshot</th><th>Status</th><th>Stage</th><th>Evidence</th><th>Started</th></tr></thead><tbody>
             {runs.map((run) => <tr key={run.id}><td><Link className="inline-flex items-center gap-2 font-medium hover:text-primary" href={"/agents/" + run.id}>{run.scan.repository || "Unnamed scan"}<ArrowUpRight className="h-3.5 w-3.5" /></Link><p className="mt-1 font-mono text-[11px] text-muted-foreground">{run.scan.branch || "default"} · {run.scan.commitSha?.slice(0, 8) || "snapshot"} · {run.mode}</p></td><td><RunStatus status={run.status} /></td><td className="text-xs">{SECURITY_AGENTS.find((agent) => agent.role === run.currentRole)?.name || "—"}</td><td className="font-mono text-xs">{run._count.evidence}</td><td className="whitespace-nowrap text-xs text-muted-foreground">{new Date(run.createdAt).toLocaleString("en-US")}</td></tr>)}
             {!runs.length && <tr><td colSpan={5} className="h-44 text-center text-sm text-muted-foreground">{loading ? "Loading operations…" : "No runs yet. Select a completed scan to start an analysis."}</td></tr>}
@@ -104,7 +104,6 @@ export default function AgentsPage() {
           <Button className="w-full" onClick={startRun} disabled={!scanId || starting || loading}><Play className="mr-2 h-3.5 w-3.5" />{starting ? "Preparing run…" : "Start analysis"}</Button>
           <p className="text-[11px] leading-5 text-muted-foreground">Analyze a recorded scan artifact. Dynamic evidence collection requires a separate scope approval.</p>
         </div></section>
-        <section className="workbench-panel p-5"><h2 className="flex items-center gap-2 text-xs font-semibold"><ShieldCheck className="h-4 w-4 text-primary" />Evidence contract</h2><p className="mt-3 text-xs leading-6 text-muted-foreground">Static candidates and runtime evidence remain separate. Approvals, snapshots, and output hashes must match. Improvement proposals are never applied automatically.</p></section>
       </aside>
     </div>
     <details className="workbench-panel"><summary className="cursor-pointer px-5 py-4 text-sm font-semibold">Agent roles and tools · 6 roles</summary><div className="overflow-auto"><table className="data-table"><thead><tr><th>Agent</th><th>Role</th><th>Responsibility</th><th>Tools</th></tr></thead><tbody>{SECURITY_AGENTS.map((agent) => <tr key={agent.role}><td className="whitespace-nowrap font-medium">{agent.name}<span className="mt-1 block font-mono text-[10px] text-muted-foreground">{agent.code}</span></td><td className="font-mono text-xs">{agent.role}</td><td className="min-w-64 text-xs text-muted-foreground">{agent.mission}</td><td className="font-mono text-[11px] text-muted-foreground">{agent.tools.join(" · ")}</td></tr>)}</tbody></table></div></details>

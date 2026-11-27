@@ -2,6 +2,7 @@ import { requireResource } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { analyzeFinding } from "@/lib/llm";
+import { reviewFindingSelect } from "@/lib/ai-review-contract";
 
 export async function POST(
   request: NextRequest,
@@ -21,6 +22,7 @@ export async function POST(
 
   const finding = await prisma.finding.findUnique({
     where: { id },
+    select: reviewFindingSelect,
   });
 
   if (!finding) {
@@ -34,7 +36,11 @@ export async function POST(
       where: {
         scanId: finding.scanId,
         filePath: finding.filePath,
+        lineStart: { lte: finding.lineStart },
+        lineEnd: { gte: finding.lineEnd },
       },
+      take: 5,
+      orderBy: [{ lineStart: "desc" }, { lineEnd: "asc" }, { id: "asc" }],
       select: {
         qualifiedName: true,
         filePath: true,
@@ -42,6 +48,9 @@ export async function POST(
         lineEnd: true,
         nodeType: true,
         outEdges: {
+          take: 13,
+          where: { scanId: finding.scanId, targetNode: { scanId: finding.scanId } },
+          orderBy: [{ callSiteLine: "asc" }, { id: "asc" }],
           select: {
             targetNode: {
               select: {
@@ -55,6 +64,9 @@ export async function POST(
           },
         },
         inEdges: {
+          take: 13,
+          where: { scanId: finding.scanId, sourceNode: { scanId: finding.scanId } },
+          orderBy: [{ callSiteLine: "asc" }, { id: "asc" }],
           select: {
             sourceNode: {
               select: {
@@ -72,18 +84,22 @@ export async function POST(
 
     if (relatedNodes.length > 0) {
       callGraphContext = JSON.stringify(
-        relatedNodes.map((n) => ({
+        relatedNodes.slice(0, 4).map((n) => ({
+          file: n.filePath, lineStart: n.lineStart, lineEnd: n.lineEnd,
+          contextLimited: relatedNodes.length > 4 || n.outEdges.length > 12 || n.inEdges.length > 12,
           name: n.qualifiedName,
           type: n.nodeType,
-          callsTo: n.outEdges.map((e) => ({
+          callsTo: n.outEdges.slice(0, 12).map((e) => ({
             target: e.targetNode.qualifiedName,
             targetFile: e.targetNode.filePath,
-            line: e.callSiteLine,
+            targetLine: e.targetNode.lineStart,
+            callSiteLine: e.callSiteLine,
           })),
-          calledBy: n.inEdges.map((e) => ({
+          calledBy: n.inEdges.slice(0, 12).map((e) => ({
             source: e.sourceNode.qualifiedName,
             sourceFile: e.sourceNode.filePath,
-            line: e.callSiteLine,
+            sourceLine: e.sourceNode.lineStart,
+            callSiteLine: e.callSiteLine,
           })),
         }))
       );
@@ -93,27 +109,7 @@ export async function POST(
   }
 
   try {
-    // Build enriched call chain by merging DB callChain + graph context
-    let enrichedCallChain = finding.callChain;
-    if (!enrichedCallChain && callGraphContext) {
-      enrichedCallChain = callGraphContext;
-    }
-
-    const result = await analyzeFinding({
-      ruleId: finding.ruleId,
-      ruleName: finding.ruleName,
-      severity: finding.severity,
-      message: finding.message,
-      filePath: finding.filePath,
-      lineStart: finding.lineStart,
-      lineEnd: finding.lineEnd,
-      codeSnippet: finding.codeSnippet,
-      cweId: finding.cweId,
-      owaspCategory: finding.owaspCategory,
-      taintFlow: finding.taintFlow,
-      callChain: enrichedCallChain,
-      defenseContext: (finding as Record<string, unknown>).defenseContext as string | null ?? null,
-    }, language);
+    const result = await analyzeFinding(finding, language, callGraphContext);
 
     // Store the analysis as JSON in the llmAnalysis field
     await prisma.finding.update({

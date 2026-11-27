@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "comparison": "owasp-python-paired-v1",
+  "mode": "identical",
+  "baseline_artifact_digest": "sha256:53251e1d79945922a09eb1a6522b7fef56d104e7a228e5e8f31803cd7d3c92ba",
+  "candidate_artifact_digest": "sha256:bf3b61e2f7d3db871edb54070a7a93fa2d665bf1ace65687665da0904dc2f5a2",
+  "input_identity": {
+    "corpus_digest": "sha256:19f1fab3f5ba12d14f2f59cbdebafb930e32f55d2d9c959079798c23a3ddc3c8",
+    "ground_truth_digest": "sha256:6396f37c97cfd0c018db3d8750095ce6c678a083f83620cfb3e88fe27a46bb0c",
+    "config_digest": "sha256:14a4dd88d1b04d08bc96224da6fc18e58a5f2ee3b69e1fc0290995c6d4aae1d6",
+    "case_identity_digest": "sha256:bfff7f093ee0fcc897410870dcbd3b93d1d21c254ada6e95b68a53bfd179707f"
+  },
+  "implementation_changes": [],
+  "identical_replay": true,
+  "regression_free": true,
+  "evaluation_complete": true,
+  "exit_code": 0,
+  "coverage_lost": [],
+  "coverage_gained": [],
+  "baseline_unscored_findings": {
+    "different_cwe": 9374,
+    "outside_labeled_case": 12
+  },
+  "candidate_unscored_findings": {
+    "different_cwe": 9374,
+    "outside_labeled_case": 12
+  },
+  "channels": {
+    "all_candidates": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 441,
+        "false_positives": 67,
+        "false_negatives": 11,
+        "true_negatives": 711,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8681102362204725,
+        "recall": 0.9756637168141593,
+        "f1": 0.91875,
+        "accuracy": 0.9365853658536586,
+        "false_positive_rate": 0.08611825192802057,
+        "balanced_accuracy": 0.9447727324430694,
+        "mcc": 0.871017159368668,
+        "precision_wilson_95": [
+          0.835903721442654,
+          0.8947912888085924
+        ],
+        "recall_wilson_95": [
+          0.956952717446061,
+          0.9863577069994283
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 441,
+        "false_positives": 67,
+        "false_negatives": 11,
+        "true_negatives": 711,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8681102362204725,
+        "recall": 0.9756637168141593,
+        "f1": 0.91875,
+        "accuracy": 0.9365853658536586,
+        "false_positive_rate": 0.08611825192802057,
+        "balanced_accuracy": 0.9447727324430694,
+        "mcc": 0.871017159368668,
+        "precision_wilson_95": [
+          0.835903721442654,
+          0.8947912888085924
+        ],
+        "recall_wilson_95": [
+          0.956952717446061,
+          0.9863577069994283
+        ]
+      },
+      "transitions": {
+        "fn->fn": 11,
+        "fp->fp": 67,
+        "tn->tn": 711,
+        "tp->tp": 441
+      },
+      "improved_cases": [],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "false_positive_rate": 0.0,
+        "mcc": 0.0
+      }
+    },
+    "advisory": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 345,
+        "false_positives": 44,
+        "false_negatives": 107,
+        "true_negatives": 734,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8868894601542416,
+        "recall": 0.7632743362831859,
+        "f1": 0.8204518430439952,
+        "accuracy": 0.8772357723577235,
+        "false_positive_rate": 0.056555269922879174,
+        "balanced_accuracy": 0.8533595331801533,
+        "mcc": 0.7327115297132055,
+        "precision_wilson_95": [
+          0.8515582508505738,
+          0.9146541568306287
+        ],
+        "recall_wilson_95": [
+          0.7219711329614145,
+          0.8001402182432982
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 345,
+        "false_positives": 44,
+        "false_negatives": 107,
+        "true_negatives": 734,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8868894601542416,
+        "recall": 0.7632743362831859,
+        "f1": 0.8204518430439952,
+        "accuracy": 0.8772357723577235,
+        "false_positive_rate": 0.056555269922879174,
+        "balanced_accuracy": 0.8533595331801533,
+        "mcc": 0.7327115297132055,
+        "precision_wilson_95": [
+          0.8515582508505738,
+          0.9146541568306287
+        ],
+        "recall_wilson_95": [
+          0.7219711329614145,
+          0.8001402182432982
+        ]
+      },
+      "transitions": {
+        "fn->fn": 107,
+        "fp->fp": 44,
+        "tn->tn": 734,
+        "tp->tp": 345
+      },
+      "improved_cases": [],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "false_positive_rate": 0.0,
+        "mcc": 0.0
+      }
+    },
+    "blocking": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 178,
+        "false_positives": 46,
+        "false_negatives": 274,
+        "true_negatives": 732,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7946428571428571,
+        "recall": 0.3938053097345133,
+        "f1": 0.5266272189349113,
+        "accuracy": 0.7398373983739838,
+        "false_positive_rate": 0.05912596401028278,
+        "balanced_accuracy": 0.6673396728621153,
+        "mcc": 0.4180853286607832,
+        "precision_wilson_95": [
+          0.7369871185465942,
+          0.8423631045569231
+        ],
+        "recall_wilson_95": [
+          0.349838662815435,
+          0.43956180056417665
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 178,
+        "false_positives": 46,
+        "false_negatives": 274,
+        "true_negatives": 732,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7946428571428571,
+        "recall": 0.3938053097345133,
+        "f1": 0.5266272189349113,
+        "accuracy": 0.7398373983739838,
+        "false_positive_rate": 0.05912596401028278,
+        "balanced_accuracy": 0.6673396728621153,
+        "mcc": 0.4180853286607832,
+        "precision_wilson_95": [
+          0.7369871185465942,
+          0.8423631045569231
+        ],
+        "recall_wilson_95": [
+          0.349838662815435,
+          0.43956180056417665
+        ]
+      },
+      "transitions": {
+        "fn->fn": 274,
+        "fp->fp": 46,
+        "tn->tn": 732,
+        "tp->tp": 178
+      },
+      "improved_cases": [],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "false_positive_rate": 0.0,
+        "mcc": 0.0
+      }
+    }
+  },
+  "changed_cases": [],
+  "limitations": [
+    "Internal consistency and paired change only; no independent label adjudication.",
+    "Public synthetic cases are not held-out production or live AI evaluation.",
+    "Identical replay excludes timing/RSS and does not prove performance equivalence.",
+    "Digests identify supplied artifacts; they do not authenticate their authors.",
+    "No significance claim or independent-sample assumption for related templates.",
+    "A regression-free comparison is not an absolute precision/recall release gate."
+  ]
+}

@@ -2,17 +2,45 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from aegify.graph_types import CodeGraph
 from aegify.models import (
     FileAST,
     Finding,
+    FindingDisposition,
     Language,
     Severity,
     TaintFlow,
 )
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
+from aegify.scanner.python_process import process_input
+from aegify.scanner.python_scope import PythonModules
+
+
+def _git_revision_sinks(file_asts: list[FileAST]) -> set[tuple[str, int, str, int]]:
+    modules = PythonModules(file_asts)
+    sinks = set()
+    for file in file_asts:
+        if file.language != Language.PYTHON:
+            continue
+        candidates = [
+            (call, fact)
+            for call in file.calls
+            if (fact := call.python_process_input)
+            and fact.git_diff_revision_only
+            and fact.shell is False
+        ]
+        if not candidates or not modules.external(file, "subprocess"):
+            continue
+        # Taint sink identity has a line but no column. A second call on that
+        # line can represent an entirely different command.
+        counts = Counter(call.line for call in file.calls)
+        for call, fact in candidates:
+            if counts[call.line] == 1 and fact.argument_index is not None:
+                sinks.add((file.file_path, call.line, fact.api, fact.argument_index))
+    return sinks
 
 
 class CommandInjectionRule(SecurityRule):
@@ -58,19 +86,34 @@ class CommandInjectionRule(SecurityRule):
     ) -> list[Finding]:
         findings: list[Finding] = []
 
+        revision_sinks = _git_revision_sinks(file_asts) if taint_flows else set()
         for flow in taint_flows:
             if flow.sink.sink_type != "os_command":
                 continue
             if flow.sanitized:
                 continue
 
+            sink = flow.sink
+            revision_only = (
+                sink.file_path,
+                sink.line,
+                sink.function,
+                sink.argument_index,
+            ) in revision_sinks
             findings.append(
                 self._create_finding(
                     file_path=flow.sink.file_path,
                     line_start=flow.sink.line,
                     line_end=flow.sink.line,
                     code_snippet="",
+                    disposition=FindingDisposition.ADVISORY if revision_only else None,
                     message=(
+                        f"Input from '{flow.source.variable}' reaches a revision operand of a "
+                        "shell-free, name-only Git diff with external diff and text conversion "
+                        "disabled. Review which revisions the caller may select."
+                    )
+                    if revision_only
+                    else (
                         f"Potential command injection: user input from "
                         f"'{flow.source.variable}' (line {flow.source.line}) "
                         f"flows to '{flow.sink.function}' (line {flow.sink.line}) "
@@ -115,14 +158,12 @@ class ShellTrueRule(SecurityRule):
                 ],
                 "args_match": {
                     "required": ["shell=True"],
-                    "logic": "callee is a subprocess function AND arguments contain shell=True",
+                    "logic": "resolved subprocess API with an enabled shell argument",
                 },
             },
             "description": (
-                "Scans for subprocess function calls (run, call, Popen, check_output, check_call) "
-                "that include shell=True in their arguments. When shell=True, the command is "
-                "executed through the shell interpreter, making it vulnerable to command injection "
-                "if any part of the command string is user-controlled."
+                "Resolves standard-library subprocess calls and checks whether their shell "
+                "option is enabled. Review the command input for each observed use."
             ),
         }
 
@@ -134,22 +175,14 @@ class ShellTrueRule(SecurityRule):
     ) -> list[Finding]:
         findings: list[Finding] = []
 
+        modules = PythonModules(file_asts)
         for ast in file_asts:
             if ast.language != Language.PYTHON:
                 continue
 
             for call in ast.calls:
-                callee = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
-                if callee not in (
-                    "subprocess.run",
-                    "subprocess.call",
-                    "subprocess.Popen",
-                    "subprocess.check_output",
-                    "subprocess.check_call",
-                ):
-                    continue
-
-                if any("shell=True" in arg or "shell = True" in arg for arg in call.arguments):
+                process = process_input(call, ast, modules)
+                if process and process.shell is True:
                     findings.append(
                         self._create_finding(
                             file_path=ast.file_path,
@@ -157,8 +190,8 @@ class ShellTrueRule(SecurityRule):
                             line_end=call.line,
                             code_snippet="",
                             message=(
-                                f"subprocess call at line {call.line} uses shell=True. "
-                                f"This is dangerous if any command argument is user-controlled."
+                                f"{process.api} enables the shell on line {call.line}. "
+                                "Review how the command text is constructed."
                             ),
                         )
                     )

@@ -395,8 +395,38 @@ def test_provider_failure_keeps_facts_and_marks_finished_run_partial() -> None:
     assert all(
         stage.narrative is None and stage.backend_error_code == "refused" for stage in run.stages
     )
-    assert [stage.facts for stage in run.stages] == [stage.facts for stage in baseline.stages]
+    for stage, original in zip(run.stages, baseline.stages, strict=True):
+        assert {k: v for k, v in stage.facts.items() if k != "reviewHandoff"} == {
+            k: v for k, v in original.facts.items() if k != "reviewHandoff"
+        }
+        handoff = stage.facts.get("reviewHandoff")
+        if handoff:
+            assert all(item["status"] == "partial" for item in handoff["inputs"])
+            assert "The surface review was incomplete." in handoff["gaps"]
     assert all(stage.backend_error_code == "" for stage in baseline.stages)
+
+
+def test_backend_exception_content_never_enters_the_record() -> None:
+    private = "private_trace_marker"
+
+    class Backend:
+        provider_name = "openai_api"
+
+        def __init__(self, error: Exception) -> None:
+            self.error = error
+
+        def invoke(self, _spec: Any, _payload: Any) -> AgentNarrative:
+            raise self.error
+
+    for error, expected in (
+        (ValueError(private), "provider_error"),
+        (AgentBackendError(private, private), "provider_error"),
+        (AgentBackendError("timeout", private), "timeout"),
+    ):
+        run = SecurityAgentPipeline(Backend(error)).run(_scan(runtime=True))
+        assert private not in run.model_dump_json()
+        assert all(stage.backend_error_code == expected for stage in run.stages)
+        assert all(stage.facts and stage.narrative is None for stage in run.stages)
 
 
 def test_legacy_run_reads_without_new_error_code_and_keeps_original_digest() -> None:
@@ -458,3 +488,44 @@ def test_mcp_bridge_requires_read_only_allowlist_and_redacts_results() -> None:
     assert envelope.arguments_digest.startswith("sha256:")
     with pytest.raises(ValueError, match="allowlisted"):
         bridge.normalize("inventory", "shell", {}, {})
+
+
+def test_static_provider_receives_only_bounded_upstream_references() -> None:
+    from aegify.agents.handoff import review_handoff
+
+    class Backend:
+        provider_name = "openai_api"
+
+        def __init__(self) -> None:
+            self.inputs: dict[AgentRole, Any] = {}
+
+        def invoke(self, spec: Any, payload: Any) -> AgentNarrative:
+            self.inputs[spec.role] = payload["facts"]
+            if spec.role == AgentRole.SURFACE:
+                payload["facts"]["endpoints"] = 0
+                payload["evidence_ids"].clear()
+            return AgentNarrative(summary="unverified-narrative-marker")
+
+    backend = Backend()
+    scan = _scan()
+    scan.findings = [
+        original.model_copy(update={"id": f"item-{i}"})
+        for original in scan.findings
+        for i in range(26)
+    ]
+    run = SecurityAgentPipeline(backend).run(scan)
+    static = backend.inputs[AgentRole.STATIC]["reviewHandoff"]
+    assert [item["role"] for item in static["inputs"]] == ["surface"]
+    assert set(static["inputs"][0]["evidenceIds"]) <= {item.id for item in run.evidence}
+    assert static["inputs"][0]["evidenceIds"]
+    assert "unverified-narrative-marker" not in str(static)
+    assert "The scan supplied no endpoint inventory." not in static["gaps"]
+    synthesis = backend.inputs[AgentRole.SYNTHESIS]
+    assert [item["role"] for item in synthesis["reviewHandoff"]["inputs"]] == ["surface", "static"]
+    assert len(synthesis["findings"]) == 25 and synthesis["omitted_findings"] == 1
+    assert len(next(s for s in run.stages if s.role == AgentRole.SYNTHESIS).facts["findings"]) == 26
+    assert "reviewHandoff" not in backend.inputs[AgentRole.DYNAMIC]
+    surface = run.stages[0].model_copy(update={"evidence_ids": [f"e-{i}" for i in range(19)]})
+    handoff = review_handoff(AgentRole.STATIC, [surface], {f"e-{i}" for i in range(18)})
+    assert handoff and handoff["inputs"][0]["evidenceIds"] == [f"e-{i}" for i in range(16)]
+    assert handoff["inputs"][0]["omittedEvidence"] == 3

@@ -1,0 +1,407 @@
+{
+  "version": 1,
+  "corpus": "transport-verification-v1",
+  "split": "all",
+  "cwe": 295,
+  "manifest_sha256": "9a701975478595a4e84222fe19ff5c8b257e51ef28a38976e8605a661fb1cce7",
+  "evaluator_sha256": "854f1c2f2981bc15e2a3bd2112149980f344ab62ae44c98ebf82c0c42c64495f",
+  "configuration_digest": "sha256:137c327fad5797282181beccdf993833548d193776f3a5f0da35fc18b59ff4ed",
+  "scored_rules": [
+    "AEG-A02-005",
+    "AEG-CRYPTO-003"
+  ],
+  "implementation": {
+    "scanner_version": "0.3.0b1",
+    "scanner_code_and_modelpacks_digest": "sha256:e0384fea13fcdaf405fcf7b711ff4d3c837cc25f525fd58c4f1bbafdb3ebfcd3",
+    "bundled_rules_digest": "sha256:77f97fe2828339fa984878d01a0c792ef3cb4c8d00df2a56a62109df9a77f420",
+    "rule_definitions_digest": "sha256:5f2999d66ec85c88658b7231122acc77bbd909f26dcfe2ec7343f9cc82120590",
+    "parser_fingerprint": "697e6b6316c4b8ea595e2b31f061ec5eaef6e97f0d429b2d2ae0e7a28f1cced0",
+    "python": "3.14.7"
+  },
+  "counts": {
+    "development": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "tn": 2,
+      "unscored": 0
+    },
+    "evaluation": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 3,
+      "tn": 6,
+      "unscored": 0
+    }
+  },
+  "cases": [
+    {
+      "site": "ckan-mail-upgrade",
+      "split": "development",
+      "version": "before",
+      "range": [
+        119,
+        119
+      ],
+      "source_sha256": "e7bbbb0d5eeeb7a3f9b272da6a57ace095c23386546151c9bd6ae525d3352c27",
+      "hits": [
+        {
+          "line": 119,
+          "rule": "AEG-A02-005",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ],
+      "outcome": "tp"
+    },
+    {
+      "site": "ckan-mail-upgrade",
+      "split": "development",
+      "version": "after",
+      "range": [
+        144,
+        144
+      ],
+      "source_sha256": "a55df3f0ee0b627b3050bcdbf710346b6692d4d8de594f11e507483342d05ad3",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "sagemaker-default-https-context",
+      "split": "development",
+      "version": "before",
+      "range": [
+        18,
+        18
+      ],
+      "source_sha256": "8100a6c7385800aea64ba88fd5c6e9a871f6132becf592adf1dff14be6f8c2ec",
+      "hits": [
+        {
+          "line": 18,
+          "rule": "AEG-A02-005",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ],
+      "outcome": "tp"
+    },
+    {
+      "site": "sagemaker-default-https-context",
+      "split": "development",
+      "version": "after",
+      "range": [
+        1,
+        16
+      ],
+      "source_sha256": "b6b1e2e4833f6c32865ef1d228ef5ff3c709cdc718f71d80d2233909b63b574d",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "airflow-sync-http",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        692,
+        701
+      ],
+      "source_sha256": "54fda4e93d856e30ee1bb625d172988ae3fa2d2aca5c3f5f265dacbc076359ea",
+      "hits": [
+        {
+          "line": 699,
+          "rule": "AEG-A02-005",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 699,
+          "rule": "AEG-CRYPTO-003",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ],
+      "outcome": "tp"
+    },
+    {
+      "site": "airflow-async-http",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        757,
+        766
+      ],
+      "source_sha256": "54fda4e93d856e30ee1bb625d172988ae3fa2d2aca5c3f5f265dacbc076359ea",
+      "hits": [
+        {
+          "line": 764,
+          "rule": "AEG-A02-005",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ],
+      "outcome": "tp"
+    },
+    {
+      "site": "airflow-sync-http",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        694,
+        703
+      ],
+      "source_sha256": "ac360d24b5a21648001a1fc6d921a2d5948615c818c01d9dc0325dd59b3ff9fa",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "airflow-async-http",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        760,
+        769
+      ],
+      "source_sha256": "ac360d24b5a21648001a1fc6d921a2d5948615c818c01d9dc0325dd59b3ff9fa",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "airflow-core-mail-upgrade",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        269,
+        269
+      ],
+      "source_sha256": "0e80c303e9f78400ebc4f82ae441f01b93e07a6d86a5afe43aa1a74506cc95a1",
+      "hits": [
+        {
+          "line": 269,
+          "rule": "AEG-A02-005",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ],
+      "outcome": "tp"
+    },
+    {
+      "site": "airflow-core-mail-upgrade",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        269,
+        269
+      ],
+      "source_sha256": "16534214994a959ad3ddc571aabd7144aea8c1743c86b4581ef70070f5cf4166",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "airflow-provider-mail-upgrade",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        129,
+        129
+      ],
+      "source_sha256": "a53c05cd545a4417a1761c71b8697424b0a71b09572ee47737ed09d7d8f75016",
+      "hits": [],
+      "outcome": "fn"
+    },
+    {
+      "site": "airflow-provider-mail-upgrade",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        129,
+        129
+      ],
+      "source_sha256": "f64dc9213457578d73a9be0ad58d0470f8c5b9421294c56a7b0c1298665084e9",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "dirac-generated-client",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        247,
+        250
+      ],
+      "source_sha256": "fd9c03cce1c2fbe9813533541e56c478a32f8581a711516e459bf2d13a7806e5",
+      "hits": [],
+      "outcome": "fn"
+    },
+    {
+      "site": "dirac-generated-client",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        247,
+        257
+      ],
+      "source_sha256": "4bbf921e0fac4797b7860f29e8c10e5ad47bc88c5268adca34e48c9f61291ff0",
+      "hits": [],
+      "outcome": "tn"
+    },
+    {
+      "site": "weblate-host-policy",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        376,
+        378
+      ],
+      "source_sha256": "f5811948daa92f7a61d6db790387c889b8d976acf0ec86b9f0386966f35efe52",
+      "hits": [],
+      "outcome": "fn"
+    },
+    {
+      "site": "weblate-host-policy",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        377,
+        378
+      ],
+      "source_sha256": "37b1f93a2c08e66127ec7ed4ab1d552a33c2c2e64d6c0ba481195462c93a0af4",
+      "hits": [],
+      "outcome": "tn"
+    }
+  ],
+  "modules": [
+    {
+      "repository": "ckan/ckan",
+      "path": "ckan/lib/mailer.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "ckan/ckan",
+      "path": "ckan/lib/mailer.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": [
+        {
+          "line": 146,
+          "rule": "AEG-A02-005",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ]
+    },
+    {
+      "repository": "aws/sagemaker-python-sdk",
+      "path": "sagemaker-serve/src/sagemaker/serve/model_server/triton/model.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "aws/sagemaker-python-sdk",
+      "path": "sagemaker-serve/src/sagemaker/serve/model_server/triton/model.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "apache/airflow",
+      "path": "providers/databricks/src/airflow/providers/databricks/hooks/databricks_base.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "apache/airflow",
+      "path": "providers/databricks/src/airflow/providers/databricks/hooks/databricks_base.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "apache/airflow",
+      "path": "airflow-core/src/airflow/utils/email.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "apache/airflow",
+      "path": "airflow-core/src/airflow/utils/email.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "apache/airflow",
+      "path": "providers/smtp/src/airflow/providers/smtp/hooks/smtp.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "apache/airflow",
+      "path": "providers/smtp/src/airflow/providers/smtp/hooks/smtp.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "DIRACGrid/DIRAC",
+      "path": "src/DIRAC/WorkloadManagementSystem/Utilities/PilotWrapper.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "DIRACGrid/DIRAC",
+      "path": "src/DIRAC/WorkloadManagementSystem/Utilities/PilotWrapper.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "WeblateOrg/wlc",
+      "path": "wlc/__init__.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    },
+    {
+      "repository": "WeblateOrg/wlc",
+      "path": "wlc/__init__.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": []
+    }
+  ]
+}

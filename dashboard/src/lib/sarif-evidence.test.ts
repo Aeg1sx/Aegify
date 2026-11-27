@@ -14,6 +14,7 @@ import {
   normalizeFindingClassification,
   normalizeFindingEvidence,
   normalizeSourceSnippet,
+  scanCoverageForRun,
   scanHealthForRun,
   workspaceSnapshotForRun,
 } from "./sarif-evidence.ts";
@@ -36,6 +37,36 @@ test("failed, partial, malformed and legacy reports cannot resolve absent findin
   assert.equal(canReconcileScanAbsence(complete, "feature", "main"), false);
   assert.equal(canReconcileScanAbsence(complete, "", "main"), false);
   assert.equal(scanHealthForRun({ analysisStatus: "partial" }, { executionSuccessful: false }).status, "partial");
+});
+
+test("solver truncation survives a successful invocation and a missing top-level gap", () => {
+  const done = { executionSuccessful: true };
+  for (const summary of [{ truncated: true }, { limits_reached: ["contexts"] }, { limits_reached: ["iterations"] }]) {
+    const health = scanHealthForRun({ analysisStatus: "completed", taintAnalysis: summary }, done);
+    assert.equal(health.status, "partial");
+    assert.deepEqual(health.gaps.map((gap) => gap.code), ["taint_limit"]);
+    const repeated = scanHealthForRun({ taintAnalysis: summary, analysisGaps: health.gaps }, done);
+    assert.deepEqual(repeated.gaps, health.gaps);
+  }
+  assert.equal(scanHealthForRun({ taintAnalysis: { truncated: false, limits_reached: [] } }, done).status, "completed");
+  const legacy = { truncated: true, contexts_analyzed: 10000, warnings: ["global taint hit the 10000-context bound"] };
+  const generic = [{ code: "taint_limit", stage: "taint", message: "Taint analysis reached its configured bound", affected_count: 1 }];
+  assert.match(scanHealthForRun({ analysisGaps: generic, taintAnalysis: legacy }, done).gaps[0].message, /limit of 10,000 call contexts/);
+  assert.doesNotMatch(scanHealthForRun({ taintAnalysis: { ...legacy, contexts_analyzed: 700 } }, done).gaps[0].message, /700|10,000/);
+  assert.match(scanHealthForRun({ taintAnalysis: { limits_reached: ["iterations"], iteration_limit: 3, iterations: 3 } }, done).gaps[0].message, /after 3 passes/);
+});
+
+test("coverage receipts distinguish missing inventories, empty arrays and bounded diagnostics", () => {
+  const run = { analysisScope: "files", analyzedFiles: ["one.py", "one.py"], evaluatedRules: ["RULE", "RULE"] };
+  const invocation = { properties: { analysisGaps: Array(105).fill({ code: "incomplete" }) }, executionSuccessful: true };
+  const health = scanHealthForRun(run, invocation);
+  health.gaps.push({ code: "identity", stage: "import", message: "import gap", affected_count: 1 });
+  assert.deepEqual(scanCoverageForRun(health, run, invocation.properties), { scope: "files", files: 1, rules: 1, gaps: 106 });
+  for (const [input, expected] of [
+    [{}, { scope: "unknown", files: null, rules: null, gaps: null }],
+    [{ analyzedFiles: [false], evaluatedRules: ["lower case"] }, { scope: "unknown", files: null, rules: null, gaps: null }],
+    [{ analyzedFiles: [], evaluatedRules: [], analysisGaps: [] }, { scope: "unknown", files: 0, rules: 0, gaps: 0 }],
+  ] as const) assert.deepEqual(scanCoverageForRun(scanHealthForRun(input), input), expected);
 });
 
 test("imports a SARIF context region without moving the reported finding", () => {

@@ -22,6 +22,9 @@ test("authentication origins and post-login return paths stay bounded", () => {
   for (const value of ["http://public.example", "https://user:pass@example.test", "https://example.test/path", "https://example.test?key=value"]) assert.equal(authOrigin({ AUTH_URL: value }), null);
   for (const value of ["https://other.example", "//other.example", "/\\other.example", "/auth/signin", "/api/auth/session", "/\nexample"]) assert.equal(safeAuthReturn(value), "/");
   assert.equal(safeAuthReturn("/findings?severity=high"), "/findings?severity=high");
+  assert.equal(safeAuthReturn("/projects/../findings?status=open#details"), "/findings?status=open#details");
+  assert.equal(safeAuthReturn("/projects/..//"), "/");
+  assert.equal(safeAuthReturn("/projects/%2e%2e//"), "/");
   assert.equal(validOktaIssuer("https://tenant.okta.com/oauth2/default"), true);
   assert.equal(validOktaIssuer("http://tenant.okta.com"), false);
 });

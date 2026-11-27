@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
-from aegify.agents.backends import AgentBackend, AgentBackendError, AnthropicAPIBackend
+from aegify.agents.backends import (
+    AgentBackend,
+    AnthropicAPIBackend,
+    public_backend_code,
+)
 from aegify.agents.catalog import AGENT_CATALOG, AgentSpec
 from aegify.agents.checkpoint import CheckpointBackend
 from aegify.agents.exploration import AgentSourceExplorer
+from aegify.agents.handoff import provider_facts, review_handoff
 from aegify.agents.models import (
     AgentEvidence,
     AgentExplorationLimits,
@@ -104,7 +110,10 @@ class SecurityAgentPipeline:
             self._steward(scan, traces),
         ]
         scan_digest = _digest(scan.model_dump_json()) if self.source_tools else ""
+        available_evidence = {item.id for item in evidence}
         for stage in stages:
+            if handoff := review_handoff(stage.role, run.stages, available_evidence):
+                stage.facts["reviewHandoff"] = handoff
             run.evidence.extend(self._attach_narrative(stage, tool_context, scan_digest))
             run.stages.append(stage)
         if isinstance(self.backend, AnthropicAPIBackend):
@@ -282,7 +291,7 @@ class SecurityAgentPipeline:
         spec = AGENT_CATALOG[AgentRole.STATIC]
         complete = sum(trace.static_complete for trace in traces)
         observed = sum(trace.runtime_observed for trace in traces)
-        facts = {
+        facts: dict[str, Any] = {
             "mode": mode.value,
             "findings": len(scan.findings),
             "severity": dict(Counter(finding.severity.value for finding in scan.findings)),
@@ -295,6 +304,17 @@ class SecurityAgentPipeline:
             "program_graph_fidelity": scan.program_graph.fidelity,
             "taint_fidelity": scan.taint_analysis.fidelity,
         }
+        if inventory := scan.gateway_inventory:
+            ownership = Counter(route.status for file in inventory.files for route in file.routes)
+            facts["gatewayOwnership"] = {
+                "inputStatus": inventory.input_status,
+                "configFiles": len(inventory.files),
+                "resolved": ownership["resolved"],
+                "ambiguous": ownership["ambiguous"],
+                "unresolved": ownership["unresolved"],
+                "omittedFiles": inventory.omitted_files,
+                "omittedRoutes": inventory.omitted_routes,
+            }
         status = (
             AgentStageStatus.COMPLETED
             if not scan.findings or complete
@@ -545,17 +565,16 @@ class SecurityAgentPipeline:
         tool_results = self.tools.collect(spec, stage, context)
         payload = {
             "deterministic_summary": stage.summary,
-            "facts": stage.facts,
-            "evidence_ids": stage.evidence_ids,
-            "required_evidence": spec.required_evidence,
+            "facts": deepcopy(provider_facts(stage)),
+            "evidence_ids": list(stage.evidence_ids),
+            "required_evidence": list(spec.required_evidence),
             "tools": [result.model_dump(mode="json") for result in tool_results],
         }
         try:
             stage.narrative = self.backend.invoke(spec, payload)
         except Exception as error:
-            stage.error = str(error)[:1_000]
-            if isinstance(error, AgentBackendError):
-                stage.backend_error_code = error.code
+            stage.backend_error_code = public_backend_code(error, unexpected="provider_error")
+            stage.error = "The AI provider could not complete this review."
             if stage.status == AgentStageStatus.COMPLETED:
                 stage.status = AgentStageStatus.PARTIAL
         return self._tool_evidence(tool_results)

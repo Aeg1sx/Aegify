@@ -137,12 +137,16 @@ export async function readReviewHistory(db: PrismaClient, access: AccessPrincipa
   const row = await db.llmReview.findFirst({ where: { id: reviewId, jobId }, include: { call: { select: { jobId: true, batchIndex: true, status: true, promptDigest: true, responseDigest: true } } } });
   if (!row) throw new AccessDenied();
   const record = verifiedPayload(row, job, row.call);
-  const finding = await db.finding.findFirst({ where: { id: row.findingId, scanId: job.scanId }, select: { ...reviewFindingSelect, status: true, aiReviewStatus: true, llmAnalysis: true } });
+  const finding = await db.finding.findFirst({ where: { id: row.findingId, scanId: job.scanId, scan: { projectId: job.projectId } }, select: { ...reviewFindingSelect, identityId: true, status: true, aiReviewStatus: true, llmAnalysis: true } });
+  const identity = finding?.identityId && job.projectId
+    ? await db.findingIdentity.findFirst({ where: { id: finding.identityId, projectId: job.projectId }, select: { status: true } })
+    : null;
   let currentHistoryId: unknown = null;
   if (finding?.llmAnalysis && finding.llmAnalysis.length <= MAX_RECORD_BYTES) { try { currentHistoryId = JSON.parse(finding.llmAnalysis)?.historyId; } catch { /* Unverified legacy projection. */ } }
   return {
     record, payloadDigest: row.payloadDigest,
     current: finding ? { findingId: finding.id, status: finding.status, aiReviewStatus: finding.aiReviewStatus,
+      triage: { scope: identity ? "identity" : "observation", status: identity?.status ?? finding.status },
       state: findingEvidenceDigest(finding) !== row.evidenceDigest ? "source_changed" : currentHistoryId === row.id ? "current" : "superseded" } : null,
   };
 }

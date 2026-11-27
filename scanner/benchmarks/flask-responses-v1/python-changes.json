@@ -1,0 +1,1627 @@
+{
+  "schema_version": 1,
+  "comparison": "owasp-python-paired-v1",
+  "mode": "no_case_regressions",
+  "baseline_artifact_digest": "sha256:9b60c2be05b272f680ab37b672028d8d24df019826a2dedf42fc5e9f8dd4d0c1",
+  "candidate_artifact_digest": "sha256:8ac1f12162c9bd8d55adb7ca4c672685395a0928bcdc651825f0edbe190767e2",
+  "input_identity": {
+    "corpus_digest": "sha256:19f1fab3f5ba12d14f2f59cbdebafb930e32f55d2d9c959079798c23a3ddc3c8",
+    "ground_truth_digest": "sha256:6396f37c97cfd0c018db3d8750095ce6c678a083f83620cfb3e88fe27a46bb0c",
+    "config_digest": "sha256:14a4dd88d1b04d08bc96224da6fc18e58a5f2ee3b69e1fc0290995c6d4aae1d6",
+    "case_identity_digest": "sha256:bfff7f093ee0fcc897410870dcbd3b93d1d21c254ada6e95b68a53bfd179707f"
+  },
+  "implementation_changes": [
+    "parser_fingerprint",
+    "rule_definitions_digest",
+    "scanner_code_and_modelpacks_digest",
+    "evaluated_rules"
+  ],
+  "identical_replay": false,
+  "regression_free": false,
+  "evaluation_complete": true,
+  "exit_code": 1,
+  "coverage_lost": [],
+  "coverage_gained": [],
+  "baseline_unscored_findings": {
+    "different_cwe": 9371,
+    "outside_labeled_case": 12
+  },
+  "candidate_unscored_findings": {
+    "different_cwe": 9374,
+    "outside_labeled_case": 12
+  },
+  "channels": {
+    "all_candidates": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 380,
+        "false_positives": 72,
+        "false_negatives": 72,
+        "true_negatives": 706,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8407079646017699,
+        "recall": 0.8407079646017699,
+        "f1": 0.8407079646017699,
+        "accuracy": 0.8829268292682927,
+        "false_positive_rate": 0.09254498714652956,
+        "balanced_accuracy": 0.8740814887276201,
+        "mcc": 0.7481629774552403,
+        "precision_wilson_95": [
+          0.8041203532608381,
+          0.8715531600629076
+        ],
+        "recall_wilson_95": [
+          0.8041203532608381,
+          0.8715531600629076
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 425,
+        "false_positives": 74,
+        "false_negatives": 27,
+        "true_negatives": 704,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8517034068136272,
+        "recall": 0.9402654867256637,
+        "f1": 0.8937960042060988,
+        "accuracy": 0.9178861788617886,
+        "false_positive_rate": 0.09511568123393316,
+        "balanced_accuracy": 0.9225749027458652,
+        "mcc": 0.829819718444414,
+        "precision_wilson_95": [
+          0.8178376590050432,
+          0.8801954761767584
+        ],
+        "recall_wilson_95": [
+          0.9144851922171906,
+          0.9586253866881691
+        ]
+      },
+      "transitions": {
+        "fn->fn": 27,
+        "fn->tp": 45,
+        "fp->fp": 72,
+        "tn->fp": 2,
+        "tn->tn": 704,
+        "tp->tp": 380
+      },
+      "improved_cases": [
+        "BenchmarkTest00096",
+        "BenchmarkTest00097",
+        "BenchmarkTest00098",
+        "BenchmarkTest00159",
+        "BenchmarkTest00169",
+        "BenchmarkTest00187",
+        "BenchmarkTest00188",
+        "BenchmarkTest00189",
+        "BenchmarkTest00272",
+        "BenchmarkTest00277",
+        "BenchmarkTest00278",
+        "BenchmarkTest00281",
+        "BenchmarkTest00357",
+        "BenchmarkTest00362",
+        "BenchmarkTest00365",
+        "BenchmarkTest00366",
+        "BenchmarkTest00372",
+        "BenchmarkTest00450",
+        "BenchmarkTest00451",
+        "BenchmarkTest00453",
+        "BenchmarkTest00515",
+        "BenchmarkTest00531",
+        "BenchmarkTest00532",
+        "BenchmarkTest00533",
+        "BenchmarkTest00599",
+        "BenchmarkTest00654",
+        "BenchmarkTest00669",
+        "BenchmarkTest00673",
+        "BenchmarkTest00674",
+        "BenchmarkTest00682",
+        "BenchmarkTest00742",
+        "BenchmarkTest00751",
+        "BenchmarkTest00753",
+        "BenchmarkTest00754",
+        "BenchmarkTest00839",
+        "BenchmarkTest00841",
+        "BenchmarkTest00842",
+        "BenchmarkTest00906",
+        "BenchmarkTest00923",
+        "BenchmarkTest00924",
+        "BenchmarkTest00925",
+        "BenchmarkTest00932",
+        "BenchmarkTest00944",
+        "BenchmarkTest00986",
+        "BenchmarkTest01210"
+      ],
+      "regressed_cases": [
+        "BenchmarkTest00006",
+        "BenchmarkTest00419"
+      ],
+      "metric_deltas": {
+        "precision": 0.010995442211857331,
+        "recall": 0.0995575221238938,
+        "f1": 0.05308803960432895,
+        "accuracy": 0.03495934959349589,
+        "false_positive_rate": 0.0025706940874035966,
+        "mcc": 0.08165674098917375
+      }
+    },
+    "advisory": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 309,
+        "false_positives": 50,
+        "false_negatives": 143,
+        "true_negatives": 728,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8607242339832869,
+        "recall": 0.6836283185840708,
+        "f1": 0.7620221948212084,
+        "accuracy": 0.843089430894309,
+        "false_positive_rate": 0.06426735218508997,
+        "balanced_accuracy": 0.8096804831994904,
+        "mcc": 0.656820268072734,
+        "precision_wilson_95": [
+          0.8210757004022341,
+          0.8927346806986488
+        ],
+        "recall_wilson_95": [
+          0.6393604686657215,
+          0.7248012300736999
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 345,
+        "false_positives": 51,
+        "false_negatives": 107,
+        "true_negatives": 727,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8712121212121212,
+        "recall": 0.7632743362831859,
+        "f1": 0.8136792452830188,
+        "accuracy": 0.8715447154471545,
+        "false_positive_rate": 0.06555269922879177,
+        "balanced_accuracy": 0.8488608185271971,
+        "mcc": 0.7199636809675786,
+        "precision_wilson_95": [
+          0.8346201109748271,
+          0.9006713239532403
+        ],
+        "recall_wilson_95": [
+          0.7219711329614145,
+          0.8001402182432982
+        ]
+      },
+      "transitions": {
+        "fn->fn": 107,
+        "fn->tp": 36,
+        "fp->fp": 50,
+        "tn->fp": 1,
+        "tn->tn": 727,
+        "tp->tp": 309
+      },
+      "improved_cases": [
+        "BenchmarkTest00096",
+        "BenchmarkTest00097",
+        "BenchmarkTest00098",
+        "BenchmarkTest00169",
+        "BenchmarkTest00187",
+        "BenchmarkTest00188",
+        "BenchmarkTest00189",
+        "BenchmarkTest00272",
+        "BenchmarkTest00277",
+        "BenchmarkTest00278",
+        "BenchmarkTest00281",
+        "BenchmarkTest00357",
+        "BenchmarkTest00362",
+        "BenchmarkTest00365",
+        "BenchmarkTest00366",
+        "BenchmarkTest00450",
+        "BenchmarkTest00451",
+        "BenchmarkTest00453",
+        "BenchmarkTest00515",
+        "BenchmarkTest00531",
+        "BenchmarkTest00532",
+        "BenchmarkTest00533",
+        "BenchmarkTest00669",
+        "BenchmarkTest00673",
+        "BenchmarkTest00742",
+        "BenchmarkTest00751",
+        "BenchmarkTest00753",
+        "BenchmarkTest00754",
+        "BenchmarkTest00839",
+        "BenchmarkTest00841",
+        "BenchmarkTest00842",
+        "BenchmarkTest00906",
+        "BenchmarkTest00923",
+        "BenchmarkTest00924",
+        "BenchmarkTest00925",
+        "BenchmarkTest01210"
+      ],
+      "regressed_cases": [
+        "BenchmarkTest00006"
+      ],
+      "metric_deltas": {
+        "precision": 0.010487887228834314,
+        "recall": 0.07964601769911506,
+        "f1": 0.05165705046181046,
+        "accuracy": 0.028455284552845517,
+        "false_positive_rate": 0.0012853470437017983,
+        "mcc": 0.0631434128948446
+      }
+    },
+    "blocking": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 141,
+        "false_positives": 44,
+        "false_negatives": 311,
+        "true_negatives": 734,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7621621621621621,
+        "recall": 0.31194690265486724,
+        "f1": 0.4427001569858713,
+        "accuracy": 0.7113821138211383,
+        "false_positive_rate": 0.056555269922879174,
+        "balanced_accuracy": 0.627695816365994,
+        "mcc": 0.34444641665844317,
+        "precision_wilson_95": [
+          0.6958710195183432,
+          0.8177873720539331
+        ],
+        "recall_wilson_95": [
+          0.2709724272968694,
+          0.356090893271193
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 153,
+        "false_positives": 46,
+        "false_negatives": 299,
+        "true_negatives": 732,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.7688442211055276,
+        "recall": 0.33849557522123896,
+        "f1": 0.4700460829493088,
+        "accuracy": 0.7195121951219512,
+        "false_positive_rate": 0.05912596401028278,
+        "balanced_accuracy": 0.639684805605478,
+        "mcc": 0.36574829348243626,
+        "precision_wilson_95": [
+          0.7055146700082396,
+          0.8219909031723637
+        ],
+        "recall_wilson_95": [
+          0.2963958623093711,
+          0.38331734241378845
+        ]
+      },
+      "transitions": {
+        "fn->fn": 299,
+        "fn->tp": 12,
+        "fp->fp": 44,
+        "tn->fp": 2,
+        "tn->tn": 732,
+        "tp->tp": 141
+      },
+      "improved_cases": [
+        "BenchmarkTest00159",
+        "BenchmarkTest00277",
+        "BenchmarkTest00372",
+        "BenchmarkTest00599",
+        "BenchmarkTest00654",
+        "BenchmarkTest00674",
+        "BenchmarkTest00682",
+        "BenchmarkTest00751",
+        "BenchmarkTest00906",
+        "BenchmarkTest00932",
+        "BenchmarkTest00944",
+        "BenchmarkTest00986"
+      ],
+      "regressed_cases": [
+        "BenchmarkTest00006",
+        "BenchmarkTest00419"
+      ],
+      "metric_deltas": {
+        "precision": 0.0066820589433654876,
+        "recall": 0.026548672566371723,
+        "f1": 0.02734592596343749,
+        "accuracy": 0.008130081300812941,
+        "false_positive_rate": 0.0025706940874036036,
+        "mcc": 0.021301876823993093
+      }
+    }
+  },
+  "changed_cases": [
+    {
+      "case": "BenchmarkTest00006",
+      "cwe": 22,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "fp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-AC-PY-006",
+          "AEG-PATH-001"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00096",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00097",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00098",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00159",
+      "cwe": 94,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-007",
+          "AEG-EXEC-001"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00169",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00187",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00188",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00189",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00272",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00277",
+      "cwe": 22,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-AC-PY-006",
+          "AEG-PATH-001"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00278",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00281",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00357",
+      "cwe": 22,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-AC-PY-006"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00362",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00365",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00366",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00372",
+      "cwe": 643,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-XPATH-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00419",
+      "cwe": 601,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "tn",
+          "advisory": "tn",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "tn",
+          "blocking": "fp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A04-006",
+          "AEG-A08-006",
+          "AEG-SSRF-002"
+        ],
+        "matched_finding_count": 3
+      }
+    },
+    {
+      "case": "BenchmarkTest00450",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00451",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00453",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00515",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00531",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00532",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00533",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00599",
+      "cwe": 94,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-007",
+          "AEG-EXEC-001"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00654",
+      "cwe": 601,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A04-006"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00669",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00673",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00674",
+      "cwe": 643,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-XPATH-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00682",
+      "cwe": 643,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-XPATH-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00742",
+      "cwe": 22,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-AC-PY-006"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00751",
+      "cwe": 22,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-AC-PY-006",
+          "AEG-PATH-001"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00753",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00754",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00839",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00841",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00842",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00906",
+      "cwe": 22,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-AC-PY-006",
+          "AEG-PATH-001"
+        ],
+        "matched_finding_count": 2
+      }
+    },
+    {
+      "case": "BenchmarkTest00923",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00924",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00925",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00932",
+      "cwe": 643,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-XPATH-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00944",
+      "cwe": 643,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-XPATH-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00986",
+      "cwe": 94,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-EXEC-001"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01210",
+      "cwe": 79,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "tp",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-FLASK-XSS-001"
+        ],
+        "matched_finding_count": 1
+      }
+    }
+  ],
+  "limitations": [
+    "Internal consistency and paired change only; no independent label adjudication.",
+    "Public synthetic cases are not held-out production or live AI evaluation.",
+    "Identical replay excludes timing/RSS and does not prove performance equivalence.",
+    "Digests identify supplied artifacts; they do not authenticate their authors.",
+    "No significance claim or independent-sample assumption for related templates.",
+    "A regression-free comparison is not an absolute precision/recall release gate."
+  ]
+}

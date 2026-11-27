@@ -1,0 +1,89 @@
+{
+  "implementation": {
+    "scanner_version": "0.3.0b1",
+    "scanner_code_and_modelpacks_digest": "sha256:d965fad96f75d5f6d325765e4b52c0c43c5df7f55fcc3425810b7577ba1e4b65",
+    "parser_fingerprint": "4ecf66421725495ec2079fafdc9f6963e967a566717e13426129537c6a1e31f6",
+    "rule_definitions_digest": "sha256:8ac9f9298ce41e29755ec4c25b6e5a3910c5343490eae482a479bb8294828b92",
+    "bundled_rules_digest": "sha256:645dab3fffc3ca3903b2c2275187977e4f7ba64bc86dd97e5f46b6bf128ba812"
+  },
+  "manifest_sha256": "0de25cf79b6edca12d8704ba55c535b5e7216773e2721d7a9526d252adafd5c8",
+  "evaluator_sha256": "b85088fc93719e8c27b25598ea02073c702c9e9d9444dd06c297b05977bda0f6",
+  "rule_id": "AEG-PATH-003",
+  "cases": [
+    {
+      "project": "starlette",
+      "version": "before",
+      "symbol": "StaticFiles.lookup_path",
+      "source_sha256": "8c59da75accc2f80f437847dec9aab5a3adf40d0221322a9a69d9a4aa37377ff",
+      "expected_lines": [
+        172
+      ],
+      "reported_lines": [],
+      "outside_reviewed_symbol": 0,
+      "evaluated": false,
+      "agreed": false
+    },
+    {
+      "project": "starlette",
+      "version": "after",
+      "symbol": "StaticFiles.lookup_path",
+      "source_sha256": "388a4936861b10fb97ac3fd50ead04616fd0beb2ad3df1694b9f0be52e76fe9f",
+      "expected_lines": [],
+      "reported_lines": [],
+      "outside_reviewed_symbol": 0,
+      "evaluated": false,
+      "agreed": false
+    },
+    {
+      "project": "pip",
+      "version": "before",
+      "symbol": "is_within_directory",
+      "source_sha256": "69bd4a727896411f8af18cb208bd1bfc988f51587bbce3e62d02b961318d68ba",
+      "expected_lines": [
+        86
+      ],
+      "reported_lines": [],
+      "outside_reviewed_symbol": 0,
+      "evaluated": false,
+      "agreed": false
+    },
+    {
+      "project": "pip",
+      "version": "after",
+      "symbol": "is_within_directory",
+      "source_sha256": "e21360e9da873a7fcacc60b3482efa9c2846f7b77f523b45f409cb4a87faef6a",
+      "expected_lines": [],
+      "reported_lines": [],
+      "outside_reviewed_symbol": 0,
+      "evaluated": false,
+      "agreed": false
+    },
+    {
+      "project": "dbt-common",
+      "version": "before",
+      "symbol": "safe_extract._is_within_directory",
+      "source_sha256": "5ce0393eb93d3fd352bd79c002a697484cb356b93b88b69d83520d01323a5ef7",
+      "expected_lines": [
+        629
+      ],
+      "reported_lines": [],
+      "outside_reviewed_symbol": 0,
+      "evaluated": false,
+      "agreed": false
+    },
+    {
+      "project": "dbt-common",
+      "version": "after",
+      "symbol": "safe_extract._is_within_directory",
+      "source_sha256": "9e3f9b913e0931fd7a87cd278e1368fce57bd3cc5bb31a11e49c825731960485",
+      "expected_lines": [],
+      "reported_lines": [],
+      "outside_reviewed_symbol": 0,
+      "evaluated": false,
+      "agreed": false
+    }
+  ],
+  "complete": false,
+  "agreed": 0,
+  "comparisons": 6
+}

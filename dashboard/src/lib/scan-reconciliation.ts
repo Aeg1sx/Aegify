@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { canReconcileScanAbsence, type ScanHealth } from "./sarif-evidence.ts";
+import { canReconcileScanAbsence, type ScanCoverage, type ScanHealth } from "./sarif-evidence.ts";
 
 interface ImportedScan {
   scanId: string;
@@ -7,7 +7,7 @@ interface ImportedScan {
   branch: string;
   defaultBranch: string;
   health: ScanHealth;
-  audit?: { actorId: string; findings: number };
+  audit?: { actorId: string; findings: number; coverage?: ScanCoverage };
   publishBaseline?: boolean;
 }
 
@@ -88,11 +88,15 @@ export async function publishScanImport(tx: Prisma.TransactionClient, imported: 
       status: health.status,
       progressPhaseName: health.status,
       progressPercent: 1,
-      progressMessage: health.gaps.map((gap) => `${gap.code}: ${gap.message} (${gap.affected_count})`).join("; ").slice(0, 4000),
+      progressMessage: health.gaps.map((gap) =>
+        gap.code === "taint_limit" && gap.stage === "taint"
+          ? gap.message
+          : `${gap.code}: ${gap.message} (${gap.affected_count})`,
+      ).join("\n").slice(0, 4000),
     },
   });
   if (imported.audit) await tx.auditEvent.create({ data: {
     projectId, actorId: imported.audit.actorId, action: "scan.import.finished", targetId: scanId,
-    details: JSON.stringify({ status: health.status, findings: imported.audit.findings }),
+    details: JSON.stringify({ status: health.status, findings: imported.audit.findings, coverage: imported.audit.coverage }),
   } });
 }

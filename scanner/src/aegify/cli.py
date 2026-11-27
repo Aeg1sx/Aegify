@@ -389,6 +389,53 @@ def benchmark_owasp(
         raise typer.Exit(code=1)
 
 
+@app.command("benchmark-reviews")
+def benchmark_reviews(
+    scan: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    labels: Annotated[Path, typer.Option("--labels", exists=True, dir_okay=False)],
+    source_root: Annotated[
+        list[str], typer.Option("--source-root", help="Frozen checkout as REPOSITORY_ID=PATH")
+    ],
+    output_file: Annotated[Path, typer.Option("--output-file")],
+    min_agreement: Annotated[float, typer.Option("--min-agreement", min=0.0, max=1.0)] = 1.0,
+) -> None:
+    """Grade saved AI reviews against labeled source ranges without calling a provider."""
+    from aegify.quality.artifacts import write_report
+    from aegify.quality.review_benchmark import evaluate_reviews
+
+    try:
+        roots: dict[str, Path] = {}
+        for binding in source_root:
+            name, separator, directory = binding.partition("=")
+            if (
+                not (name and separator and directory)
+                or name in roots
+                or not Path(directory).is_dir()
+            ):
+                raise ValueError("source roots must be unique REPOSITORY_ID=PATH directories")
+            roots[name] = Path(directory).resolve()
+        destination = output_file.resolve()
+        if destination in {labels.resolve(), scan.resolve()} or any(
+            destination.is_relative_to(root) for root in roots.values()
+        ):
+            raise ValueError("output must be separate from inputs and outside source roots")
+        report = evaluate_reviews(scan, labels, roots)
+        write_report(output_file, json.dumps(report, indent=2))
+    except (OSError, ValueError) as error:
+        _benchmark_error("Invalid review benchmark input:", error)
+        raise typer.Exit(code=2) from error
+    console.print_json(
+        data={
+            key: report[key]
+            for key in ("label_count", "agreed", "disagreed", "unscored", "complete")
+        }
+    )
+    if not report["complete"]:
+        raise typer.Exit(code=3)
+    if report["agreement_over_all_labels"] < min_agreement:
+        raise typer.Exit(code=1)
+
+
 @app.command("compare-owasp")
 def compare_owasp(
     baseline: Annotated[Path, typer.Argument(help="Baseline OWASP JSON report", exists=True)],
@@ -460,6 +507,10 @@ def benchmark(
     output_file: Annotated[
         Path | None, typer.Option("--output-file", "-o", help="Write JSON evidence report")
     ] = None,
+    line_tolerance: Annotated[
+        int,
+        typer.Option("--line-tolerance", min=0, help="Maximum distance from a labeled source line"),
+    ] = 3,
 ) -> None:
     """Measure precision and recall against versioned, owned ground truth."""
     from aegify.quality.artifacts import write_report
@@ -471,7 +522,7 @@ def benchmark(
             or output_file.resolve() == ground_truth.resolve()
         ):
             raise ValueError("output must be outside the source directory and label file")
-        report = run_owned_benchmark(target, ground_truth)
+        report = run_owned_benchmark(target, ground_truth, line_tolerance=line_tolerance)
         rendered = report.model_dump_json(indent=2)
         if output_file:
             write_report(output_file, rendered)
@@ -491,6 +542,31 @@ def benchmark(
         or report.metrics.recall < min_recall
     ):
         raise typer.Exit(code=1)
+
+
+@app.command("prepare-workspace")
+def prepare_workspace_command(
+    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    output: Annotated[Path, typer.Option("--output", "-o", help="New workspace directory")],
+) -> None:
+    """Prepare commit-pinned Git sources and local paths for scan-workspace."""
+    console.print(str(_prepare_sources(manifest, output)), markup=False, highlight=False)
+
+
+def _prepare_sources(manifest: Path, output: Path) -> Path:
+    import subprocess
+
+    from aegify.scanner.workspace_sources import prepare_workspace
+
+    try:
+        return prepare_workspace(manifest, output)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        # Git diagnostics can contain credentials or remote-controlled terminal content.
+        if isinstance(error, ValueError):
+            _benchmark_error("Workspace preparation failed", error)
+        else:
+            console.print("Workspace preparation failed during file or Git transport access.")
+        raise typer.Exit(code=2) from None
 
 
 @app.command("scan-workspace")
@@ -544,11 +620,23 @@ def scan_workspace(
             help="Write the complete CFG/DFG/SSA/security graph as JSONL",
         ),
     ] = None,
+    prepare_to: Annotated[
+        Path | None,
+        typer.Option(
+            "--prepare-to", help="Fetch pinned sources into a new directory before scanning"
+        ),
+    ] = None,
+    config_path: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", exists=True, dir_okay=False, help="Scan configuration file"),
+    ] = None,
 ) -> None:
     """Scan a multi-repository workspace with stable cross-repo identities."""
     from aegify.scanner.engine import ScanEngine
 
-    cfg = AegifyConfig.load(manifest.parent)
+    cfg = AegifyConfig.from_yaml(config_path) if config_path else AegifyConfig.load(manifest.parent)
+    if prepare_to is not None:
+        manifest = _prepare_sources(manifest, prepare_to)
     cfg.rules.severity_threshold = severity
     cfg.llm.enabled = ai_tools
     cfg.llm.model = model

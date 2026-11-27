@@ -34,6 +34,7 @@ def verdict(**changes: Any) -> dict[str, Any]:
         "verdict": "LIKELY_FALSE_POSITIVE",
         "confidence": 0.9,
         "reasoning": "A defense is present in the supplied fixture",
+        "evidence_against": ["The recorded call uses a bound parameter."],
         **changes,
     }
 
@@ -113,6 +114,8 @@ def test_partial_batch_covers_only_its_index_and_retains_missing_review_gap(
         {"evidence_for": "not a list"},
         {"evidence_gaps": [None]},
         {"verdict": "CONFIRMED"},
+        {"verdict": "TRUE_POSITIVE", "evidence_for": ["   "]},
+        {"evidence_against": [], "evidence_for": ["An unrelated fact"]},
     ],
 )
 def test_invalid_review_fields_abstain(changes: dict[str, Any]) -> None:

@@ -30,10 +30,13 @@ repositories:
   - id: edge-gateway
     path: ./services/gateway
     role: gateway
+    gateway_configs:
+      - deploy/kong-production.yaml
 
   - id: user-service
     path: ./services/users
     role: spring-service
+    service_names: [users, users.default.svc.cluster.local]
     scip_indexes:
       - ./evidence/users-api/index.scip
 
@@ -56,6 +59,62 @@ aegify scan-workspace ./aegify-workspace.yml \
   --semantic-graph-file semantic-graph.jsonl \
   --program-graph-file program-graph.jsonl
 ```
+
+## Review gateway service ownership
+
+In this example a Spring route with `uri: lb://users` and a Kong route whose
+Gateway Service has `host: users` both point to the `user-service` repository.
+Declare the exact host names your team uses in `service_names`. Matching ignores
+DNS case and a final dot. A shared name produces an ambiguous result with the
+candidate repository IDs. A dynamic or undeclared host produces an unresolved
+result with a reason.
+
+| Configuration | Declarations reviewed |
+| --- | --- |
+| Spring Cloud Gateway YAML and indexed Java properties | `spring.cloud.gateway.routes`, `spring.cloud.gateway.mvc.routes` and `spring.cloud.gateway.server.{webflux,webmvc}.routes`. YAML accepts dotted or nested keys. In properties files use indexed keys such as `spring.cloud.gateway.routes[0].uri`. Both formats retain logical document numbers. |
+| Kong declarative YAML and JSON | Formats `1.1` and `3.0`. Routes can be nested under a Service or refer to a Service in the same document by name or ID. A named Upstream pool is recorded as unresolved. |
+
+Aegify discovers `application` and `bootstrap` configuration in YAML and
+properties format, including `application-prod.properties` and other hyphenated
+profile names. Kong defaults are `kong.yaml`, `kong.yml` and `kong.json`.
+Add repository-relative YAML, JSON or properties paths to `gateway_configs` for
+custom file names. Workspace excludes also apply to those paths.
+
+Connected static scans can retain the encrypted input snapshot for retries.
+Model-only fetches skip conventional Spring and Kong configurations. AI review
+source catalogs exclude those files and properties files, including older saved
+catalog entries.
+
+Read `gateway_inventory` in scan JSON or `runs[0].properties.gatewayInventory`
+in SARIF. Each route records its configuration file, SHA-256, document number
+and source line. The inventory digest includes the service ownership declarations.
+The inventory marks its input status as `partial` when a file diagnostic or an
+omitted count indicates a coverage gap. The defaults cover 128 candidate files, 512 KiB per file, 8 MiB total
+and 4,096 emitted routes. YAML aliases and merge keys produce a file diagnostic.
+
+Upload the workspace SARIF to its dashboard project. Each scan in project history
+shows the resolved, ambiguous and unresolved counts. Open **Gateway ownership**
+to inspect a configuration file, its SHA-256, route declarations, logical
+documents, source lines, candidate owners and review reasons. An incomplete
+inventory displays its partial input status and any omitted counts.
+
+The SARIF upload receipt and the project's scan history expose a
+`gatewayInventory` summary. The authorized scan detail API also includes the
+files and their declarations. Scans saved without an inventory return
+`gatewayInventory: null` in project history and scan details. The dashboard
+accepts up to 8 MiB of projected details per inventory.
+
+This report describes declarations as written. Active Spring profiles, external
+configuration, Java DSL, Kubernetes resources, deployment DNS, Kong pool members
+and plugin behavior require separate evidence. A repository scan without a
+workspace manifest can still list declarations for review. A config-only scan
+retains its inventory and reports the existing coverage gap for source code.
+
+See the [Spring legacy configuration properties](https://docs.spring.io/spring-cloud-gateway/reference/4.1/configprops.html),
+[current Spring properties](https://docs.spring.io/spring-cloud-gateway/reference/configprops.html),
+[Spring Boot file and list syntax](https://docs.spring.io/spring-boot/reference/features/external-config.html),
+[Kong Service schema](https://developer.konghq.com/gateway/entities/service/) and
+[Kong format history](https://developer.konghq.com/deck/reference/3.0-upgrade/).
 
 ## Compiler evidence
 

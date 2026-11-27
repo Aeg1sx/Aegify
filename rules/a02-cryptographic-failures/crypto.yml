@@ -12,9 +12,15 @@ rules:
     cwe_id: 321
     owasp_category: "A02:2021-Cryptographic Failures"
     defense_patterns: ["env_var", "secret_manager", "vault", "keystore", "KMS"]
+    semantic:
+      kind: python_jwt_signing_key
     patterns:
-      - callee_match: "(AES|DES|Fernet|HMAC|RSA|encrypt|sign|jwt\\.encode)"
+      - callee_match: "(AES|DES|Fernet|HMAC|RSA|encrypt|sign)"
         args_match: "key\\s*=\\s*['\"][^'\"]+"
+      - callee_match: 'jwt\.encode'
+        args_match: >-
+          key\s*=\s*['"][^'"]+
+        languages: [javascript, typescript, java, go, rust, swift, kotlin]
     message: >
       Hardcoded cryptographic key detected at line {sink_line}. Secrets
       must be loaded from environment variables, a secrets manager, or a
@@ -85,9 +91,11 @@ rules:
     cwe_id: 338
     owasp_category: "A02:2021-Cryptographic Failures"
     defense_patterns: ["secrets", "crypto.randomBytes", "SecureRandom", "crypto/rand", "os.urandom", "CSPRNG"]
+    semantic:
+      kind: credential_randomness
     patterns:
-      - callee_match: "(random\\.random|random\\.randint|random\\.choice|random\\.randrange|Math\\.random|java\\.util\\.Random|rand\\.Intn|rand\\.Int|arc4random)"
-      - callee_match: "(Math\\.random|random\\.random)"
+      - callee_match: "(Math\\.random|java\\.util\\.Random|rand\\.Intn|rand\\.Int|arc4random)"
+        languages: [javascript, typescript, java, go, kotlin, swift]
     message: >
       Insecure random number generator used in security context at line
       {sink_line}. Use a cryptographically secure PRNG: secrets (Python),
@@ -96,22 +104,26 @@ rules:
   - id: AEG-A02-005
     name: Missing TLS Certificate Verification
     description: >
-      TLS/SSL certificate verification is explicitly disabled, allowing
-      man-in-the-middle attacks. An attacker on the network path can
-      intercept, read, and modify encrypted traffic by presenting a
-      fraudulent certificate.
+      Reviews TLS client configuration that can leave the server certificate
+      or hostname unverified. Python findings identify the client API and
+      the certificate verification option or context factory.
     severity: critical
     confidence: 0.95
     languages: [python, javascript, typescript, java, go, kotlin, swift]
     cwe_id: 295
     owasp_category: "A02:2021-Cryptographic Failures"
     defense_patterns: ["verify=True", "rejectUnauthorized: true", "certificate_pinning"]
+    semantic:
+      kind: python_tls_verification
     patterns:
       - callee_match: "(requests\\.(get|post|put|delete|patch|head|options)|urllib3|httplib2|aiohttp)"
+        languages: [javascript, typescript, java, go, kotlin, swift]
         args_match: "verify\\s*=\\s*False"
       - callee_match: "(SSLContext|ssl\\.create_default_context)"
+        languages: [javascript, typescript, java, go, kotlin, swift]
         args_match: "(check_hostname\\s*=\\s*False|verify_mode\\s*=\\s*ssl\\.CERT_NONE)"
       - callee_match: "(TrustManager|X509TrustManager|HostnameVerifier)"
+        languages: [javascript, typescript, java, go, kotlin, swift]
     message: >
       TLS certificate verification is disabled at line {sink_line}. This
       allows man-in-the-middle attacks. Always verify TLS certificates in

@@ -268,6 +268,27 @@ def test_repeated_observations_ignore_timings_and_bind_duplicate_hits(
     assert run_owned_benchmark(root, labels).outcomes_digest != first.outcomes_digest
 
 
+def test_cli_can_require_exact_locations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, labels, scan = _fixture(tmp_path)
+    monkeypatch.setattr(ScanEngine, "scan", lambda *args: scan)
+    output = tmp_path / "report.json"
+    args = ["benchmark", str(root), "--ground-truth", str(labels), "-o", str(output)]
+    runner = CliRunner()
+    assert runner.invoke(app, args).exit_code == 0
+    default = json.loads(output.read_bytes())
+    assert default["line_tolerance"] == 3
+    assert runner.invoke(app, [*args, "--line-tolerance", "0"]).exit_code == 0
+    exact = json.loads(output.read_bytes())
+    assert exact["metrics"] == default["metrics"] and exact["line_tolerance"] == 0
+    assert exact["outcomes_digest"] != default["outcomes_digest"]
+    scan.findings[0].line_start += 1
+    assert runner.invoke(app, args).exit_code == 0
+    assert runner.invoke(app, [*args, "--line-tolerance", "0"]).exit_code == 1
+    missed = json.loads(output.read_bytes())
+    assert missed["metrics"]["false_positives"] == missed["metrics"]["false_negatives"] == 1
+    assert runner.invoke(app, [*args, "--line-tolerance", "-1"]).exit_code == 2
+
+
 def test_file_target_binds_auxiliary_inputs_and_rejects_other_file_labels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

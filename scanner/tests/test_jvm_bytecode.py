@@ -748,6 +748,25 @@ def test_classpath_snapshot_imports_hashed_bytecode_signature_and_calls(
     assert snapshot.is_file()
 
 
+def test_snapshot_reads_at_most_the_limit_plus_one(tmp_path: Path, monkeypatch):
+    from io import BytesIO
+    from unittest.mock import patch
+
+    snapshot = tmp_path / "classpath.json"
+    artifact = JvmClasspathArtifact(path=snapshot)
+    repository = WorkspaceRepository(id="app", path=tmp_path)
+    importer = JvmBytecodeImporter()
+    monkeypatch.setattr(importer, "_SNAPSHOT_LIMIT", 32)
+    stream = BytesIO(b" " * 64)
+    with (
+        patch.object(Path, "open", return_value=stream),
+        patch.object(stream, "read", wraps=stream.read) as read,
+    ):
+        with pytest.raises(ValueError, match="exceeds 32 bytes"):
+            importer.load(artifact, repository)
+        read.assert_called_once_with(33)
+
+
 def test_classpath_snapshot_rejects_hash_mismatch_without_failing_scan(
     tmp_path: Path,
 ):

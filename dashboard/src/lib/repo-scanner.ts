@@ -141,6 +141,7 @@ export async function scanRepoCode(
       ownerSlug: project.ownerSlug,
       providerRepoId: project.providerRepoId,
       ref,
+      withholdConfigFromModel: true,
     });
     const workspaceSnapshot = `sha256:${sha256(
       [provider, project.ownerSlug, bundle.ref].join("\0"),
@@ -189,7 +190,7 @@ export async function scanRepoCode(
           progressPercent: 100,
           progressPhaseName: bundle.truncated ? "partial" : "completed",
           progressMessage: bundle.truncated
-            ? "No supported source files were fetched before an input bound was reached"
+            ? "No source files were available for model review within the input and disclosure limits"
             : "No supported source files were present",
           progressUpdatedAt: new Date(),
         },

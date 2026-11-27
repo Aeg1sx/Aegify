@@ -41,7 +41,13 @@ test("SARIF artifact publication rolls back every artifact and baseline on late 
     const graphs = await db.callGraphNode.count();
     const audits = await db.auditEvent.count();
     await sql.executeMultiple('CREATE TRIGGER fail_late BEFORE INSERT ON Endpoint BEGIN SELECT RAISE(ABORT, \'injected late artifact failure\'); END;');
-    await assert.rejects(importSarif(db, report("Changed evidence"), context));
+    const interrupted = report("Changed evidence");
+    Object.assign(interrupted.runs[0].properties, { gatewayInventory: {
+      version: 1, digest: "a".repeat(64), input_status: "partial", omitted_files: 1,
+      omitted_routes: 0, files: [],
+    } });
+    await assert.rejects(importSarif(db, interrupted, context));
+    assert.equal(await db.scanGatewayInventory.count(), 0);
     assert.equal(await db.scan.count(), scans);
     assert.equal(await db.callGraphNode.count(), graphs);
     assert.equal(await db.auditEvent.count(), audits);
@@ -322,6 +328,13 @@ test("repository and rule namespaces isolate producer hashes and checkout-indepe
     analyzedFiles: ["/checkout/new/src/app.py", "/checkout/b/src/app.py"],
   } }] };
   await importSarif(db, legacyEmpty, context);
+  const incomplete = { ...empty, runs: [{ ...empty.runs[0], properties: {
+    ...empty.runs[0].properties, taintAnalysis: { truncated: true },
+  } }] };
+  const incompleteReceipt = await importSarif(db, incomplete, context);
+  assert.equal(incompleteReceipt.status, "partial");
+  assert.equal((await db.findingIdentity.findUniqueOrThrow({ where: { id: firstFinding.identityId } })).absentAt, null);
+  assert.equal((await db.finding.findUniqueOrThrow({ where: { id: firstFinding.id } })).isCurrent, true);
   assert.equal(await db.finding.count({ where: { isCurrent: true } }), 3, "An unqualified legacy inventory cannot erase known repository scopes");
   const invalid = structuredClone(empty);
   invalid.runs[0].properties.analyzedSources.push({ ...invalid.runs[0].properties.analyzedSources[0], repositoryId: "service-b" });
@@ -452,4 +465,23 @@ test("real Python source reports retain one identity through fresh checkout root
     assert.equal(current.modulePath, `src/${sourceName}`);
     assert.equal(current.filePath, join(directory, "checkout-b", "src", sourceName));
   } finally { await rm(directory, { recursive: true, force: true }); }
+}));
+
+test("gateway configuration excerpts remain outside saved finding snippets and traces", async () => identityDatabase(async (db) => {
+  const project = await db.project.create({ data: { name: "Gateway evidence" } });
+  const marker = "owned-test-gateway-config-value";
+  const path = "service/application-prod.properties";
+  const location = { physicalLocation: { artifactLocation: { uri: path }, region: { startLine: 3, snippet: { text: marker } } } };
+  const sarif = report();
+  const item = { ...sarif.runs[0].results[0], locations: [location],
+    codeFlows: [{ threadFlows: [{ locations: [{ location: { ...location, message: { text: marker } } }] }] }],
+    properties: { callChain: [{ function: "config", filePath: path, line: 3, snippet: marker }] },
+  };
+  const receipt = await importSarif(db, { ...sarif, runs: [{ ...sarif.runs[0], results: [item] }] }, importContext(project.id));
+  const saved = await db.finding.findFirstOrThrow({ where: { scanId: receipt.scanId } });
+  assert.equal(saved.filePath, path);
+  assert.equal(saved.codeSnippet, "");
+  assert.ok(!saved.taintFlow?.includes(marker));
+  assert.ok(!saved.callChain?.includes(marker));
+  assert.deepEqual(JSON.parse(saved.callChain!), [{ filePath: path, line: 3 }]);
 }));

@@ -16,8 +16,10 @@ from aegify.agents.backends import (
     _narrative_schema,
     _prompt,
     _validate_narrative,
+    public_backend_code,
 )
 from aegify.agents.catalog import AgentSpec
+from aegify.agents.handoff import provider_facts
 from aegify.agents.models import (
     AgentExploration,
     AgentExplorationLimits,
@@ -152,7 +154,7 @@ class AgentSourceExplorer:
             payload = redact_sensitive(
                 {
                     "deterministic_summary": stage.summary,
-                    "facts": stage.facts,
+                    "facts": provider_facts(stage),
                     "evidence_ids": stage.evidence_ids,
                     "required_evidence": spec.required_evidence,
                     "source_catalog": sources.summary(),
@@ -200,7 +202,7 @@ class AgentSourceExplorer:
                 self._validate_turn(response)
                 round_trace.outcome = response["kind"]
             except Exception as error:
-                code = error.code if isinstance(error, AgentBackendError) else "invalid_response"
+                code = public_backend_code(error)
                 round_trace.error_code = code
                 self._stop(stage, code)
                 break
@@ -220,14 +222,7 @@ class AgentSourceExplorer:
                 trace.covered_finding_ids = [
                     finding.id
                     for finding in findings
-                    if (location := sources.finding_location(finding))
-                    and any(
-                        citation.repository_id == location["repository_id"]
-                        and citation.path == location["path"]
-                        and citation.line_start <= finding.line_start
-                        and citation.line_end >= finding.line_end
-                        for citation in trace.citations
-                    )
+                    if sources.covers_finding(finding, trace.citations)
                 ]
                 if stage.role in {AgentRole.STATIC, AgentRole.SYNTHESIS} and any(
                     finding.id not in trace.covered_finding_ids for finding in findings

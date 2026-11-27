@@ -73,12 +73,14 @@ class SecurityRule(ABC):
         confidence: float | None = None,
         taint_flow: TaintFlow | None = None,
         defense_context: DefenseContext | None = None,
-        evidence_state: EvidenceState = EvidenceState.CANDIDATE,
+        evidence_state: EvidenceState | None = None,
         disposition: FindingDisposition | None = None,
     ) -> Finding:
         """Helper to create a Finding from this rule."""
-        if taint_flow is not None and evidence_state == EvidenceState.CANDIDATE:
-            evidence_state = EvidenceState.REACHABLE
+        if evidence_state is None:
+            evidence_state = (
+                EvidenceState.REACHABLE if taint_flow is not None else EvidenceState.CANDIDATE
+            )
         if disposition is None:
             disposition = (
                 FindingDisposition.BLOCKING

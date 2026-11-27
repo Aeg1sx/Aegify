@@ -26,8 +26,12 @@ def benchmark_root(target: Path) -> Path:
     return (target if target.is_dir() else target.parent).resolve()
 
 
-def run_owned_benchmark(target: Path, ground_truth: Path) -> BenchmarkReport:
+def run_owned_benchmark(
+    target: Path, ground_truth: Path, *, line_tolerance: int = 3
+) -> BenchmarkReport:
     """Analyze static input using trusted defaults and bind every consumed input."""
+    if line_tolerance < 0:
+        raise ValueError("line_tolerance must be non-negative")
     started = time.monotonic()
     root = benchmark_root(target)
     target = target.resolve()
@@ -72,6 +76,7 @@ def run_owned_benchmark(target: Path, ground_truth: Path) -> BenchmarkReport:
     report = evaluate_findings(
         result.findings,
         manifest.expected,
+        line_tolerance=line_tolerance,
         target_root=root,
         rule_scope=manifest.rule_scope,
         corpus_id=manifest.corpus_id,
@@ -111,6 +116,7 @@ def run_owned_benchmark(target: Path, ground_truth: Path) -> BenchmarkReport:
     report.outcomes_digest = json_digest(
         {
             "observations": observations,
+            "line_tolerance": report.line_tolerance,
             "metrics": report.metrics.model_dump(),
             "by_rule": {key: value.model_dump() for key, value in report.by_rule.items()},
             "unmatched_actual": report.unmatched_actual,

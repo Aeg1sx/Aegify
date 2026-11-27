@@ -113,7 +113,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,size=134217728
     healthcheck:
-      test: ["CMD", "node", "-e", "const fs=require('node:fs');process.exit(Date.now()-fs.statSync('/tmp/aegify-ai-worker-health').mtimeMs<45000?0:1)"]
+      test: ["CMD", "node", "-e", "const file=require('node:path').join(require('node:os').tmpdir(),'aegify-ai-worker-health');process.exit(Date.now()-require('node:fs').statSync(file).mtimeMs<45000?0:1)"]
       interval: 30s
       timeout: 5s
       start_period: 30s

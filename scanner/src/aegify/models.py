@@ -70,6 +70,7 @@ class Language(StrEnum):
     RUST = "rust"
     SWIFT = "swift"
     KOTLIN = "kotlin"
+    WRANGLER = "wrangler"
 
 
 # --- AST / Call Graph Models ---
@@ -84,6 +85,156 @@ class ParseDiagnostic(BaseModel):
     line_end: int = Field(ge=1)
 
 
+class SessionWrite(BaseModel):
+    """A Flask session subscript write resolved to its lexical import."""
+
+    function_line: int
+    line: int
+    expression: str
+    field: Literal["key", "identity"]
+
+
+class PythonRequestBodyRead(BaseModel):
+    function_line: int
+    line: int
+    expression: str
+    pattern: str
+
+
+class FlaskBodyPart(BaseModel):
+    """A selected body operand at the statement where Python reads its value."""
+
+    line: int
+    expression: str
+    text_context: bool = True
+    request_source: str = ""
+    source_line: int = 0
+    html_text_filter_line: int = 0
+    substitution_lines: list[int] = Field(default_factory=list)
+
+
+class FlaskResponse(BaseModel):
+    """A potentially HTML-producing view return and its contributing operands."""
+
+    function_line: int
+    return_line: int
+    construction_line: int = 0
+    binding: Literal["declared", "imported", "injected"]
+    router: str = ""
+    parts: list[FlaskBodyPart]
+
+
+class PythonTLSSetting(BaseModel):
+    """A statically identified client or process-wide TLS configuration."""
+
+    api: str
+    mode: Literal["http_option", "implicit_context", "unverified_context", "https_default"]
+    line: int
+    option: str = ""
+
+
+class PythonSigningKey(BaseModel):
+    """Literal source and signing call coordinates, without the key material."""
+
+    api: str
+    algorithm: str
+    line: int = Field(ge=1)
+    end_line: int = Field(ge=1)
+    column: int = Field(ge=0)
+    end_column: int = Field(ge=0)
+    use_line: int = Field(ge=1)
+
+
+class CredentialRandomness(BaseModel):
+    """Source and use of a standard Python PRNG value in a credential operation."""
+
+    generator: str
+    generator_line: int
+    use: str
+    use_line: int
+    comparison_line: int | None = None
+
+
+type WranglerStorageCollection = Literal["kv_namespaces", "d1_databases", "r2_buckets"]
+type WranglerPreviewCollection = WranglerStorageCollection | Literal["queues.producers"]
+type WranglerRuleKind = Literal[
+    "plaintext_binding", "version_urls", "shared_remote_storage", "shared_preview_resource"
+]
+WRANGLER_STORAGE_FIELDS: dict[WranglerStorageCollection, tuple[str, str]] = {
+    "kv_namespaces": ("id", "preview_id"),
+    "d1_databases": ("database_id", "preview_database_id"),
+    "r2_buckets": ("bucket_name", "preview_bucket_name"),
+}
+WRANGLER_PREVIEW_FIELDS: dict[WranglerPreviewCollection, str] = {
+    **{collection: names[0] for collection, names in WRANGLER_STORAGE_FIELDS.items()},
+    "queues.producers": "queue",
+}
+
+
+class WranglerStorageMatch(BaseModel):
+    """Locations of a development selector and a matching deployment declaration."""
+
+    collection: WranglerStorageCollection
+    index: int = Field(ge=0)
+    uses_preview: bool
+    selector_line: int = Field(gt=0)
+    peer_scope: str
+    peer_index: int = Field(ge=0)
+    peer_line: int = Field(gt=0)
+
+
+class WranglerPreviewMatch(BaseModel):
+    """Primary fields in a Worker Preview and its selected Worker's deployment."""
+
+    collection: WranglerPreviewCollection
+    index: int = Field(ge=0)
+    peer_scope: str
+    peer_index: int = Field(ge=0)
+    peer_line: int = Field(gt=0)
+
+
+class WranglerSetting(BaseModel):
+    """A configuration observation containing only setting names and source locations."""
+
+    kind: WranglerRuleKind
+    scope: str
+    line: int = Field(ge=1)
+    binding: str = ""
+    workers_dev_line: int | None = None
+    preview_urls_line: int | None = None
+    storage_match: WranglerStorageMatch | None = None
+    preview_match: WranglerPreviewMatch | None = None
+
+
+class PythonHostCheck(BaseModel):
+    parser: str
+    component: str
+    comparison: str
+    line: int
+    end_line: int
+
+
+class PythonDirectoryCheck(BaseModel):
+    api: str
+    line: int
+    end_line: int
+    comparison_line: int
+
+
+class JinjaEnvironment(BaseModel):
+    line: int
+    use_line: int
+    use: Literal["html_template", "web_settings"]
+    optional_options: bool = False
+
+
+class PythonReadLimit(BaseModel):
+    method: str
+    line: int
+    end_line: int
+    guard_line: int
+
+
 class FileAST(BaseModel):
     """Parsed AST for a single file."""
 
@@ -93,6 +244,27 @@ class FileAST(BaseModel):
     classes: list[ClassDef] = Field(default_factory=list)
     imports: list[ImportInfo] = Field(default_factory=list)
     calls: list[CallSite] = Field(default_factory=list)
+    python_request_body_reads: list[PythonRequestBodyRead] | None = None
+    python_host_checks: list[PythonHostCheck] = Field(default_factory=list)
+    python_directory_checks: list[PythonDirectoryCheck] = Field(default_factory=list)
+    python_read_limits: list[PythonReadLimit] = Field(default_factory=list)
+    python_ldap_factories: dict[str, str] = Field(default_factory=dict)
+    python_redirect_resolved: bool = False
+    python_process_resolved: bool = False
+    python_custom_request_data: bool = False
+    python_stdin_resolved: bool = False
+    python_file_access_resolved: bool = False
+    python_deserialization_resolved: bool = False
+    python_yaml_extensions: list[str] = Field(default_factory=list)
+    python_stored_reads: list[PythonStoredRead] = Field(default_factory=list)
+    session_writes: list[SessionWrite] = Field(default_factory=list)
+    flask_routers: list[str] = Field(default_factory=list)
+    flask_responses: list[FlaskResponse] = Field(default_factory=list)
+    jinja_environments: list[JinjaEnvironment] = Field(default_factory=list)
+    python_signing_keys: list[PythonSigningKey] = Field(default_factory=list)
+    credential_randomness: list[CredentialRandomness] = Field(default_factory=list)
+    tls_settings: list[PythonTLSSetting] = Field(default_factory=list)
+    wrangler_settings: list[WranglerSetting] = Field(default_factory=list)
     repository_id: str = ""
     module_path: str = ""
     source_digest: str = ""
@@ -100,6 +272,11 @@ class FileAST(BaseModel):
     parse_error_count: int = 0
     parse_diagnostics: list[ParseDiagnostic] = Field(default_factory=list)
     query_expression_limit_count: int = 0
+
+
+type PythonParameterKind = Literal[
+    "positional_only", "regular", "varargs", "keyword_only", "kwargs"
+]
 
 
 class FunctionDef(BaseModel):
@@ -111,6 +288,7 @@ class FunctionDef(BaseModel):
     line_start: int
     line_end: int
     parameters: list[str] = Field(default_factory=list)
+    python_parameter_kinds: list[PythonParameterKind] = Field(default_factory=list)
     parameter_types: list[str] = Field(default_factory=list)
     parameter_defaults: list[bool] = Field(default_factory=list)
     variadic: bool = False
@@ -188,6 +366,90 @@ class CallArgument(BaseModel):
     options: list[BooleanOption] | None = None
 
 
+class PythonStoredRead(BaseModel):
+    """A snapshot of a known slot or key. An empty value name denotes a literal."""
+
+    function_line: int
+    write_line: int
+    value_name: str
+    read_line: int
+    target: str
+
+
+class XMLInvocation(BaseModel):
+    """The resolved XML API, selected source argument and parser configuration."""
+
+    api: str
+    argument_index: int = Field(ge=0)
+    mode: Literal["xpath", "entities_enabled", "entities_disabled", "parser_unknown"]
+    configuration_line: int | None = None
+    fixed_input: bool = False
+    quoted_value_constrained: bool = False
+
+
+class PythonFileAccess(BaseModel):
+    """A filesystem API and the operands that select its paths (-1 for the receiver)."""
+
+    api: str
+    path_indices: list[int]
+    sink_type: Literal["file_access", "file_metadata"] = "file_access"
+    cli_path_origin_line: int | None = None
+
+
+class LDAPFilterOperand(BaseModel):
+    index: int = Field(ge=0)
+    value_encoder: str = ""
+
+
+class PythonLDAPSearch(BaseModel):
+    factory: str
+    ldap3_filter: LDAPFilterOperand | None = None
+    python_ldap_filter: LDAPFilterOperand | None = None
+
+
+class PythonCallOperand(BaseModel):
+    api: str
+    argument_index: int = Field(ge=0)
+
+
+class PythonRedirect(PythonCallOperand):
+    validator: str = ""
+
+
+class PythonCodeInput(BaseModel):
+    """The source operand of a resolved Python built-in eval or exec call."""
+
+    api: Literal["builtins.eval", "builtins.exec"]
+    literal_constraint: Literal["", "quoted_text", "repr_text"] = ""
+    runtime_text_check: bool = False
+
+
+class PythonProcessPart(BaseModel):
+    """An interpreter command expression at the statement that evaluates it."""
+
+    line: int = Field(gt=0)
+    expression: str
+
+
+class PythonProcessInput(BaseModel):
+    api: str
+    argument_index: int | None = Field(default=None, ge=0)
+    shell: bool | None = None
+    command_parts: list[PythonProcessPart] = Field(default_factory=list)
+    git_diff_revision_only: bool = False
+
+
+class PythonDeserialization(BaseModel):
+    """Resolved input, loader policy and optional proof of a passive local value."""
+
+    api: str
+    argument_index: int | None = Field(default=None, ge=0)
+    mode: Literal["pickle", "object", "restricted", "full", "unknown"]
+    loader: str = ""
+    passive_input: bool = False
+    deferred: bool = False
+
+
 class CallSite(BaseModel):
     """Function call site in source code."""
 
@@ -199,6 +461,18 @@ class CallSite(BaseModel):
     argument_types: list[str] = Field(default_factory=list)
     structured_arguments: list[CallArgument] | None = None
     query_expression: QueryExpression | None = None
+    xml_invocation: XMLInvocation | None = None
+    python_file_access: PythonFileAccess | None = None
+    python_ldap_search: PythonLDAPSearch | None = None
+    python_redirect: PythonRedirect | None = None
+    python_code_input: PythonCodeInput | None = None
+    python_template_source: PythonCallOperand | None = None
+    python_download_url: PythonCallOperand | None = None
+    python_process_input: PythonProcessInput | None = None
+    python_deserialization: PythonDeserialization | None = None
+    python_assigned_sanitizer: str = ""
+    python_buffer_write: bool = False
+    resolved_source: str = ""
     receiver: str | None = None  # object.method() -> receiver = object
     receiver_type: str = ""
     in_function: str | None = None  # enclosing function
@@ -239,7 +513,17 @@ class TaintSink(BaseModel):
     line: int
     sink_type: str  # e.g., "sql_query", "os_command"
     argument_index: int = 0  # dangerous argument; -1 denotes the call receiver
+    cli_path_origin_line: int | None = None
     in_function: str | None = None
+
+
+def inferred_process_field(
+    source: TaintSource, path: list[TaintPropagation] | tuple[TaintPropagation, ...]
+) -> bool:
+    """A process input taints a receiver without a write to the selected field."""
+    return source.source_type in {"environment_variable", "stdin", "cli_arg"} and any(
+        step.propagation_type == "receiver-field-summary" for step in path
+    )
 
 
 class TaintFlow(BaseModel):
@@ -657,6 +941,10 @@ class TaintAnalysisSummary(BaseModel):
     fidelity: str = "flow-field-object-call-string-sensitive-bounded"
     context_depth: int = 0
     contexts_analyzed: int = 0
+    contexts_admitted: int = 0
+    context_limit: int = 0
+    iteration_limit: int = 0
+    limits_reached: list[Literal["contexts", "iterations"]] = Field(default_factory=list)
     library_model_pack: str | None = None
     library_models_loaded: int = 0
     library_summary_applications: int = 0
@@ -673,6 +961,22 @@ class TaintAnalysisSummary(BaseModel):
     heap_objects: int = 0
     truncated: bool = False
     warnings: list[str] = Field(default_factory=list)
+
+    def limit_message(self) -> str:
+        messages = []
+        if "contexts" in self.limits_reached:
+            unit = "context" if self.context_limit == 1 else "contexts"
+            messages.append(
+                f"Data flow reached its limit of {self.context_limit:,} call {unit}. "
+                "Additional call contexts could not be analyzed."
+            )
+        if "iterations" in self.limits_reached:
+            passes = "pass" if self.iterations == 1 else "passes"
+            messages.append(
+                f"Data flow stopped after {self.iterations:,} {passes} "
+                "while results were still changing."
+            )
+        return " ".join(messages) or "Data flow reached an analysis limit."
 
 
 class FrameworkAnalysisSummary(BaseModel):
@@ -757,6 +1061,37 @@ class AnalyzedSource(BaseModel):
     language: Language | None = None
 
 
+class GatewayOwnership(BaseModel):
+    """A declared route and its manifest-based service ownership."""
+
+    schema_path: str
+    document: int
+    line: int
+    route_name: str | None = None
+    status: Literal["resolved", "unresolved", "ambiguous"]
+    reason: str
+    repository_ids: list[str] = Field(default_factory=list)
+
+
+class GatewayConfigReview(BaseModel):
+    repository_id: str
+    path: str
+    sha256: str | None = None
+    routes: list[GatewayOwnership] = Field(default_factory=list)
+    diagnostics: list[str] = Field(default_factory=list)
+
+
+class GatewayInventory(BaseModel):
+    """Source declarations for review, independent of executable reachability."""
+
+    version: Literal[1] = 1
+    input_status: Literal["processed", "partial"] = "processed"
+    digest: str = ""
+    files: list[GatewayConfigReview] = Field(default_factory=list)
+    omitted_files: int = 0
+    omitted_routes: int = 0
+
+
 class ScanResult(BaseModel):
     """Complete result of a security scan."""
 
@@ -776,6 +1111,7 @@ class ScanResult(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     endpoints: list[EndpointInfo] = Field(default_factory=list)
     frontend_calls: list[FrontendCall] = Field(default_factory=list)
+    gateway_inventory: GatewayInventory | None = None
     gateway_routes: list[GatewayRoute] = Field(default_factory=list)
     attack_surface_links: list[AttackSurfaceLink] = Field(default_factory=list)
     semantic_analysis: SemanticAnalysisSummary = Field(default_factory=SemanticAnalysisSummary)

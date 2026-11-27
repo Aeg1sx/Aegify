@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "corpus": "python-web-xss-postfreeze-v1",
+  "cwe": 79,
+  "labels": {
+    "before": "positive",
+    "after": "negative"
+  },
+  "modules": [
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/apache/airflow/commit/27a4a888e946728d9bb33b78ec604e08d4a93f89",
+      "repository": "apache/airflow",
+      "path": "airflow/www/views.py",
+      "before": {
+        "commit": "a38fecf948e22a0631054b5e21e444f06a477808",
+        "sha256": "a6d783e4656ff72b3ebc652003cfc6b47e4680abf2bea9aace3b76dfe712565a",
+        "bytes": 112690
+      },
+      "after": {
+        "commit": "27a4a888e946728d9bb33b78ec604e08d4a93f89",
+        "sha256": "984dbe637b435beb7a5cd94ac35f4a22832ee22779b6a30e4a47bdd99001d60b",
+        "bytes": 112768
+      },
+      "sites": [
+        {
+          "id": "airflow-dag-run-link-text",
+          "scope": "DAG run link formatter passes the display label into trusted HTML. The repair escapes the label before marking the link as HTML.",
+          "before": [
+            134,
+            134
+          ],
+          "after": [
+            134,
+            135
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,11 +1,12 @@
+import { publishWorkerHeartbeat } from "../src/lib/worker-heartbeat.ts";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { setInterval, clearInterval } from "node:timers";
 import { log, error } from "node:console";
 import { prisma } from "../src/lib/prisma.ts";
 import { runWorkerOnce } from "../src/lib/scan-worker.ts";
+import { recordWorkerHeartbeat, unregisterWorker } from "../src/lib/worker-registry.ts";
 import { configureDatabase } from "../src/lib/database-runtime.ts";
 import { runRuleFixtureWorkerOnce } from "../src/lib/rule-fixture-worker.ts";
 import { expireRuleFixtures } from "../src/lib/rule-fixture-jobs.ts";
@@ -19,15 +20,15 @@ process.once("SIGTERM", () => stopping.abort());
 process.once("SIGINT", () => stopping.abort());
 const workerId = randomUUID();
 let lastMaintenance = 0;
-let registrationBusy = false;
+let registration;
 let preferFixtures = false;
-async function register() {
-  if (registrationBusy) return;
-  registrationBusy = true;
-  try {
-    await prisma.scanWorker.upsert({ where: { id: workerId }, create: { id: workerId, version: "0.3.0-beta.1", ruleFixturesVersion: 1 }, update: { lastSeenAt: new Date(), ruleFixturesVersion: 1 } });
-    await writeFile("/tmp/aegify-worker-health", new Date().toISOString(), { mode: 0o600 });
-  } finally { registrationBusy = false; }
+function register() {
+  if (registration) return registration;
+  registration = (async () => {
+    await recordWorkerHeartbeat(prisma, "source", workerId);
+    await publishWorkerHeartbeat("scan", "/tmp");
+  })().finally(() => { registration = undefined; });
+  return registration;
 }
 const pulse = setInterval(() => { register().catch(() => error("Worker heartbeat could not be stored.")); }, 15_000);
 try {
@@ -57,6 +58,7 @@ try {
   }
 } finally {
   clearInterval(pulse);
-  await prisma.scanWorker.deleteMany({ where: { id: workerId } }).catch(() => {});
+  await registration?.catch(() => {});
+  await unregisterWorker(prisma, "source", workerId).catch(() => {});
   await prisma.$disconnect();
 }

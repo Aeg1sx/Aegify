@@ -335,7 +335,18 @@ def main() -> int:
             resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
         if len(sys.argv) != 2:
             raise ValueError("worker input required")
-        payload = strict_json(read_input(Path(sys.argv[1]), MAX_INPUT_BYTES))
+        # Both controllers create the input in the worker's private current directory.
+        # Select the known file there and let read_input enforce no-follow and size.
+        supplied = Path(sys.argv[1])
+        if supplied.parent.resolve(strict=True) != Path.cwd():
+            raise ValueError("invalid worker input directory")
+        if supplied.name == "request.json":
+            request = Path("request.json")
+        elif supplied.name == "input.json":
+            request = Path("input.json")
+        else:
+            raise ValueError("invalid worker input name")
+        payload = strict_json(read_input(request, MAX_INPUT_BYTES))
         if not isinstance(payload, dict) or set(payload) != {
             "rule_yaml",
             "suite",

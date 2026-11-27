@@ -23,6 +23,7 @@ class ScanConfig(BaseModel):
             "go",
             "rust",
             "swift",
+            "wrangler",
         ]
     )
     exclude: list[str] = Field(
@@ -88,12 +89,15 @@ class ScanConfig(BaseModel):
     max_findings_per_file: int = Field(default=50, ge=0)  # 0 disables the output cap
 
 
+DEFAULT_TAINT_CONTEXT_LIMIT = 50_000
+
+
 class TaintAnalysisConfig(BaseModel):
     """Explicit resource and precision bounds for the global taint solver."""
 
     max_iterations: int = Field(default=64, ge=1, le=1024)
     context_depth: int = Field(default=2, ge=1, le=4)
-    max_contexts: int = Field(default=10_000, ge=1, le=1_000_000)
+    max_contexts: int = Field(default=DEFAULT_TAINT_CONTEXT_LIMIT, ge=1, le=1_000_000)
 
 
 class StorageConfig(BaseModel):

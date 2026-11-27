@@ -73,6 +73,20 @@ def test_worker_does_not_execute_source_or_load_repository_configuration(tmp_pat
     assert manifest["rulesDigest"].startswith("sha256:")
 
 
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+def test_worker_preserves_provider_identity_for_gateway_evidence(tmp_path: Path, provider: str):
+    payload = _payload("deploy/kong.yml", "_format_version: '3.0'\nroutes: [{name: gateway}]")
+    payload["provider"] = provider
+    payload["sourceDigest"] = snapshot_digest(payload)
+    report = run_snapshot(payload, tmp_path / "source")
+    evidence = report["runs"][0]["properties"]["gatewayInventory"]["files"]
+    assert len(evidence) == 1
+    assert evidence[0]["repository_id"] == f"{provider}/fixture/repository"
+    assert evidence[0]["path"] == payload["files"][0]["path"]
+    assert evidence[0]["sha256"] == payload["files"][0]["sha256"]
+    assert evidence[0]["routes"][0]["reason"] == "unresolved_service_ref"
+
+
 def test_worker_configuration_overrides_ambient_integrations(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("AEGIFY_STORAGE__BACKEND", "s3")
     monkeypatch.setenv("AEGIFY_RULES__CUSTOM_RULES", "/untrusted/rules")

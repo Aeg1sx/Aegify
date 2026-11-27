@@ -33,6 +33,51 @@ class AgentBackendError(RuntimeError):
         super().__init__(message)
 
 
+# Only scanner-defined stop codes may enter durable review and checkpoint records.
+_PUBLIC_STOP_CODES = frozenset(
+    {
+        "automatic_replay_rejected",
+        "body_deadline_exceeded",
+        "budget_exhausted",
+        "checkpoint_stopped",
+        "encoded_response_rejected",
+        "incomplete",
+        "incomplete_response",
+        "interrupted",
+        "invalid_content",
+        "invalid_http_status",
+        "invalid_prompt",
+        "invalid_request_limits",
+        "invalid_response",
+        "invalid_review_json",
+        "model_text_too_large",
+        "process_error",
+        "prompt_too_large",
+        "provider_client_error",
+        "provider_error",
+        "provider_transport_error",
+        "redirect_rejected",
+        "refused",
+        "response_limit",
+        "response_too_large",
+        "timeout",
+        "transport_timeout",
+        "unsupported_content",
+        "unsupported_content_type",
+        "unsupported_platform",
+        "unsupported_response_stream",
+        "usage_unavailable",
+    }
+)
+
+
+def public_backend_code(error: Exception, *, unexpected: str = "invalid_response") -> str:
+    if not isinstance(error, AgentBackendError):
+        return unexpected
+    code = error.code
+    return code if type(code) is str and code in _PUBLIC_STOP_CODES else "provider_error"
+
+
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self,

@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { sanitizeLLMSourceText } from "./llm-safety.ts";
+import { withholdSourceFromModel } from "./configuration-evidence.ts";
 import { sourceDigest, type SourceSnapshot } from "./source-snapshot.ts";
 
 export const SOURCE_TOOL_LIMITS = {
@@ -19,11 +20,12 @@ const bytes = (value: unknown) => {
 export class SourceToolError extends Error {}
 
 export interface ReviewSourceFile {
+  signingKeyReview?: 2;
   id: string; path: string; sourceDigest: string; contentDigest: string; content: string; lineCount: number;
 }
 export interface ReviewSourceCatalog {
   version: 1; repository: string; commit: string; sourceDigest: string; manifestDigest: string;
-  truncated: boolean; omittedFiles: number; files: ReviewSourceFile[];
+  truncated: boolean; omittedFiles: number; unverifiedSigningKeyFiles?: number; files: ReviewSourceFile[];
 }
 export interface SourceCitation {
   citation_id: string; repository_id: string; path: string; line_start: number; line_end: number;
@@ -63,11 +65,32 @@ function fields(value: Record<string, unknown>, allowed: string[], required: str
 
 function manifest(catalog: Omit<ReviewSourceCatalog, "manifestDigest"> | ReviewSourceCatalog): string {
   return sha(JSON.stringify({ version: catalog.version, repository: catalog.repository, commit: catalog.commit,
-    sourceDigest: catalog.sourceDigest, truncated: catalog.truncated, omittedFiles: catalog.omittedFiles,
-    files: catalog.files.map(({ id, path, sourceDigest, contentDigest, lineCount }) => ({ id, path, sourceDigest, contentDigest, lineCount })) }));
+    sourceDigest: catalog.sourceDigest, truncated: catalog.truncated, omittedFiles: catalog.omittedFiles, unverifiedSigningKeyFiles: catalog.unverifiedSigningKeyFiles,
+    files: catalog.files.map(({ id, path, sourceDigest, contentDigest, lineCount, signingKeyReview }) => ({ id, path, sourceDigest, contentDigest, lineCount, signingKeyReview })) }));
 }
 
-export function captureReviewSources(raw: unknown, expected: { repository: string; commit: string; sourceDigest: string }, preferredPaths: string[] = []): ReviewSourceCatalog {
+function mayContainSigningKey(path: string, content: string): boolean {
+  return path.toLowerCase().endsWith(".py") && content.includes("jwt") && content.includes("encode");
+}
+
+/** The trusted worker supplies coordinates and a digest. The source snapshot supplies the bytes. */
+function signingKeyReviewText(content: string, hash: string, masks: unknown): string | null {
+  if (!masks || typeof masks !== "object" || Array.isArray(masks) || !Object.hasOwn(masks, hash)) return null;
+  const entry: unknown = (masks as Record<string, unknown>)[hash];
+  if (!entry || typeof entry !== "object" || !("ranges" in entry) || !Array.isArray(entry.ranges) || entry.ranges.length === 0
+    || !("sha256" in entry) || typeof entry.sha256 !== "string" || !HASH.test(entry.sha256)) return null;
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  for (const range of entry.ranges) {
+    if (!Array.isArray(range) || range.length !== 2) return null;
+    const [start, end] = range;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || start > end || end > lines.length) return null;
+    lines.fill("[REDACTED_SIGNING_KEY]", start - 1, end);
+  }
+  const projected = lines.join("\n");
+  return sha(projected) === `sha256:${entry.sha256}` ? projected : null;
+}
+
+export function captureReviewSources(raw: unknown, expected: { repository: string; commit: string; sourceDigest: string }, preferredPaths: string[] = [], signingKeyMasks?: unknown): ReviewSourceCatalog {
   if (!/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(expected.repository) || expected.repository.length > 256) throw new SourceToolError("Invalid repository identity");
   if (bytes(raw) > SOURCE_TOOL_LIMITS.snapshotBytes) throw new SourceToolError("Stored source snapshot exceeds its limit");
   const value = object(raw);
@@ -92,17 +115,22 @@ export function captureReviewSources(raw: unknown, expected: { repository: strin
   files.sort((a, b) => Number(preferred.has(b.path)) - Number(preferred.has(a.path)) || Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
   const selected: ReviewSourceFile[] = [];
   let selectedBytes = 0;
+  let unverifiedSigningKeyFiles = 0;
   for (const file of files) {
-    const content = sanitizeLLMSourceText(file.content);
+    if (withholdSourceFromModel(file.path)) continue;
+    const checked = mayContainSigningKey(file.path, file.content);
+    const reviewText = checked ? signingKeyReviewText(file.content, file.sha256, signingKeyMasks) : file.content;
+    if (reviewText === null) { unverifiedSigningKeyFiles += 1; continue; }
+    const content = sanitizeLLMSourceText(reviewText);
     const entry = { id: sha(`${expected.repository}\0${file.path}\0${file.sha256}`), path: file.path,
-      sourceDigest: `sha256:${file.sha256}`, contentDigest: sha(content), content, lineCount: content.split("\n").length };
+      sourceDigest: `sha256:${file.sha256}`, contentDigest: sha(content), content, lineCount: content.split("\n").length, ...(checked ? { signingKeyReview: 2 as const } : {}) };
     const size = bytes(entry);
     if (selected.length >= SOURCE_TOOL_LIMITS.files || selectedBytes + size > SOURCE_TOOL_LIMITS.catalogBytes) continue;
     selected.push(entry); selectedBytes += size;
   }
   selected.sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
   const catalog: ReviewSourceCatalog = { version: 1, repository: expected.repository, commit: expected.commit, sourceDigest: expected.sourceDigest,
-    manifestDigest: "", truncated: value.truncated || selected.length < files.length, omittedFiles: files.length - selected.length, files: selected };
+    manifestDigest: "", truncated: value.truncated || selected.length < files.length, omittedFiles: files.length - selected.length, ...(unverifiedSigningKeyFiles ? { unverifiedSigningKeyFiles } : {}), files: selected };
   catalog.manifestDigest = manifest(catalog);
   return catalog;
 }
@@ -114,11 +142,17 @@ export function validateReviewSources(value: ReviewSourceCatalog): ReviewSourceC
     || !DIGEST.test(value.sourceDigest) || !DIGEST.test(value.manifestDigest)
     || !Array.isArray(value.files) || value.files.length > SOURCE_TOOL_LIMITS.files || bytes(value) > SOURCE_TOOL_LIMITS.catalogBytes + 8192
     || !Number.isSafeInteger(value.omittedFiles) || value.omittedFiles < 0 || value.omittedFiles > 1000
+    || (value.unverifiedSigningKeyFiles !== undefined && (!Number.isSafeInteger(value.unverifiedSigningKeyFiles) || value.unverifiedSigningKeyFiles < 0 || value.unverifiedSigningKeyFiles > value.omittedFiles))
     || typeof value.truncated !== "boolean" || (value.omittedFiles > 0 && !value.truncated)) throw new SourceToolError("Invalid source catalog");
   const paths = new Set<string>(), ids = new Set<string>();
   for (const file of value.files) {
     object(file);
     safePath(file.path);
+    if (withholdSourceFromModel(file.path)) throw new SourceToolError("Configuration values are withheld from source tools");
+    if (file.signingKeyReview !== 2 && (file.signingKeyReview !== undefined
+      || (typeof file.content === "string" && mayContainSigningKey(file.path, file.content)))) {
+      throw new SourceToolError("This saved source review lacks verified signing-key redaction ranges. Start a new source review.");
+    }
     if (paths.has(file.path) || ids.has(file.id) || !DIGEST.test(file.id) || !DIGEST.test(file.sourceDigest)
       || file.id !== sha(`${value.repository}\0${file.path}\0${file.sourceDigest.slice(7)}`)
       || typeof file.content !== "string" || Buffer.byteLength(file.content) > SOURCE_TOOL_LIMITS.catalogBytes
@@ -131,7 +165,7 @@ export function validateReviewSources(value: ReviewSourceCatalog): ReviewSourceC
 
 export function sourceCatalogSummary(catalog: ReviewSourceCatalog) {
   return { repository: catalog.repository, commit: catalog.commit, sourceDigest: catalog.sourceDigest,
-    manifestDigest: catalog.manifestDigest, files: catalog.files.length, truncated: catalog.truncated, omittedFiles: catalog.omittedFiles };
+    manifestDigest: catalog.manifestDigest, files: catalog.files.length, truncated: catalog.truncated, omittedFiles: catalog.omittedFiles, ...(catalog.unverifiedSigningKeyFiles ? { unverifiedSigningKeyFiles: catalog.unverifiedSigningKeyFiles } : {}) };
 }
 export function sourceLocation(catalog: ReviewSourceCatalog, path: string) {
   const file = catalog.files.find((entry) => entry.path === path);

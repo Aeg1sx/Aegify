@@ -43,9 +43,12 @@ unreadable sources, file-size limits, and result/analysis bounds are visible gap
 to disable that bound; do this only after considering the available worker memory.
 
 Global taint limits are configurable under `taint`: `max_contexts` (default
-10,000), `context_depth` (default 2, range 1–4), and `max_iterations` (default 64).
-Increasing a bound can increase memory and latency. A reached bound still marks
-the scan partial; changing a limit never hides the corresponding coverage gap.
+50,000 for both the CLI and source worker), `context_depth` (default 2, range 1–4),
+and `max_iterations` (default 64). Increasing a bound can increase memory and
+latency. A scan becomes partial when the solver rejects another call context or
+exhausts its passes while results are still changing. The SARIF run property
+`taintAnalysis` records the effective limits, the contexts admitted and evaluated,
+the passes performed, and which limits interrupted analysis.
 
 The dashboard reconciles absent findings only after a completed import on the
 project's explicitly supplied default branch, and only for analyzed file paths
@@ -82,9 +85,28 @@ describes source-root and relative URI requirements for other producers.
 - `blocking` results can fail CI when their severity meets the configured
   threshold.
 
+For Python HTTP body findings, the parser records the actual property read and the
+scanner checks that the selected operand uses it. Supported receivers include
+Flask's imported request proxy, typed Flask, Werkzeug and Django REST framework
+request parameters, the first argument of a Django REST framework `@api_view`,
+and an awaited `.json()` on a typed Starlette or FastAPI request. An untyped parameter in an
+ordinary helper needs additional caller evidence. [Flask request API](https://flask.palletsprojects.com/en/stable/api/#flask.Request.json) · [Django REST framework requests](https://www.django-rest-framework.org/api-guide/requests/) · [Starlette request bodies](https://starlette.dev/requests/#body)
+
 Native and YAML lexical patterns default to `candidate/advisory`. Taint paths
 and structured semantic detectors may emit `reachable/blocking` only when their
 required evidence is satisfied.
+
+For Python file paths, an explicit script entry point can read a file chosen by
+a positional command-line argument or write a fixed sibling. Aegify retains
+that path as reachable and advisory when the file operation and argument are
+bound in the same function. The message asks which directories its caller
+may select. A path formed by joining an independent directory with an
+untrusted name keeps its ordinary path rule evaluation.
+
+A receiver-wide approximation can carry a process input to an object's field
+without identifying a write to that field. The path rule records this as a
+candidate and shows the missing field evidence. Explicit field stores, direct
+operands and request-to-path flows retain their own evidence.
 
 ## Examples of blocking evidence
 

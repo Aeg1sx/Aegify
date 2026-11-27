@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "dataset": "owned-receipt-projections-v1",
+  "cases": [
+    {
+      "repository_id": "receipts",
+      "path": "receipts.py",
+      "rule_id": "FIXTURE-EMAIL-PROJECTION",
+      "line_start": 1,
+      "line_end": 2,
+      "source_digest": "sha256:ec341dd17da6b83ae33f9100f95e8c355522e13f8c9e9e955e885473377f88bc",
+      "expected": "likely_true_positive"
+    },
+    {
+      "repository_id": "receipts",
+      "path": "receipts.py",
+      "rule_id": "FIXTURE-EMAIL-PROJECTION",
+      "line_start": 5,
+      "line_end": 6,
+      "source_digest": "sha256:ec341dd17da6b83ae33f9100f95e8c355522e13f8c9e9e955e885473377f88bc",
+      "expected": "likely_false_positive"
+    },
+    {
+      "repository_id": "receipts",
+      "path": "receipts.py",
+      "rule_id": "FIXTURE-EMAIL-PROJECTION",
+      "line_start": 9,
+      "line_end": 10,
+      "source_digest": "sha256:ec341dd17da6b83ae33f9100f95e8c355522e13f8c9e9e955e885473377f88bc",
+      "expected": "needs_review"
+    }
+  ]
+}

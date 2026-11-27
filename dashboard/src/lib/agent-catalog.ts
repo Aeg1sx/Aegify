@@ -29,7 +29,7 @@ export const SECURITY_AGENTS: AgentIdentity[] = [
     code: "maenun",
     name: "Maenun",
     romanizedName: "Maenun",
-    mission: "Review static findings in lite or deep mode and trace recorded source-to-sink paths.",
+    mission: "Review static findings in lite or deep mode and trace recorded source-to-sink paths. Read the preceding review evidence and check the finding location, defenses and unresolved assumptions.",
     tools: ["finding_context", "call_path", "attack_surface"],
   },
   {
@@ -53,7 +53,7 @@ export const SECURITY_AGENTS: AgentIdentity[] = [
     code: "jangseung",
     name: "Jangseung",
     romanizedName: "Jangseung",
-    mission: "Reconcile static and runtime evidence into risk and code-level remediation guidance.",
+    mission: "Reconcile static and runtime evidence into risk and code-level remediation guidance. Use prior evidence references and identify missing proof.",
     tools: ["finding_context", "call_path", "attack_surface"],
   },
   {

@@ -1,24 +1,10 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, ArrowRight, ExternalLink, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
-import {
-  ArrowLeft,
-  BookOpen,
-  ExternalLink,
-  FileCode,
-  Shield,
-  ToggleLeft,
-  ToggleRight,
-  Code,
-  Save,
-  Pencil,
-  X,
-  FileDown,
-} from "lucide-react";
 import { YamlHighlight } from "@/components/code-highlight";
 import { RuleEditor } from "@/components/rules/rule-editor";
 
@@ -30,7 +16,6 @@ interface RuleDetail {
   owaspCategory: string | null;
   languages: string;
   enabled: boolean;
-  findingCount: number;
   yamlContent: string;
   description: string;
   sourceFile: string;
@@ -38,371 +23,207 @@ interface RuleDetail {
 
 interface RuleStats {
   totalFindings: number;
-  severityBreakdown: Record<string, number>;
   statusBreakdown: Record<string, number>;
   avgConfidence: number;
+  filePathCount: number;
   topFiles: Array<{ path: string; count: number }>;
 }
 
-export default function RuleDetailPage({
-  params,
-}: {
+type RecordData = { rule: RuleDetail; stats: RuleStats };
+type Failure = "access" | "missing" | "load";
+const failureText: Record<Failure, string> = {
+  access: "Workspace administrator access is required to view this rule.",
+  missing: "Rule not found.",
+  load: "Couldn’t load this rule.",
+};
+const changeFailure = {
+  state: "Couldn’t change the rule state. Try again.",
+  save: "Couldn’t save the definition. Your draft is still open.",
+  file: "Couldn’t write the YAML file. Check the rule source and try again.",
+};
+
+export default function RuleDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = use(params);
-  const [rule, setRule] = useState<RuleDetail | null>(null);
-  const [stats, setStats] = useState<RuleStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState(false);
-  const [editingYaml, setEditingYaml] = useState(false);
-  const [yamlDraft, setYamlDraft] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
-  const [yamlValid, setYamlValid] = useState(false);
+  const search = use(searchParams);
+  const catalog = new URLSearchParams();
+  for (const key of ["q", "severity", "page"]) {
+    const value = search[key];
+    if (typeof value === "string" && value) catalog.set(key, value);
+  }
+  return <RuleRecord key={id} id={id} backHref={catalog.size ? "/rules?" + catalog : "/rules"} />;
+}
+
+function RuleRecord({ id, backHref }: { id: string; backHref: string }) {
+  const [record, setRecord] = useState<RecordData | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [pending, setPending] = useState<"state" | "save" | "file" | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [valid, setValid] = useState(false);
+  const [message, setMessage] = useState("");
+  const [stateMessage, setStateMessage] = useState("");
+  const endpoint = "/api/rules/" + encodeURIComponent(id);
 
   useEffect(() => {
-    fetch(`/api/rules/${encodeURIComponent(id)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setRule(data.rule);
-        setStats(data.stats);
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
-
-  const toggleEnabled = async () => {
-    if (!rule) return;
-    setToggling(true);
-    const res = await fetch(`/api/rules/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !rule.enabled }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setRule(data.rule);
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch(endpoint, { signal: controller.signal });
+        if (!response.ok) {
+          if (!controller.signal.aborted) setFailure(response.status === 403 ? "access" : response.status === 404 ? "missing" : "load");
+          return;
+        }
+        const data: RecordData = await response.json();
+        if (!controller.signal.aborted) { setRecord(data); setFailure(null); }
+      } catch {
+        if (!controller.signal.aborted) setFailure("load");
+      }
     }
-    setToggling(false);
-  };
+    void load();
+    return () => controller.abort();
+  }, [endpoint, attempt]);
 
-  const startEditYaml = () => {
-    setYamlDraft(rule?.yamlContent || "");
-    setEditingYaml(true);
-    setYamlValid(false);
-    setSaveMsg("");
-  };
-
-  const saveYaml = async () => {
-    if (!rule) return;
-    setSaving(true);
-    setSaveMsg("");
-    const res = await fetch(`/api/rules/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ yamlContent: yamlDraft }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setRule(data.rule);
-      setEditingYaml(false);
-      setSaveMsg("Saved");
-    } else {
-      setSaveMsg("Save failed");
+  async function change(action: "state" | "save" | "file") {
+    if (!record || pending) return;
+    const { rule } = record;
+    setPending(action);
+    const feedback = action === "state" ? setStateMessage : setMessage;
+    feedback("");
+    try {
+      const file = action === "file";
+      const response = await fetch(file ? "/api/rules/sync" : endpoint, {
+        method: file ? "POST" : "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(file
+          ? { direction: "db-to-yaml", ruleId: rule.id }
+          : action === "state" ? { enabled: !rule.enabled } : { yamlContent: draft }),
+      });
+      if (!response.ok) throw new Error();
+      if (file) {
+        feedback("Saved to the YAML file.");
+      } else {
+        const data: { rule: RuleDetail } = await response.json();
+        setRecord({ ...record, rule: data.rule });
+        if (action === "save") { setEditing(false); feedback("Definition saved."); }
+        else feedback(data.rule.enabled ? "Rule enabled." : "Rule disabled.");
+      }
+    } catch {
+      feedback(changeFailure[action]);
+    } finally {
+      setPending(null);
     }
-    setSaving(false);
-  };
-
-  const saveToYamlFile = async () => {
-    if (!rule) return;
-    setSaving(true);
-    setSaveMsg("");
-    const res = await fetch("/api/rules/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ direction: "db-to-yaml", ruleId: rule.id }),
-    });
-    if (res.ok) {
-      setSaveMsg("Saved to YAML file");
-    } else {
-      const data = await res.json();
-      setSaveMsg(data.error || "Failed to save to YAML");
-    }
-    setSaving(false);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
   }
 
-  if (!rule) {
-    return (
-      <div className="space-y-4">
-        <Link href="/rules" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-          <ArrowLeft className="h-4 w-4" /> Back to rules
-        </Link>
-        <p className="text-muted-foreground">Rule not found</p>
-      </div>
-    );
+  function startEdit() {
+    setDraft(record?.rule.yamlContent || "");
+    setValid(false);
+    setMessage("");
+    setEditing(true);
   }
 
-  const languages = rule.languages ? rule.languages.split(",").map((l) => l.trim()).filter(Boolean) : [];
+  const back = (
+    <Link href={backHref} className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-primary">
+      <ArrowLeft aria-hidden className="size-4" />Detection rules
+    </Link>
+  );
+  if (!record) {
+    return <div className="space-y-3">{back}
+      <p role={failure ? "alert" : "status"}>{failure ? failureText[failure] : "Loading rule…"}</p>
+      {failure === "load" && <Button variant="outline" className="min-h-11" onClick={() => { setFailure(null); setAttempt((n) => n + 1); }}>Retry</Button>}
+    </div>;
+  }
 
+  const { rule, stats } = record;
+  const languages = rule.languages.split(",").map((language) => language.trim()).filter(Boolean);
   return (
-    <div className="space-y-6">
-      <Link href="/rules" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-        <ArrowLeft className="h-4 w-4" /> Back to rules
-      </Link>
-
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <Shield className="h-6 w-6" />
-            <h1 className="text-2xl font-bold">{rule.name}</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-sm text-muted-foreground">{rule.id}</span>
-            <SeverityBadge severity={rule.severity} />
-            {rule.cweId && (
-              <a
-                href={`https://cwe.mitre.org/data/definitions/${rule.cweId}.html`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:underline flex items-center gap-1"
-              >
-                CWE-{rule.cweId} <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
-            {rule.owaspCategory && (
-              <span className="text-xs text-muted-foreground">{rule.owaspCategory}</span>
-            )}
-          </div>
-          {rule.description && (
-            <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-              {rule.description}
-            </p>
-          )}
+    <article className="mx-auto w-full max-w-7xl space-y-6">
+      <header className="space-y-2">
+        {back}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="break-all font-mono text-sm text-muted-foreground">{rule.id}</span>
+          <SeverityBadge severity={rule.severity} />
         </div>
-        <Button
-          variant={rule.enabled ? "outline" : "secondary"}
-          onClick={toggleEnabled}
-          disabled={toggling}
-          className="flex items-center gap-2"
-        >
-          {rule.enabled ? (
-            <ToggleRight className="h-4 w-4 text-green-400" />
-          ) : (
-            <ToggleLeft className="h-4 w-4 text-muted-foreground" />
-          )}
-          {rule.enabled ? "Enabled" : "Disabled"}
-        </Button>
-      </div>
+        <h1 className="workbench-title max-w-4xl [overflow-wrap:anywhere]">{rule.name}</h1>
+        {rule.description && <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{rule.description}</p>}
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.totalFindings || 0}</div>
-            <div className="text-xs text-muted-foreground">Total Findings</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">
-              {stats?.avgConfidence ? `${(stats.avgConfidence * 100).toFixed(0)}%` : "-"}
-            </div>
-            <div className="text-xs text-muted-foreground">Avg Confidence</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{languages.length || "-"}</div>
-            <div className="text-xs text-muted-foreground">Languages</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.topFiles.length || 0}</div>
-            <div className="text-xs text-muted-foreground">Affected Files</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* YAML Rule Definition */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Code className="h-4 w-4" />
-              Rule Definition (YAML)
-            </CardTitle>
-            {!editingYaml ? (
-              <div className="flex items-center gap-2">
-                {saveMsg && (
-                  <span className="text-xs text-muted-foreground">{saveMsg}</span>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={saveToYamlFile}
-                  disabled={saving}
-                  className="flex items-center gap-1"
-                >
-                  <FileDown className="h-3 w-3" />
-                  Save to YAML
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={startEditYaml}
-                  className="flex items-center gap-1"
-                >
-                  <Pencil className="h-3 w-3" />
-                  Edit
-                </Button>
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 space-y-6">
+          <section className="workbench-panel" aria-labelledby="rule-definition">
+            <div className="workbench-heading items-start">
+              <div className="min-w-0">
+                <h2 id="rule-definition" className="font-semibold">Rule definition</h2>
+                {rule.sourceFile && (editing || !rule.yamlContent) && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{rule.sourceFile}</p>}
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                {saveMsg && (
-                  <span className="text-xs text-muted-foreground">{saveMsg}</span>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingYaml(false)}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={saveYaml}
-                  disabled={saving || !yamlValid}
-                  className="flex items-center gap-1"
-                >
-                  <Save className="h-3 w-3" />
-                  {saving ? "Saving..." : "Save"}
-                </Button>
+              <div className="flex flex-wrap gap-2">
+                {editing ? <>
+                  <Button variant="outline" className="min-h-11" disabled={!!pending} onClick={() => { setEditing(false); setMessage(""); }}>Cancel</Button>
+                  <Button className="min-h-11" disabled={!!pending || !valid} onClick={() => change("save")}>{pending === "save" ? "Saving…" : "Save definition"}</Button>
+                </> : <>
+                  {rule.yamlContent && <Button variant="outline" className="min-h-11" disabled={!!pending} onClick={() => change("file")}>{pending === "file" ? "Writing…" : "Write YAML file"}</Button>}
+                  <Button variant="outline" className="min-h-11" disabled={!!pending} onClick={startEdit}>
+                    <Pencil aria-hidden />{rule.yamlContent ? "Edit YAML" : "Add definition"}
+                  </Button>
+                </>}
               </div>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {editingYaml ? (
-            <RuleEditor
-              value={yamlDraft}
-              originalValue={rule.yamlContent}
-              expectedRuleId={rule.id}
-              onChange={setYamlDraft}
-              onValidityChange={setYamlValid}
-            />
-          ) : rule.yamlContent ? (
-            <YamlHighlight code={rule.yamlContent} />
-          ) : (
-            <div className="bg-muted rounded-md p-4 text-sm text-muted-foreground italic">
-              No rule definition available.
-              <Button
-                variant="link"
-                size="sm"
-                onClick={startEditYaml}
-                className="ml-2 text-xs"
-              >
-                Add YAML definition
-              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Rule Configuration */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <BookOpen className="h-4 w-4" />
-              Configuration
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <span className="text-muted-foreground">ID</span>
-              <span className="font-mono">{rule.id}</span>
-              <span className="text-muted-foreground">Severity</span>
-              <SeverityBadge severity={rule.severity} />
-              <span className="text-muted-foreground">CWE</span>
-              <span>{rule.cweId ? `CWE-${rule.cweId}` : "-"}</span>
-              <span className="text-muted-foreground">OWASP</span>
-              <span>{rule.owaspCategory || "-"}</span>
-              <span className="text-muted-foreground">Languages</span>
-              <span>{languages.length > 0 ? languages.join(", ") : "All"}</span>
-              <span className="text-muted-foreground">Enabled</span>
-              <span>{rule.enabled ? "Yes" : "No"}</span>
-              <span className="text-muted-foreground">Source</span>
-              <span className="font-mono text-xs truncate">{rule.sourceFile || "Manual"}</span>
+            {message && <p role="status" className="border-b px-5 py-3 text-sm">{message}</p>}
+            <div className="min-w-0 p-3 sm:p-4">
+              {editing ? <fieldset disabled={pending === "save"} className="min-w-0"><RuleEditor value={draft} originalValue={rule.yamlContent} expectedRuleId={rule.id} onChange={setDraft} onValidityChange={setValid} /></fieldset>
+                : rule.yamlContent ? <YamlHighlight code={rule.yamlContent} filePath={rule.sourceFile} />
+                : <p className="p-1 text-sm text-muted-foreground">No YAML definition has been saved.</p>}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Finding Status Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Finding Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stats && Object.keys(stats.statusBreakdown).length > 0 ? (
-              <div className="space-y-2">
-                {Object.entries(stats.statusBreakdown).map(([status, count]) => (
-                  <div key={status} className="flex items-center justify-between text-sm">
-                    <span className="capitalize">{status.replace("_", " ")}</span>
-                    <span className="font-mono">{count}</span>
-                  </div>
-                ))}
+          </section>
+          <section className="min-w-0 border-t pt-4" aria-labelledby="rule-current-findings">
+            <div className="flex flex-wrap items-center justify-between gap-x-4">
+              <h2 id="rule-current-findings" className="text-lg font-semibold">Current findings</h2>
+              <Link href={"/findings?ruleId=" + encodeURIComponent(id)} className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-primary hover:underline">Open findings <ArrowRight aria-hidden className="size-4" /></Link>
+            </div>
+            {stats.totalFindings ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  {stats.totalFindings.toLocaleString()} current · {stats.filePathCount.toLocaleString()} distinct {stats.filePathCount === 1 ? "path" : "paths"} · {Math.round(stats.avgConfidence * 100)}% average confidence
+                </p>
+                <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">{Object.entries(stats.statusBreakdown).map(([status, count]) => (
+                  <div key={status} className="flex gap-1.5"><dt className="capitalize text-muted-foreground">{status.replaceAll("_", " ")}</dt><dd className="font-medium tabular-nums">{count}</dd></div>
+                ))}</dl>
+                {stats.topFiles.length > 0 && <>
+                  <h3 className="text-sm font-medium">Paths with the most findings</h3>
+                  <ul className="divide-y border-y">{stats.topFiles.map((file) => (
+                    <li key={file.path} className="flex items-baseline justify-between gap-4 py-2 text-sm">
+                      <span className="min-w-0 break-all font-mono text-xs">{file.path || "Path unavailable"}</span>
+                      <span className="tabular-nums">{file.count}</span>
+                    </li>
+                  ))}</ul>
+                </>}
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No findings yet</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            ) : <p className="mt-1 text-sm text-muted-foreground">No current findings for this rule.</p>}
+          </section>
+        </div>
 
-      {/* Top Affected Files */}
-      {stats && stats.topFiles.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <FileCode className="h-4 w-4" />
-              Top Affected Files
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {stats.topFiles.map((file) => (
-                <div
-                  key={file.path}
-                  className="flex items-center justify-between py-1.5 text-sm"
-                >
-                  <span className="font-mono text-xs truncate flex-1 mr-4">
-                    {file.path}
-                  </span>
-                  <span className="text-muted-foreground font-mono">
-                    {file.count}
-                  </span>
-                </div>
-              ))}
+        <aside aria-label="Rule configuration" className="min-w-0 self-start border-t pt-4 xl:border-t-0 xl:border-l xl:pt-1 xl:pl-6">
+          <h2 className="font-semibold">Configuration</h2>
+          <dl className="mt-1 divide-y text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <dt className="text-muted-foreground">Rule state</dt>
+              <dd><Button role="switch" aria-label="Enable rule" aria-checked={rule.enabled} variant="outline" className="min-h-11" disabled={!!pending} onClick={() => change("state")}>
+                <span aria-hidden className={rule.enabled ? "size-2 rounded-full bg-primary" : "size-2 rounded-full border border-muted-foreground"} />{rule.enabled ? "Enabled" : "Disabled"}
+              </Button></dd>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* View Findings Link */}
-      <div className="flex justify-center">
-        <Link href={`/findings?ruleId=${encodeURIComponent(rule.id)}`}>
-          <Button variant="outline">
-            View all findings for this rule
-          </Button>
-        </Link>
+            <div className="py-3"><dt className="text-xs text-muted-foreground">Languages</dt><dd className="mt-1">{languages.join(", ") || "Unspecified"}</dd></div>
+            {rule.cweId !== null && <div className="py-2"><dt className="sr-only">CWE classification</dt><dd>
+              <a href={"https://cwe.mitre.org/data/definitions/" + rule.cweId + ".html"} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 text-primary hover:underline">
+                CWE-{rule.cweId} <ExternalLink aria-hidden className="size-3.5" />
+              </a>
+            </dd></div>}
+            {rule.owaspCategory && <div className="py-3"><dt className="text-xs text-muted-foreground">OWASP category</dt><dd className="mt-1">{rule.owaspCategory}</dd></div>}
+          </dl>
+          {stateMessage && <p role="status" className="mt-2 text-sm text-muted-foreground">{stateMessage}</p>}
+        </aside>
       </div>
-    </div>
+    </article>
   );
 }

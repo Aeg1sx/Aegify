@@ -13,7 +13,8 @@ rules:
       services used for authentication and authorization decisions.
     severity: critical
     confidence: 0.91
-    languages: [python, java, javascript, typescript, csharp, php]
+    # Python filter flows use the resolved search API and operand in AEG-A03-001.
+    languages: [java, javascript, typescript, csharp, php]
     cwe_id: 90
     owasp_category: "A03:2021-Injection"
     patterns:
@@ -110,7 +111,7 @@ rules:
     cwe_id: 90
     owasp_category: "A03:2021-Injection"
     patterns:
-      - pattern: "(search|search_s|search_ext|searchRequest)\\s*\\(.*base\\s*=.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - pattern: "(search|search_s|search_ext|searchRequest)\\s*\\(.*base\\s*=\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
       - pattern: "(searchBase|base_dn|baseDN|search_base)\\s*[=:]\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
       - pattern: "(scope|searchScope)\\s*[=:]\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
         context_match: "ldap|LDAP|directory|search"

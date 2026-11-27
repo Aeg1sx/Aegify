@@ -6,8 +6,13 @@ import { validateRuleYaml } from "@/lib/rule-validation";
 export async function GET(request: Request) {
   const access = await requireAccess(request, true);
   if (access instanceof Response) return access;
+  const catalog = new URL(request.url).searchParams.get("view") === "catalog";
   const rules = await prisma.rule.findMany({
     orderBy: [{ findingCount: "desc" }, { id: "asc" }],
+    select: catalog ? {
+      id: true, name: true, severity: true, cweId: true, owaspCategory: true,
+      languages: true, enabled: true, findingCount: true,
+    } : undefined,
   });
 
   return NextResponse.json({ rules });

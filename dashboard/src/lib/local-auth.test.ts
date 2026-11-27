@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { createClient } from "@libsql/client";
-import { authClientKey, consumeAuthLimit, createLocalAuthService, resendAuthMailer, tokenHash, type AuthMail } from "./local-auth.ts";
+import { setTimeout as delay } from "node:timers/promises";
+import { configureDatabase, writeTransaction } from "./database-runtime.ts";
+import { authClientKey, consumeAuthLimit, limitAuthRequest, createLocalAuthService, resendAuthMailer, tokenHash, type AuthMail } from "./local-auth.ts";
 
 test("email-first activation, one-time reset, policy checks, and throttling persist in a migrated database", async () => {
   const directory = await mkdtemp(join(tmpdir(), "aegify-auth-test-"));
@@ -17,6 +19,7 @@ test("email-first activation, one-time reset, policy checks, and throttling pers
   for (const entry of (await readdir(migrations, { withFileTypes: true })).filter((entry) => entry.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) await sql.executeMultiple(await readFile(join(migrations, entry.name, "migration.sql"), "utf8"));
   sql.close();
   const db = new PrismaClient({ adapter: new PrismaLibSql({ url }) });
+  await configureDatabase(db);
   const env = { AUTH_SECRET: "test-secret-at-least-32-characters-long", AUTH_URL: "https://workspace.example.test", AUTH_ALLOWED_EMAILS: "owner@example.test,expired@example.test" };
   const outbox: AuthMail[] = [];
   const service = createLocalAuthService(db, env, async (mail) => { outbox.push(mail); });
@@ -55,6 +58,23 @@ test("email-first activation, one-time reset, policy checks, and throttling pers
     assert.equal(allowed.filter(Boolean).length, 3);
     assert.equal(await consumeAuthLimit(db, env, "test", "identity", 3, 60_000, 61_000), true);
     const request = new Request("https://workspace.example.test", { headers: { "x-forwarded-for": "203.0.113.10" } });
+    const other = new PrismaClient({ adapter: new PrismaLibSql({ url }) });
+    try {
+      const reserved = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const worker = writeTransaction(other, async () => {
+        reserved.resolve();
+        await release.promise;
+      });
+      await reserved.promise;
+      const admission = limitAuthRequest(db, env, request, "signin", "owner@example.test")
+        .then((allowed) => ({ allowed, error: "" }), (error: Error) => ({ allowed: false, error: error.message }));
+      try { await delay(120); } finally { release.resolve(); }
+      await worker;
+      assert.deepEqual(await admission, { allowed: true, error: "" }, "An ordinary worker write must leave the login quota available exactly once");
+      const counts = await db.authRateLimit.findMany({ where: { expiresAt: { gt: new Date() } }, select: { count: true } });
+      assert.deepEqual(counts.map((r) => r.count), [1, 1, 1]);
+    } finally { await other.$disconnect(); }
     assert.equal(authClientKey(request, env), "shared");
     assert.equal(authClientKey(request, { ...env, AUTH_TRUST_PROXY: "true" }), "203.0.113.10");
   } finally { await db.$disconnect(); }

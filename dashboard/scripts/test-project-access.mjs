@@ -162,8 +162,10 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     const sourceScan = await db.scan.create({ data: { projectId: a.id, repository: "owned/source-review", commitSha: "a".repeat(40), status: "completed" } });
     const sourceFinding = await db.finding.create({ data: { ...finding, scanId: sourceScan.id, filePath: "main.py", codeSnippet: "value = normalize(value)" } });
     const sourceText = "value = normalize(value)\nreturn 'OWNED_SOURCE_HTTP_EVIDENCE'\n";
+    const legacySigningText = "from jwt import encode\ndef issue(data): return encode(data, 'owned-legacy-key-marker')\n";
     const sourceBase = { version: 1, provider: "github", repository: sourceScan.repository, commit: sourceScan.commitSha, truncated: false,
-      files: [{ path: "main.py", content: sourceText, sha256: createHash("sha256").update(sourceText).digest("hex") }] };
+      files: [{ path: "main.py", content: sourceText, sha256: createHash("sha256").update(sourceText).digest("hex") },
+        { path: "signing.py", content: legacySigningText, sha256: createHash("sha256").update(legacySigningText).digest("hex") }] };
     const sourceSnapshot = { ...sourceBase, sourceDigest: sourceDigest(sourceBase) };
     await db.scanJob.create({ data: { scanId: sourceScan.id, projectId: a.id, requestedBy: "alice", provider: "github", ownerSlug: sourceScan.repository, requestedRef: "main", commitSha: sourceScan.commitSha,
       sourceDigest: sourceSnapshot.sourceDigest, sourceCiphertext: encrypt(JSON.stringify(sourceSnapshot), environment.ENCRYPTION_SECRET), status: "completed",
@@ -219,7 +221,28 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     await call(`/api/upload?projectId=${a.id}`, { user: "bob", method: "POST", body: sarif, status: 404 });
     await call("/api/projects", { user: null, token: issued.token, status: 401 });
     await call("/api/upload", { user: null, token: "invalid-project-token", method: "POST", body: sarif, status: 401 });
+    sarif.runs[0].properties.gatewayInventory = {
+      version: 1, digest: "a".repeat(64), input_status: "processed", omitted_files: 0, omitted_routes: 0,
+      files: [{ repository_id: "edge", path: "deploy/kong.yml", sha256: "b".repeat(64), diagnostics: [],
+        routes: [{ schema_path: "kong.3.0", document: 1, line: 7, route_name: "catalog",
+          status: "resolved", reason: "manifest_service_name", repository_ids: ["catalog-service"] },
+        { schema_path: "kong.3.0", document: 1, line: 9, route_name: "pool",
+          status: "unresolved", reason: "kong_upstream_pool", repository_ids: [] }] }],
+    };
     const uploaded = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: sarif });
+    const inventory = (await call(`/api/scans/${uploaded.scanId}`)).gatewayInventory;
+    assert.deepEqual(inventory.files[0].routes[0].owners, ["catalog-service"]);
+    assert.equal(inventory.files[0].routes[1].reason, "kong_upstream_pool");
+    assert.equal(inventory.files[0].path, "deploy/kong.yml");
+    const memberProject = await call(`/api/projects/${a.id}?scanLimit=10`);
+    const overview = memberProject.scans.find((scan) => scan.id === uploaded.scanId).gatewayInventory;
+    assert.deepEqual(overview, uploaded.gatewayInventory);
+    assert.equal(overview.resolved, 1);
+    assert.equal(overview.unresolved, 1);
+    assert.ok(!Object.hasOwn(overview, "files"));
+    assert.equal((await call(`/api/scans/${sa.id}`)).gatewayInventory, null);
+    await call(`/api/scans/${uploaded.scanId}`, { user: "outside", status: 404 });
+    await call(`/api/projects/${a.id}?scanLimit=10`, { user: "outside", status: 404 });
     assert.equal((await db.scan.findUniqueOrThrow({ where: { id: uploaded.scanId } })).projectId, a.id);
     assert.equal((await db.scan.findUniqueOrThrow({ where: { id: uploaded.scanId } })).status, "partial");
     assert.equal((await db.rule.findUniqueOrThrow({ where: { id: "SHARED" } })).yamlContent, "original-rule");
@@ -303,6 +326,16 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.deepEqual(JSON.parse(regressionDetail.tags), ["owned-fixture"]);
     assert.equal(regressionDetail.baselineState, "regressed");
     assert.equal(regressionDetail.identity.triageEvents.length, 2);
+    const historyReportPath = `/api/findings/${originalIdentityFinding.id}/report?format=json`;
+    const historyReport = await call(historyReportPath);
+    assert.equal(historyReport.status, "false_positive");
+    assert.equal(historyReport.owner, "AppSec fixture team");
+    assert.equal(historyReport.decision.status, "open");
+    assert.equal(historyReport.decision.actor, "aegify-system");
+    assert.equal(historyReport.decision.owner, "Service fixture team");
+    assert.equal("llmAnalysis" in historyReport, false);
+    await call(historyReportPath, { user: "outside", status: 404 });
+    await call(historyReportPath, { user: null, status: 401 });
     const reportPath = join(directory, "synthetic.sarif");
     await writeFile(reportPath, JSON.stringify(sarif));
     // The optional local CLI check uses the same endpoint and synthetic credential.
@@ -337,7 +370,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.equal((await call(`/api/scans/${queued.scanId}/job`)).job.status, "cancelled");
     const retry = await call(`/api/scans/${queued.scanId}/job`, { method: "POST", body: { action: "retry" }, status: 202 });
     assert.notEqual(retry.scanId, queued.scanId);
-    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id, workflowFindingId: regression.id, historicalFindingId: originalIdentityFinding.id, reviewJobId: queuedReview.id, reviewScanId: sa.id, sourceScanId: sourceScan.id, sourceFindingId: sourceFinding.id, db, environment });
+    if (verifyBrowser) await verifyBrowser({ origin, cookies, projectId: a.id, gatewayScanId: uploaded.scanId, reportPath, queuedScanId: retry.scanId, aiFindingId: aiFinding.id, workflowFindingId: regression.id, historicalFindingId: originalIdentityFinding.id, reviewJobId: queuedReview.id, reviewScanId: sa.id, sourceScanId: sourceScan.id, sourceFindingId: sourceFinding.id, db, environment });
     // Recovery rotates an epoch even if a restored session counter repeats.
     const recoveredEpoch = randomBytes(16).toString("hex");
     await db.user.update({ where: { id: "alice" }, data: { sessionEpoch: recoveredEpoch } });

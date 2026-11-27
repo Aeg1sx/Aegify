@@ -8,24 +8,9 @@ import subprocess
 from pathlib import Path
 
 from aegify.models import FileAST
+from aegify.scanner.ast_parser import detect_language
 
 logger = logging.getLogger(__name__)
-
-# File extensions the scanner supports
-SUPPORTED_EXTENSIONS = frozenset(
-    {
-        ".py",
-        ".js",
-        ".jsx",
-        ".ts",
-        ".tsx",
-        ".java",
-        ".go",
-        ".kt",
-        ".swift",
-        ".rs",
-    }
-)
 
 
 class DiffResolver:
@@ -136,12 +121,18 @@ class DiffResolver:
         return result
 
     def _resolve_explicit(self, file_list: list[str]) -> list[Path]:
-        """Resolve an explicit comma-separated file list."""
+        """Admit regular, supported files inside this checkout without following links."""
         result: list[Path] = []
-        for f in file_list:
-            p = (self.repo_root / f).resolve()
-            if p.exists() and p.suffix in SUPPORTED_EXTENSIONS:
-                result.append(p)
+        for name in file_list:
+            path = self.repo_root / name
+            if (
+                path.is_relative_to(self.repo_root)
+                and ".." not in path.parts
+                and detect_language(path) is not None
+                and path.resolve() == path
+                and path.is_file()
+            ):
+                result.append(path)
         return result
 
     def _detect_base_ref(self) -> str | None:
@@ -163,25 +154,36 @@ class DiffResolver:
 
     def _git_diff_files(self, base_ref: str) -> list[Path]:
         """Get changed files from git diff against base ref."""
+        if base_ref.startswith("-") or any(ord(char) < 32 or ord(char) == 127 for char in base_ref):
+            logger.warning("Invalid Git base ref")
+            return []
         try:
             result = subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=ACMR", base_ref, "HEAD"],
+                [
+                    "git",
+                    "diff",
+                    "--name-only",
+                    "-z",
+                    "--diff-filter=ACMR",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--end-of-options",
+                    base_ref,
+                    "HEAD",
+                    "--",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=30,
                 cwd=self.repo_root,
             )
             if result.returncode != 0:
-                logger.warning("git diff failed: %s", result.stderr.strip())
+                logger.warning("git diff failed with exit code %d", result.returncode)
                 return []
 
-            files: list[Path] = []
-            for line in result.stdout.strip().splitlines():
-                p = (self.repo_root / line).resolve()
-                if p.exists() and p.suffix in SUPPORTED_EXTENSIONS:
-                    files.append(p)
+            files = self._resolve_explicit(result.stdout.split("\0"))
 
-            logger.info("Git diff found %d changed files (base=%s)", len(files), base_ref[:12])
+            logger.info("Git diff found %d changed files", len(files))
             return files
 
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:

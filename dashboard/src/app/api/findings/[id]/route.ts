@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { findingContractContext } from "@/lib/openapi-context";
 import { readAuthBody } from "@/lib/auth-request";
-import { FindingWorkflowError, findingWorkflow, parseFindingWorkflowPatch, updateFindingWorkflow } from "@/lib/finding-workflow";
+import { FindingWorkflowError, readFindingWorkflow, parseFindingWorkflowPatch, updateFindingWorkflow } from "@/lib/finding-workflow";
 
 export async function GET(
   request: NextRequest,
@@ -33,7 +33,8 @@ export async function GET(
   const canTriage = finding.scan.projectId ? Boolean(await prisma.project.findFirst({
     where: { AND: [{ id: finding.scan.projectId, archived: false }, projectScope(access, "triager")] }, select: { id: true },
   })) : access.workspaceAdmin;
-  return NextResponse.json({ ...finding, identity, workflow: findingWorkflow(finding, identity), permissions: { canTriage }, apiContractContext }, { headers: { "Cache-Control": "no-store" } });
+  const workflow = await readFindingWorkflow(prisma, finding, identity, finding.scan.projectId);
+  return NextResponse.json({ ...finding, identity, workflow, permissions: { canTriage }, apiContractContext }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(

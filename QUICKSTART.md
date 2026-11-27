@@ -57,6 +57,8 @@ Wait until you see "Initializing done" in logs.
 
 ### Upload Scan Results
 
+Use the HTTPS base URL for a remote DefectDojo installation. The CLI also accepts direct HTTP to localhost, 127.0.0.1 or [::1] for the local setup below. Configure the final URL, including any installation path, because authenticated uploads reject redirects.
+
 **Option A: CLI**
 ```bash
 # Set env vars
@@ -141,3 +143,18 @@ docker compose -f docker-compose.defectdojo.yml down
 # To also delete data:
 docker compose -f docker-compose.defectdojo.yml down -v
 ```
+
+## Scan local and hosted repositories together
+
+From a source checkout, prepare the bundled multi-repository example and scan it.
+
+```sh
+aegify scan-workspace scanner/examples/workspace-sources.yml --prepare-to ./prepared-example \
+  --output json --output-file workspace-report.json
+```
+
+Use a repository's local path or a hosted HTTPS URL and full commit SHA.
+The adjacent `sources.json` identifies each remote commit and tree. For Spring
+Cloud Gateway and Kong, declare each service's `service_names` in the workspace
+manifest to distinguish a matched repository from an ambiguous or unassigned
+target. [Repository credentials and limits](scanner/README.md) · [Gateway configuration](docs/concepts/multi-repository.mdx)

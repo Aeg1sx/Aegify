@@ -107,6 +107,26 @@ def test_direct_json_worker_and_cli_controller_share_timeout_identity(tmp_path):
     assert reports[0].result_digest == reports[1].result_digest == controller.result_digest
 
 
+@pytest.mark.parametrize("relative", ["input.json", "other.json", "elsewhere/request.json"])
+def test_fixture_worker_reads_only_controller_inputs_in_its_directory(tmp_path, relative):
+    request = tmp_path / relative
+    request.parent.mkdir(exist_ok=True)
+    request.write_text(
+        json.dumps({"rule_yaml": _rule(), "suite": _suite().model_dump(), "timeout_seconds": 30})
+    )
+    output = _supervise(
+        [sys.executable, "-I", "-m", "aegify.quality.rule_fixture_worker", str(request)],
+        tmp_path,
+        30,
+    )
+    report = FixtureReport.model_validate(strict_json(output))
+    if relative == "input.json":
+        assert report.exit_code == 0
+    else:
+        assert report.issues == ["rule_or_worker_invalid"]
+        assert not report.cases
+
+
 @pytest.mark.parametrize("timeout", [True, "30", None, 0, 120.1])
 def test_direct_worker_rejects_invalid_timeout_before_analysis(tmp_path, timeout):
     request = tmp_path / "request.json"

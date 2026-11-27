@@ -68,10 +68,24 @@ model Scan {
   agentRuns  AgentRun[]
   apiSpecifications ApiSpecification[]
   scanJob ScanJob?
+  gatewayInventory ScanGatewayInventory?
 
   @@index([createdAt])
   @@index([repository])
   @@index([projectId])
+}
+
+model ScanGatewayInventory {
+  scanId       String @id
+  scan         Scan   @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  inputStatus  String
+  fileCount    Int
+  resolved     Int
+  ambiguous    Int
+  unresolved   Int
+  omittedFiles Int
+  omittedRoutes Int
+  details      String
 }
 
 model ScanJob {
@@ -698,6 +712,7 @@ model AuditEvent {
 
   @@index([projectId, createdAt])
   @@index([actorId, createdAt])
+  @@index([targetId, action, projectId, createdAt])
 }
 
 model Account {

@@ -1,0 +1,104 @@
+{
+  "ground_truth_sha256": "26b377d576f05c1ec9f781fa2ab432a125dd31d42ba9290e93e58b5b09adb65b",
+  "rule_scope": [
+    "AEG-A03-006",
+    "AEG-CMD-001",
+    "AEG-CMD-002"
+  ],
+  "line_tolerance": 0,
+  "files": {
+    "commands.py": "fa182af8f2fbd1610506ac2e7ad584efc0fc28ff861d24c06ec1c550439dc18a",
+    "options.py": "f88ca246f8a360c2f58a1050c02115c8af2bd8f4cf4e695f759ce199b8964f54"
+  },
+  "previous": {
+    "wheel_sha256": "6c8a9b210fbc22c32c5da7b87751da4c4c1690c1654d716820ea41e67a3f2e63",
+    "observed": [
+      [
+        "options.py",
+        "AEG-A03-006",
+        31
+      ],
+      [
+        "options.py",
+        "AEG-CMD-002",
+        31
+      ]
+    ],
+    "true_positives": 0,
+    "false_positives": 2,
+    "false_negatives": 13
+  },
+  "candidate": {
+    "wheel_sha256": "39c3167ade362132a0dbaed39a91c82f079521942a130e29d2567fec520a214c",
+    "observed": [
+      [
+        "commands.py",
+        "AEG-A03-006",
+        17
+      ],
+      [
+        "commands.py",
+        "AEG-A03-006",
+        25
+      ],
+      [
+        "commands.py",
+        "AEG-A03-006",
+        48
+      ],
+      [
+        "commands.py",
+        "AEG-CMD-001",
+        17
+      ],
+      [
+        "commands.py",
+        "AEG-CMD-001",
+        25
+      ],
+      [
+        "commands.py",
+        "AEG-CMD-001",
+        48
+      ],
+      [
+        "options.py",
+        "AEG-A03-006",
+        11
+      ],
+      [
+        "options.py",
+        "AEG-A03-006",
+        17
+      ],
+      [
+        "options.py",
+        "AEG-CMD-001",
+        11
+      ],
+      [
+        "options.py",
+        "AEG-CMD-001",
+        17
+      ],
+      [
+        "options.py",
+        "AEG-CMD-002",
+        11
+      ],
+      [
+        "options.py",
+        "AEG-CMD-002",
+        17
+      ],
+      [
+        "options.py",
+        "AEG-CMD-002",
+        21
+      ]
+    ],
+    "true_positives": 13,
+    "false_positives": 0,
+    "false_negatives": 0
+  }
+}

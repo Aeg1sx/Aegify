@@ -26,8 +26,16 @@ export function passwordError(value: unknown): string | null {
 }
 export function safeAuthReturn(value: unknown): string {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || /[\\\x00-\x20]/.test(value)) return "/";
-  try { const url = new URL(value, "https://workspace.invalid"); return url.origin === "https://workspace.invalid" && !url.pathname.startsWith("/auth") && !url.pathname.startsWith("/api/") ? url.pathname + url.search + url.hash : "/"; }
-  catch { return "/"; }
+  const origin = "https://workspace.invalid";
+  try {
+    const url = new URL(value, origin);
+    // The browser resolves this serialized path again when it navigates after sign-in.
+    if (url.origin !== origin || url.pathname.startsWith("//") ||
+        url.pathname.startsWith("/auth") || url.pathname.startsWith("/api/")) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return "/";
+  }
 }
 export function authOrigin(environment: AuthEnvironment): string | null {
   try {

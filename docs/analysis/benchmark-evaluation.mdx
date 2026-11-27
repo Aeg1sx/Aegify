@@ -17,6 +17,8 @@ locations; the checked-in core corpus is a small regression contract. The output
 is **report schema version 2**. Consumers of older reports must allow `null`
 precision, recall and F1 when the corresponding denominator is empty.
 
+The default location match allows three lines in either direction within the same file and rule. Pass `--line-tolerance 0` for exact locations. The report records the tolerance and binds it to the outcome digest. The process-argument controls in CI require the exact subprocess call line.
+
 ```bash
 cd scanner
 uv run aegify benchmark benchmarks/core-v1/sources \

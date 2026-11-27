@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "corpus": "python-web-xss-postfreeze-v1",
+  "split": "all",
+  "cwe": 79,
+  "manifest_sha256": "ea4eda0fa12f239f44d4164ec31136531537294f3fb3507e7b33c9a058ae887a",
+  "evaluator_sha256": "ca69fe1b65bbcd811f323a808ab2bf1b26d58d0274d463c8d1cce3b782e694d9",
+  "configuration_digest": "sha256:137c327fad5797282181beccdf993833548d193776f3a5f0da35fc18b59ff4ed",
+  "scored_rules": [
+    "AEG-FLASK-XSS-001",
+    "AEG-XSS-002",
+    "AEG-XSS-005",
+    "AEG-XSS-007"
+  ],
+  "implementation": {
+    "scanner_version": "0.3.0b1",
+    "scanner_code_and_modelpacks_digest": "sha256:7db68f191d68f3440f48827008a5219ba0c09b269db0142ea278ede172dd0809",
+    "bundled_rules_digest": "sha256:e42667b1fb950318af092760634abec1c8a6b680db83dcd106d77c574d781ad5",
+    "rule_definitions_digest": "sha256:14127135e22e1eefe283d35bc595af9cc8793c498259eb9fb780a9b8106fb257",
+    "parser_fingerprint": "a6563e217029c5b1be095ee46963d5965f6a59254ae142c159b5d5cf251ef81a",
+    "python": "3.14.7"
+  },
+  "counts": {
+    "evaluation": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "tn": 1,
+      "unscored": 0
+    }
+  },
+  "cases": [
+    {
+      "site": "airflow-dag-run-link-text",
+      "split": "evaluation",
+      "version": "before",
+      "range": [
+        134,
+        134
+      ],
+      "source_sha256": "a6d783e4656ff72b3ebc652003cfc6b47e4680abf2bea9aace3b76dfe712565a",
+      "hits": [],
+      "outcome": "fn"
+    },
+    {
+      "site": "airflow-dag-run-link-text",
+      "split": "evaluation",
+      "version": "after",
+      "range": [
+        134,
+        135
+      ],
+      "source_sha256": "984dbe637b435beb7a5cd94ac35f4a22832ee22779b6a30e4a47bdd99001d60b",
+      "hits": [],
+      "outcome": "tn"
+    }
+  ],
+  "modules": [
+    {
+      "repository": "apache/airflow",
+      "path": "airflow/www/views.py",
+      "version": "before",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": [
+        {
+          "line": 920,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 1484,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 1570,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 1975,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 2188,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ]
+    },
+    {
+      "repository": "apache/airflow",
+      "path": "airflow/www/views.py",
+      "version": "after",
+      "status": "completed",
+      "missing_rules": [],
+      "gaps": [],
+      "outside_labels": [
+        {
+          "line": 923,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 1487,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 1573,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 1978,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        },
+        {
+          "line": 2191,
+          "rule": "AEG-XSS-002",
+          "evidence": "candidate",
+          "disposition": "advisory"
+        }
+      ]
+    }
+  ]
+}

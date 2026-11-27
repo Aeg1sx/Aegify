@@ -1,53 +1,21 @@
 rules:
   - id: "AEG-TMPL-001"
-    name: "Jinja2 Server-Side Template Injection"
+    name: "Request input in Python template source"
     description: >
-      Detects user-controlled input rendered through Jinja2 template engine
-      without proper sandboxing or using unsafe patterns. Jinja2 SSTI occurs
-      when user input is passed to Template() constructor or render_template_string()
-      instead of being passed as a template variable to a pre-compiled template.
-      An attacker can exploit Python's Method Resolution Order (MRO) to escape
-      the Jinja2 sandbox by traversing __mro__, __subclasses__(), __globals__,
-      and __builtins__ to reach dangerous classes like os.popen or subprocess.Popen.
-      Classic payloads include {{config}} to leak Flask configuration secrets,
-      {{''.__class__.__mro__[2].__subclasses__()}} to enumerate available classes,
-      and chaining to os.popen() for remote code execution. Even Jinja2's
-      SandboxedEnvironment has known bypasses via Jinja2 internal objects.
-    severity: critical
-    confidence: 0.94
+      Traces request data to the template source argument of an imported Django,
+      Flask or Jinja compiler. Rendering a fixed template with request data in
+      the context is the expected use of these APIs.
+    severity: high
+    confidence: 0.90
     languages: [python]
     cwe_id: 1336
     owasp_category: "A03:2021-Injection"
-    patterns:
-      - callee: "Template"
-        args_match: "(req|request|input|param|query|body|form|data|user)"
-        context_match: "jinja2|Jinja2|flask"
-      - callee: "render_template_string"
-        args_match: "(req|request|input|param|query|body|form|data|user)"
-      - pattern: "Template\\s*\\(\\s*[\"'`].*\\{\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
-      - pattern: "Template\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
-      - pattern: "render_template_string\\s*\\(\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
-      - pattern: "Environment\\(\\)\\.(from_string|parse)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
     taint:
-      source_types: [http_param, http_body, http_query, form_input]
-      sink_types: [template_render]
-      sink_pattern: "(Template\\(|render_template_string|from_string|Environment.*parse)"
-      # Reference only; propagation comes from scanner models.
-      # propagation:
-        # - "string_concat"
-        # - "f_string"
-        # - "format\\("
-        # - "%s.*%"
-    defense_patterns:
-      - "render_template\\("
-      - "SandboxedEnvironment"
-      - "ImmutableSandboxedEnvironment"
-      - "autoescape\\s*=\\s*True"
-      - "select_autoescape"
-      - "Markup\\.escape"
-      - "jinja2\\.escape"
-      - "bleach\\.clean"
-    message: "Jinja2 template at line {line} renders user-controlled input via Template() or render_template_string(), enabling server-side template injection. An attacker can achieve remote code execution by traversing Python MRO to access os.popen or subprocess modules."
+      source_types: [http_param, http_body, http_query, http_header, http_cookie, form_input]
+      sink_types: [template_source]
+    message: >
+      Request data at line {source_line} reaches the template source of {sink}
+      at line {sink_line}. Load a fixed template and pass the value in its render context.
 
   - id: "AEG-TMPL-002"
     name: "Handlebars Server-Side Template Injection"

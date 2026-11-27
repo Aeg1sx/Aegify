@@ -301,7 +301,10 @@ def _check_semantic(
             report, "error", "invalid-semantic", "semantic must be a mapping", file_path, rule_id
         )
         return False
-    unknown = set(semantic) - SUPPORTED_SEMANTIC_FIELDS
+    from aegify.rules.yaml_rule import SemanticSpec
+
+    fixed = isinstance(semantic.get("kind"), str) and semantic["kind"] in SemanticSpec.FIXED_KINDS
+    unknown = set(semantic) - ({"kind"} if fixed else SUPPORTED_SEMANTIC_FIELDS)
     for field_name in sorted(unknown):
         _issue(
             report,
@@ -311,6 +314,8 @@ def _check_semantic(
             file_path,
             rule_id,
         )
+    if fixed:
+        return not unknown
     kind_supported = semantic.get("kind") == "database_race"
     if not kind_supported:
         _issue(

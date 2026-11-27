@@ -53,6 +53,7 @@ rules:
 
   - id: "AEG-CRYPTO-PY-003"
     name: "os.urandom used where secrets module is preferred"
+    enabled: false
     description: >
       The application uses os.urandom() to generate tokens, session IDs, API keys,
       or other security-sensitive random values instead of the secrets module (Python

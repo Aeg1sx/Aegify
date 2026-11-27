@@ -1,0 +1,84 @@
+---
+title: "Cloudflare configuration audit"
+description: "Review Worker Preview resources, plaintext variables, version URLs and local development bindings in Wrangler manifests."
+---
+
+Run a source scan on a repository containing `wrangler.toml`, `wrangler.json`
+or `wrangler.jsonc`. You can also pass a single manifest to the CLI. The
+dashboard source worker, pull request scanner and multi-repository scanner
+use the same checks. The scan reads local configuration and needs no Cloudflare
+account or API token.
+
+```bash
+uv run --project scanner --locked aegify scan ./workers/receipts/wrangler.toml \
+  --no-llm --output sarif --output-file wrangler.sarif
+```
+
+## What gets reported
+
+| Rule | Configuration evidence | Reviewer action |
+|---|---|---|
+| `AEG-CF-001` | A direct `vars` or Worker `previews.vars` binding with a credential-like name such as `DATABASE_PASSWORD` contains a nonempty literal string. The report records its name, environment and line. | Check whether the value is sensitive. Move a real credential to an encrypted secret in that environment and rotate it. |
+| `AEG-CF-002` | The effective Worker configuration explicitly combines `workers_dev = false` with `preview_urls = true`. The report records the lines for both settings, including inherited values. | Confirm the intended audience for version deployments. Review the applicable Access policy or disable version URLs. |
+| `AEG-CF-003` | A Worker binding explicitly uses remote storage for local development. Its selected KV namespace, D1 database or R2 bucket matches the deployment target declared in another environment of the same manifest. | Confirm whether both environments should use this resource. Select a dedicated preview resource or local storage if separation is intended. |
+| `AEG-CF-004` | A branch Worker Preview selects the same KV namespace, D1 database, R2 bucket or queue as its target Worker. The report shows the two primary field locations. | Confirm whether branch workloads should use this resource. For isolation, assign the Preview a dedicated resource. |
+
+These findings are advisory. A configuration file can show what a deployment
+requests. Confirming that a version is reachable or that an Access policy
+protects it requires deployment evidence. An omitted `preview_urls` leaves
+the current deployed setting unknown. Wrangler documents both routing flags
+as inheritable. A named environment defines its own `vars`.
+[Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/)
+and [Version URLs](https://developers.cloudflare.com/workers/versions-and-deployments/version-urls/).
+
+The binding check covers Workers and Pages. It skips empty values, recognized
+placeholders, public-key names such as `PUBLIC_API_KEY`, and secret-name
+declarations. Its name-based scope can miss sensitive values under innocuous
+names. The version URL check applies to Workers and skips configurations
+declaring a live local Durable Object class. A binding to another Worker's
+class has its own deployment boundary.
+[Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+and [Pages bindings](https://developers.cloudflare.com/pages/functions/bindings/).
+
+## Follow a shared storage target
+
+For local development, Wrangler selects `preview_id` for KV, `preview_database_id` for D1 or `preview_bucket_name` for R2 when present. Otherwise it selects the binding’s primary field. Aegify compares this selection to another environment’s declared primary field, accounting for configured account IDs and R2 jurisdictions. Each named environment declares its own storage bindings. The audit covers explicit `remote = true` bindings and reports one matching peer per binding. Its evidence contains the environment names, array positions and field locations. The actual IDs and bucket names stay in the manifest. [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/) · [Local development](https://developers.cloudflare.com/workers/local-development/)
+
+**Local development** identifies the selected field and the line enabling remote access. **Matching deployment** identifies the other environment and its primary field. Confirming which account a developer authenticated to, which configuration was deployed and whether data was accessed requires separate evidence. [Desktop finding](/assets/aegify-storage-desktop.png) · [Mobile finding](/assets/aegify-storage-mobile.png)
+
+## Compare a Worker Preview with its target
+
+Worker Previews can connect branch code to resources in the same account. Wrangler reads the `previews` block for a branch deployment. A named Worker can inherit that block from the top level or replace it, including with an empty object. The target Worker's own storage bindings come from its selected environment. Version URLs and local `wrangler dev` use different binding rules. [Worker Preview configuration](https://developers.cloudflare.com/workers/previews/configuration/) · [Compare preview workflows](https://developers.cloudflare.com/workers/previews/compare-workflows/)
+
+The finding shows the declaration for **Worker Preview** and the corresponding **Worker deployment**. For example, a top-level `previews.d1_databases[0].database_id` can match `env.production.d1_databases[0].database_id`. Each row cites its original line. The note under the rows identifies the named environment that inherited the Preview block. Resource identifiers stay in the manifest. [Desktop comparison](/assets/aegify-worker-preview-desktop.png) · [Mobile comparison](/assets/aegify-worker-preview-mobile.png) · [Dark appearance](/assets/aegify-worker-preview-dark.png)
+
+The comparison uses KV `id`, D1 `database_id`, R2 `bucket_name` with its jurisdiction, and Queue producer `queue`. It reports one matching pair per declared resource identity and target Worker. Local development uses its own selectors such as `preview_database_id`. Durable Objects and Containers have automatic Preview isolation. Account-side deployment and data access require separate evidence. [Cloudflare resource behavior](https://developers.cloudflare.com/workers/previews/resources/)
+
+## Inspect the result
+
+In **Findings**, search for `wrangler` to find matching manifests. Open a
+finding and select **Settings**. The inspector shows the manifest
+path, source line and parsed assignments. Select **Remediation** for the
+corresponding fix. On a phone, **Back to list** restores focus to the selected
+finding and preserves the current filters. Open the full finding to record a
+triage decision. Choose a status, enter the rationale, and select **Save
+decision**. False positive and accepted risk decisions require a rationale.
+The printable and Markdown reports include the same settings.
+
+[Desktop audit screen](/assets/aegify-cloudflare-desktop.png) ·
+[Mobile audit screen](/assets/aegify-cloudflare-mobile.png) ·
+[Full finding on mobile](/assets/aegify-finding-detail-mobile.png)
+
+The scanner represents plaintext values as `[withheld]` in its findings.
+The deterministic dashboard worker retains the original source in its
+encrypted snapshot. Individual and batch AI reviews receive location metadata
+and recognized value-free settings. The review omits free-text fields on
+manifest findings. A batch that includes a manifest omits the scan graph.
+Source navigation omits the manifest body.
+The historical repository model scanner omits these files and records partial
+coverage. Reviewers can inspect the original file in their own checkout.
+
+Malformed documents, duplicate keys and unsupported syntax produce partial
+scan coverage. These checks read the three conventional manifest names.
+Custom `--config` filenames, generated deployment settings, dashboard-only
+bindings, account policies and secret history require separate evidence.

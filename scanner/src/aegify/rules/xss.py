@@ -8,6 +8,7 @@ from aegify.graph_types import CodeGraph
 from aegify.models import (
     FileAST,
     Finding,
+    FindingDisposition,
     Language,
     Severity,
     TaintFlow,
@@ -84,6 +85,68 @@ class XSSRule(SecurityRule):
         return findings
 
 
+class FlaskResponseRule(SecurityRule):
+    """Request data reaching a text insertion in a Flask response."""
+
+    definition = RuleDefinition(
+        id="AEG-FLASK-XSS-001",
+        name="Request input in a Flask HTML response",
+        description="Review the output encoding where HTTP input enters a returned HTML body.",
+        severity=Severity.HIGH,
+        default_confidence=0.75,
+        languages=[Language.PYTHON],
+        cwe_id=79,
+        owasp_category="A03:2021-Injection",
+    )
+    sink_types = {"flask_html_body", "flask_injected_html"}
+
+    def get_detection_metadata(self) -> dict[str, Any]:
+        return {
+            "detection_method": "taint_analysis",
+            "taint": {"sink_types": sorted(self.sink_types)},
+        }
+
+    def evaluate(
+        self,
+        file_asts: list[FileAST],
+        call_graph: CodeGraph,
+        taint_flows: list[TaintFlow],
+    ) -> list[Finding]:
+        findings = []
+        for flow in taint_flows:
+            if flow.sink.sink_type not in self.sink_types or flow.sanitized:
+                continue
+            message = f"Request input from line {flow.source.line} reaches the response body. "
+            if any(step.propagation_type == "filtered-response-body" for step in flow.path):
+                message += (
+                    "A character filter limits the value. Verify how the surrounding HTML uses it. "
+                )
+            line = flow.sink.line
+            for step in reversed(flow.path):
+                if (
+                    step.propagation_type == "response-construction"
+                    and step.file_path == flow.sink.file_path
+                    and step.function == flow.sink.in_function
+                ):
+                    line = step.line
+                    message += f"The view returns this response on line {flow.sink.line}. "
+                    break
+            if flow.sink.sink_type == "flask_injected_html":
+                message += "Verify the factory's Flask registration and response type. "
+            findings.append(
+                self._create_finding(
+                    file_path=flow.sink.file_path,
+                    line_start=line,
+                    line_end=line,
+                    code_snippet="",
+                    disposition=FindingDisposition.ADVISORY,
+                    message=message + "Review output encoding at the insertion point.",
+                    taint_flow=flow,
+                )
+            )
+        return findings
+
+
 class DangerousInnerHTMLRule(SecurityRule):
     """Detect usage of dangerouslySetInnerHTML in React."""
 
@@ -149,3 +212,4 @@ class DangerousInnerHTMLRule(SecurityRule):
 
 register_rule(XSSRule())
 register_rule(DangerousInnerHTMLRule())
+register_rule(FlaskResponseRule())

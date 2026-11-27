@@ -102,7 +102,7 @@ def test_call_graph_contract_resolves_every_supported_language(
 
 
 def test_call_graph_support_contract_covers_parser_registry() -> None:
-    assert HEURISTIC_CALL_GRAPH_LANGUAGES == frozenset(Language)
+    assert HEURISTIC_CALL_GRAPH_LANGUAGES == frozenset(Language) - {Language.WRANGLER}
 
 
 def test_typescript_relative_import_resolves_without_global_name_guessing(
@@ -583,7 +583,7 @@ def test_endpoint_framework_contract(
 
 
 def test_endpoint_support_contract_covers_every_parser_language() -> None:
-    assert set(ENDPOINT_SUPPORT_MATRIX) == set(Language)
+    assert set(ENDPOINT_SUPPORT_MATRIX) == set(Language) - {Language.WRANGLER}
     exercised = {(language, framework) for language, framework, *_ in ENDPOINT_CASES}
     declared = {
         (language, framework)

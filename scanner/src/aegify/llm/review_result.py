@@ -36,7 +36,7 @@ def _evidence(value: object) -> list[str] | None:
         or any(not isinstance(item, str) for item in value)
     ):
         return None
-    return [item[:2000] for item in value]
+    return [text for item in value if (text := item[:2000].strip())]
 
 
 def review_from_result(result: dict[str, Any]) -> AIReview:
@@ -65,13 +65,20 @@ def review_from_result(result: dict[str, Any]) -> AIReview:
         or any(items is None for items in evidence)
     ):
         return AIReview(evidence_gaps=["Model review fields were missing, invalid or ambiguous."])
+    gaps = evidence[2] or []
+    if (verdict == AIReviewVerdict.LIKELY_TRUE_POSITIVE and not evidence[0]) or (
+        verdict == AIReviewVerdict.LIKELY_FALSE_POSITIVE and not evidence[1]
+    ):
+        missing = "supporting" if verdict == AIReviewVerdict.LIKELY_TRUE_POSITIVE else "contrary"
+        gaps = [f"The model supplied no {missing} evidence for its verdict.", *gaps][:20]
+        verdict = AIReviewVerdict.NEEDS_REVIEW
     return AIReview(
         verdict=verdict,
-        confidence=confidence,
+        confidence=0 if verdict == AIReviewVerdict.NEEDS_REVIEW else confidence,
         reasoning=_text(reasoning),
         evidence_for=evidence[0] or [],
         evidence_against=evidence[1] or [],
-        evidence_gaps=evidence[2] or [],
+        evidence_gaps=gaps,
         remediation_summary=_text(result.get("remediation")),
     )
 

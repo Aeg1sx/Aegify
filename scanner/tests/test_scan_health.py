@@ -233,4 +233,29 @@ def test_configured_taint_bound_propagates_to_scan_health(tmp_path: Path) -> Non
     assert result.status == ScanStatus.PARTIAL
     assert any(gap.code == "taint_limit" for gap in result.analysis_gaps)
     assert "global taint hit the 1-context bound" in result.taint_analysis.warnings
-    assert result.taint_analysis.contexts_analyzed <= 1
+    assert result.taint_analysis.limits_reached == ["contexts"]
+    assert result.taint_analysis.contexts_analyzed == result.taint_analysis.context_limit == 1
+    assert "1 call context" in result.analysis_gaps[0].message
+
+
+def test_iteration_limit_distinguishes_admitted_from_evaluated_contexts(tmp_path: Path) -> None:
+    source = tmp_path / "app.py"
+    source.write_text(
+        "def consume(arg):\n    return arg\ndef entry():\n    return consume(input())\n"
+    )
+    config = AegifyConfig()
+    config.taint.max_iterations = 1
+    result = ScanEngine(config).scan(source)
+    summary = result.taint_analysis
+    assert result.status == ScanStatus.PARTIAL
+    assert summary.limits_reached == ["iterations"]
+    assert summary.iterations == summary.iteration_limit == 1
+    assert summary.contexts_admitted > summary.contexts_analyzed == 2
+    assert "after 1 pass" in result.analysis_gaps[0].message
+    from aegify.reporter.sarif import SARIFReporter
+
+    run = SARIFReporter().generate(result)["runs"][0]
+    assert run["properties"]["taintAnalysis"] == summary.model_dump(mode="json")
+    assert (
+        run["invocations"][0]["properties"]["analysisGaps"][0]["message"] == summary.limit_message()
+    )

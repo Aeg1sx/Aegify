@@ -58,64 +58,20 @@ rules:
       - "https://cwe.mitre.org/data/definitions/611.html"
 
   - id: "AEG-XEE-002"
-    name: "Python xml.etree.ElementTree/xml.sax with user input"
+    name: "Request input reaches an external-entity-enabled Python XML parser"
     description: >
-      Python's standard library XML modules (xml.etree.ElementTree, xml.sax, xml.dom,
-      xml.dom.minidom) have varying levels of XXE vulnerability. While
-      xml.etree.ElementTree in CPython disables external entity loading by default
-      since Python 3.7.1, xml.sax and xml.dom.pulldom can still be vulnerable.
-      Additionally, the billion laughs (XML bomb) attack via recursive entity
-      expansion is possible across all standard library XML parsers unless explicitly
-      mitigated. The defusedxml package provides drop-in replacements with proper
-      protections.
-    severity: medium
-    confidence: 0.8
+      A standard-library DOM or SAX consumer uses a parser with external
+      general entities explicitly enabled. The reported path traces the
+      request value to the XML input.
+    severity: high
+    confidence: 0.85
     languages: [python]
     cwe_id: 611
     owasp_category: "A05:2021-Security Misconfiguration"
-    patterns:
-      - pattern: "xml\\.sax\\.(parse|parseString|make_parser)\\s*\\("
-        args_match: "(request|input|param|query|body|form|data|user|upload|file|read)"
-        description: "xml.sax parsing with user-controlled input"
-      - pattern: "xml\\.dom\\.(minidom|pulldom)\\.(parse|parseString)\\s*\\("
-        args_match: "(request|input|param|query|body|form|data|user|upload)"
-        description: "xml.dom parsing with user-controlled input"
-      - pattern: "ET\\.(parse|fromstring|ElementTree)\\s*\\("
-        args_match: "(request|input|param|query|body|form|data|user|upload)"
-        description: "ElementTree parsing with user-controlled input"
-      - pattern: "XMLReader.*setFeature.*feature_external_ges.*True"
-        description: "SAX parser with external general entities explicitly enabled"
-      - pattern: "expat\\.ParserCreate\\s*\\("
-        args_match: "(request|input|param|query|body|data|user)"
-        description: "Low-level expat parser with user-controlled XML"
     taint:
-      source_types: [http_body, file_upload, http_param, xml_input]
-      sink_types: [xml_parse]
-      sink_pattern: "xml\\.(sax|dom|etree|parsers)"
-      # Reference only; propagation comes from scanner models.
-      # propagation:
-        # - through: "file_read"
-        # - through: "request_body"
-        # - through: "string_decode"
-    defense_patterns:
-      - "defusedxml"
-      - "feature_external_ges.*False"
-      - "feature_external_pes.*False"
-      - "forbid_dtd"
-      - "forbid_entities"
-      - "forbid_external"
-    fix_suggestion: >
-      Use the defusedxml package which provides safe replacements for all standard
-      library XML parsers: defusedxml.ElementTree, defusedxml.sax, defusedxml.minidom.
-      For xml.sax, explicitly disable external entity features:
-      parser.setFeature(xml.sax.handler.feature_external_ges, False) and
-      parser.setFeature(xml.sax.handler.feature_external_pes, False).
-      Set entity expansion limits to prevent XML bomb attacks.
-    message: "Standard library XML parsing with potentially user-controlled input at line {line}. Depending on Python version and parser, XXE and XML bomb attacks may be possible."
-    references:
-      - "https://docs.python.org/3/library/xml.html#xml-vulnerabilities"
-      - "https://pypi.org/project/defusedxml/"
-      - "https://cwe.mitre.org/data/definitions/611.html"
+      source_types: [http_body, http_header, http_cookie, http_query, file_upload, http_param, xml_input]
+      sink_types: [xml_external_input]
+    message: "Request input from line {source_line} reaches '{sink}' on line {sink_line} with external general entities enabled. Disable external resolution before parsing untrusted XML."
 
   - id: "AEG-XEE-003"
     name: "Java SAXParser without secure processing features"

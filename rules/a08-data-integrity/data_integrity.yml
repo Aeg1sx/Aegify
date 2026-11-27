@@ -56,23 +56,17 @@ rules:
     message: "File downloaded without integrity check at '{callee}' (line {line}). Verify checksum or signature after download."
 
   - id: AEG-A08-004
-    name: Unsafe YAML Load
+    name: Python YAML loader configuration
     description: >
-      Using yaml.load() without specifying SafeLoader allows arbitrary Python
-      object deserialization, leading to remote code execution. Always use
-      yaml.safe_load() or yaml.load(data, Loader=yaml.SafeLoader).
+      Reviews the resolved PyYAML loader, locally registered constructors and the
+      selected input. An unresolved or extended loader needs configuration review.
     severity: high
     confidence: 0.9
     languages: [python]
     cwe_id: 502
     owasp_category: "A08:2021-Software and Data Integrity Failures"
-    patterns:
-      - callee: "yaml\\.load"
-        args_match: "^(?!.*SafeLoader)(?!.*safe_load).*$"
-      - callee: "yaml\\.load_all"
-        args_match: "^(?!.*SafeLoader).*$"
-      - callee: "yaml\\.unsafe_load"
-    message: "Unsafe YAML loading at '{callee}' (line {line}). Use yaml.safe_load() or specify Loader=yaml.SafeLoader."
+    semantic: {kind: python_yaml_loader}
+    message: "Review the YAML loader policy and input provenance."
 
   - id: AEG-A08-005
     name: Pickle Deserialization of Untrusted Data
@@ -102,7 +96,7 @@ rules:
       phishing or credential theft.
     severity: medium
     confidence: 0.75
-    languages: [python, javascript, typescript, java, go]
+    languages: [javascript, typescript, java, go]
     cwe_id: 601
     owasp_category: "A08:2021-Software and Data Integrity Failures"
     defense_patterns: ["allowlist", "whitelist", "url_validate", "urlparse", "same_origin"]

@@ -38,8 +38,10 @@ claim runtime impact without observed evidence, expose secrets, or propose destr
 Return strict JSON. If evidence is incomplete, use needs_review. When source tools are available,
 cite only citation_id values actually returned by source_read or source_search. Never invent
 locations or digests. Tool results may justify another read-only tool request; stop when sufficient
-evidence is collected. A source citation proves which text was read,
-not the correctness of a claim."""
+evidence is collected. Cover the full reported line range. Explain a likely positive in
+evidence_for and a likely false positive in evidence_against. A source citation identifies the
+text read during review. For a likely positive on a recorded taint flow, cite the input
+line as well as the finding. The flow_origin object identifies that input when available."""
 _DESTRUCTIVE_TEMPLATE = re.compile(
     r"(?:\b(?:rm\s+-rf|drop\s+(?:database|table)|truncate\s+table|shutdown|reboot|"
     r"mkfs|dd\s+if=|nc\s+-e|bash\s+-i|169\.254\.169\.254|"
@@ -123,6 +125,7 @@ class AISTASTOrchestrator:
                 "harness_plan": {},
             },
         }
+        origin = sources.flow_origin(finding) if sources else None
         base = {
             "finding": {
                 "id": finding.id,
@@ -136,6 +139,7 @@ class AISTASTOrchestrator:
             },
             "source_catalog": sources.summary() if sources else None,
             "finding_source": sources.finding_location(finding) if sources else None,
+            "flow_origin": origin,
             "required_schema": schema,
         }
         payload: dict[str, Any] = {}
@@ -207,21 +211,37 @@ class AISTASTOrchestrator:
             if sources is not None and not citations:
                 session.gaps.append("No valid source citation supports this review")
                 verdict = AIReviewVerdict.NEEDS_REVIEW
-            if sources is not None and citations:
-                location = sources.finding_location(finding)
-                if location is None or not any(
-                    citation.repository_id == location["repository_id"]
-                    and citation.path == location["path"]
-                    and citation.line_start
-                    <= finding.line_start
-                    <= finding.line_end
-                    <= citation.line_end
-                    for citation in citations
-                ):
-                    session.gaps.append(
-                        "Source references do not cover this finding's repository and range"
-                    )
-                    verdict = AIReviewVerdict.NEEDS_REVIEW
+            if sources is not None and citations and not sources.covers_finding(finding, citations):
+                session.gaps.append(
+                    "Source references do not cover this finding's repository and range"
+                )
+                verdict = AIReviewVerdict.NEEDS_REVIEW
+        if (
+            sources is not None
+            and verdict == AIReviewVerdict.LIKELY_TRUE_POSITIVE
+            and finding.taint_flow
+        ):
+            if origin is None or not any(
+                item.repository_id == origin["repository_id"]
+                and item.path == origin["path"]
+                and item.line_start <= origin["line"] <= item.line_end
+                for item in citations
+            ):
+                session.gaps.append(
+                    "Source references do not cover the recorded input to this flow"
+                )
+                verdict = AIReviewVerdict.NEEDS_REVIEW
+        if verdict != AIReviewVerdict.NEEDS_REVIEW:
+            support = (
+                "evidence_for"
+                if verdict == AIReviewVerdict.LIKELY_TRUE_POSITIVE
+                else "evidence_against"
+            )
+            if not _safe_text(payload.get("reasoning"), 12_000).strip() or not any(
+                fact.strip() for fact in _strings(payload.get(support))
+            ):
+                session.gaps.append("The source review lacks reasoning or evidence for its verdict")
+                verdict = AIReviewVerdict.NEEDS_REVIEW
         if session.stop_reason != "final_review":
             verdict = AIReviewVerdict.NEEDS_REVIEW
         proof_payload = payload.get("proof")
@@ -242,7 +262,9 @@ class AISTASTOrchestrator:
         prompt_digest = hashlib.sha256((_SYSTEM + "\n".join(session.prompts)).encode()).hexdigest()
         return AIReview(
             verdict=verdict,
-            confidence=_confidence(payload.get("confidence")),
+            confidence=0.0
+            if verdict == AIReviewVerdict.NEEDS_REVIEW
+            else _confidence(payload.get("confidence")),
             reasoning=_safe_text(payload.get("reasoning"), 12_000),
             evidence_for=_strings(payload.get("evidence_for")),
             evidence_against=_strings(payload.get("evidence_against")),

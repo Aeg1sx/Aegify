@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient, RuleFixtureJob } from "@prisma/client";
 import type { AuthEnvironment } from "./auth-policy.ts";
 import { AccessDenied, authorizeProject, resolvePrincipal, type AccessPrincipal } from "./project-access.ts";
-import { writeTransaction } from "./database-runtime.ts";
+import { queuedOrExpired, writeTransaction } from "./database-runtime.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { FIXTURE_REPORT_BYTES, FIXTURE_RETENTION_MS, type FixtureInput, type FixtureReport } from "./rule-fixture-contract.ts";
 import { encodeFixtureInput, fixtureDigest, fixtureInput, restoreFixtureInput } from "./rule-fixture-input.ts";
@@ -74,10 +74,12 @@ export async function assertFixtureLease(tx: Prisma.TransactionClient, job: Pick
   await permission(tx, current, env);
   return current;
 }
-export async function claimRuleFixture(db: PrismaClient, workerId: string, env: AuthEnvironment, now = new Date()): Promise<RuleFixtureJob | null> {
+export async function claimRuleFixture(db: PrismaClient, workerId: string, env: AuthEnvironment, clock?: Date): Promise<RuleFixtureJob | null> {
+  if (!await db.ruleFixtureJob.findFirst({ where: queuedOrExpired(clock ?? new Date()), select: { id: true } })) return null;
   return writeTransaction(db, async (tx) => {
+    const now = clock ?? new Date();
     for (let skipped = 0; skipped < 20; skipped++) {
-      const job = await tx.ruleFixtureJob.findFirst({ where: { OR: [{ status: "queued", nextAttemptAt: { lte: now } }, { status: "running", leaseExpiresAt: { lte: now } }] }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+      const job = await tx.ruleFixtureJob.findFirst({ where: queuedOrExpired(now), orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       if (!job) return null;
       const code = job.expiresAt <= now ? "expired" : job.attempts >= job.maxAttempts ? "attempts_exhausted" : null;
       if (code) { await terminal(tx, job, "failed", code, workerId, now); continue; }
@@ -94,16 +96,18 @@ export async function claimRuleFixture(db: PrismaClient, workerId: string, env: 
     return null;
   }, { timeout: 10_000 });
 }
-export async function heartbeatRuleFixture(db: PrismaClient, job: RuleFixtureJob, env: AuthEnvironment, now = new Date()) {
+export async function heartbeatRuleFixture(db: PrismaClient, job: RuleFixtureJob, env: AuthEnvironment, clock?: Date) {
   await writeTransaction(db, async (tx) => {
+    const now = clock ?? new Date();
     await assertFixtureLease(tx, job, env, now);
     await tx.ruleFixtureJob.update({ where: { id: job.id }, data: { heartbeatAt: now, leaseExpiresAt: new Date(now.getTime() + LEASE_MS) } });
   });
 }
-export async function failRuleFixture(db: PrismaClient, job: RuleFixtureJob, code: string, retryable = false, now = new Date()) {
+export async function failRuleFixture(db: PrismaClient, job: RuleFixtureJob, code: string, retryable = false, clock?: Date) {
   if (!job.leaseToken) return;
   if (!(code in messages)) code = "worker_failed";
   await writeTransaction(db, async (tx) => {
+    const now = clock ?? new Date();
     const current = await tx.ruleFixtureJob.findFirst({ where: { id: job.id, leaseToken: job.leaseToken, status: "running", leaseExpiresAt: { gt: now } } });
     if (!current) return;
     if (retryable && current.attempts < current.maxAttempts && current.expiresAt > now) {

@@ -222,6 +222,30 @@ export function buildAgentBlueprint(
       improvementProposals: proposals,
     }),
   ];
+  const evidence = new Set([...surfaceEvidence, ...scan.findings.map(f => f.evidenceId || `finding:${f.id}`)]);
+  const preceding: AgentStageBlueprint[] = [];
+  for (const current of stages) {
+    if (current.role === "static" || current.role === "synthesis") {
+      const gaps: string[] = [];
+      const inputs = preceding.map(source => {
+        const refs = unique(source.evidenceIds);
+        const evidenceIds = refs.filter(ref => evidence.has(ref) && /^[a-zA-Z0-9_.:/@-]{1,160}$/.test(ref)).slice(0, 16);
+        if (source.status === "partial") gaps.push(`The ${source.role} review was incomplete.`);
+        if (source.role === "surface") {
+          if (!scan.endpoints.length) gaps.push("The scan supplied no endpoint inventory.");
+          else if (publicEndpoints.length) gaps.push("Authentication enforcement is unresolved for some endpoints.");
+        } else if (unresolved) {
+          gaps.push("Some findings lack a complete source path.");
+        }
+        return {
+          role: source.role, status: source.status, evidenceIds,
+          omittedEvidence: refs.length - evidenceIds.length, sourceCitationIds: [], sourceLocations: [], omittedCitations: 0,
+        };
+      });
+      current.facts.reviewHandoff = { version: 1, inputs, gaps };
+    }
+    if (current.role === "surface" || current.role === "static") preceding.push(current);
+  }
   const status = dynamicPlans.length > 0 ? "awaiting_approval" : "completed";
   const artifactDigest = digest(JSON.stringify({ scanId: scan.id, mode, status, stages }));
   return { status, stages, artifactDigest };
@@ -453,7 +477,7 @@ function stage(
 }
 
 function endpointEvidenceId(endpoint: AgentEndpointInput): string {
-  return `surface:${digest(`${endpoint.method}:${endpoint.path}:${endpoint.filePath}`).slice(7, 27)}`;
+  return `surface:${digest(`${endpoint.repositoryId || ""}:${endpoint.method}:${endpoint.path}:${endpoint.filePath}`).slice(7, 27)}`;
 }
 
 function counts(values: string[]): Record<string, number> {

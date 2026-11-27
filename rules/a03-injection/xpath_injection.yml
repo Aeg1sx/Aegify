@@ -2,18 +2,9 @@ rules:
   - id: "AEG-XPATH-001"
     name: "XPath Query Injection"
     description: >
-      Detects user-controlled input concatenated or interpolated into XPath
-      query expressions without proper sanitization. XPath is used to navigate
-      and query XML documents, and its expression syntax supports string
-      manipulation, boolean logic, and node traversal operations. An attacker
-      can inject XPath metacharacters such as single quotes, double quotes,
-      square brackets, and boolean operators (or, and) to modify the query
-      structure. This can result in unauthorized data extraction from XML
-      data stores, bypassing access controls on XML-backed applications,
-      or information disclosure about the XML document structure. Common
-      vulnerable patterns include building XPath queries with string
-      concatenation for user lookup, configuration retrieval, or XML
-      database queries.
+      Review externally supplied values used to construct an XPath expression.
+      Python findings trace the selected program argument of a resolved XPath API.
+      Bind values as variables in a fixed expression.
     severity: critical
     confidence: 0.90
     languages: [python, java, javascript, typescript, csharp, php, ruby]
@@ -21,16 +12,20 @@ rules:
     owasp_category: "A03:2021-Injection"
     patterns:
       - pattern: "(xpath|selectNodes|selectSingleNode|evaluate|select|find)\\s*\\(\\s*[\"'`].*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        languages: [java, javascript, typescript, csharp, php, ruby]
       - pattern: "[\"'`]//.*\\[.*=\\s*[\"'`]\\s*[\"'`]\\s*\\+\\s*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        languages: [java, javascript, typescript, csharp, php, ruby]
       - pattern: "f[\"']//.*\\[.*=\\s*['\"]\\{.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        languages: [java, javascript, typescript, csharp, php, ruby]
       - pattern: "String\\.format\\s*\\([\"']//.*\\[.*=.*%s"
+        languages: [java, javascript, typescript, csharp, php, ruby]
         context_match: "xpath|xml|XPath|XML|selectNodes"
       - pattern: "(XPathFactory|XPathExpression|document\\.evaluate).*\\b(req|request|input|param|query|body|form|data|user)\\b"
-      - pattern: "etree\\.(XPath|xpath)\\s*\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+        languages: [java, javascript, typescript, csharp, php, ruby]
     taint:
-      source_types: [http_param, http_body, http_query, form_input]
+      source_types: [http_param, http_body, http_query, http_header, http_cookie, form_input]
       sink_types: [xpath_query]
-      sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath|XPathExpression|etree\\.xpath)"
+      sink_pattern: "(xpath|selectNodes|selectSingleNode|evaluate|XPath|ETXPath|elementpath\\.(select|iter_select|Selector))"
       # Reference only; propagation comes from scanner models.
       # propagation:
         # - "string_concat"
@@ -49,7 +44,7 @@ rules:
       - "replace\\(.*['\"].*['\"]"
       - "lxml\\.etree\\.XPath.*variable"
       - "XPathExpression\\.evaluate.*variable"
-    message: "XPath query at line {line} incorporates unsanitized user input via string concatenation, enabling injection. An attacker can extract arbitrary nodes from the XML document, bypass access controls, or enumerate the document structure."
+    message: "Review the XPath expression on line {line}. Bind externally supplied values as XPath variables and keep the expression fixed."
 
   - id: "AEG-XPATH-002"
     name: "XPath Authentication Bypass"
@@ -67,7 +62,7 @@ rules:
       of valid credentials.
     severity: critical
     confidence: 0.93
-    languages: [python, java, javascript, typescript, csharp, php, ruby]
+    languages: [java, javascript, typescript, csharp, php, ruby]
     cwe_id: 643
     owasp_category: "A03:2021-Injection"
     patterns:
@@ -113,7 +108,7 @@ rules:
       the document, making the impact potentially more severe.
     severity: high
     confidence: 0.82
-    languages: [python, java, javascript, typescript, csharp, php]
+    languages: [java, javascript, typescript, csharp, php]
     cwe_id: 643
     owasp_category: "A03:2021-Injection"
     patterns:

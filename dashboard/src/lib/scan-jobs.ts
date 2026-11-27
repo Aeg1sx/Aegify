@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient, ScanJob } from "@prisma/client";
 import type { AuthEnvironment } from "./auth-policy.ts";
 import { AccessDenied, authorizeProject, resolvePrincipal, type AccessPrincipal } from "./project-access.ts";
 import type { ImportReceipt } from "./sarif-import.ts";
-import { writeTransaction } from "./database-runtime.ts";
+import { queuedOrExpired, writeTransaction } from "./database-runtime.ts";
 
 export const LEASE_MS = 120_000;
 export const JOB_DEADLINE_MS = 15 * 60_000;
@@ -75,11 +75,13 @@ async function terminateJob(tx: Prisma.TransactionClient, job: Pick<ScanJob, "id
 }
 
 /** SQLite serializes this transaction; the lease token fences every later write. */
-export async function claimScanJob(db: PrismaClient, workerId: string, env: AuthEnvironment, now = new Date()): Promise<ScanJob | null> {
+export async function claimScanJob(db: PrismaClient, workerId: string, env: AuthEnvironment, clock?: Date): Promise<ScanJob | null> {
+  if (!await db.scanJob.findFirst({ where: queuedOrExpired(clock ?? new Date()), select: { id: true } })) return null;
   return writeTransaction(db, async (tx) => {
+    const now = clock ?? new Date();
     for (let skipped = 0; skipped < 20; skipped++) {
       const job = await tx.scanJob.findFirst({
-        where: { OR: [{ status: "queued", nextAttemptAt: { lte: now } }, { status: "running", leaseExpiresAt: { lte: now } }] },
+        where: queuedOrExpired(now),
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
       if (!job) return null;
@@ -101,16 +103,18 @@ export async function claimScanJob(db: PrismaClient, workerId: string, env: Auth
   }, { timeout: 10_000 });
 }
 
-export async function heartbeatScanJob(db: PrismaClient, job: ScanJob, env: AuthEnvironment, now = new Date()): Promise<void> {
+export async function heartbeatScanJob(db: PrismaClient, job: ScanJob, env: AuthEnvironment, clock?: Date): Promise<void> {
   await writeTransaction(db, async (tx) => {
+    const now = clock ?? new Date();
     await assertJobLease(tx, job, env, now);
     await tx.scanJob.update({ where: { id: job.id }, data: { heartbeatAt: now, leaseExpiresAt: new Date(now.getTime() + LEASE_MS) } });
   });
 }
 
-export async function failScanJob(db: PrismaClient, job: ScanJob, code: string, retryable: boolean, now = new Date()): Promise<void> {
+export async function failScanJob(db: PrismaClient, job: ScanJob, code: string, retryable: boolean, clock?: Date): Promise<void> {
   if (!(code in jobMessages)) code = "scanner_failed";
   await writeTransaction(db, async (tx) => {
+    const now = clock ?? new Date();
     const current = await tx.scanJob.findFirst({ where: { id: job.id, leaseToken: job.leaseToken, status: "running", leaseExpiresAt: { gt: now } } });
     if (!current) return;
     if (retryable && current.attempts < current.maxAttempts) {

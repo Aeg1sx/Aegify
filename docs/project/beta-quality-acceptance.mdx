@@ -3,11 +3,134 @@ title: "Beta quality acceptance"
 description: "Measured detection changes, external labels, live-provider conformance, recovery and scanner performance."
 ---
 
-Updated 2026-09-26. `v0.3.0-beta.1` is published. The changes on this page are
-subsequent development work and are **not included in that release wheel**.
-They do not establish general availability or commercial accuracy.
+Updated 2026-11-22. The published release is `v0.3.0-beta.1`. The results below
+describe the development checkout.
 
-## Detection quality and external data
+## November development results
+
+The latest local production build passed **801 Chrome checks, 158 HTTP/CLI checks, 193 dashboard unit tests and three database migration tests**. The browser compared a provider draft with saved settings, saved a change in another section, and read a cross-file SARIF excerpt by keyboard. It exercised 320, 390, 820 and 1440 pixel layouts and dark-theme contrast. [Workspace settings](/analysis/ai-sast-operations#configure-the-review-provider) · [Finding review](/operations/finding-history#review-a-finding)
+
+The latest two installed runs agreed on all 1,230 OWASP Python labels. The scanner found all 452 labeled positives and flagged 53 negatives, for **89.50% precision and 100% recall** on this public development set. It traced raw query input through a character-copying helper into Flask session state. Three XML warnings and two pickle warnings cleared. One response using a custom HTML encoder gained an advisory on a negative case. The new CI check matched eight exact source locations. [Python reader contracts](/analysis/rule-authoring#python-deserialization) · [Benchmark evaluation](/analysis/benchmark-evaluation)
+
+Following shell command text through Python argument lists recovered six missed CWE-78 cases. The installed wheel scored **88.78% precision and 99.78% recall** across all 1,230 public Python labels, with 57 false positives and one false negative. Two processes agreed on every case. On a separate owned corpus the CI gate matched all 13 expected rule, file and line combinations. Shifting one label by one line failed the gate. [Python subprocess arguments](/analysis/rule-authoring#python-subprocess-arguments) · [Benchmark evaluation](/analysis/benchmark-evaluation)
+
+The local production build passed **757 Chrome checks and 158 HTTP/CLI checks**. The browser followed a subprocess argument in an imported scan to its saved source line. It also retried a failed graph request by keyboard and verified both decisions on a finding recorded in two scans. Layout checks covered 320, 390, 820 and 1440 pixels. The finding history labels and values also passed the dark-theme contrast check. [Finding review and screenshots](/operations/finding-history#review-a-finding)
+
+The Python code-input update scored **88.65% precision and 98.45% recall** across 1,230 public OWASP labels. It cleared six false positives and retained all 445 true positives. All outcomes agreed across two runs of the installed wheel. A local replay of the new CI checks matched the expected source locations on 13 controls and reproduced the grades on all three saved AI reviews. [Python code inputs](/analysis/rule-authoring#python-code-inputs) · [Saved review evaluation](/analysis/benchmark-evaluation)
+
+The Worker Preview comparison exercised 67 environment selections in 42 manifests against Wrangler 4.166.0’s configuration reader and Preview request builder. The candidate recovered 17 missed advisories. All 25 clean cases stayed clear, and a second installed process reproduced the first report byte for byte. Tests also cover withholding raw configuration in quick, deep and source-assisted AI prompts. [Worker Preview audit](/analysis/cloudflare-configuration#compare-a-worker-preview-with-its-target)
+
+The earlier import update passed 720 Chrome checks and 158 HTTP/CLI checks. A malformed file produced a local validation message with zero upload requests. A successful HTTP response missing a scan ID exposed a link to scan history. A real import displayed the saved partial scan, its destination and its zero findings. The browser opened that record by keyboard and checked the receipt at four widths from 320 to 1440 pixels and in desktop dark mode. [Import workflow and screenshots](/operations/finding-history#import-a-scan)
+
+The browser also expanded priority findings, followed a source link by keyboard and reloaded it with focus on the evidence. It recovered a failed review-history request and returned focus to the selected run. The sidebar showed **Review queued** before the worker started and zero of 12 findings reviewed on an active run. [Review queue](/operations/finding-history#open-the-next-finding) · [AI review workspace](/analysis/ai-sast-operations#start-a-review)
+
+A three-file receipt service went through the scanner, upload and call graph screens. The selected function opened its TLS finding despite 105 newer findings elsewhere in the same file. The browser checked keyboard focus, mobile file selection, four viewport widths from 320 to 1440 pixels, dark appearance and the colors drawn on the network canvas. The Preview screen and exported report also retained both original field locations. [Call graph workspace](/analysis/semantic-analysis#read-the-call-graph-for-a-scan)
+
+The project detail pairs a paged revision history with current findings. The local production build passed 613 Chrome checks and 158 HTTP/CLI checks. They exercise all four viewport widths, dark appearance, severity links, a conflicting repository update, token issuance and revocation, and access changes for a viewer. Provider directory responses used local fixtures. [Project record](/operations/self-hosted-workers#review-a-project)
+
+Two local cutovers started from a 704 KiB snapshot with two accounts, one project and one finding. The time from stopping the dashboard and workers to an authorized project read was 2.568 and 2.613 seconds. Replacement CI deliveries finished at 2.832 and 2.881 seconds. The source worker returned a new passing rule evaluation at 5.917 and 5.970 seconds. The operator retained the saved decision. Previous browser sessions and the old CI token were rejected. [Dashboard cutover rehearsal](/operations/backup-recovery#rehearse-a-dashboard-cutover)
+
+The finding detail puts the source beside the triage decision on desktop. On mobile, **Triage** links directly to the decision. Viewers see the saved decision and assignment. The production build passed 538 Chrome checks and 158 HTTP/CLI checks. The browser fixture scanned a mail client, imported its SARIF, opened the reported line and suggested fix, saved an assignment, recovered a stale edit, and read back the saved fields as a viewer. [Finding review](/operations/finding-history#review-a-finding)
+
+The Python scanner found both certificate-verification issues in its two development sites. In six separately scored application sites, detection rose from one to three. All six corresponding fixed locations were clear. The remaining misses involved a mixed SMTP receiver, a generated client and a host-selection policy. Two installed-wheel runs agreed across all 14 module versions. The public fixes came from five projects, with multiple related sites in Airflow. Independent label review and broader application coverage remain open. [TLS rule scope](/analysis/rule-authoring#python-tls-client-verification)
+
+The project directory aligns the repository, scan count and latest findings on
+desktop. Mobile rows keep the same details and separate project navigation
+from archive and restore. An active scan displays one job status with its latest
+event. Pending scans display their recording time and the source job activity.
+The local production build passed 505 Chrome checks and 158 HTTP/CLI checks
+with synthetic records. They cover 320-, 390-, 820- and 1440-pixel widths,
+keyboard actions, theme contrast, project access and retry after a failed save.
+[Project directory](/operations/self-hosted-workers#find-a-project) · [Scan activity](/operations/finding-history#review-a-scan)
+
+Two independent runs on one macOS arm64 host exercised four worker processes,
+24 ordinary projects and three deliberate process interruptions per run. Each
+run published 25 source scans through the Python scanner. All 25 contained the
+expected redacted Wrangler finding. The AI transport observed 27 scripted
+requests with zero repeated dispatches. The interrupted second batch became
+unknown and its 50 previously saved reviews survived live recovery and restore.
+The source and undispatched AI jobs resumed after their original two-minute
+leases. [Worker recovery rehearsal](/operations/backup-recovery#rehearse-worker-interruption)
+
+Both backups included all 24,000 historical audit events and a complete prefix
+of a concurrent writer’s transactions. Ten transactions in the first run and
+zero in the second began and ended strictly inside the snapshot interval.
+Restoring the roughly 23 MB archives took 421 ms and 253 ms. A separate local cutover rehearsal measured access reactivation on a smaller database.
+Production identity, external storage and provider latency require installation measurements.
+
+The HTTP redirect update scored **87.60% precision and 98.45% recall** on the same 1,230 public OWASP Python labels. Two installed processes agreed on all cases. The paired comparison recovered four positives and cleared four false positives with zero regressions. One of 21 redirect negatives still produced a finding. Independent application labels and the 90% precision target remain open. [Python HTTP redirect destinations](/analysis/rule-authoring#python-http-redirect-destinations)
+
+The API specification workbench puts the declared authentication beside each candidate source handler. A late preview from a previous repository is discarded. The local production build passed 440 Chrome checks and 158 HTTP/CLI checks on synthetic data. Coverage includes four viewport widths, keyboard selection, dark mode, an older scan link, repository-scoped history and export provenance. [Operation comparison and screenshots](/operations/api-specifications#compare-with-a-scan)
+
+Two fresh processes using the same installed wheel scored all 1,230 public OWASP Python labels. The scanner recognized the directory search filter in all 16 CWE-90 positives and flagged none of the 13 LDAP negatives. Overall precision reached **86.81%** and recall **97.57%**, with 67 false positives and 11 false negatives. The per-case comparison found zero regressions. The 90% precision target and an independent application evaluation remain open. [Python LDAP search filters](/analysis/rule-authoring#python-ldap-search-filters)
+
+AI review results now show the code excerpt alongside the model verdict and the project's current triage status. Earlier runs retain their original source and recommendation. Known excerpt offsets highlight the cited lines. Narrow screens use a finding selector above the source. The local production build passed 389 Chrome checks and 158 HTTP/CLI checks with synthetic records. The run included keyboard navigation, a 390-pixel setup with the start action in view, stable line numbers at 320 pixels and dark-theme contrast. [Saved review screens](/analysis/ai-sast-operations#structured-review-contract)
+
+The installed scanner wheel flagged the changed directory comparison in three historical functions from Starlette, pip and dbt-common. It cleared all three corresponding patched functions. Two clean runs agreed on the source hashes, finding lines and advisory classification. The previous wheel lacked this rule. The six-version comparison covers selected maintenance changes, including related implementations. On the broader OWASP Python set, all 1,230 case outcomes matched the preceding build. Precision was 86.38% and recall was 94.03%. [Directory containment checks](/analysis/rule-authoring#directory-containment-checks)
+
+The finding report pairs the current triage decision with the selected scan's saved evidence, including on historical and branch-only records. The Markdown download checks the version the reviewer saw. The local production build passed 344 Chrome checks and 158 HTTP/CLI checks. The print test extracted the decision and evidence ID from a one-page A4 report, and the last source line and evidence ID from a three-page version. Both used synthetic data. [Finding report](/operations/finding-history#read-and-export-a-finding-report)
+
+The storage-binding audit agreed with Wrangler 4.166.0 on 29 synthetic manifests. Ten produced an advisory at the expected line and 19 stayed clean. The comparison used Wrangler’s configuration reader for 58 environment selections and its local-development binding builder. The resulting SARIF omits resource identifiers. [Cloudflare configuration audit](/analysis/cloudflare-configuration#follow-a-shared-storage-target)
+
+The overview now links the highest-priority finding directly to its source record. Chrome checks covered 320-, 390-, 820- and 1440-pixel widths, keyboard navigation and the responsive configuration evidence view. Model review checks exercised current verdicts and both states of the older false-positive flag. [Review queue and screenshots](/operations/finding-history#open-the-next-finding)
+
+The Python object-reader update scored all 1,230 public Python labels. All-candidate precision rose from 85.17% to **86.38%**. Recall held at **94.03%**. The scanner retained all 18 CWE-502 positives, cleared seven false positives and added a blocking source trace on nine positives. Five negative cases remain advisory. The full reports and identical replay are in `scanner/benchmarks/python-decoders-v1`. The 90% precision target and independent application review remain open. [Python deserialization model](/analysis/rule-authoring#python-deserialization)
+
+The rule catalog supports search by CWE, language and ID. Its links preserve filters when a reviewer returns from the definition. The detail view shows the rule source, current findings and distinct paths. [Rule catalog and screenshots](/analysis/rule-authoring#browse-detection-rules)
+
+In the preceding Flask evaluation, two processes produced identical outcomes across 1,230 public
+OWASP Python labels. All-candidate precision rose from 84.07% to **85.17%** and
+recall rose from 84.07% to **94.03%**. The Flask response rule found all 31 XSS
+positives and flagged zero of 58 XSS negatives. The rule produces advisory findings.
+Across all CWEs the scanner recovered 45 positives and flagged two previously
+clean negatives. Per-case outcomes and replay instructions are in
+`scanner/benchmarks/flask-responses-v1`. The 90% precision target remains open.
+[Flask response rule scope](/analysis/rule-authoring#flask-html-response-bodies)
+
+Scan history aligns the repository, status, findings and recording time on desktop.
+Smaller screens show one run at a time in a vertical list. Browser checks covered
+the 320-, 390-, 820- and 1440-pixel layouts, the keyboard link into a partial
+scan and the severity totals returned by the scoped list API. [Scan history and screenshots](/operations/finding-history#find-a-scan)
+
+The endpoint inventory keeps matching paths from different repositories visible
+as separate records. The source-file view preserves the same boundary. Browser
+checks cover filtering, error recovery, keyboard navigation and restoring a
+search after opening a record. [Endpoint inventory and screenshots](/concepts/attack-surface#review-endpoint-records)
+
+The scan record shows findings in severity order with source locations and
+evidence levels. Search, severity and frequent-rule filters apply to that
+record. Chrome checks exercise these controls at 320- and 390-pixel widths
+and verify that opening a finding reaches its evidence. [Scan record and screenshots](/operations/finding-history#review-a-scan)
+
+The Wrangler configuration audit adds two advisory rules. A locally installed
+wheel reported both on their expected lines. The dashboard's source worker,
+individual and batch review inputs, saved review history and rendered reports
+were exercised with synthetic manifest values. Chrome checks covered the
+390-pixel mobile and 1280-pixel desktop layouts, including finding selection,
+keyboard focus, returning to a filtered list and saving a branch decision
+with its rationale. [Audit scope and screenshots](/analysis/cloudflare-configuration).
+
+Source-backed AI verdicts now require citations covering the finding's complete
+line range and evidence supporting the verdict. On three owned receipt
+functions, Codex CLI matched all three frozen labels, including the expected
+abstention for an unspecified formatter. Replay the saved provider output with
+`aegify benchmark-reviews` and the data in `scanner/benchmarks/source-review-v1`.
+Independent application labels and deployment-specific service measurements
+remain open release requirements.
+
+Two local SQLite trials used four clients and 24 distinct projects. Each job
+was claimed once and then cancelled. With no simulated service delay, one
+client served the queue. At 50 ms of simulated service per job all four clients
+participated. Each encrypted backup restored 25 jobs including one pending job
+that recovery cancelled. The fixture account was disabled on restore. Reproduce
+these controlled workloads from the repository root:
+
+```bash
+node dashboard/scripts/measure-queue-recovery.mjs --service-ms 0
+node dashboard/scripts/measure-queue-recovery.mjs --service-ms 50
+```
+
+## September detection baseline and external data
 
 Python taint extraction now uses bounded syntax parsing. Literal `{name}` and
 `$name` text does not read a variable; actual f-string fields do. Annotated
@@ -174,15 +297,16 @@ Reports retain process wall time, engine scan time, process-lifetime peak RSS,
 median and nearest-rank p95. Below twenty samples, p95 is the maximum. Processes
 are fresh but the OS filesystem cache is not cleared. Core fixtures are tiny;
 their results do not describe large repositories or the complete deployed service.
-Queue latency, concurrent workers, database load, real provider tails, backup
-restore time and installation-specific RPO/RTO still need operational trials.
+The worker rehearsal measured queue latency and backup under concurrent writes
+on one host. The dashboard cutover measured recovery through login, CI upload and
+a fresh worker result on a small local database. Rollout acceptance still needs
+representative traffic, live provider measurements and the installation’s RPO and RTO.
 
 ## Next acceptance gates
 
-1. Model guard semantics conservatively and resolve the three new case regressions;
-   expand supported CWE coverage without changing labels or lowering thresholds.
+1. Review the 53 public false positives, including the new advisory on a custom HTML encoder, and meet the 90% precision target.
 2. Independently adjudicate application labels and keep a frozen application holdout.
 3. Run configured API/Claude providers and repeated labeled AI review tasks with
    observed model identities, usage receipts and provider-isolation evidence.
-4. Extend scanner measurements and recovery controls to realistic queue/database
-   load, concurrent workers, backup/restore and deployment-specific service targets.
+4. Repeat the concurrent worker and restore rehearsal on representative
+   installation traffic and measure through service cutover and account reactivation.

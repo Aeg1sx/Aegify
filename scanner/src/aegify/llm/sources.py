@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import stat
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -14,7 +12,9 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any
 
-from aegify.models import FileAST, Finding, ScanResult
+from aegify.models import AISourceCitation, FileAST, Finding, ScanResult
+from aegify.scanner.python_signing_keys import redact_signing_source, signing_keys
+from aegify.source_files import read_regular_source
 
 MAX_SOURCE_FILES = 2_000
 MAX_FILE_BYTES = 512 * 1024
@@ -171,6 +171,9 @@ class SourceCatalog:
         gaps: Counter[str] = Counter()
         remaining = MAX_TOTAL_BYTES
         for ast in sorted(asts, key=lambda item: (item.repository_id, item.file_path)):
+            if ast.language.value == "wrangler":
+                gaps["configuration_values_withheld"] += 1
+                continue
             if len(entries) >= MAX_SOURCE_FILES or remaining <= 0:
                 gaps["source_catalog_limit"] += 1
                 continue
@@ -192,12 +195,16 @@ class SourceCatalog:
                     raise ValueError("source_path_not_admitted")
                 if (repository_id, path) in entries:
                     raise ValueError("duplicate_source_identity")
-                raw = _read_regular_source(root.resolve(), relative, min(MAX_FILE_BYTES, remaining))
+                raw = read_regular_source(root.resolve(), relative, min(MAX_FILE_BYTES, remaining))
                 if hashlib.sha256(raw).hexdigest() != ast.source_digest:
                     raise ValueError("source_changed_after_parse")
                 text = raw.decode("utf-8")
                 if "\x00" in text:
                     raise ValueError("binary_source")
+                if ast.language.value == "python":
+                    # Reconstruct facts when reopening a saved scan which only retains digests.
+                    if facts := ast.python_signing_keys or signing_keys(raw):
+                        text = redact_signing_source(raw, facts)
                 lines = _redacted_lines(text)
             except UnicodeError:
                 gaps["invalid_source_encoding"] += 1
@@ -269,6 +276,40 @@ class SourceCatalog:
             if repo == repository and finding.file_path in (path, entry.scan_path):
                 return entry.metadata()
         return None
+
+    def flow_origin(self, finding: Finding) -> dict[str, Any] | None:
+        """A taint source has no repository ID. Resolve only an unambiguous captured file."""
+        if finding.taint_flow is None:
+            return None
+        source = finding.taint_flow.source
+        matches = [
+            entry
+            for entry in self.files.values()
+            if source.file_path in (entry.scan_path, entry.path)
+        ]
+        if len(matches) != 1 or not 1 <= source.line <= len(matches[0].lines):
+            return None
+        entry = matches[0]
+        return {"repository_id": entry.repository_id, "path": entry.path, "line": source.line}
+
+    def covers_finding(self, finding: Finding, citations: Sequence[AISourceCitation]) -> bool:
+        """Check the union of validated, cited ranges in this finding's source."""
+        location = self.finding_location(finding)
+        if location is None or not 1 <= finding.line_start <= finding.line_end:
+            return False
+        next_line = finding.line_start
+        spans = sorted(
+            (item.line_start, item.line_end)
+            for item in citations
+            if item.repository_id == location["repository_id"] and item.path == location["path"]
+        )
+        for start, end in spans:
+            if start > next_line:
+                break
+            next_line = max(next_line, end + 1)
+            if next_line > finding.line_end:
+                return True
+        return False
 
     def _select(self, arguments: dict[str, Any]) -> list[SourceFile]:
         repository_id = _text(arguments, "repository_id", 256)
@@ -409,43 +450,19 @@ def _valid_path(value: str) -> bool:
     )
 
 
-def _read_regular_source(root: Path, relative: Path, limit: int) -> bytes:
-    """Reject links at every component and special files, including blocking FIFOs."""
-    if os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"):
-        raise NotImplementedError("safe source capture requires descriptor-relative opens")
-    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-    absolute = root / relative
-    directory = os.open(absolute.anchor, flags | os.O_DIRECTORY)
-    try:
-        for part in absolute.parts[1:-1]:
-            child = os.open(part, flags | os.O_DIRECTORY, dir_fd=directory)
-            os.close(directory)
-            directory = child
-        descriptor = os.open(absolute.name, flags, dir_fd=directory)
-        with os.fdopen(descriptor, "rb") as stream:
-            info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
-                raise ValueError("source_type_or_size_limit")
-            raw = stream.read(limit + 1)
-            if len(raw) > limit:
-                raise ValueError("source_type_or_size_limit")
-            return raw
-    finally:
-        os.close(directory)
-
-
 def _redacted_lines(text: str) -> tuple[str, ...]:
     from aegify.llm.tools import redact_sensitive
 
     # Redact complete key blocks before slicing, including a slice requested from
     # the middle of a block, without changing the original line numbering.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _PRIVATE_KEY.sub(
         lambda match: "\n".join("[REDACTED_PRIVATE_KEY]" for _ in match[0].split("\n")), text
     )
     lines = text.split("\n")
     if lines[-1] == "":
         lines.pop()
-    return tuple(str(redact_sensitive(line.removesuffix("\r"))) for line in lines)
+    return tuple(str(redact_sensitive(line)) for line in lines)
 
 
 def _citation(entry: SourceFile, start: int, end: int, content: str) -> dict[str, Any]:

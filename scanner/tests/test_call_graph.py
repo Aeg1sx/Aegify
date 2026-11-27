@@ -111,3 +111,52 @@ def test_external_import_resolution_is_bounded_for_repeated_calls(tmp_path: Path
     graph = CallGraphBuilder().build(asts)
     assert graph.number_of_edges() == 0
     assert time.monotonic() - started < 2
+
+
+def test_same_named_functions_must_share_a_runtime(tmp_path: Path):
+    (tmp_path / "caller.ts").write_text("export function home(value) { return label(value); }\n")
+    (tmp_path / "labels.py").write_text("def label(value):\n    return value\n")
+    parser = ASTParser()
+    assert CallGraphBuilder().build(parser.parse_directory(tmp_path)).number_of_edges() == 0
+    (tmp_path / "labels.js").write_text("export function label(value) { return value; }\n")
+    graph = CallGraphBuilder().build(parser.parse_directory(tmp_path))
+    ((_, callee),) = graph.edges()
+    assert graph.nodes[callee]["data"].file_path.endswith("labels.js")
+
+
+def test_dict_get_bindings_resist_unrelated_project_method(tmp_path):
+    src = tmp_path / "values.py"
+    src.write_text(
+        "DEFAULTS = {'label': 'sample'}\n"
+        "def use():\n    local = dict()\n    local.get('name')\n"
+        "    DEFAULTS.get('name')\n    {}.get('nested').get('field')\n"
+        "def unknown(DEFAULTS):\n    return DEFAULTS.get('name')\n"
+        "def changed():\n    local = {}\n    local = replacement()\n"
+        "    return local.get('name')\n"
+        "def hidden(dict):\n    return dict().get('name')\n"
+        "class Service:\n    def get(self, key):\n        return key\n"
+        "    def name(self):\n        return self.get('name')\n"
+    )
+    file = ASTParser().parse_file(src)
+    assert file is not None
+    gets = [c for c in file.calls if c.callee == "get"]
+    assert [(c.line, c.receiver) for c in gets if c.receiver_type == "builtins.dict"] == [
+        (4, "local"),
+        (5, "DEFAULTS"),
+        (6, "{}"),
+    ]
+    graph = CallGraphBuilder().build([file])
+    edges = [edge["call_site"] for _, _, edge in graph.edges(data=True) if "call_site" in edge]
+    assert any(c.receiver == "self" and c.callee == "get" for c in edges)
+    assert all(c.receiver_type != "builtins.dict" for c in edges)
+
+
+def test_global_rebinding_makes_the_dict_receiver_unknown(tmp_path):
+    path = tmp_path / "options.py"
+    path.write_text(
+        "OPTIONS = {}\ndef configure(other):\n    global OPTIONS\n    OPTIONS = other\n"
+        "def observe():\n    return OPTIONS.get('label')\n"
+    )
+    file = ASTParser().parse_file(path)
+    assert file is not None
+    assert [c.receiver_type for c in file.calls if c.callee == "get"] == [""]

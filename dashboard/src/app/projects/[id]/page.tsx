@@ -1,30 +1,31 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  BookOpen,
+  ChevronDown,
+  GitBranch,
+  Play,
+  RotateCcw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SeverityChart } from "@/components/severity-chart";
 import { ProjectAccessPanel } from "@/components/project-access-panel";
-import { RepoConnector } from "@/components/repo-connector";
-import {
-  ArrowLeft,
-  ScanSearch,
-  AlertTriangle,
-  Clock,
-  Trash2,
-  ExternalLink,
-  GitBranch,
-  Unplug,
-  Loader2,
-} from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { RepoConnector, type RepositoryChoice } from "@/components/repo-connector";
+import type { GatewaySummary } from "@/lib/gateway-inventory";
+import { repositoryLink, repositoryName } from "@/lib/project-view";
 
-interface ScanSummary {
+interface Scan {
+  gatewayInventory?: GatewaySummary | null;
   id: string;
   repository: string;
   branch: string;
+  commitSha: string;
   status: string;
   scanType: string;
   filesScanned: number;
@@ -32,350 +33,536 @@ interface ScanSummary {
   createdAt: string;
   _count: { findings: number };
 }
-
-interface ProjectDetail {
-  accessRole: string;
+interface Project {
   id: string;
   name: string;
-  repositoryUrl: string;
-  defaultBranch: string;
   description: string;
-  color: string;
+  repositoryUrl: string;
   provider: string;
-  providerRepoId: string;
   ownerSlug: string;
-  createdAt: string;
-  scans: ScanSummary[];
+  defaultBranch: string;
+  accessRole: string;
+  archived: boolean;
+  updatedAt: string;
+  scans: Scan[];
+  scanCount: number;
+  scanPage: { page: number; pages: number; limit: number };
   severities: Record<string, number>;
-  totalFindings: number;
 }
 
-export default function ProjectDetailPage() {
-  const params = useParams();
-  const router = useRouter();
-  const [project, setProject] = useState<ProjectDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [connectorOpen, setConnectorOpen] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState("");
-  const [loadError, setLoadError] = useState("");
+const date = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+const countLabel = (count: number, noun: string) =>
+  count.toLocaleString() + " " + noun + (count === 1 ? "" : "s");
 
-  const fetchProject = useCallback(() => {
-    return fetch(`/api/projects/${params.id}`)
-      .then(async (r) => { const data = await r.json(); if (!r.ok) throw new Error(data.error || "Project could not be loaded."); return data; })
-      .then(setProject)
-      .catch((error) => setLoadError(error.message))
-      .finally(() => setLoading(false));
-  }, [params.id]);
-
-  useEffect(() => {
-    fetchProject();
-  }, [fetchProject]);
-
-  const deleteProject = async () => {
-    if (!confirm("Archive this project? Its scan history will be retained and new CI uploads will stop.")) return;
-    const response = await fetch(`/api/projects/${params.id}`, { method: "DELETE" });
-    if (!response.ok) { setScanError("Project could not be archived."); return; }
-    router.push("/projects");
-  };
-
-  const connectRepo = async (repo: {
-    provider: string;
-    id: string;
-    fullName: string;
-    url: string;
-    defaultBranch: string;
-  }) => {
-    // Extract numeric ID from "gh-123" or "gl-456"
-    const numericId = repo.id.replace(/^(gh|gl)-/, "");
-
-    await fetch(`/api/projects/${params.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        provider: repo.provider,
-        providerRepoId: numericId,
-        ownerSlug: repo.fullName,
-        repositoryUrl: repo.url,
-        defaultBranch: repo.defaultBranch,
-      }),
-    });
-
-    setConnectorOpen(false);
-    fetchProject();
-  };
-
-  const disconnectRepo = async () => {
-    if (!confirm("Disconnect repository from this project?")) return;
-    await fetch(`/api/projects/${params.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        provider: "",
-        providerRepoId: "",
-        ownerSlug: "",
-      }),
-    });
-    fetchProject();
-  };
-
-  const startRepoScan = async () => {
-    setScanning(true);
-    setScanError("");
-    try {
-      const response = await fetch(`/api/projects/${params.id}/scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || "Could not queue the repository scan");
-      }
-      router.push(`/scans/${result.scanId}`);
-    } catch (error) {
-      setScanError(error instanceof Error ? error.message : "Could not queue the repository scan");
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  if (loadError) return <div className="space-y-3"><p role="alert">{loadError}</p><Link href="/projects" className="text-primary underline">Back to projects</Link></div>;
-  if (loading || !project) {
-    return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  const canManage = project.accessRole === "admin";
-  const canScan = ["admin", "maintainer"].includes(project.accessRole);
-  const hasRepo = !!project.provider && !!project.ownerSlug;
-
+function ScanRow({ scan, repository }: { scan: Scan; repository: string }) {
+  const finished = scan.status === "completed";
+  const ongoing = ["pending", "running", "queued"].includes(scan.status);
+  const count = scan._count.findings;
+  const result =
+    count || finished
+      ? countLabel(count, "finding") + (ongoing ? " so far" : "")
+      : ongoing
+        ? "Awaiting results"
+        : "No results recorded";
+  const measures = [
+    ...(finished || scan.filesScanned > 0 ? [countLabel(scan.filesScanned, "file")] : []),
+    ...(finished || scan.duration > 0 ? [scan.duration.toFixed(1) + " s"] : []),
+  ];
   return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-3">
-        <Link href="/projects" className="text-muted-foreground hover:text-foreground mt-1">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-4 h-4 rounded-full"
-              style={{ backgroundColor: project.color }}
-            />
-            <h1 className="text-2xl font-bold">{project.name}</h1>
-          </div>
-          {project.description && (
-            <p className="text-muted-foreground mt-1">{project.description}</p>
-          )}
-          {project.repositoryUrl && (
-            <a
-              href={project.repositoryUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline flex items-center gap-1 mt-1"
-            >
-              {project.repositoryUrl}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
+    <li>
+      <Link className="project-scan-row" href={"/scans/" + encodeURIComponent(scan.id)}>
+        <div className="min-w-0 space-y-1">
+          <span className="block text-sm font-semibold wrap-anywhere">
+            {scan.branch || "Branch not recorded"}
+          </span>
+          <span className="block text-xs text-muted-foreground wrap-anywhere">
+            {scan.commitSha ? <code>{scan.commitSha.slice(0, 8)}</code> : <code>#{scan.id.slice(-8)}</code>}
+            {scan.repository && scan.repository !== repository && " · " + scan.repository}
+            {scan.scanType === "repo-ai-candidate" && " · AI candidate scan"}
+          </span>
         </div>
-        <Link href={`/projects/${encodeURIComponent(project.id)}/rule-lab`} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent">Rule lab</Link>
-        <Button variant="outline" size="sm" onClick={deleteProject} disabled={!canManage} aria-label="Archive project">
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Repository Connection Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <GitBranch className="h-5 w-5" />
-            Repository
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {hasRepo ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <ProviderIcon provider={project.provider} />
-                <div>
-                  <p className="text-sm font-medium">{project.ownerSlug}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {project.defaultBranch || "main"} &middot; {project.provider}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={startRepoScan}
-                  disabled={scanning || !canScan}
-                >
-                  {scanning ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                      Queuing...
-                    </>
-                  ) : (
-                    <>
-                      <ScanSearch className="h-4 w-4 mr-1" />
-                      Start source scan
-                    </>
-                  )}
-                </Button>
-                {scanError && (
-                  <p role="alert" className="max-w-64 text-xs text-destructive">
-                    {scanError}
-                  </p>
-                )}
-                <Button variant="outline" size="sm" onClick={disconnectRepo} disabled={!canManage}>
-                  <Unplug className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-4">
-              <GitBranch className="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-50" />
-              <p className="text-sm text-muted-foreground mb-3">
-                No repository connected
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!canManage}
-                onClick={() => setConnectorOpen(true)}
-              >
-                Connect Repository
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Scans</p>
-                <p className="text-3xl font-bold">{project.scans.length}</p>
-              </div>
-              <ScanSearch className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Findings</p>
-                <p className="text-3xl font-bold">{project.totalFindings}</p>
-              </div>
-              <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <CardTitle className="text-sm mb-3">Severity</CardTitle>
-            <SeverityChart severities={project.severities} />
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Scans</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {project.scans.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              No scans linked to this project yet
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {project.scans.map((scan) => (
-                <Link
-                  key={scan.id}
-                  href={`/scans/${scan.id}`}
-                  className="block p-3 rounded-md border border-border hover:bg-accent/30 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <ScanSearch className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <span className="text-sm font-medium">
-                          {scan.branch || "main"}
-                          <span className={`ml-2 rounded px-2 py-0.5 text-xs ${["partial", "failed"].includes(scan.status) ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200" : "bg-muted text-muted-foreground"}`}>{scan.status}</span>
-                          {scan.scanType === "repo-ai-candidate" && (
-                            <span className="ml-2 text-xs text-muted-foreground font-normal">
-                              evidence-bound AI candidate scan
-                            </span>
-                          )}
-                          {scan.status === "running" && (
-                            <Loader2 className="inline-block h-3 w-3 animate-spin ml-2" />
-                          )}
-                        </span>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {formatDistanceToNow(new Date(scan.createdAt), {
-                              addSuffix: true,
-                            })}
-                          </span>
-                          <span>{scan.filesScanned} files</span>
-                          <span>{scan.duration.toFixed(1)}s</span>
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-sm font-mono">
-                      {scan._count.findings} findings
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center gap-2">
-        <Link href={`/findings?projectId=${project.id}`}>
-          <Button variant="outline" size="sm">
-            View all findings
-          </Button>
+        <div className="space-y-1">
+          <span className="inline-flex items-center gap-2 text-sm capitalize">
+            <span data-state={scan.status} aria-hidden className="project-scan-dot" />
+            {scan.status || "Unknown"}
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            {result}
+            {scan.status === "partial" && " · Partial coverage"}
+          </span>
+        </div>
+        <div className="project-scan-time">
+          <time dateTime={scan.createdAt}>{date.format(new Date(scan.createdAt))}</time>
+          {measures.length > 0 && <span>{measures.join(" · ")}</span>}
+        </div>
+      </Link>
+      {scan.gatewayInventory && (
+        <Link href={"/scans/" + encodeURIComponent(scan.id) + "#gateway-inventory"}
+          className="inline-block min-h-11 py-2 text-sm text-primary underline-offset-4 hover:underline">
+          Gateway ownership · {scan.gatewayInventory.resolved} resolved · {scan.gatewayInventory.ambiguous} ambiguous
+          {" · "}{scan.gatewayInventory.unresolved} unresolved
+          {scan.gatewayInventory.inputStatus === "partial" && " · Partial input"}
         </Link>
-      </div>
-
-      {canManage && <ProjectAccessPanel key={project.id} projectId={project.id} />}
-
-      <RepoConnector
-        open={connectorOpen}
-        onOpenChange={setConnectorOpen}
-        onSelect={connectRepo}
-      />
-    </div>
+      )}
+    </li>
   );
 }
 
-function ProviderIcon({ provider }: { provider: string }) {
-  if (provider === "github") {
-    return (
-      <svg className="h-5 w-5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-      </svg>
-    );
+function History({ project, path }: { project: Project; path: string }) {
+  const { page, pages, limit } = project.scanPage;
+  const pageLink = (value: number) => (value === 1 ? path : path + "?page=" + value);
+  return (
+    <section aria-labelledby="scan-history" className="project-history min-w-0">
+      <header className="project-section-heading">
+        <h2 id="scan-history">Scan history</h2>
+        <span className="text-sm text-muted-foreground">{countLabel(project.scanCount, "scan")}</span>
+      </header>
+      {project.scans.length ? (
+        <>
+          <div aria-hidden className="project-scan-labels">
+            <span>Revision</span>
+            <span>Scan result</span>
+            <span>Recorded</span>
+          </div>
+          <ol aria-label="Project scan history" className="divide-y border-b">
+            {project.scans.map((scan) => (
+              <ScanRow key={scan.id} scan={scan} repository={project.ownerSlug} />
+            ))}
+          </ol>
+          {pages > 1 && (
+            <nav
+              aria-label="Scan history pages"
+              className="flex flex-wrap items-center justify-between gap-x-4 pt-1 text-sm"
+            >
+              <span className="py-2 text-muted-foreground tabular-nums">
+                {(page - 1) * limit + 1}–{Math.min(page * limit, project.scanCount)} of {project.scanCount}
+              </span>
+              <span className="flex gap-4">
+                {page > 1 && (
+                  <Link className="project-text-link" href={pageLink(page - 1)} scroll={false} rel="prev">
+                    <ArrowLeft aria-hidden />
+                    Previous
+                  </Link>
+                )}
+                {page < pages && (
+                  <Link className="project-text-link" href={pageLink(page + 1)} scroll={false} rel="next">
+                    Next
+                    <ArrowRight aria-hidden />
+                  </Link>
+                )}
+              </span>
+            </nav>
+          )}
+        </>
+      ) : (
+        <p className="border-b py-7 text-sm text-muted-foreground">
+          No scans have been recorded for this project.
+        </p>
+      )}
+    </section>
+  );
+}
+
+export default function ProjectDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  return (
+    <Suspense fallback={<p role="status">Loading project…</p>}>
+      <ProjectRecord key={id} id={id} />
+    </Suspense>
+  );
+}
+
+type Action = "scan" | "connect" | "disconnect" | "archive" | "restore";
+
+function ProjectRecord({ id }: { id: string }) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const requested = Number(params.get("page"));
+  const page = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, 100000) : 1;
+  const path = "/projects/" + encodeURIComponent(id);
+  const api = "/api" + path;
+  const [record, setRecord] = useState<{ page: number; project: Project } | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [connector, setConnector] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [settingsVisited, setSettingsVisited] = useState(false);
+  const [confirm, setConfirm] = useState<"archive" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<Action | null>(null);
+  const [notice, setNotice] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [conflict, setConflict] = useState(false);
+  const mutation = useRef<AbortController | null>(null);
+  const connectButton = useRef<HTMLButtonElement>(null);
+  const title = useRef<HTMLHeadingElement>(null);
+  const confirmCancel = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      setLoadError("");
+      try {
+        const response = await fetch(api + "?scanLimit=10&scanPage=" + page, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(
+            [401, 403, 404].includes(response.status)
+              ? "This project is unavailable to your account."
+              : "The project could not be loaded.",
+          );
+        }
+        const data: Project = await response.json();
+        if (!controller.signal.aborted) setRecord({ page, project: data });
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setRecord(null);
+          setLoadError(
+            error instanceof Error && error.name === "Error"
+              ? error.message
+              : "The project could not be loaded.",
+          );
+        }
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [api, page, revision]);
+  useEffect(() => () => mutation.current?.abort(), []);
+  useEffect(() => {
+    if (confirm) confirmCancel.current?.focus();
+  }, [confirm]);
+
+  const project = record?.page === page ? record.project : null;
+  function reload() {
+    setConfirm(null);
+    setActionError("");
+    setConflict(false);
+    setConnector(false);
+    setRevision((value) => value + 1);
   }
-  if (provider === "gitlab") {
-    return (
-      <svg className="h-5 w-5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z" />
-      </svg>
-    );
+  async function act(action: Action, repo?: RepositoryChoice) {
+    if (mutation.current || !project) return;
+    const controller = new AbortController();
+    mutation.current = controller;
+    setBusy(action);
+    setActionError("");
+    setConflict(false);
+    setNotice("");
+    const updatingRepo = action === "connect" || action === "disconnect";
+    const method = updatingRepo ? "PATCH" : action === "archive" ? "DELETE" : "POST";
+    const body = updatingRepo
+      ? {
+          provider: repo?.provider ?? "",
+          providerRepoId: repo?.id.replace(/^(gh|gl)-/, "") ?? "",
+          ownerSlug: repo?.fullName ?? "",
+          repositoryUrl: repo?.url ?? "",
+          ...(repo && { defaultBranch: repo.defaultBranch }),
+          expectedUpdatedAt: project.updatedAt,
+        }
+      : action === "scan"
+        ? {}
+        : undefined;
+    try {
+      const response = await fetch(api + (action === "scan" || action === "restore" ? "/" + action : ""), {
+        method,
+        signal: controller.signal,
+        ...(body && { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        setConflict(response.status === 409 && updatingRepo);
+        throw new Error(
+          typeof result?.error === "string" ? result.error : "The request could not be completed.",
+        );
+      }
+      if (controller.signal.aborted) return;
+      if (action === "scan") {
+        router.push("/scans/" + encodeURIComponent(result.scanId));
+        return;
+      }
+      setRecord({
+        page,
+        project: updatingRepo ? { ...project, ...result } : { ...project, archived: action === "archive" },
+      });
+      setNotice(
+        {
+          connect: "Repository connected.",
+          disconnect: "Repository disconnected.",
+          archive: "Project archived.",
+          restore: "Project restored.",
+        }[action],
+      );
+      reload();
+      title.current?.focus();
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setActionError(
+          error instanceof Error && error.name === "Error"
+            ? error.message
+            : "The request could not be completed. Try again.",
+        );
+    } finally {
+      mutation.current = null;
+      if (!controller.signal.aborted) setBusy(null);
+    }
   }
-  return <GitBranch className="h-5 w-5 flex-shrink-0" />;
+  const back = (
+    <Link href={project?.archived ? "/projects?archived=true" : "/projects"} className="project-text-link">
+      <ArrowLeft aria-hidden />
+      Projects
+    </Link>
+  );
+  if (!project)
+    return (
+      <div className="space-y-4">
+        {back}
+        {loadError ? (
+          <>
+            <p role="alert">{loadError}</p>
+            <Button variant="outline" className="min-h-11" onClick={reload}>
+              Retry
+            </Button>
+          </>
+        ) : (
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading project…
+          </p>
+        )}
+      </div>
+    );
+
+  const admin = project.accessRole === "admin";
+  const active = !project.archived;
+  const connected = !!(project.provider && project.ownerSlug);
+  const name = repositoryName(project);
+  const href = repositoryLink(project.repositoryUrl);
+  const canScan = active && connected && (admin || project.accessRole === "maintainer");
+  const readFindings = "/findings?projectId=" + encodeURIComponent(id);
+  return (
+    <article className="project-record min-w-0 pb-6">
+      <nav aria-label="Project navigation">{back}</nav>
+      <header className="project-masthead">
+        <div className="min-w-0">
+          {project.archived && (
+            <p className="mb-1 text-sm font-medium text-muted-foreground">Archived project</p>
+          )}
+          <h1 ref={title} tabIndex={-1} className="workbench-title wrap-anywhere">
+            {project.name}
+          </h1>
+          {project.description && (
+            <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground wrap-anywhere">
+              {project.description}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" className="min-h-11">
+            <Link href={path + "/rule-lab"}>
+              <BookOpen aria-hidden />
+              Rule lab
+            </Link>
+          </Button>
+          {canScan && (
+            <Button className="min-h-11" disabled={!!busy} onClick={() => act("scan")}>
+              <Play aria-hidden />
+              {busy === "scan" ? "Queuing scan…" : "Start source scan"}
+            </Button>
+          )}
+          {admin && active && !connected && (
+            <Button
+              ref={connectButton}
+              className="min-h-11"
+              disabled={!!busy}
+              onClick={() => {
+                setActionError("");
+                setConflict(false);
+                setConnector(true);
+              }}
+            >
+              <GitBranch aria-hidden />
+              Connect repository
+            </Button>
+          )}
+          {admin && !active && (
+            <Button className="min-h-11" disabled={!!busy} onClick={() => act("restore")}>
+              <RotateCcw aria-hidden />
+              Restore project
+            </Button>
+          )}
+        </div>
+      </header>
+      <dl className="project-facts">
+        <div>
+          <dt>Repository</dt>
+          <dd>
+            {name ? (
+              href ? (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex max-w-full items-center gap-1.5 hover:text-primary hover:underline"
+                >
+                  <span className="wrap-anywhere">{name}</span>
+                  <ArrowUpRight aria-hidden className="size-3.5 shrink-0" />
+                </a>
+              ) : (
+                name
+              )
+            ) : (
+              "No repository connected"
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Default branch</dt>
+          <dd className="font-mono">{project.defaultBranch || "Not recorded"}</dd>
+        </div>
+        <div>
+          <dt>Your role</dt>
+          <dd className="capitalize">{project.accessRole}</dd>
+        </div>
+      </dl>
+      {project.archived && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Scan history is available. New source scans and CI uploads are paused.
+        </p>
+      )}
+      {notice && (
+        <p className="mt-3 text-sm text-primary" role="status">
+          {notice}
+        </p>
+      )}
+      {actionError && !connector && (
+        <div className="mt-3">
+          <p role="alert" className="text-sm text-destructive">
+            {actionError}
+          </p>
+          {conflict && (
+            <Button className="min-h-11" variant="link" onClick={reload}>
+              Reload project
+            </Button>
+          )}
+        </div>
+      )}
+      <div className="project-workspace">
+        <section className="project-findings min-w-0" aria-labelledby="project-findings">
+          <header className="project-section-heading">
+            <h2 id="project-findings">Current findings</h2>
+            <Link
+              className="project-text-link text-sm"
+              aria-label="View all findings for this project"
+              href={readFindings}
+            >
+              View all
+              <ArrowRight aria-hidden />
+            </Link>
+          </header>
+          <SeverityChart severities={project.severities} projectId={project.id} />
+        </section>
+        <History project={project} path={path} />
+      </div>
+      {admin && (
+        <section className="mt-6 border-y">
+          <button
+            type="button"
+            className="flex min-h-12 w-full items-center justify-between gap-3 py-2 text-left font-semibold hover:text-primary"
+            aria-expanded={settings}
+            aria-controls="project-settings"
+            onClick={() => {
+              setSettings(!settings);
+              setSettingsVisited(true);
+            }}
+          >
+            Project settings
+            <ChevronDown aria-hidden className={"size-4 " + (settings ? "rotate-180" : "")} />
+          </button>
+          <div hidden={!settings} id="project-settings" className="pb-4">
+            {settingsVisited && (
+              <>
+                <ProjectAccessPanel
+                  key={project.archived ? "archived" : "active"}
+                  projectId={id}
+                  archived={project.archived}
+                />
+                {active && (
+                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-3">
+                    {confirm ? (
+                      <>
+                        <p className="w-full text-sm">
+                          {confirm === "archive"
+                            ? "Archiving pauses new scans and CI uploads. Scan history stays available."
+                            : "Disconnecting removes the repository link. Existing scan results stay available."}
+                        </p>
+                        <Button
+                          ref={confirmCancel}
+                          className="min-h-11"
+                          variant="outline"
+                          disabled={!!busy}
+                          onClick={() => {
+                            setConfirm(null);
+                            requestAnimationFrame(() =>
+                              document.getElementById("project-" + confirm)?.focus(),
+                            );
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button className="min-h-11" disabled={!!busy} onClick={() => act(confirm)}>
+                          {confirm === "archive" ? "Confirm archive" : "Confirm disconnect"}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        {connected && (
+                          <Button
+                            className="min-h-11"
+                            variant="outline"
+                            id="project-disconnect"
+                            onClick={() => setConfirm("disconnect")}
+                          >
+                            Disconnect repository
+                          </Button>
+                        )}
+                        <Button
+                          className="min-h-11"
+                          variant="outline"
+                          id="project-archive"
+                          onClick={() => setConfirm("archive")}
+                        >
+                          Archive project
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </section>
+      )}
+      {connector && admin && active && !connected && (
+        <RepoConnector
+          onClose={() => {
+            setConnector(false);
+            setActionError("");
+            setConflict(false);
+          }}
+          onReturnFocus={() => (connectButton.current || title.current)?.focus()}
+          busy={busy === "connect"}
+          error={actionError}
+          onReload={conflict ? reload : undefined}
+          onSelect={(repo) => act("connect", repo)}
+        />
+      )}
+    </article>
+  );
 }

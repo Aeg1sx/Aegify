@@ -1,14 +1,13 @@
+import { publishWorkerHeartbeat } from "../src/lib/worker-heartbeat.ts";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { setInterval, clearInterval } from "node:timers";
 import { log, error } from "node:console";
 import { prisma } from "../src/lib/prisma.ts";
 import { runLlmWorkerOnce } from "../src/lib/llm-worker.ts";
 import { expireLlmInputs } from "../src/lib/llm-jobs.ts";
+import { recordWorkerHeartbeat, unregisterWorker } from "../src/lib/worker-registry.ts";
 import { configureDatabase } from "../src/lib/database-runtime.ts";
 
 if (!process.env.AUTH_SECRET || !process.env.ENCRYPTION_SECRET || !process.env.DATABASE_URL || !process.env.AUTH_ADMIN_EMAILS || (!process.env.AUTH_ALLOWED_EMAILS && !process.env.AUTH_ALLOWED_DOMAINS)) throw new Error("The AI worker requires the dashboard's database, encryption, authentication and admission configuration.");
@@ -21,8 +20,8 @@ let lastMaintenance = 0;
 function register() {
   if (registration) return registration;
   registration = (async () => {
-    await prisma.llmWorker.upsert({ where: { id: workerId }, create: { id: workerId, version: "review-v2" }, update: { lastSeenAt: new Date(), version: "review-v2" } });
-    await writeFile(join(tmpdir(), "aegify-ai-worker-health"), new Date().toISOString(), { mode: 0o600 });
+    await recordWorkerHeartbeat(prisma, "ai", workerId);
+    await publishWorkerHeartbeat("ai");
   })().finally(() => { registration = undefined; });
   return registration;
 }
@@ -50,6 +49,6 @@ try {
 } finally {
   clearInterval(pulse);
   await registration?.catch(() => {});
-  await prisma.llmWorker.deleteMany({ where: { id: workerId } }).catch(() => {});
+  await unregisterWorker(prisma, "ai", workerId).catch(() => {});
   await prisma.$disconnect();
 }

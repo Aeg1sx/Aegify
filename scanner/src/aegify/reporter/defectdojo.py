@@ -4,14 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+from http.client import HTTPException
 from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from aegify.models import ScanResult
 from aegify.reporter.sarif import SARIFReporter
 
 logger = logging.getLogger(__name__)
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(
+        self, req: Request, fp: Any, code: int, msg: str, headers: Any, newurl: str
+    ) -> None:
+        return None
 
 
 class DefectDojoReporter:
@@ -53,35 +63,7 @@ class DefectDojoReporter:
             file_content=sarif_bytes,
         )
 
-        try:
-            url = f"{self.base_url}/api/v2/import-scan/"
-            req = Request(
-                url,
-                data=body,
-                headers={
-                    "Authorization": f"Token {self.api_token}",
-                    "Content-Type": f"multipart/form-data; boundary={boundary}",
-                },
-                method="POST",
-            )
-            with urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                test_id = data.get("test")
-                logger.info("Uploaded SARIF to DefectDojo: test=%s", test_id)
-                return test_id if isinstance(test_id, int) else None
-
-        except HTTPError as e:
-            logger.error(
-                "DefectDojo upload failed: HTTP %d - %s",
-                e.code,
-                e.read().decode("utf-8", errors="replace")[:200],
-            )
-        except URLError as e:
-            logger.error("DefectDojo upload failed: %s", e.reason)
-        except Exception:
-            logger.exception("DefectDojo upload failed")
-
-        return None
+        return self._post_import(body, boundary)
 
     def upload_sarif_file(
         self,
@@ -105,10 +87,45 @@ class DefectDojoReporter:
             file_content=sarif_bytes,
         )
 
+        return self._post_import(body, boundary)
+
+    def _post_import(self, body: bytes, boundary: str) -> int | None:
         try:
-            url = f"{self.base_url}/api/v2/import-scan/"
+            url = urlsplit(self.base_url)
+            valid_port = url.port is None or 0 < url.port < 65536
+        except ValueError:
+            logger.error("Invalid DefectDojo URL")
+            return None
+        if (
+            not url.hostname
+            or not valid_port
+            or url.username is not None
+            or url.password is not None
+            or url.query
+            or url.fragment
+            or "\\" in self.base_url
+            or any(ord(c) < 33 or ord(c) == 127 for c in self.base_url)
+        ):
+            logger.error("Invalid DefectDojo URL")
+            return None
+
+        # Match the actual HTTP authority, including brackets around IPv6.
+        authority = url.netloc.lower()
+        if url.port is not None:
+            authority = authority.rpartition(":")[0]
+        local_http = url.scheme == "http" and authority in ("localhost", "127.0.0.1", "[::1]")
+        if url.scheme != "https" and not local_http:
+            logger.error("DefectDojo requires HTTPS, or loopback HTTP for a local install")
+            return None
+
+        try:
+            opener = (
+                build_opener(_RejectRedirects(), ProxyHandler({}))
+                if local_http
+                else build_opener(_RejectRedirects())
+            )
             req = Request(
-                url,
+                f"{self.base_url}/api/v2/import-scan/",
                 data=body,
                 headers={
                     "Authorization": f"Token {self.api_token}",
@@ -116,23 +133,17 @@ class DefectDojoReporter:
                 },
                 method="POST",
             )
-            with urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                test_id = data.get("test")
-                logger.info("Uploaded SARIF file to DefectDojo: test=%s", test_id)
-                return test_id if isinstance(test_id, int) else None
-
-        except HTTPError as e:
-            logger.error(
-                "DefectDojo upload failed: HTTP %d - %s",
-                e.code,
-                e.read().decode("utf-8", errors="replace")[:200],
-            )
-        except URLError as e:
-            logger.error("DefectDojo upload failed: %s", e.reason)
-        except Exception:
-            logger.exception("DefectDojo upload failed")
-
+            with opener.open(req, timeout=60) as resp:
+                data = json.load(resp)
+            test_id = data.get("test") if isinstance(data, dict) else None
+            if type(test_id) is int:
+                logger.info("Uploaded SARIF to DefectDojo: test=%d", test_id)
+                return test_id
+        except HTTPError as error:
+            logger.error("DefectDojo upload failed: HTTP %d", error.code)
+            error.close()
+        except HTTPException, URLError, OSError, ValueError:
+            logger.error("DefectDojo upload failed; check the endpoint and its TLS configuration")
         return None
 
     @staticmethod

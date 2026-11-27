@@ -16,13 +16,17 @@ rules:
     owasp_category: "A10:2021-Server-Side Request Forgery (SSRF)"
     patterns:
       - pattern_type: "sequence"
+        scope: function
         steps:
-          - match: "(socket\\.getaddrinfo|dns\\.resolve|dns\\.lookup|InetAddress\\.getByName|net\\.LookupHost|Resolv\\.getaddress)\\(.*\\b(url|host|domain|target)\\b"
-          - match: "(requests\\.(get|post|put|delete|patch|head)|fetch|axios\\.(get|post)|http\\.(get|request)|urllib\\.request\\.urlopen|HttpClient|http\\.Get)\\(.*\\b(url|host|domain|target)\\b"
+          - match: '\b(?:socket\.getaddrinfo|dns\.(?:resolve|lookup)|InetAddress\.getByName|net\.LookupHost|Resolv\.getaddress)\([^)\r\n;]*\b(?:url|host|domain|target)\b'
+          - match: '\b(?:requests\.(?:get|post|put|delete|patch|head)|fetch|axios\.(?:get|post)|http\.(?:get|request)|urllib\.request\.urlopen|HttpClient)\([^)\r\n;]*\b(?:url|host|domain|target)\b'
         condition: "steps[0].variable == steps[1].variable"
-      - pattern_type: "regex"
-        match: "def\\s+\\w*(fetch|request|proxy|forward|redirect)\\w*.*:\\s*\\n.*?(gethostbyname|getaddrinfo|resolve|lookup).*\\n.*?(requests|fetch|axios|urllib|http\\.(get|request))"
-        multiline: true
+      - pattern_type: "sequence"
+        scope: function
+        steps:
+          - match: '^[ \t]*(?:async[ \t]+)?def[ \t]+\w*(?:fetch|request|proxy|forward|redirect)\w*[ \t]*\('
+          - match: '\b(?:gethostbyname|getaddrinfo|resolve|lookup)[ \t]*\('
+          - match: '\b(?:requests\.(?:get|post|put|delete|patch|head|request)|fetch|axios\.(?:get|post|request)|(?:urllib\.request\.)?urlopen|http\.(?:get|request))[ \t]*\('
     defense_patterns:
       - "pin_dns_resolution"
       - "resolve_then_connect_to_ip"

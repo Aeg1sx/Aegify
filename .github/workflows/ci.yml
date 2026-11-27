@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -43,9 +43,9 @@ jobs:
           python scripts/release_metadata.py
 
       - name: Set up uv for release inventory verification
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: "0.12.18"
+          version: "0.13.9"
           enable-cache: false
 
       - name: Generate and verify complete locked CycloneDX SBOM
@@ -55,7 +55,7 @@ jobs:
           python scripts/verify_sbom.py aegify-sbom.cdx.json
 
       - name: Upload verified release inventory
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aegify-locked-sbom
           path: aegify-sbom.cdx.json
@@ -71,7 +71,7 @@ jobs:
         working-directory: scanner
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -86,9 +86,9 @@ jobs:
           python-version: "3.14"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: "0.12.18"
+          version: "0.13.9"
           enable-cache: true
           cache-dependency-glob: scanner/uv.lock
 
@@ -145,23 +145,53 @@ jobs:
             --labels benchmarks/core-v1/ground-truth.json \
             --repeats 2 --timeout 120 --output performance-report.json
 
+      - name: Build and install the wheel with the locked dependencies
+        run: |
+          uv build --wheel
+          uv pip install --offline --no-deps --reinstall --python .venv/bin/python dist/*.whl
+
+      - name: Check Python code operands and literal grammar
+        run: .venv/bin/python -I benchmarks/python-code-inputs-v1/verify.py .venv/bin/aegify > python-code-inputs.json
+
+      - name: Check process inputs at their exact source lines
+        run: |
+          .venv/bin/aegify benchmark benchmarks/python-process-arguments-v1/sources \
+            --ground-truth benchmarks/python-process-arguments-v1/ground-truth.json \
+            --line-tolerance 0 --min-precision 1 --min-recall 1 \
+            --output-file python-process-arguments.json
+
+      - name: Check reader inputs and cross-file session flows
+        run: |
+          .venv/bin/aegify benchmark benchmarks/python-reader-flows-v1/sources \
+            --ground-truth benchmarks/python-reader-flows-v1/ground-truth.json \
+            --line-tolerance 0 --min-precision 1 --min-recall 1 \
+            --output-file python-reader-flows.json
+
+      - name: Grade saved AI reviews against their frozen source
+        run: |
+          .venv/bin/aegify benchmark-reviews benchmarks/source-review-v1/codex-reviews.json \
+            --labels benchmarks/source-review-v1/labels.json \
+            --source-root receipts=benchmarks/source-review-v1/sources \
+            --output-file source-review-report.json
+
       - name: Upload precision and performance evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aegify-core-precision-report
           path: |
             scanner/benchmark-report.json
             scanner/benchmark-repeat.json
             scanner/performance-report.json
+            scanner/python-code-inputs.json
+            scanner/python-process-arguments.json
+            scanner/python-reader-flows.json
+            scanner/source-review-report.json
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Build wheel
-        run: uv build --wheel
-
       - name: Upload wheel
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aegify-wheel
           path: scanner/dist/*.whl
@@ -185,7 +215,7 @@ jobs:
       AUTH_ADMIN_EMAILS: ci-only@example.test
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -205,7 +235,7 @@ jobs:
           echo "ENCRYPTION_SECRET=$encryption_test_secret" >> "$GITHUB_ENV"
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26.7.0"
           cache: npm
@@ -255,7 +285,7 @@ jobs:
         working-directory: docs
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -265,7 +295,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26.7.0"
           cache: npm
@@ -288,7 +318,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 

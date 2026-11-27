@@ -1,0 +1,192 @@
+{
+  "grammar_reference": {
+    "python": "3.14.7",
+    "matching_inputs": 14762,
+    "single_strings": 8680,
+    "syntax_errors": 6082,
+    "repr_round_trips": 11111
+  },
+  "cases": [
+    {
+      "case": "bare",
+      "source_sha256": "ae61d2e3b6792b298ca488424e53aa6f21e8852ab85be7f384cf8090586c199f",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "module_alias",
+      "source_sha256": "3e1144b6377019a73bbff3d9efa65fe9b0419acea9a674c20e3e7fea595eb1a0",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "imported_alias",
+      "source_sha256": "e6c05100cb234904cc54f6e399811f76ca8f479776a5b47b68351e7a7c943058",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "assigned_alias",
+      "source_sha256": "2af97c66128f180fd9e86a72cc836195ecb5ba3e432dec283d8c666033699670",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          7
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          7
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "whole_literal",
+      "source_sha256": "3b79e33324c8abacf27f935d4e237e6781737d329310c7fc21cd5fe5fc9c74e6",
+      "expected": [],
+      "observed": [],
+      "agrees": true
+    },
+    {
+      "case": "indexed_edges",
+      "source_sha256": "aadc040a2b2bd3e44cc4bb4a9c20beba710406a03ce05ed2495688d24e27fe0e",
+      "expected": [],
+      "observed": [],
+      "agrees": true
+    },
+    {
+      "case": "missing_interior_check",
+      "source_sha256": "486fbc5ef38bd7919b10f4d5fc22b41d282a8531bf9eb83ecd44dc67c9e3525d",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          7
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          7
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "different_operand",
+      "source_sha256": "e17e3782b4549423e1b127d6427fca37c249a307d35b6a06448b430252802afc",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          8
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          8
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "new_assignment",
+      "source_sha256": "f0c00d1dbd8f57e135d2d2459a2ab30a3446a6cb96fd516a47460039127932c6",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          8
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          8
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "complete_representation",
+      "source_sha256": "1f3818b574ca17906474fe2afe6b0ef4adeef83ed0b64ccad61d146556da2035",
+      "expected": [],
+      "observed": [],
+      "agrees": true
+    },
+    {
+      "case": "representation_plus_input",
+      "source_sha256": "612139a657bedd437ec97cbe16cfe4fbfcd496d609bd0648750f6f80f7443a7d",
+      "expected": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-EXEC-001",
+          6
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "file_after_code_guard",
+      "source_sha256": "cccf633dab379a78e83427ffcd5e3a508adb8f55da7b6fbed53a0e2863d5a6cc",
+      "expected": [
+        [
+          "AEG-PATH-001",
+          7
+        ]
+      ],
+      "observed": [
+        [
+          "AEG-PATH-001",
+          7
+        ]
+      ],
+      "agrees": true
+    },
+    {
+      "case": "data_in_namespace",
+      "source_sha256": "fcef84c55f285eb57147f86ec40f627fd0b9a98a98138942f4e03c43be8df2fc",
+      "expected": [],
+      "observed": [],
+      "agrees": true
+    }
+  ]
+}

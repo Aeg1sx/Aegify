@@ -1,0 +1,240 @@
+{
+  "version": 1,
+  "corpus": "transport-verification-v1",
+  "cwe": 295,
+  "labels": {
+    "before": "positive",
+    "after": "negative"
+  },
+  "modules": [
+    {
+      "split": "development",
+      "reference": "https://github.com/ckan/ckan/security/advisories/GHSA-mpfm-fpgx-647q",
+      "advisory": "GHSA-mpfm-fpgx-647q",
+      "repository": "ckan/ckan",
+      "path": "ckan/lib/mailer.py",
+      "before": {
+        "commit": "3ad8e3fbb535020fc5a3a38d65026609aadc8819",
+        "sha256": "e7bbbb0d5eeeb7a3f9b272da6a57ace095c23386546151c9bd6ae525d3352c27",
+        "bytes": 10139
+      },
+      "after": {
+        "commit": "69f790d9e37805827f513a78e586ac54be91a6b9",
+        "sha256": "a55df3f0ee0b627b3050bcdbf710346b6692d4d8de594f11e507483342d05ad3",
+        "bytes": 11514
+      },
+      "sites": [
+        {
+          "id": "ckan-mail-upgrade",
+          "scope": "The enabled verification branch of STARTTLS. The fixed version retains a separately configurable opt-out on line 146.",
+          "before": [
+            119,
+            119
+          ],
+          "after": [
+            144,
+            144
+          ]
+        }
+      ]
+    },
+    {
+      "split": "development",
+      "reference": "https://github.com/aws/sagemaker-python-sdk/security/advisories/GHSA-62rc-f4v9-h543",
+      "advisory": "GHSA-62rc-f4v9-h543",
+      "repository": "aws/sagemaker-python-sdk",
+      "path": "sagemaker-serve/src/sagemaker/serve/model_server/triton/model.py",
+      "before": {
+        "commit": "8e2778c7d11eeebf637bcb516a24a746f157ffe8",
+        "sha256": "8100a6c7385800aea64ba88fd5c6e9a871f6132becf592adf1dff14be6f8c2ec",
+        "bytes": 2873
+      },
+      "after": {
+        "commit": "5e7a3efa7bec0a161194ffa0cef346dda93bf2c6",
+        "sha256": "b6b1e2e4833f6c32865ef1d228ef5ff3c709cdc718f71d80d2233909b63b574d",
+        "bytes": 2684
+      },
+      "sites": [
+        {
+          "id": "sagemaker-default-https-context",
+          "scope": "Module initialization of the Triton backend. The global override was removed from the setup before the model class.",
+          "before": [
+            18,
+            18
+          ],
+          "after": [
+            1,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/apache/airflow/pull/63704",
+      "advisory": "GHSA-wrpj-755p-x363",
+      "repository": "apache/airflow",
+      "path": "providers/databricks/src/airflow/providers/databricks/hooks/databricks_base.py",
+      "before": {
+        "commit": "10ccbd0295f48431cd40c7949ed9c3f1deb22396",
+        "sha256": "54fda4e93d856e30ee1bb625d172988ae3fa2d2aca5c3f5f265dacbc076359ea",
+        "bytes": 55324
+      },
+      "after": {
+        "commit": "a8c12067fbe984cd2a99b35f0a6909a570e87a1c",
+        "sha256": "ac360d24b5a21648001a1fc6d921a2d5948615c818c01d9dc0325dd59b3ff9fa",
+        "bytes": 55414
+      },
+      "sites": [
+        {
+          "id": "airflow-sync-http",
+          "scope": "Certificate verification argument on the synchronous Databricks provider request.",
+          "before": [
+            692,
+            701
+          ],
+          "after": [
+            694,
+            703
+          ]
+        },
+        {
+          "id": "airflow-async-http",
+          "scope": "TLS option on the corresponding asynchronous provider request.",
+          "before": [
+            757,
+            766
+          ],
+          "after": [
+            760,
+            769
+          ]
+        }
+      ]
+    },
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/apache/airflow/pull/65346",
+      "advisory": "GHSA-799x-qp47-8qwq",
+      "repository": "apache/airflow",
+      "path": "airflow-core/src/airflow/utils/email.py",
+      "before": {
+        "commit": "60db83fa80233c330933bb65123bdce14dfc5c26",
+        "sha256": "0e80c303e9f78400ebc4f82ae441f01b93e07a6d86a5afe43aa1a74506cc95a1",
+        "bytes": 12734
+      },
+      "after": {
+        "commit": "06981d4ad8249bfd371bd718d37c7f04eec7c151",
+        "sha256": "16534214994a959ad3ddc571aabd7144aea8c1743c86b4581ef70070f5cf4166",
+        "bytes": 13122
+      },
+      "sites": [
+        {
+          "id": "airflow-core-mail-upgrade",
+          "scope": "Standard-library SMTP upgrade with the default deployment settings.",
+          "before": [
+            269,
+            269
+          ],
+          "after": [
+            269,
+            269
+          ]
+        }
+      ]
+    },
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/apache/airflow/pull/65346",
+      "advisory": "GHSA-x8mh-94wc-33gv",
+      "repository": "apache/airflow",
+      "path": "providers/smtp/src/airflow/providers/smtp/hooks/smtp.py",
+      "before": {
+        "commit": "60db83fa80233c330933bb65123bdce14dfc5c26",
+        "sha256": "a53c05cd545a4417a1761c71b8697424b0a71b09572ee47737ed09d7d8f75016",
+        "bytes": 28883
+      },
+      "after": {
+        "commit": "06981d4ad8249bfd371bd718d37c7f04eec7c151",
+        "sha256": "f64dc9213457578d73a9be0ad58d0470f8c5b9421294c56a7b0c1298665084e9",
+        "bytes": 29548
+      },
+      "sites": [
+        {
+          "id": "airflow-provider-mail-upgrade",
+          "scope": "Synchronous SMTP provider with its default settings. The asynchronous mail client uses a different TLS contract and is outside this label.",
+          "before": [
+            129,
+            129
+          ],
+          "after": [
+            129,
+            129
+          ]
+        }
+      ]
+    },
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/DIRACGrid/DIRAC/security/advisories/GHSA-vg99-gr89-qhw9",
+      "advisory": "GHSA-vg99-gr89-qhw9",
+      "repository": "DIRACGrid/DIRAC",
+      "path": "src/DIRAC/WorkloadManagementSystem/Utilities/PilotWrapper.py",
+      "before": {
+        "commit": "826a1e35070e9a6d507ed5181a82b1a6993c9c0e",
+        "sha256": "fd9c03cce1c2fbe9813533541e56c478a32f8581a711516e459bf2d13a7806e5",
+        "bytes": 13097
+      },
+      "after": {
+        "commit": "68029dfb5ddd8b1e4106851f8e37370aa80ac7ae",
+        "sha256": "4bbf921e0fac4797b7860f29e8c10e5ad47bc88c5268adca34e48c9f61291ff0",
+        "bytes": 13420
+      },
+      "sites": [
+        {
+          "id": "dirac-generated-client",
+          "scope": "Client context in the generated Python wrapper used for HTTPS downloads.",
+          "before": [
+            247,
+            250
+          ],
+          "after": [
+            247,
+            257
+          ]
+        }
+      ]
+    },
+    {
+      "split": "evaluation",
+      "reference": "https://github.com/WeblateOrg/wlc/security/advisories/GHSA-2mmv-7rrp-g8xh",
+      "advisory": "GHSA-2mmv-7rrp-g8xh",
+      "repository": "WeblateOrg/wlc",
+      "path": "wlc/__init__.py",
+      "before": {
+        "commit": "aafdb507a9e66574ade1f68c50c4fe75dbe80797",
+        "sha256": "f5811948daa92f7a61d6db790387c889b8d976acf0ec86b9f0386966f35efe52",
+        "bytes": 29300
+      },
+      "after": {
+        "commit": "a513864ec4daad00146e6d6e039559726e256fa3",
+        "sha256": "37b1f93a2c08e66127ec7ed4ab1d552a33c2c2e64d6c0ba481195462c93a0af4",
+        "bytes": 29278
+      },
+      "sites": [
+        {
+          "id": "weblate-host-policy",
+          "scope": "Host classification that selects certificate verification for the client.",
+          "before": [
+            376,
+            378
+          ],
+          "after": [
+            377,
+            378
+          ]
+        }
+      ]
+    }
+  ]
+}

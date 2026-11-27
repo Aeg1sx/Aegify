@@ -1,0 +1,640 @@
+{
+  "schema_version": 1,
+  "comparison": "owasp-python-paired-v1",
+  "mode": "no_case_regressions",
+  "baseline_artifact_digest": "sha256:7ddd57db28cf54e147b936d2a193001fe639ba06df8263f07442f55006616cd9",
+  "candidate_artifact_digest": "sha256:47d1e116ea31771a9b29fb3dc7cb8998a3539ec932691953f0fe7fa4cf2b70cf",
+  "input_identity": {
+    "corpus_digest": "sha256:4b361552a8499e173db739afa729f2eef31c8ffe52b049a05feb5521d1c26f0e",
+    "ground_truth_digest": "sha256:6396f37c97cfd0c018db3d8750095ce6c678a083f83620cfb3e88fe27a46bb0c",
+    "config_digest": "sha256:14a4dd88d1b04d08bc96224da6fc18e58a5f2ee3b69e1fc0290995c6d4aae1d6",
+    "case_identity_digest": "sha256:bfff7f093ee0fcc897410870dcbd3b93d1d21c254ada6e95b68a53bfd179707f"
+  },
+  "implementation_changes": [
+    "bundled_rules_digest",
+    "parser_fingerprint",
+    "rule_definitions_digest",
+    "scanner_code_and_modelpacks_digest"
+  ],
+  "identical_replay": false,
+  "regression_free": true,
+  "evaluation_complete": true,
+  "exit_code": 0,
+  "coverage_lost": [],
+  "coverage_gained": [],
+  "baseline_unscored_findings": {
+    "different_cwe": 9370,
+    "outside_labeled_case": 12
+  },
+  "candidate_unscored_findings": {
+    "different_cwe": 9370,
+    "outside_labeled_case": 12
+  },
+  "channels": {
+    "all_candidates": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 445,
+        "false_positives": 57,
+        "false_negatives": 7,
+        "true_negatives": 721,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8864541832669323,
+        "recall": 0.9845132743362832,
+        "f1": 0.9329140461215933,
+        "accuracy": 0.9479674796747968,
+        "false_positive_rate": 0.07326478149100257,
+        "balanced_accuracy": 0.9556242464226403,
+        "mcc": 0.893878086620032,
+        "precision_wilson_95": [
+          0.85571662511474,
+          0.9113221243475386
+        ],
+        "recall_wilson_95": [
+          0.9683819631022369,
+          0.9924784227282849
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 451,
+        "false_positives": 57,
+        "false_negatives": 1,
+        "true_negatives": 721,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8877952755905512,
+        "recall": 0.9977876106194691,
+        "f1": 0.9395833333333333,
+        "accuracy": 0.9528455284552846,
+        "false_positive_rate": 0.07326478149100257,
+        "balanced_accuracy": 0.9622614145642332,
+        "mcc": 0.905265981544896,
+        "precision_wilson_95": [
+          0.8573875804028122,
+          0.9123820293271103
+        ],
+        "recall_wilson_95": [
+          0.9875759757718787,
+          0.9996093521361913
+        ]
+      },
+      "transitions": {
+        "fn->fn": 1,
+        "fn->tp": 6,
+        "fp->fp": 57,
+        "tn->tn": 721,
+        "tp->tp": 445
+      },
+      "improved_cases": [
+        "BenchmarkTest00165",
+        "BenchmarkTest00267",
+        "BenchmarkTest00268",
+        "BenchmarkTest00511",
+        "BenchmarkTest00899",
+        "BenchmarkTest01191"
+      ],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.0013410923236188976,
+        "recall": 0.013274336283185861,
+        "f1": 0.006669287211739983,
+        "accuracy": 0.004878048780487809,
+        "false_positive_rate": 0.0,
+        "mcc": 0.011387894924864028
+      }
+    },
+    "advisory": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 345,
+        "false_positives": 44,
+        "false_negatives": 107,
+        "true_negatives": 734,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8868894601542416,
+        "recall": 0.7632743362831859,
+        "f1": 0.8204518430439952,
+        "accuracy": 0.8772357723577235,
+        "false_positive_rate": 0.056555269922879174,
+        "balanced_accuracy": 0.8533595331801533,
+        "mcc": 0.7327115297132055,
+        "precision_wilson_95": [
+          0.8515582508505738,
+          0.9146541568306287
+        ],
+        "recall_wilson_95": [
+          0.7219711329614145,
+          0.8001402182432982
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 345,
+        "false_positives": 44,
+        "false_negatives": 107,
+        "true_negatives": 734,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8868894601542416,
+        "recall": 0.7632743362831859,
+        "f1": 0.8204518430439952,
+        "accuracy": 0.8772357723577235,
+        "false_positive_rate": 0.056555269922879174,
+        "balanced_accuracy": 0.8533595331801533,
+        "mcc": 0.7327115297132055,
+        "precision_wilson_95": [
+          0.8515582508505738,
+          0.9146541568306287
+        ],
+        "recall_wilson_95": [
+          0.7219711329614145,
+          0.8001402182432982
+        ]
+      },
+      "transitions": {
+        "fn->fn": 107,
+        "fp->fp": 44,
+        "tn->tn": 734,
+        "tp->tp": 345
+      },
+      "improved_cases": [],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "false_positive_rate": 0.0,
+        "mcc": 0.0
+      }
+    },
+    "blocking": {
+      "jointly_scored_cases": 1230,
+      "baseline_paired_metrics": {
+        "true_positives": 182,
+        "false_positives": 36,
+        "false_negatives": 270,
+        "true_negatives": 742,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8348623853211009,
+        "recall": 0.4026548672566372,
+        "f1": 0.5432835820895522,
+        "accuracy": 0.751219512195122,
+        "false_positive_rate": 0.04627249357326478,
+        "balanced_accuracy": 0.6781911868416862,
+        "mcc": 0.4499422015452269,
+        "precision_wilson_95": [
+          0.77986053926295,
+          0.8782671199046997
+        ],
+        "recall_wilson_95": [
+          0.3584462017626337,
+          0.44850422300201037
+        ]
+      },
+      "candidate_paired_metrics": {
+        "true_positives": 188,
+        "false_positives": 36,
+        "false_negatives": 264,
+        "true_negatives": 742,
+        "scored_cases": 1230,
+        "unscored_cases": 0,
+        "precision": 0.8392857142857143,
+        "recall": 0.415929203539823,
+        "f1": 0.5562130177514792,
+        "accuracy": 0.7560975609756098,
+        "false_positive_rate": 0.04627249357326478,
+        "balanced_accuracy": 0.6848283549832791,
+        "mcc": 0.46177945861462566,
+        "precision_wilson_95": [
+          0.7855348876043321,
+          0.8815956723330515
+        ],
+        "recall_wilson_95": [
+          0.37138577835329334,
+          0.46188958848889916
+        ]
+      },
+      "transitions": {
+        "fn->fn": 264,
+        "fn->tp": 6,
+        "fp->fp": 36,
+        "tn->tn": 742,
+        "tp->tp": 182
+      },
+      "improved_cases": [
+        "BenchmarkTest00165",
+        "BenchmarkTest00267",
+        "BenchmarkTest00268",
+        "BenchmarkTest00511",
+        "BenchmarkTest00899",
+        "BenchmarkTest01191"
+      ],
+      "regressed_cases": [],
+      "metric_deltas": {
+        "precision": 0.004423328964613393,
+        "recall": 0.013274336283185806,
+        "f1": 0.012929435661927058,
+        "accuracy": 0.004878048780487809,
+        "false_positive_rate": 0.0,
+        "mcc": 0.011837257069398754
+      }
+    }
+  },
+  "changed_cases": [
+    {
+      "case": "BenchmarkTest00165",
+      "cwe": 78,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-001",
+          "AEG-RCE-PY-003"
+        ],
+        "matched_finding_count": 3
+      }
+    },
+    {
+      "case": "BenchmarkTest00267",
+      "cwe": 78,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-001",
+          "AEG-RCE-PY-003"
+        ],
+        "matched_finding_count": 3
+      }
+    },
+    {
+      "case": "BenchmarkTest00268",
+      "cwe": 78,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-001",
+          "AEG-RCE-PY-003"
+        ],
+        "matched_finding_count": 3
+      }
+    },
+    {
+      "case": "BenchmarkTest00350",
+      "cwe": 78,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00511",
+      "cwe": 78,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-001",
+          "AEG-RCE-PY-003"
+        ],
+        "matched_finding_count": 3
+      }
+    },
+    {
+      "case": "BenchmarkTest00512",
+      "cwe": 78,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00736",
+      "cwe": 78,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest00899",
+      "cwe": 78,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-001",
+          "AEG-RCE-PY-003"
+        ],
+        "matched_finding_count": 3
+      }
+    },
+    {
+      "case": "BenchmarkTest00900",
+      "cwe": 78,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01097",
+      "cwe": 78,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01098",
+      "cwe": 78,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01173",
+      "cwe": 78,
+      "positive": false,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 2
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "fp",
+          "advisory": "fp",
+          "blocking": "tn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-CMD-002"
+        ],
+        "matched_finding_count": 1
+      }
+    },
+    {
+      "case": "BenchmarkTest01191",
+      "cwe": 78,
+      "positive": true,
+      "baseline": {
+        "outcomes": {
+          "all_candidates": "fn",
+          "advisory": "fn",
+          "blocking": "fn"
+        },
+        "unscored_reason": null,
+        "matched_rules": [],
+        "matched_finding_count": 0
+      },
+      "candidate": {
+        "outcomes": {
+          "all_candidates": "tp",
+          "advisory": "fn",
+          "blocking": "tp"
+        },
+        "unscored_reason": null,
+        "matched_rules": [
+          "AEG-A03-006",
+          "AEG-CMD-001",
+          "AEG-RCE-PY-003"
+        ],
+        "matched_finding_count": 3
+      }
+    }
+  ],
+  "limitations": [
+    "Internal consistency and paired change only; no independent label adjudication.",
+    "Public synthetic cases are not held-out production or live AI evaluation.",
+    "Identical replay excludes timing/RSS and does not prove performance equivalence.",
+    "Digests identify supplied artifacts; they do not authenticate their authors.",
+    "No significance claim or independent-sample assumption for related templates.",
+    "A regression-free comparison is not an absolute precision/recall release gate."
+  ]
+}

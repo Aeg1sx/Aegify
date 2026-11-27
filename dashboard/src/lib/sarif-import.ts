@@ -1,8 +1,10 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { normalizeFindingClassification, normalizeFindingEvidence, normalizeSourceSnippet, scanHealthForRun, workspaceSnapshotForRun } from "./sarif-evidence.ts";
+import { parseGatewayInventory, gatewayStorage, GatewayInventoryError, type GatewaySummary } from "./gateway-inventory.ts";
+import { flowLineExcerpt, normalizeFindingClassification, normalizeFindingEvidence, normalizeSourceSnippet, scanCoverageForRun, scanHealthForRun, workspaceSnapshotForRun } from "./sarif-evidence.ts";
 import { classifyFindingBaseline, findingIdentityScope, findingMessageDigest, legacyFindingFingerprint, relativeIdentityPath, stableFindingFingerprint } from "./finding-lifecycle.ts";
 import { migrateFindingIdentities, readFindingIdentities } from "./finding-identity-import.ts";
 import { findingManagement } from "./finding-workflow.ts";
+import { isGatewayConfiguration, withholdSourceFromModel } from "./configuration-evidence.ts";
 import { publishScanImport } from "./scan-reconciliation.ts";
 import { writeTransaction } from "./database-runtime.ts";
 
@@ -68,7 +70,8 @@ interface SARIFResult {
         location: {
           physicalLocation?: {
             artifactLocation?: { uri: string };
-            region?: { startLine: number };
+            region?: { startLine: number; endLine?: number; snippet?: { text: string } };
+            contextRegion?: { startLine: number; endLine?: number; snippet?: { text: string } };
           };
           message?: { text: string };
         };
@@ -184,6 +187,7 @@ interface SARIFReport {
       artifactPathEncoding?: unknown;
       analysisStatus?: unknown;
       analysisGaps?: unknown;
+      taintAnalysis?: unknown;
       analysisScope?: unknown;
       evaluatedRules?: unknown;
       analyzedFiles?: unknown;
@@ -210,6 +214,7 @@ interface SARIFReport {
         runtimeObservationCount?: number;
       }>;
       frontendCalls?: FrontendCallData[];
+      gatewayInventory?: unknown;
       gatewayRoutes?: GatewayRouteData[];
       runtimeObservations?: RuntimeObservationData[];
       attackSurfaceLinks?: AttackSurfaceLinkData[];
@@ -251,6 +256,7 @@ function artifactSourcePath(uri: unknown, encoding: unknown): string {
   return path;
 }
 export interface ImportReceipt {
+  gatewayInventory?: GatewaySummary;
   scanId: string;
   findingsCount: number;
   status: "completed" | "partial" | "failed";
@@ -270,7 +276,7 @@ export interface ImportContext {
   onPublished?: (tx: Prisma.TransactionClient, receipt: ImportReceipt) => Promise<void>;
 }
 
-export function validateSarifReport(value: unknown): SARIFReport {
+function readReport(value: unknown) {
   if (!value || typeof value !== "object") throw new SarifValidationError("Upload a SARIF 2.1.0 report.");
   const report = value as SARIFReport;
   if (report.version !== "2.1.0" || !Array.isArray(report.runs) || report.runs.length !== 1 || !report.runs[0]?.tool?.driver || !Array.isArray(report.runs[0].results)) throw new SarifValidationError("Upload one SARIF 2.1.0 run with a driver and results array.");
@@ -301,12 +307,22 @@ export function validateSarifReport(value: unknown): SARIFReport {
   }
   const bounded = (value: unknown, limit: number) => value === undefined || (Array.isArray(value) && value.length <= limit);
   if (!bounded(run.tool.driver.rules, 10_000) || !bounded(run.properties?.callGraph?.nodes, 50_000) || !bounded(run.properties?.callGraph?.edges, 200_000) || !bounded(run.properties?.endpoints, 10_000)) throw new SarifValidationError("Report graph, rule or endpoint limits exceeded.");
-  return report;
+  try {
+    const review = parseGatewayInventory(run.properties?.gatewayInventory);
+    return { report, gateway: review ? gatewayStorage(review) : null };
+  } catch (error) {
+    if (error instanceof GatewayInventoryError) throw new SarifValidationError(error.message);
+    throw error;
+  }
+}
+
+export function validateSarifReport(value: unknown): SARIFReport {
+  return readReport(value).report;
 }
 
 /** All findings, identities, graphs, absence, audit and job completion publish together. */
 export async function importSarif(db: PrismaClient, report: unknown, context: ImportContext): Promise<ImportReceipt> {
-  const sarif = validateSarifReport(report);
+  const { report: sarif, gateway } = readReport(report);
   const { projectId, repository, branch, commitSha, actorId, canManageWorkspace = false } = context;
   if (repository.length > 2048 || branch.length > 255 || commitSha.length > 128) throw new SarifValidationError("Scan metadata exceeds the size limit.");
   return writeTransaction(db, async (tx) => {
@@ -341,6 +357,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
     const scan = context.scanId
       ? await tx.scan.update({ where: { id: context.scanId }, data: metadata })
       : await tx.scan.create({ data: metadata });
+    if (gateway) await tx.scanGatewayInventory.create({ data: { scanId: scan.id, ...gateway.data } });
     // A slow queued scan cannot supersede a newer completed scan request.
     const newer = projectId ? await tx.scan.findFirst({
       where: { projectId, branch, status: { in: ["completed", "partial"] }, createdAt: { gt: scan.createdAt } }, select: { id: true },
@@ -360,6 +377,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         "medium";
       const evidence = normalizeFindingEvidence(result.properties);
       const sourceSnippet = normalizeSourceSnippet(loc);
+      const gatewayConfig = isGatewayConfiguration(filePath) || isGatewayConfiguration(evidence.modulePath);
       const classification = normalizeFindingClassification(result.properties);
       const admittedSource = analyzedSourceByPath.get(filePath);
       if (admittedSource && ((evidence.repositoryId && evidence.repositoryId !== admittedSource.repositoryId)
@@ -399,11 +417,15 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
       let taintFlow: string | null = null;
       if (result.codeFlows?.[0]?.threadFlows?.[0]?.locations) {
         taintFlow = JSON.stringify(
-          result.codeFlows[0].threadFlows[0].locations.map((loc) => ({
-            file: artifactSourcePath(loc.location.physicalLocation?.artifactLocation?.uri, run.properties?.artifactPathEncoding),
-            line: loc.location.physicalLocation?.region?.startLine || 0,
-            message: loc.location.message?.text || "",
-          }))
+          result.codeFlows[0].threadFlows[0].locations.map(({ location }, index) => {
+            const file = artifactSourcePath(location.physicalLocation?.artifactLocation?.uri, run.properties?.artifactPathEncoding);
+            return {
+              file, line: location.physicalLocation?.region?.startLine || 0,
+              message: isGatewayConfiguration(file) ? "" : location.message?.text || "",
+              snippet: index < 200 && file && !withholdSourceFromModel(file) && result.properties?.provenance?.analysis_kind !== "configuration"
+                ? flowLineExcerpt(location.physicalLocation) : undefined,
+            };
+          })
         );
       }
 
@@ -420,7 +442,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         filePath,
         lineStart: loc?.region?.startLine || 0,
         lineEnd: loc?.region?.endLine || loc?.region?.startLine || 0,
-        codeSnippet: sourceSnippet.codeSnippet,
+        codeSnippet: gatewayConfig ? "" : sourceSnippet.codeSnippet,
         message: result.message.text,
         cweId,
         owaspCategory,
@@ -429,14 +451,15 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
         llmAnalysis: result.properties?.aiReview
           ? JSON.stringify(result.properties.aiReview)
           : result.properties?.llmAnalysis || null,
-        callChain: result.properties?.callChain
-          ? JSON.stringify(result.properties.callChain) : null,
+        callChain: Array.isArray(result.properties?.callChain)
+          ? JSON.stringify(result.properties.callChain.map((step) => typeof step?.filePath === "string" && isGatewayConfiguration(step.filePath)
+            ? { filePath: step.filePath, line: step.line } : step)) : null,
         defenseContext: result.properties?.defenseContext
           ? JSON.stringify(result.properties.defenseContext) : null,
         evidenceId: evidence.evidenceId,
         repositoryId: identityScope.repositoryId,
         modulePath: identityScope.modulePath,
-        provenance: JSON.stringify({ ...JSON.parse(evidence.provenance), snippet_start_line: sourceSnippet.snippetStartLine }),
+        provenance: JSON.stringify({ ...JSON.parse(evidence.provenance), snippet_start_line: gatewayConfig ? null : sourceSnippet.snippetStartLine }),
         fingerprint,
         baselineState: "new",
         identityId: "",
@@ -760,11 +783,12 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
     await publishScanImport(tx, {
       scanId: scan.id, projectId, branch, publishBaseline,
       defaultBranch: project?.defaultBranch || "", health: scanHealth,
-      audit: { actorId: actorId, findings: findings.length },
+      audit: { actorId, findings: findings.length, coverage: scanCoverageForRun(scanHealth, run.properties, invocation?.properties) },
     });
 
 
     const receipt: ImportReceipt = {
+      ...(gateway && { gatewayInventory: gateway.summary }),
       scanId: scan.id, findingsCount: findings.length, status: scanHealth.status,
       baseline: findings.reduce<Record<string, number>>((counts, finding) => {
         counts[finding.baselineState] = (counts[finding.baselineState] || 0) + 1;

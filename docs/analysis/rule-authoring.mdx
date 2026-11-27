@@ -8,6 +8,14 @@ Aegify rules are executable security detectors, not documentation disguised as
 configuration. The strict audit gate requires every enabled rule and every
 declared pattern to map to implemented evaluator behavior.
 
+## Browse detection rules
+
+Workspace administrators can open **Rules** to find a detector by name, ID, language, CWE or OWASP category. Use the severity filter to narrow the list. Select a rule name to inspect its definition, or its finding count to open the findings queue with that rule selected. Going back restores the search, severity and page.
+
+Each entry shows the languages, enabled state, severity and finding count. On narrow screens those details sit under the rule name. **Sync rules** reads the rule pack from disk. **New rule** opens the editor. [Desktop catalog](/assets/aegify-rules-desktop.png) · [Mobile catalog](/assets/aegify-rules-mobile.png)
+
+Open a rule to inspect its YAML and enabled state. **Current findings** counts every distinct reported path and lists up to ten paths with the most findings. When a definition fails to save, the editor keeps your draft so you can retry. [Desktop rule detail](/assets/aegify-rule-detail-desktop.png) · [Mobile rule detail](/assets/aegify-rule-detail-mobile.png)
+
 ## Minimal rule
 
 ```yaml
@@ -298,6 +306,83 @@ database receiver, occur in order and within the bound, contain the required
 business-state operation, and have no matching transaction or concurrency
 defense in that function.
 
+## Python deserialization
+
+The bundled Python rules resolve the imported reader and the argument that supplies its input. A source trace to an object-capable PyYAML loader or a pickle reader can produce a reachable finding. A loader passed as the first keyword argument never becomes the input merely because of its position. For a multi-document YAML reader, Aegify checks direct consumption by iteration, `list`, `tuple` or `next`. Deferred consumption remains advisory.
+
+Use `semantic: {kind: python_yaml_loader}` for loader review and `semantic: {kind: python_pickle_input}` for pickle input review. Aegify reports an unresolved loader, a full loader with unresolved input, or direct loader extensions found in the same repository for review. The stock restricted loaders handle ordinary untrusted data without generating a constructor finding. Code outside the scan and runtime registrations can affect the loader in production. [PyYAML loading and custom constructors](https://pyyaml.org/wiki/PyYAMLDocumentation)
+
+Aegify inspects bounded local literals, selected container entries and simple encodings. Pickle inspection uses opcode metadata and consumes no serialized objects. Opaque fixed byte streams stay reviewable. A literal proved to contain only ordinary data clears this specific object-construction check. Resource limits and deployment artifact integrity need separate controls. [Python pickle](https://docs.python.org/3/library/pickle.html) · [Python pickletools](https://docs.python.org/3/library/pickletools.html)
+
+For a fresh reader, a fixed sequence of plain, fixed-width pickle instructions also clears this check when the next instruction boundary is EOF or an unknown byte. A frame, a variable-width operand or a callback before that boundary ends this particular proof. [Python opcode inspection](https://docs.python.org/3.14/library/pickletools.html)
+
+## Python randomness in credential handling
+
+The `credential_randomness` detector follows a value from Python's `random`
+module or a `random.Random` instance to a Flask credential operation within one
+function. It handles stable imports, local aliases, and common encodings. A
+cookie comparison against a stored value requires a matching mapping and key.
+The finding cites the generator, the use, and the comparison when available.
+Review it against the application's authentication logic.
+
+```yaml
+semantic:
+  kind: credential_randomness
+```
+
+`AEG-CRYPTO-002` and `AEG-A02-004` use this advisory detector for Python.
+Unrelated simulations, shadowed imports, and values from secure generators
+fall outside the rule. The development catalog retires the old
+`AEG-CRYPTO-PY-003` style suggestion for `os.urandom`.
+[Python random module](https://docs.python.org/3/library/random.html)
+and [cryptographic random bytes](https://docs.python.org/3/library/os.html#os.urandom).
+
+## Python XML and XPath
+
+For `parseString`, the scanner can evaluate a small set of literal documents selected through local branches or indexed containers. Each possible value must consist of plain text without declarations, entity syntax or an encoding switch. An unknown branch or a mutable input keeps the parser configuration visible for review. A filename passed to `parse` still refers to the contents of a file. [Python DOM reader](https://docs.python.org/3.14/library/xml.dom.minidom.html) · [SAX parser features](https://docs.python.org/3.14/library/xml.sax.handler.html)
+
+`AEG-XPATH-001` traces request data into the query argument of a resolved
+`lxml` or `elementpath` API. For example, in
+`elementpath.select(root, path, variables=values)`, the scanner follows
+`path`. Supplying a request value as a bound variable in a fixed query leaves
+the expression unchanged. A finding carries the input line and the consuming
+call. [lxml XPath variables](https://lxml.de/xpathxslt.html#the-xpath-method)
+and [elementpath selector arguments](https://elementpath.readthedocs.io/en/latest/xpath_api.html#xpath-selectors).
+
+For a single interpolated value in a simple attribute-equality predicate,
+the scanner checks the surrounding XPath delimiter, the Python string producer,
+and the guard or replacement applied to that same value. A different delimiter,
+a conditional guard, an overwritten value, an unknown object method, or a more
+complex expression needs further review. Binding variables is the preferred
+remediation because it preserves the distinction between program and data.
+
+`AEG-A05-004` accepts `semantic: {kind: python_xml_configuration}`. The Python
+advisory records the setting line for a known SAX parser or identifies a supplied
+parser whose configuration could not be resolved. `AEG-XEE-002` also requires
+a traced request value at the XML input and an explicitly enabled external
+general entity feature on that parser. The built-in SAX default has disabled
+this feature since Python 3.7.1. Custom parsers, process-level overrides and
+runtime resource access require deployment evidence. [Python SAX configuration](https://docs.python.org/3/library/xml.sax.html).
+
+Append-only local `StringIO` and `BytesIO` streams carry the value at each
+write into subsequent reads. Calling another method or sharing the stream
+leaves the summary unresolved. For fresh local dictionaries and
+`ConfigParser` instances, named values written to a literal key retain their
+write-time origin. Section names and normalized option keys identify a config
+value. Interpolated config strings require additional inputs. A file-backed
+config read on a resolved instance contributes a separate source.
+[Python configuration mappings and interpolation](https://docs.python.org/3/library/configparser.html#interpolation-of-values).
+
+## Python TLS client verification
+
+`AEG-A02-005` records the client API and source line when Requests, HTTPX or aiohttp explicitly disables certificate verification. It also checks the implicit or explicitly unverified TLS context at standard-library SMTP calls and the standard-library default HTTPS context factory. `AEG-CRYPTO-003` retains its existing ID for the explicit HTTP `verify` option. Both findings are static candidates with advisory disposition. Their remediation appears in the finding detail and exported SARIF.
+
+The rule resolves imports and supported client bindings. A same-named project module, conflicting client types or a computed verification value limits that resolution. A plaintext HTTP literal has no certificate check at that request. The regression controls include verified clients, a custom certificate authority, rebound methods and unrelated arguments. [Requests verification](https://requests.readthedocs.io/en/latest/user/advanced/#ssl-cert-verification) · [HTTPX verification](https://www.python-httpx.org/advanced/ssl/) · [aiohttp SSL controls](https://docs.aiohttp.org/en/stable/client_advanced.html#ssl-control-for-tcp-sockets)
+
+For mail, CPython 3.14.7 supplies its compatibility TLS context when the caller omits one. Passing `ssl.create_default_context()` enables server certificate and hostname verification. The Airflow provider's synchronous and asynchronous client paths illustrate why receiver identity matters. [CPython SMTP implementation](https://github.com/python/cpython/blob/v3.14.7/Lib/smtplib.py) · [CPython context defaults](https://github.com/python/cpython/blob/v3.14.7/Lib/ssl.py) · [Airflow mail change](https://github.com/apache/airflow/pull/65346)
+
+A client assigned directly in a `try` suite can be identified in that statement’s `else` suite. This lets the scanner recognize Airflow’s synchronous client on the success path even though another method can store an asynchronous client in the same field. The same assignment alone leaves the client type unresolved in exception handlers and cleanup code. [Python try statement](https://docs.python.org/3/reference/compound_stmts.html#the-try-statement)
+
 ## Negative checks
 
 Negative rules require a positive scope anchor. A global “missing header” or
@@ -326,12 +411,81 @@ propagation models. It does not install a new model or create a flow from text.
 | `source_pattern` | Python regex search over the source variable |
 | `sink_pattern` | Python regex search over the sink function |
 | `ignore_sanitizers` | Boolean; defaults to `false`, which omits sanitized flows |
+| `disposition` | `blocking` by default. Use `advisory` to retain a reachable flow for human review |
 
 Selectors combine as filters. Type lists may contain at most 100 nonempty names
 of at most 256 characters each; patterns are limited to 4,096 characters. At least
 one nonempty selector is required. Regex matching uses Python's case-insensitive
 mode; inline flags can refine it. An empty mapping, malformed regex, non-boolean
 sanitizer option or unsupported field fails audit and rule loading.
+
+### Flask HTML response bodies
+
+`AEG-FLASK-XSS-001` traces HTTP input into the body returned by a Flask view. The evidence records the request source, the expression inserted into the body and the return statement. The finding is advisory. Check the actual route, content type and output encoding when reviewing it. Flask gives string responses an HTML content type by default and also accepts body, status and header tuples. [Flask response contract](https://flask.palletsprojects.com/en/stable/quickstart/#about-responses)
+
+The scanner recognizes Flask and Blueprint constructors, imported aliases and exported routers in the same repository. A factory with an untyped router parameter needs both a `.route()` decorator and an imported Flask request in the view. Its finding identifies registration as an assumption. Custom response classes, middleware and dynamically constructed routers require application review.
+
+The model selects interpolated fields, the slots named in literal format strings and the body argument of `Response` or `make_response`. A value used only in a header, an unused format argument, a JSON response, an attachment or an explicitly plain-text body produces no HTML response finding. A supported encoder covers ordinary HTML text. Attribute and script insertions retain their own encoding requirements. [MarkupSafe escaping](https://markupsafe.palletsprojects.com/en/stable/escaping/)
+
+Local list and tuple indexing uses the value at insertion time. For a single local list the scanner follows fixed-index writes, insertions, appends and removals. An alias, unresolved mutation, loop or dynamic index prevents an exact slot decision. Coverage of arbitrary containers, helpers and templates remains incomplete.
+
+When a view returns a previously constructed response, the warning can point to the constructor and the trace retains the return line. The scanner can skip an assignment followed immediately by a return on a separate branch. For supported `re.sub` calls it records the substitution lines. Removing every character outside a restricted text alphabet can clear a warning in ordinary HTML text. An insertion into an attribute, script or unresolved markup context still requires review. [Source and repair controls](https://github.com/Aeg1sx/Aegify/blob/main/scanner/benchmarks/zeropath-python-v1/README.md)
+
+### Python LDAP search filters
+
+`AEG-A03-001` follows external input into the filter argument of a resolved
+directory client. In `ldap3.Connection.search` this is `search_filter`.
+Python-ldap's search methods take `filterstr` after the base and scope.
+The rule records the source line, search line and actual argument position.
+A local synchronous factory can supply the connection when its returns
+resolve to the same constructor within the scanned repository.
+[ldap3 search](https://ldap3.readthedocs.io/en/latest/searches.html) · [Python-ldap search](https://www.python-ldap.org/en/latest/reference/ldap.html)
+
+For a single fixed equality assertion, the model recognizes a filter value
+encoded with the library's `escape_filter_chars` and the fixed-template use of
+`ldap.filter.filter_format`. An escaped attribute name or a different encoder
+still needs review. A search on an unresolved client stays outside this rule.
+[RFC 4515](https://www.rfc-editor.org/rfc/rfc4515) · [Python-ldap filter helpers](https://www.python-ldap.org/en/latest/reference/ldap-filter.html)
+
+### Python HTTP redirect destinations
+
+`AEG-A04-006` follows request data to the URL argument of an imported Flask, Werkzeug or Django redirect helper, Django redirect response, or Starlette or FastAPI `RedirectResponse`. It uses the resolved import and the actual argument position, including reordered keyword arguments. Cookie, query and form input can reach this rule. A status code or a custom object's similarly named method does not qualify as a destination. [Flask redirect](https://flask.palletsprojects.com/en/stable/api/#flask.redirect) · [Django redirect](https://docs.djangoproject.com/en/5.2/topics/http/shortcuts/#redirect)
+
+The model recognizes a successful Django `url_has_allowed_host_and_scheme` check with fixed allowed hosts. It also recognizes a branch that checks the parsed full authority against fixed hosts and the scheme against HTTP or HTTPS. These checks must apply to the same unchanged local string that reaches the redirect. An unresolved value type, a caller-supplied host list or an exception handler that can resume without completing validation keeps the flow visible. [Django URL validation](https://github.com/django/django/blob/stable/5.2.x/django/utils/http.py) · [Python URL parsing security](https://docs.python.org/3/library/urllib.parse.html#url-parsing-security)
+
+On the 34 public OWASP Python CWE-601 labels the updated scanner flagged all 13 positives and one of 21 negatives. The outstanding false positive used a dynamically selected object's return value. Two fresh installed processes produced identical outcomes across the whole benchmark.
+
+### Python code inputs
+
+`AEG-EXEC-001` and `AEG-A03-007` trace the first positional argument of Python's built-in `eval` and `exec`. The parser follows direct calls, imports under another name, and simple local assignments to a built-in. Request data used only as a namespace argument does not reach the code input. [Python built-in functions](https://docs.python.org/3.14/library/functions.html#eval)
+
+Inside a function, the rules recognize an unchanged local string whose first and last character are the same quote and whose entire interior excludes that quote. Every condition must hold on the path reaching the call. They also recognize the whole result of the built-in `repr` on a known text value. Reassignment, a partial delimiter check, or an object with unknown string behavior keeps the finding eligible. A visible Flask request or storage class override requires an exact runtime type check before relying on the input's string behavior. The same value passed to a filesystem call receives its usual path analysis. [Python string literals](https://docs.python.org/3.14/reference/lexical_analysis.html#string-and-bytes-literals) · [Flask request class](https://flask.palletsprojects.com/en/stable/api/#flask.Flask.request_class)
+
+The candidate found all 20 positives and flagged six of 33 negatives in the public Python CWE-94 cases. The installed scanner also matched all 13 owned file-and-line controls. [Development acceptance](/project/beta-quality-acceptance#november-development-results)
+
+### Python subprocess arguments
+
+`AEG-CMD-001` and `AEG-A03-006` trace untrusted command input to supported calls in Python's `subprocess` module. The parser follows imported aliases and simple local assignments. It binds the `args` argument by position or name. `AEG-CMD-002` records a separate advisory when the actual `shell` option resolves to true, including on a fixed command. Text inside an environment variable or an ordinary argument has no effect on that option. [Python subprocess](https://docs.python.org/3.14/library/subprocess.html#popen-constructor)
+
+For a local argument list built with `append` or literal `extend`, the parser follows supported branches and records the value when it enters the list. It models the command-text slot for supported POSIX shell invocations and the command tail for Windows `cmd`. Complex mutations, escaped lists and unresolved interpreters retain the existing whole-argument analysis. A recorded flow can include the line that supplied the command argument as well as the source and subprocess call. [Bash invocation](https://www.gnu.org/software/bash/manual/html_node/Invoking-Bash.html) · [Windows command processor](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/cmd)
+
+On the public Python CWE-78 labels, the scanner reported blocking flows on all 13 positives. The seven negatives each received a shell-option advisory. [Development acceptance](/project/beta-quality-acceptance#november-development-results)
+
+### Python filesystem paths
+
+`AEG-AC-PY-006` follows HTTP input to the path selected by a filesystem operation. It records the source, the filesystem call and the path between them. The rule produces an advisory finding so reviewers can check the allowed directory and the caller's permissions.
+
+The scanner resolves imported file functions and aliases, including `codecs.open`, `os.open` and `shutil.copy`. It selects the path argument by name or position. Copy and move operations can have two independently controlled paths. For a locally constructed `pathlib.Path`, the receiver selects the file read or written. File contents, encoding, open mode and download names have different roles. [Python filesystem paths](https://docs.python.org/3/library/pathlib.html) and [Python file operations](https://docs.python.org/3/library/shutil.html).
+
+Existence and status checks use a separate `file_metadata` sink. A request reaching `Path.exists()` warrants a review of what the response reveals. A content-access finding requires an operation such as `read_text()`. Path construction alone produces no finding from this rule. Dynamic argument unpacking, ambiguous receiver types and application-specific storage wrappers have incomplete coverage.
+
+The default Python model scopes HTML and shell encoding to their respective sinks. The encoder must resolve to a supported import and produce the entire assigned value. The historical `validate_path` and `validate_command` hooks apply to their named categories when the call has no local binding. These hooks are conventions in the scanner model. Confirm how the application implements and enforces a guard before closing a finding.
+
+### Directory containment checks
+
+`AEG-PATH-003` reports an advisory when a Python branch or returned predicate compares the result of `os.path.commonprefix` with one of two path operands. The scanner resolves supported standard-library imports, a local result or tuple, and explicit path construction. Text completion, ambiguous aliases and calls with unknown path semantics fall outside this rule. It records the prefix call and identifies the comparison line in the message.
+
+Review where the candidate comes from and how the application handles symlinks. For containment, compare path components after resolving paths according to that policy. The installed wheel distinguished the corrected and preceding versions of the selected functions in Starlette, pip and dbt-common. [Python path documentation](https://docs.python.org/3/library/os.path.html#os.path.commonprefix)
 
 **Migration:** `sources`, `sinks` and `propagation` are not executable fields in
 this mapping. Previously they could be silently ignored. Use `source_types` /
@@ -523,6 +677,8 @@ The audit rejects:
 
 The release baseline is 311 definitions, 303 enabled/executable rules, 8
 explicitly disabled reference rules, and 986/986 enabled patterns executable.
+The November 22 development audit counted 302 executable rules, nine disabled
+references and 963 executable patterns across the same 311 definitions.
 
 ## Test requirements
 
@@ -534,9 +690,8 @@ Every new or materially changed rule should include:
 4. stable rule ID, severity, location, and evidence assertions;
 5. a test proving a nearby decoy is not selected.
 
-Rules with a fallback and a semantic detector also require assertions that the
-fallback is retained as advisory, the semantic path is blocking, and a defended
-or unrelated path is not blocking.
+Rules with multiple detectors need assertions for each detector's declared
+disposition and for a defended or unrelated input.
 
 Rules affecting reachability should test repository/module identity and ambiguous
 targets. Rules affecting secrets or logs must use synthetic placeholders.

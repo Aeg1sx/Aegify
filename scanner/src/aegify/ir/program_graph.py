@@ -12,8 +12,10 @@ import networkx as nx
 from tree_sitter import Node
 
 from aegify.graph_types import ProgramGraph
-from aegify.models import FileAST, FunctionDef, ProgramGraphSummary
+from aegify.models import FileAST, FunctionDef, Language, ProgramGraphSummary
 from aegify.scanner.ast_parser import _get_parser
+from aegify.scanner.python_text import iteration_bindings
+from aegify.scanner.python_values import constant_branch, constant_condition, constant_match
 from aegify.text import scrub_quoted_strings
 
 
@@ -124,6 +126,8 @@ class ProgramGraphBuilder:
         graph: ProgramGraph = nx.MultiDiGraph()
         summary = ProgramGraphSummary(enabled=True)
         for ast in file_asts:
+            if ast.language == Language.WRANGLER:
+                continue
             try:
                 source = Path(ast.file_path).read_bytes()
             except OSError as error:
@@ -137,6 +141,15 @@ class ProgramGraphBuilder:
                     continue
                 self._build_function(graph, ast, function, function_node, source)
                 summary.functions += 1
+            if ast.language == Language.PYTHON:
+                function_ids = {
+                    (f.line_start, f.name): f.symbol_id or f.qualified_name for f in definitions
+                }
+                for function_key, offset, kind, targets, operand in iteration_bindings(source):
+                    function_id = function_ids.get(function_key)
+                    loop_id = f"{function_id}::cfg:{offset}:for_statement"
+                    if loop_id in graph:
+                        graph.nodes[loop_id][kind] = (targets, operand)
 
         self._build_data_overlays(graph, summary)
         summary.cfg_nodes = sum(
@@ -334,6 +347,49 @@ class ProgramGraphBuilder:
                 if condition is not None:
                     fact_text = self._text(condition, source)
             facts = self._data_facts(fact_text)
+            if ast.language == Language.PYTHON and statement.type in {
+                "if_statement",
+                "while_statement",
+            }:
+                predicate = statement.child_by_field_name("condition")
+                if predicate is not None and self._eager_python_call(predicate):
+                    facts["python_predicate"] = (
+                        predicate.start_point[0] + 1,
+                        predicate.start_point[1],
+                        predicate.end_point[0] + 1,
+                        predicate.end_point[1],
+                        fact_text,
+                    )
+            if (
+                ast.language == Language.PYTHON
+                and statement.type == "expression_statement"
+                and " if " in text
+            ):
+                previous = statement.prev_named_sibling
+                selected = constant_branch(
+                    text, self._text(previous, source) if previous is not None else ""
+                )
+                if selected is not None:
+                    facts["selected_value"] = selected
+            # The other edge bypasses a Python default assignment. Preserve its
+            # input at the join instead of treating the default as unconditional.
+            block = statement.parent
+            guard = block.parent if block is not None else None
+            if (
+                ast.language == Language.PYTHON
+                and statement.type == "expression_statement"
+                and block is not None
+                and block.type == "block"
+                and block.named_child_count == 1
+                and guard is not None
+                and guard.type == "if_statement"
+                and guard.child_by_field_name("alternative") is None
+                and (condition := guard.child_by_field_name("condition")) is not None
+            ):
+                test = self._text(condition, source).strip()
+                match = re.fullmatch(r"not\s+([A-Za-z_]\w*)|([A-Za-z_]\w*)\s+is\s+None", test)
+                if match:
+                    facts["defaulted_name"] = match.group(1) or match.group(2)
             graph.add_node(
                 statement_id,
                 kind="statement",
@@ -355,7 +411,28 @@ class ProgramGraphBuilder:
                     overlay="cfg",
                 )
 
-            if statement.type in self._TRY_TYPES:
+            selected_arm = (
+                self._selected_python_arm(statement, text, source)
+                if ast.language == Language.PYTHON
+                and statement.type in {"if_statement", "match_statement"}
+                else None
+            )
+            if selected_arm is not None:
+                edge, selected_body = selected_arm
+                graph.nodes[statement_id]["selected_arm"] = edge
+                tails = self._emit_sequence(
+                    graph,
+                    ast,
+                    function_id,
+                    self._statements(selected_body),
+                    [(statement_id, edge)],
+                    exit_node,
+                    source,
+                    break_target,
+                    continue_target,
+                    terminal_target,
+                )
+            elif statement.type in self._TRY_TYPES:
                 tails = self._emit_try(
                     graph,
                     ast,
@@ -811,6 +888,16 @@ class ProgramGraphBuilder:
         functions = [
             node for node, data in graph.nodes(data=True) if data.get("kind") == "function"
         ]
+        cfg_nodes: dict[str, set[str]] = defaultdict(set)
+        for node, data in graph.nodes(data=True):
+            owner = data.get("function")
+            if isinstance(owner, str) and data.get("kind") in {
+                "control-join",
+                "entry",
+                "statement",
+                "exit",
+            }:
+                cfg_nodes[owner].add(node)
         for function in functions:
             members = {
                 target
@@ -820,22 +907,18 @@ class ProgramGraphBuilder:
             entries = [node for node in members if graph.nodes[node].get("kind") == "entry"]
             if not entries:
                 continue
-            nodes = {
-                node
-                for node, data in graph.nodes(data=True)
-                if data.get("function") == function
-                and data.get("kind") in {"control-join", "entry", "statement", "exit"}
-            }
+            nodes = cfg_nodes[function]
             predecessors: dict[str, set[str]] = defaultdict(set)
-            for source, target, data in graph.edges(data=True):
-                if source in nodes and target in nodes and data.get("overlay") == "cfg":
+            for source, target, data in graph.out_edges(nodes, data=True):
+                if target in nodes and data.get("overlay") == "cfg":
                     predecessors[target].add(source)
 
             in_defs: dict[str, dict[str, set[str]]] = {node: {} for node in nodes}
             out_defs: dict[str, dict[str, set[str]]] = {node: {} for node in nodes}
+            ordered_nodes = sorted(nodes)
             for _ in range(max(len(nodes) * 2, 1)):
                 changed = False
-                for node in sorted(nodes):
+                for node in ordered_nodes:
                     merged: dict[str, set[str]] = defaultdict(set)
                     for predecessor in predecessors.get(node, set()):
                         for variable, definitions in out_defs[predecessor].items():
@@ -966,6 +1049,37 @@ class ProgramGraphBuilder:
                             target_variable=target_variable,
                         )
 
+    @staticmethod
+    def _eager_python_call(expression: Node) -> bool:
+        """Select a call evaluated on entry to the guard, excluding lazy subexpressions."""
+        if expression.end_byte - expression.start_byte > 1000:
+            return False
+        root = expression
+        while (
+            root.type in {"parenthesized_expression", "not_operator"}
+            and root.named_child_count == 1
+        ):
+            root = root.named_children[0]
+        if root.type != "call":
+            return False
+        pending = [root]
+        while pending:
+            node = pending.pop()
+            if node.type in {
+                "boolean_operator",
+                "conditional_expression",
+                "comparison_operator",
+                "lambda",
+                "list_comprehension",
+                "set_comprehension",
+                "dictionary_comprehension",
+                "generator_expression",
+                "named_expression",
+            }:
+                return False
+            pending.extend(node.named_children)
+        return True
+
     def _data_facts(self, text: str) -> dict[str, Any]:
         scrubbed = scrub_quoted_strings(text)
         definitions: set[str] = set()
@@ -998,6 +1112,35 @@ class ProgramGraphBuilder:
             "allocations": allocations,
             "aliases": aliases,
         }
+
+    def _selected_python_arm(
+        self, statement: Node, text: str, source: bytes
+    ) -> tuple[str, Node | None] | None:
+        previous = statement.prev_named_sibling
+        if statement.type == "if_statement":
+            alternatives = statement.children_by_field_name("alternative")
+            if any(arm.type != "else_clause" for arm in alternatives):
+                return None
+            test = self._text(statement.child_by_field_name("condition"), source)
+            chosen = constant_condition(test, self._text(previous, source))
+            if chosen is None:
+                return None
+            if chosen:
+                return "true", statement.child_by_field_name("consequence")
+            return "false", alternatives[0].child_by_field_name("body") if alternatives else None
+
+        preceding: list[str] = []
+        while (
+            previous is not None and previous.type == "expression_statement" and len(preceding) < 3
+        ):
+            preceding.append(self._text(previous, source))
+            previous = previous.prev_named_sibling
+        selected = constant_match(text, tuple(reversed(preceding)))
+        body = statement.child_by_field_name("body")
+        cases = body.children_by_field_name("alternative") if body is not None else []
+        if selected is None or selected >= len(cases):
+            return None
+        return f"case-{selected}", cases[selected].child_by_field_name("consequence")
 
     def _statements(self, node: Node | None) -> list[Node]:
         if node is None:

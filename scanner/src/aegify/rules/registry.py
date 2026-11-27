@@ -17,9 +17,13 @@ def load_builtin_rules() -> RuleRegistry:
     Also auto-loads YAML rules from the bundled rules/ directory.
     """
     import aegify.rules.command_injection  # noqa: F401
+    import aegify.rules.flask_session  # noqa: F401
+    import aegify.rules.host_check  # noqa: F401
     import aegify.rules.idor  # noqa: F401
     import aegify.rules.path_traversal  # noqa: F401
+    import aegify.rules.read_limit  # noqa: F401
     import aegify.rules.sql_injection  # noqa: F401
+    import aegify.rules.wrangler  # noqa: F401
     import aegify.rules.xss  # noqa: F401
 
     # Auto-load bundled YAML rules from scanner/rules/ directory

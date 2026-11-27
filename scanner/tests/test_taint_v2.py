@@ -42,6 +42,37 @@ def test_sink_matching_uses_call_boundaries_not_exec_substrings(tmp_path: Path):
     assert StructuredTaintAnalyzer._call_matches_pattern("exec", calls["exec"]) is True
 
 
+@pytest.mark.parametrize("suffix", [".js", ".ts"])
+@pytest.mark.parametrize(
+    ("expression", "is_sink"),
+    [
+        ("/sample/i.exec(value)", False),
+        ("(/sample/).exec(value)", False),
+        ("child.exec(value)", True),
+        ("exec(value)", True),
+        ("other.exec(value)", True),
+    ],
+)
+def test_command_model_distinguishes_regex_literals_from_process_calls(
+    tmp_path, suffix, expression, is_sink
+):
+    path = tmp_path / ("sample" + suffix)
+    path.write_text(
+        "import * as child from 'node:child_process';\n"
+        "import {exec} from 'node:child_process';\n"
+        "export function review(req, other) {\n  const value = req.query.label;\n  return "
+        + expression
+        + ";\n}\n"
+    )
+    ast = ASTParser().parse_file(path)
+    assert ast is not None
+    sinks = [s for s in DataflowAnalyzer()._find_sinks(ast) if s.sink_type == "os_command"]
+    assert bool(sinks) is is_sink
+    flows, summary = _analyze(tmp_path)
+    assert not summary.truncated
+    assert bool([f for f in flows if f.sink.sink_type == "os_command"]) is is_sink
+
+
 @pytest.mark.parametrize("callee", ["open", "builtins.open", "io.open"])
 def test_python_file_open_models_preserve_input_to_path_flows(tmp_path: Path, callee: str):
     (tmp_path / "file_reader.py").write_text(
@@ -563,6 +594,15 @@ def test_workspace_taint_crosses_repository_boundary(tmp_path: Path):
     assert result.taint_analysis.context_depth == 2
     assert result.taint_analysis.contexts_analyzed >= 2
     assert cross_repo
+
+    manifest.write_text(manifest.read_text().replace("    depends_on: [provider]\n", ""))
+    isolated = ScanEngine(config=config).scan_workspace(manifest)
+    assert not any(
+        finding.taint_flow
+        and "/consumer/" in finding.taint_flow.source.file_path
+        and "/provider/" in finding.taint_flow.sink.file_path
+        for finding in isolated.findings
+    )
 
 
 def test_scip_occurrence_disambiguates_cross_repo_taint_target(tmp_path: Path):

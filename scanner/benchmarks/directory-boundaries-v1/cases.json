@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "rule_id": "AEG-PATH-003",
+  "projects": [
+    {
+      "project": "starlette",
+      "repository": "Kludex/starlette",
+      "path": "starlette/staticfiles.py",
+      "reference": "GHSA-v5gw-mw7f-84px",
+      "license_spdx": "BSD-3-Clause",
+      "before": {
+        "commit": "24c1fac62a80bb153c6548145334fc643991e35a",
+        "sha256": "8c59da75accc2f80f437847dec9aab5a3adf40d0221322a9a69d9a4aa37377ff"
+      },
+      "after": {
+        "commit": "1797de464124b090f10cf570441e8292936d63e3",
+        "sha256": "388a4936861b10fb97ac3fd50ead04616fd0beb2ad3df1694b9f0be52e76fe9f"
+      },
+      "checks": [
+        {
+          "symbol": "StaticFiles.lookup_path",
+          "before_lines": [
+            172
+          ]
+        }
+      ]
+    },
+    {
+      "project": "pip",
+      "repository": "pypa/pip",
+      "path": "src/pip/_internal/utils/unpacking.py",
+      "reference": "https://github.com/pypa/pip/pull/13777",
+      "license_spdx": "MIT",
+      "before": {
+        "commit": "f5315ad96808c106a5c73936cebd335082be406e",
+        "sha256": "69bd4a727896411f8af18cb208bd1bfc988f51587bbce3e62d02b961318d68ba"
+      },
+      "after": {
+        "commit": "8e227a9be4faa9594e05d02ca05a413a2a4e7735",
+        "sha256": "e21360e9da873a7fcacc60b3482efa9c2846f7b77f523b45f409cb4a87faef6a"
+      },
+      "checks": [
+        {
+          "symbol": "is_within_directory",
+          "before_lines": [
+            86
+          ]
+        }
+      ]
+    },
+    {
+      "project": "dbt-common",
+      "repository": "dbt-labs/dbt-common",
+      "path": "dbt_common/clients/system.py",
+      "reference": "GHSA-w75w-9qv4-j5xj",
+      "license_spdx": "Apache-2.0",
+      "before": {
+        "commit": "e10b8aca2164c632cf0ab5fdbb16db0ec9176189",
+        "sha256": "5ce0393eb93d3fd352bd79c002a697484cb356b93b88b69d83520d01323a5ef7"
+      },
+      "after": {
+        "commit": "e547954a48bac9394ef6eb98432e429dce9a7709",
+        "sha256": "9e3f9b913e0931fd7a87cd278e1368fce57bd3cc5bb31a11e49c825731960485"
+      },
+      "checks": [
+        {
+          "symbol": "safe_extract._is_within_directory",
+          "before_lines": [
+            629
+          ]
+        }
+      ]
+    }
+  ]
+}

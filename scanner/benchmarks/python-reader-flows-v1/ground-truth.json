@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "corpus_id": "python-reader-flows",
+  "corpus_version": "1.0.0",
+  "rule_scope": ["AEG-SESS-501", "AEG-A05-004", "AEG-XEE-002", "AEG-DESER-001", "AEG-A08-005", "AEG-RCE-PY-006"],
+  "expected": [
+    {"rule_id": "AEG-SESS-501", "file_path": "accounts.py", "line_start": 9},
+    {"rule_id": "AEG-SESS-501", "file_path": "accounts.py", "line_start": 20},
+    {"rule_id": "AEG-A05-004", "file_path": "readers.py", "line_start": 23},
+    {"rule_id": "AEG-XEE-002", "file_path": "readers.py", "line_start": 23},
+    {"rule_id": "AEG-A05-004", "file_path": "readers.py", "line_start": 29},
+    {"rule_id": "AEG-DESER-001", "file_path": "readers.py", "line_start": 38},
+    {"rule_id": "AEG-A08-005", "file_path": "readers.py", "line_start": 38},
+    {"rule_id": "AEG-RCE-PY-006", "file_path": "readers.py", "line_start": 38}
+  ]
+}

@@ -9,7 +9,7 @@ import { buildProviderRequest } from "./provider-client.ts";
 import { sha256, type ProviderReceipt } from "./provider-receipt.ts";
 import { contractReviewInput, findingContractContext } from "./openapi-context.ts";
 import { sanitizeLLMText } from "./llm-safety.ts";
-import { batchPrompt, findingEvidenceDigest, freezeFinding, packSnapshot, promptDigest, REVIEW_LIMITS, REVIEW_VERSION, SOURCE_REVIEW_VERSION, ReviewContractError, reviewFindingSelect, reviewSystem, scanEvidenceDigest, type ReviewMode, type ReviewResult, type ReviewSnapshot } from "./ai-review-contract.ts";
+import { batchPrompt, findingEvidenceDigest, freezeFinding, isConfigFinding, packSnapshot, promptDigest, redactManifestFinding, REVIEW_LIMITS, REVIEW_VERSION, SOURCE_REVIEW_VERSION, ReviewContractError, reviewFindingSelect, reviewSystem, scanEvidenceDigest, type ReviewMode, type ReviewResult, type ReviewSnapshot } from "./ai-review-contract.ts";
 import { llmJobTerminalStatus } from "./llm-job-state.ts";
 import { prepareReviewHistory, REVIEW_HISTORY_VERSION, type SavedReview } from "./ai-review-history.ts";
 import { captureReviewSources, SOURCE_TOOL_LIMITS, type SourceToolRequest } from "./ai-source-tools.ts";
@@ -109,7 +109,7 @@ export async function enqueueLlmJob(db: PrismaClient, access: AccessPrincipal, s
         if (result.sourceDigest !== sourceJob.sourceDigest || result.commit !== sourceJob.commitSha) throw new Error();
         const raw = JSON.parse(decrypt(sourceJob.sourceCiphertext));
         if (raw.provider !== sourceJob.provider) throw new Error();
-        sources = captureReviewSources(raw, { repository: scan.repository, commit: scan.commitSha, sourceDigest: sourceJob.sourceDigest }, findings.map((finding) => finding.filePath));
+        sources = captureReviewSources(raw, { repository: scan.repository, commit: scan.commitSha, sourceDigest: sourceJob.sourceDigest }, findings.map((finding) => finding.filePath), result.signingKeyReviewV1);
         // A dashboard repository scan has one namespace. Never guess across repositories or normalize arbitrary paths.
         if (findings.some((finding) => finding.repositoryId && finding.repositoryId !== sources!.repository)) throw new Error();
       } catch { throw new AccessDenied(409, "Retained source identity could not be verified for this scan. Run a new repository scan."); }
@@ -152,10 +152,16 @@ async function terminate(tx: Prisma.TransactionClient, job: LlmJob, code: string
   await tx.auditEvent.create({ data: { projectId: job.projectId, actorId: job.workerId || job.requestedBy || "worker", action: "ai.review." + status, targetId: job.id, details: JSON.stringify({ code }) } });
 }
 
-export async function claimLlmJob(db: PrismaClient, workerId: string, env: AuthEnvironment, now = new Date()): Promise<LlmJob | null> {
+function readyForReview(now: Date): Prisma.LlmJobWhereInput {
+  return { OR: [{ status: "pending" }, { status: "running", leaseExpiresAt: { lte: now } }, { status: "running", leaseExpiresAt: null }] };
+}
+
+export async function claimLlmJob(db: PrismaClient, workerId: string, env: AuthEnvironment, clock?: Date): Promise<LlmJob | null> {
+  if (!await db.llmJob.findFirst({ where: readyForReview(clock ?? new Date()), select: { id: true } })) return null;
   return writeTransaction(db, async (tx) => {
+    const now = clock ?? new Date();
     for (let skipped = 0; skipped < 50; skipped++) {
-      const job = await tx.llmJob.findFirst({ where: { OR: [{ status: "pending" }, { status: "running", leaseExpiresAt: { lte: now } }, { status: "running", leaseExpiresAt: null }] }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+      const job = await tx.llmJob.findFirst({ where: readyForReview(now), orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       if (!job) return null;
       let code = "";
       if (await tx.llmCall.count({ where: { jobId: job.id, status: { in: ["dispatched", "unknown"] } } })) code = "provider_outcome_unknown";
@@ -260,15 +266,17 @@ export async function publishLlmBatch(db: PrismaClient, job: LlmJob, snapshot: R
     let suggestedFalsePositives = 0;
     const history: SavedReview[] = [];
     const expected = snapshot.batches[batchIndex];
+    const graphWithheld = Boolean(snapshot.graphContext) && snapshot.findings.some((item) => expected.includes(item.id) && isConfigFinding(item.data));
     if (new Set(results.map((result) => result.findingId)).size !== results.length) throw new AiJobError("invalid_review");
     for (const id of expected) {
       const finding = await tx.finding.findUnique({ where: { id }, select: reviewFindingSelect });
       if (!finding || findingEvidenceDigest(finding) !== snapshot.findings.find((item) => item.id === id)?.evidenceDigest) throw new AiJobError("source_changed");
     }
     for (const result of results) {
-      const frozen = snapshot.findings.find((finding) => finding.id === result.findingId);
+      const original = snapshot.findings.find((finding) => finding.id === result.findingId);
       const finding = await tx.finding.findUnique({ where: { id: result.findingId }, select: { ...reviewFindingSelect, aiReviewStatus: true } });
-      if (!snapshot.batches[batchIndex].includes(result.findingId) || !frozen || !finding || findingEvidenceDigest(finding) !== frozen.evidenceDigest) throw new AiJobError("source_changed");
+      if (!expected.includes(result.findingId) || !original || !finding || findingEvidenceDigest(finding) !== original.evidenceDigest) throw new AiJobError("source_changed");
+      const frozen = redactManifestFinding(original);
       const preserved = ["accepted", "rejected"].includes(finding.aiReviewStatus);
       const historyId = randomUUID();
       const sourceEvidence = sourceSession ? saveSourceEvidence(snapshot, sourceSession, citationIds![result.findingId], job.model, call.promptDigest, currentPromptBytes) : undefined;
@@ -286,6 +294,7 @@ export async function publishLlmBatch(db: PrismaClient, job: LlmJob, snapshot: R
           provider: job.provider, model: job.model, inputDigest: job.inputDigest, evidenceDigest: frozen.evidenceDigest,
           promptDigest: call.promptDigest, responseDigest: receipt.responseDigest, reviewedAt: now.toISOString(),
           apiContractContextRequested: snapshot.includeApiContracts, apiContractContext: frozen.apiContractContext, omittedFields: frozen.omittedFields, graphRecordsOmitted: snapshot.graphContext?.omitted || 0,
+          ...(graphWithheld ? { graphContextWithheld: "Configuration review uses parsed settings." } : {}),
           ...(sourceEvidence ? { sourceReview: { manifestDigest: sourceEvidence.catalog.manifestDigest, toolCalls: sourceEvidence.tools_used.length, citations: sourceEvidence.citations.length } } : {}) }),
       } });
     }

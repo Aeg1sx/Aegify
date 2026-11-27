@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "corpus_id": "python-process-arguments",
+  "corpus_version": "1.0.0",
+  "rule_scope": [
+    "AEG-A03-006",
+    "AEG-CMD-001",
+    "AEG-CMD-002"
+  ],
+  "expected": [
+    {
+      "rule_id": "AEG-A03-006",
+      "file_path": "commands.py",
+      "line_start": 17
+    },
+    {
+      "rule_id": "AEG-CMD-001",
+      "file_path": "commands.py",
+      "line_start": 17
+    },
+    {
+      "rule_id": "AEG-A03-006",
+      "file_path": "commands.py",
+      "line_start": 25
+    },
+    {
+      "rule_id": "AEG-CMD-001",
+      "file_path": "commands.py",
+      "line_start": 25
+    },
+    {
+      "rule_id": "AEG-A03-006",
+      "file_path": "commands.py",
+      "line_start": 48
+    },
+    {
+      "rule_id": "AEG-CMD-001",
+      "file_path": "commands.py",
+      "line_start": 48
+    },
+    {
+      "rule_id": "AEG-A03-006",
+      "file_path": "options.py",
+      "line_start": 11
+    },
+    {
+      "rule_id": "AEG-CMD-001",
+      "file_path": "options.py",
+      "line_start": 11
+    },
+    {
+      "rule_id": "AEG-CMD-002",
+      "file_path": "options.py",
+      "line_start": 11
+    },
+    {
+      "rule_id": "AEG-A03-006",
+      "file_path": "options.py",
+      "line_start": 17
+    },
+    {
+      "rule_id": "AEG-CMD-001",
+      "file_path": "options.py",
+      "line_start": 17
+    },
+    {
+      "rule_id": "AEG-CMD-002",
+      "file_path": "options.py",
+      "line_start": 17
+    },
+    {
+      "rule_id": "AEG-CMD-002",
+      "file_path": "options.py",
+      "line_start": 21
+    }
+  ]
+}
