@@ -18,6 +18,7 @@ export interface RepositoryChoice {
 interface Directory {
   repos: RepositoryChoice[];
   providers: { github: boolean; gitlab: boolean };
+  next?: Partial<Record<"github" | "gitlab", number>>;
   warnings?: string[];
   retryable?: boolean;
 }
@@ -41,13 +42,15 @@ export function RepoConnector({
   const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const [pages, setPages] = useState(["/api/repos"]);
+  const currentPage = pages[pages.length - 1];
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       setLoadError("");
       setDirectory(null);
       try {
-        const response = await fetch("/api/repos", { cache: "no-store", signal: controller.signal });
+        const response = await fetch(currentPage, { cache: "no-store", signal: controller.signal });
         const data = await response.json();
         if (!response.ok || !Array.isArray(data.repos) || !data.providers) throw new Error();
         if (!controller.signal.aborted) setDirectory(data);
@@ -57,7 +60,7 @@ export function RepoConnector({
     }
     void load();
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, currentPage]);
 
   const repos =
     directory?.repos.filter((item) => item.fullName.toLowerCase().includes(search.trim().toLowerCase())) ??
@@ -112,7 +115,7 @@ export function RepoConnector({
           (hasProvider ? (
             <>
               <label className="grid gap-1.5 text-sm font-medium">
-                Search repositories
+                Search repositories on this page
                 <Input
                   type="search"
                   className="h-11"
@@ -148,8 +151,8 @@ export function RepoConnector({
                 !directory.retryable && (
                   <p className="py-3 text-sm text-muted-foreground">
                     {search.trim()
-                      ? "No repositories match your search."
-                      : "No repositories are available from your connected accounts."}
+                      ? "No repositories on this page match your search."
+                      : pages.length > 1 ? "No repositories on this page." : "No repositories are available from your connected accounts."}
                   </p>
                 )
               )}
@@ -159,6 +162,20 @@ export function RepoConnector({
               Sign in with GitHub or GitLab to choose a repository.
             </p>
           ))}
+        {(pages.length > 1 || directory?.next?.github || directory?.next?.gitlab) && (
+          <nav aria-label="Repository pages" className="flex flex-wrap gap-2">
+            {pages.length > 1 && <Button type="button" variant="outline" className="min-h-11"
+              disabled={busy} onClick={() => setPages((history) => history.slice(0, -1))}>Previous repositories</Button>}
+            {(["github", "gitlab"] as const).map((provider) => {
+              const next = directory?.next?.[provider];
+              if (!next) return null;
+              return <Button key={provider} type="button" variant="outline" className="min-h-11" disabled={busy || !!onReload}
+                onClick={() => setPages((history) => [...history, "/api/repos?provider=" + provider + "&start=" + next])}>
+                Next {provider === "github" ? "GitHub" : "GitLab"} repositories
+              </Button>;
+            })}
+          </nav>
+        )}
         {busy && (
           <p role="status" className="text-sm">
             Connecting repository…

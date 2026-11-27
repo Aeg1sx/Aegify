@@ -1,3 +1,4 @@
+import { repositoryWindow } from "@/lib/repository-pages";
 import { requireAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { getGitHubToken, listGitHubRepos } from "@/lib/github";
@@ -9,13 +10,15 @@ export async function GET(request: Request) {
   if (!access.userId)
     return NextResponse.json({ error: "Sign in to list your repositories." }, { status: 401 });
 
+  const window = repositoryWindow(new URL(request.url).searchParams);
+  if (!window) return NextResponse.json({ error: "Invalid repository listing page." }, { status: 400 });
   const [ghToken, glToken] = await Promise.all([
     getGitHubToken(access.userId),
     getGitLabToken(access.userId),
   ]);
   const [github, gitlab] = await Promise.all([
-    ghToken ? listGitHubRepos(ghToken, request.signal) : undefined,
-    glToken ? listGitLabProjects(glToken, request.signal) : undefined,
+    ghToken && window.provider !== "gitlab" ? listGitHubRepos(ghToken, request.signal, window.start) : undefined,
+    glToken && window.provider !== "github" ? listGitLabProjects(glToken, request.signal, window.start) : undefined,
   ]);
   const warnings: string[] = [];
   for (const [provider, state] of [
@@ -24,7 +27,6 @@ export async function GET(request: Request) {
   ]) {
     if (state === "interrupted")
       warnings.push(provider + " could not finish loading repositories. Try again.");
-    if (state === "limited") warnings.push("Showing the first 500 repositories from " + provider + ".");
   }
 
   const repos = [
@@ -57,6 +59,7 @@ export async function GET(request: Request) {
     {
       repos,
       providers: { github: !!ghToken, gitlab: !!glToken },
+      next: { github: github?.next, gitlab: gitlab?.next },
       warnings,
       retryable: [github?.state, gitlab?.state].includes("interrupted"),
     },

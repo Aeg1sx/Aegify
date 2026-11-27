@@ -19,8 +19,8 @@ export async function getGitLabToken(userId: string): Promise<string | null> {
   return account?.access_token || null;
 }
 
-export function listGitLabProjects(accessToken: string, signal: AbortSignal) {
-  return repositoryPages<GitLabProject>((page) => `https://gitlab.com/api/v4/projects?membership=true&per_page=100&page=${page}&order_by=last_activity_at`, { Authorization: `Bearer ${accessToken}` }, signal);
+export function listGitLabProjects(accessToken: string, signal: AbortSignal, start = 1) {
+  return repositoryPages<GitLabProject>((page) => `https://gitlab.com/api/v4/projects?membership=true&per_page=100&page=${page}&order_by=last_activity_at`, { Authorization: `Bearer ${accessToken}` }, signal, start);
 }
 
 export async function getGitLabFileContent(

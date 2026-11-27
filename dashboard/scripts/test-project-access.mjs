@@ -198,6 +198,11 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     await call("/api/llm-jobs?limit=NaN", { status: 400 });
     await db.setting.deleteMany({ where: { key: { startsWith: "llm." } } });
     assert.equal((await call("/api/repos")).repos.length, 0, "Repository discovery uses only the caller's OAuth account");
+    await call("/api/repos?provider=gitlab&start=2", { status: 400 });
+    await call("/api/repos?provider=github&start=6", { user: null, status: 401 });
+    const nextDirectory = await call("/api/repos?provider=github&start=6");
+    assert.deepEqual(nextDirectory.repos, []);
+    assert.deepEqual(nextDirectory.next, {});
     for (const path of [`/api/findings?projectId=${b.id}&language=Python&search=BRAVO`, `/api/scans?projectId=${b.id}`, `/api/endpoints?projectId=${b.id}`]) assert.equal((await call(path)).total, 0);
     for (const path of [`/api/projects/${b.id}`, `/api/scans/${sb.id}`, `/api/scans/${sb.id}/progress`, `/api/findings/${fb.id}`, `/api/findings/${fb.id}/graph`, `/api/findings/${fb.id}/report`, `/api/graph/${sb.id}`, `/api/endpoints/${eb.id}`, `/api/endpoints/import-openapi?scanId=${sb.id}`, `/api/agent-runs/${rb.id}`, `/api/llm-jobs/${jb.id}`, `/api/llm-jobs/${jb.id}/reviews`, `/api/llm-jobs/${jb.id}/reviews/${savedHistory.reviews[0].id}`, `/api/llm-scan/${sb.id}`, `/api/projects/${b.id}/members`, `/api/projects/${b.id}/tokens`, `/api/projects/${b.id}/audit`]) await call(path, { status: 404 });
     const viewerFinding = await call(`/api/findings/${fa.id}`, { user: "bob" });
