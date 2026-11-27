@@ -572,3 +572,81 @@ def test_reset_credential_assignment_and_constant_vocabulary(tmp_path):
     for i, expr in enumerate(("time.time()", "str(user.email)")):
         body = f'def issue(session, user):\n    session["reset_token"] = {expr}\n'
         assert "AEG-PASS-005" in _scan_rule(tmp_path, pack, body, f"reset{i}.py")
+
+
+def test_upload_rule_distinguishes_request_files_from_browser_file_selection(tmp_path: Path):
+    findings = _scan_findings(
+        tmp_path,
+        RULES_DIR / "a01-broken-access-control" / "access_control.yml",
+        "async function selectFile(page, path) {\n"
+        "  const ready = waitForUpload();\n"
+        "  await page.uploadFile(path);\n"
+        "  await ready;\n"
+        "}\n"
+        "function storeRequest(req) {\n"
+        "  return storage.uploadFile(req.file);\n"
+        "}\n"
+        "function configure() { return multer({}); }\n",
+        "upload.js",
+    )
+    assert {finding.line_start for finding in findings if finding.rule_id == "AEG-A01-007"} == {
+        7,
+        9,
+    }
+
+
+@pytest.mark.parametrize("owner", ["stored", "allocation"])
+def test_timing_rule_distinguishes_navigation_hash_from_credential_comparisons(
+    tmp_path: Path, owner: str
+):
+    findings = _scan_findings(
+        tmp_path,
+        RULES_DIR / "a02-cryptographic-failures" / "javascript_crypto.yml",
+        "function navigate() { return window.location.hash === '#reports'; }\n"
+        "function link() { return globalThis.location?.hash !== '#details'; }\n"
+        f"function verify({owner}, candidate) {{ return {owner}.hash === candidate; }}\n"
+        "function authorize(value, token) { return value !== token; }\n",
+        "compare.js",
+    )
+    assert {
+        finding.line_start for finding in findings if finding.rule_id == "AEG-CRYPTO-JS-005"
+    } == {3, 4}
+
+
+@pytest.mark.parametrize(
+    ("name", "source", "expected"),
+    [
+        (
+            "page.tsx",
+            'const hasRouteCounts = receipt.status === "completed";\n'
+            'setResult({ state: "saved", count: hasRouteCounts });\n',
+            False,
+        ),
+        (
+            "ui.js",
+            "router.get('/status', showCompleted);\nconst text = '/checkout/confirm';\n",
+            False,
+        ),
+        (
+            "workflow.py",
+            "@checkout.post('/orders/confirm')\ndef submit(): return publish()\n",
+            True,
+        ),
+        (
+            "Order.java",
+            'class Order {\n@PostMapping(path = "/checkout/stage-10")\n'
+            "public void submit() {}\n}\n",
+            True,
+        ),
+        (
+            "router.go",
+            'package shop\nfunc routes(){ http.HandleFunc("/order/complete", finish) }\n',
+            True,
+        ),
+    ],
+)
+def test_workflow_rule_matches_the_registered_route_path(tmp_path: Path, name, source, expected):
+    found = _scan_rule(
+        tmp_path, RULES_DIR / "a04-insecure-design" / "business_logic.yml", source, name
+    )
+    assert ("AEG-LOGIC-003" in found) is expected
