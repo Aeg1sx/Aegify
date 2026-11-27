@@ -740,6 +740,11 @@ class YAMLRule(SecurityRule):
                 if not matcher(callee_full) and not matcher(f"{callee_full}("):
                     continue
 
+            if pattern.fetch_query_keys is not None and pattern.fetch_query_keys.isdisjoint(
+                call.fetch_query_keys or ()
+            ):
+                continue
+
             args_text = " ".join(call.arguments)
             option_state = "unmodeled"
             if pattern.boolean_option is not None:
@@ -931,6 +936,7 @@ class PatternSpec:
                 for field in (
                     "args_match",
                     "args_exclude",
+                    "fetch_query_keys",
                     "missing_args",
                     "boolean_option",
                     *self._CALL_CONTEXT_REQUIRED_FIELDS,
@@ -971,6 +977,19 @@ class PatternSpec:
         self.entropy_threshold = float(data.get("entropy_threshold") or 0.0)
         self.callee: str | None = data.get("callee") or data.get("callee_match")
         self.receiver: str | None = data.get("receiver")
+        keys = data.get("fetch_query_keys")
+        self.fetch_query_keys: frozenset[str] | None = None
+        if "fetch_query_keys" in data:
+            if (
+                not isinstance(keys, list)
+                or not 1 <= len(keys) <= 128
+                or not all(
+                    isinstance(key, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", key)
+                    for key in keys
+                )
+            ):
+                raise ValueError("fetch_query_keys requires a bounded list of parameter names")
+            self.fetch_query_keys = frozenset(key.lower() for key in keys)
         self.args_match: str | None = data.get("args_match")
         self.args_exclude: str | None = data.get("args_exclude")
         self.boolean_option = (
@@ -1093,9 +1112,9 @@ class PatternSpec:
 
     @property
     def is_executable(self) -> bool:
-        if self.boolean_option is not None and self.source_mode:
-            return False
         if self.source_mode:
+            if self.boolean_option is not None or self.fetch_query_keys is not None:
+                return False
             return bool(
                 self._primary_res
                 or self._sequence_res
@@ -1107,6 +1126,7 @@ class PatternSpec:
             (self.callee and not self._callee_match_all)
             or self.receiver
             or self.args_match
+            or self.fetch_query_keys
             or self.args_exclude
             or self._missing_args_res
             or self.boolean_option is not None

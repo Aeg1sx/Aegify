@@ -85,11 +85,15 @@ rules:
     cwe_id: 598
     owasp_category: "A07:2021-Identification and Authentication Failures"
     patterns:
-      - callee: "(redirect|url_for|reverse|Response|fetch|request|http\\.(Get|Post)|HttpClient)"
+      - callee: '(?:(?:globalThis|window|self)\.)?fetch'
+        callee_match_mode: full
+        fetch_query_keys: [session_id, sessionid, token, access_token, auth_token, api_key, apikey, jwt, sid, jsessionid]
+      - callee: "(redirect|url_for|reverse|Response|request|http\\.(Get|Post)|HttpClient)"
         args_match: '(\\?|&)(session_id|sessionid|token|access_token|auth_token|api_key|apikey|jwt|sid|JSESSIONID)='
       - callee: "(window\\.location|location\\.href|location\\.assign|router\\.push|navigate)"
         args_match: '(\\?|&)(session|token|access_token|auth_token|api_key|jwt|sid)='
-      - callee: ".*"
+      # Standard Fetch calls use the URL argument above, including nested Request inputs.
+      - callee: '^(?!(?:(?:globalThis|window|self)\.)?fetch(?:$|[(])).+'
         args_match: '(url|URL|href|link)\s*[:=].*["\x27].*[?&](token|session_id|api_key|access_token|auth_token)='
     message: >
       Session token passed in URL at '{callee}' (line {line}). Transmit

@@ -61,6 +61,7 @@ Common call fields:
 - `receiver` / `receiver_match`
 - `args_match`, `args_exclude`, and `missing_args`
 - `args_match_index` to inspect one zero-based argument rather than every argument together
+- `fetch_query_keys` to match named query parameters in a JavaScript or TypeScript Fetch URL
 - `boolean_option` to select a literal keyword or object option and retain unknown values
 - language restrictions
 
@@ -87,6 +88,14 @@ configuration value, bind the identifier, assignment separator and value in one
 bounded expression. For API arguments, prefer a parsed call, an exact callee
 pattern and constraints on that call's arguments. Test an unrelated identifier,
 the same keyword on another line, and a matching keyword in a different argument.
+
+For example, `fetch_query_keys: [token, access_token]` matches a nonempty
+value under either key in the query of a direct Fetch call. The parser reads
+string literals, templates, concatenations and inline `URL` or `Request`
+constructors. It ignores the options object, URL fragment and template
+expression bodies. Query keys are percent-decoded and compared without case
+sensitivity. Variables that hold a previously constructed URL, arbitrary URL
+builders and conditional targets require separate data-flow analysis.
 
 ### Hash algorithm selection
 
