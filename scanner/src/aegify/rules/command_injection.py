@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from aegify.graph_types import CodeGraph
 from aegify.models import (
     FileAST,
     Finding,
+    FindingDisposition,
     Language,
     Severity,
     TaintFlow,
@@ -15,6 +17,30 @@ from aegify.models import (
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
 from aegify.scanner.python_process import process_input
 from aegify.scanner.python_scope import PythonModules
+
+
+def _git_revision_sinks(file_asts: list[FileAST]) -> set[tuple[str, int, str, int]]:
+    modules = PythonModules(file_asts)
+    sinks = set()
+    for file in file_asts:
+        if file.language != Language.PYTHON:
+            continue
+        candidates = [
+            (call, fact)
+            for call in file.calls
+            if (fact := call.python_process_input)
+            and fact.git_diff_revision_only
+            and fact.shell is False
+        ]
+        if not candidates or not modules.external(file, "subprocess"):
+            continue
+        # Taint sink identity has a line but no column. A second call on that
+        # line can represent an entirely different command.
+        counts = Counter(call.line for call in file.calls)
+        for call, fact in candidates:
+            if counts[call.line] == 1 and fact.argument_index is not None:
+                sinks.add((file.file_path, call.line, fact.api, fact.argument_index))
+    return sinks
 
 
 class CommandInjectionRule(SecurityRule):
@@ -60,19 +86,34 @@ class CommandInjectionRule(SecurityRule):
     ) -> list[Finding]:
         findings: list[Finding] = []
 
+        revision_sinks = _git_revision_sinks(file_asts) if taint_flows else set()
         for flow in taint_flows:
             if flow.sink.sink_type != "os_command":
                 continue
             if flow.sanitized:
                 continue
 
+            sink = flow.sink
+            revision_only = (
+                sink.file_path,
+                sink.line,
+                sink.function,
+                sink.argument_index,
+            ) in revision_sinks
             findings.append(
                 self._create_finding(
                     file_path=flow.sink.file_path,
                     line_start=flow.sink.line,
                     line_end=flow.sink.line,
                     code_snippet="",
+                    disposition=FindingDisposition.ADVISORY if revision_only else None,
                     message=(
+                        f"Input from '{flow.source.variable}' reaches a revision operand of a "
+                        "shell-free, name-only Git diff with external diff and text conversion "
+                        "disabled. Review which revisions the caller may select."
+                    )
+                    if revision_only
+                    else (
                         f"Potential command injection: user input from "
                         f"'{flow.source.variable}' (line {flow.source.line}) "
                         f"flows to '{flow.sink.function}' (line {flow.sink.line}) "

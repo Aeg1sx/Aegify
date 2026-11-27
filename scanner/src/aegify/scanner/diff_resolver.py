@@ -167,6 +167,7 @@ class DiffResolver:
                     "--diff-filter=ACMR",
                     "--no-ext-diff",
                     "--no-textconv",
+                    "--end-of-options",
                     base_ref,
                     "HEAD",
                     "--",

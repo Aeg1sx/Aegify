@@ -17,6 +17,16 @@ def test_invalid_ci_base_is_rejected_before_git_runs(
     run.assert_not_called()
 
 
+def test_ci_base_follows_the_end_of_options_marker(tmp_path: Path) -> None:
+    with patch("aegify.scanner.diff_resolver.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess([], 0, stdout="")
+        assert DiffResolver(tmp_path).get_changed_files(base_ref="refs/heads/integration") == []
+    argv = run.call_args.args[0]
+    assert argv[:2] == ["git", "diff"]
+    assert argv[-4:] == ["--end-of-options", "refs/heads/integration", "HEAD", "--"]
+    assert {"--name-only", "--no-ext-diff", "--no-textconv"} <= set(argv[2:-4])
+
+
 def test_ci_base_uses_revision_even_if_its_name_is_also_a_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

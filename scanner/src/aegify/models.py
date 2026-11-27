@@ -436,6 +436,7 @@ class PythonProcessInput(BaseModel):
     argument_index: int | None = Field(default=None, ge=0)
     shell: bool | None = None
     command_parts: list[PythonProcessPart] = Field(default_factory=list)
+    git_diff_revision_only: bool = False
 
 
 class PythonDeserialization(BaseModel):

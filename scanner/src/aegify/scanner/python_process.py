@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from collections import Counter
 from itertools import islice
 
@@ -165,6 +166,64 @@ def _command_parts(
     return [PythonProcessPart(line=line, expression=expr) for line, expr in sorted(selected)]
 
 
+def _git_diff_revision_only(local: LocalValues, value: ast.expr, call: ast.Call) -> bool:
+    """Recognize read-only, literal argv with data operands after Git's option boundary."""
+    if not isinstance(value, ast.List | ast.Tuple) or len(call.args) > 1:
+        return False
+    # Unknown keyword forwarding, environment/executable overrides and callbacks
+    # can affect what launches. Admit only ordinary output/timeout settings.
+    allowed = {"args", "shell", "cwd", "text", "capture_output", "check", "timeout"}
+    if any(kw.arg not in allowed for kw in call.keywords):
+        return False
+    argv = value.elts
+    if len(argv) < 9 or [_text(arg) for arg in argv[:2]] != ["git", "diff"]:
+        return False
+    if _text(argv[-4]) != "--end-of-options" or _text(argv[-1]) != "--":
+        return False
+    options = {_text(arg) for arg in argv[2:-4]}
+    required = {"--name-only", "--no-ext-diff", "--no-textconv"}
+    if not required <= options or any(
+        not re.fullmatch(r"--diff-filter=[ACDMRTUXB]+", option)
+        for option in options - required - {"-z"}
+    ):
+        return False
+    revisions = argv[-3:-1]
+    names = {arg.id for arg in revisions if isinstance(arg, ast.Name)}
+    if not names or not all(
+        isinstance(arg, ast.Name) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", _text(arg))
+        for arg in revisions
+    ):
+        return False
+    for kw in call.keywords:
+        if kw.arg in {"args", "shell"}:
+            continue
+        if kw.arg == "cwd":
+            # A separate working directory is normal. When a revision also
+            # selects the directory, the input has another process-level role.
+            cwd = kw.value
+            if isinstance(cwd, ast.Name):
+                if cwd.id in names or not isinstance(local.assigned(cwd), ast.Constant):
+                    return False
+            elif isinstance(cwd, ast.Attribute) and isinstance(cwd.value, ast.Name):
+                owner = cwd.value.id
+                if (
+                    owner in names
+                    or local.stores.get(owner)
+                    or any(
+                        isinstance(node, ast.Attribute)
+                        and node.attr == cwd.attr
+                        and not isinstance(node.ctx, ast.Load)
+                        for node in local.scope.nodes
+                    )
+                ):
+                    return False
+            elif not isinstance(cwd, ast.Constant):
+                return False
+        elif not isinstance(kw.value, ast.Constant):
+            return False
+    return True
+
+
 def _parameter(call: ast.Call, index: int, name: str) -> tuple[int, ast.expr] | None:
     bound = call_argument(call, index, name)
     if bound or (
@@ -227,6 +286,7 @@ def process_calls(source: bytes) -> dict[tuple[int, int, int, int], PythonProces
             if not option and unpacked:
                 shell = None
             parts = []
+            git_revisions = False
             if (
                 operand
                 and shell is False
@@ -240,12 +300,17 @@ def process_calls(source: bytes) -> dict[tuple[int, int, int, int], PythonProces
                 if not lines:
                     lines.update(node.lineno for node in scope.nodes if isinstance(node, ast.stmt))
                 parts = _command_parts(local, operand[1], call, lines)
+                git_revisions = _git_diff_revision_only(local, operand[1], call)
             argument_index = operand[0] if operand else None
             if argument_index is None and call.args and isinstance(call.args[0], ast.Starred):
                 argument_index = 0
             facts[call.lineno, call.col_offset, call.end_lineno, call.end_col_offset] = (
                 PythonProcessInput(
-                    api=api, argument_index=argument_index, shell=shell, command_parts=parts
+                    api=api,
+                    argument_index=argument_index,
+                    shell=shell,
+                    command_parts=parts,
+                    git_diff_revision_only=git_revisions,
                 )
             )
     return facts
