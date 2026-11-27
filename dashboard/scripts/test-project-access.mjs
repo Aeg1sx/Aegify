@@ -1,5 +1,6 @@
 // Real production HTTP checks with synthetic accounts, no external IdP or AI calls.
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -82,6 +83,10 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
       return text ? JSON.parse(text) : null;
     }
     for (const path of ["/api/projects", "/api/scans", "/api/findings", "/api/stats", "/api/endpoints", "/api/agent-runs", "/api/llm-jobs", "/api/settings", "/api/rules"]) await call(path, { user: null, status: 401 });
+    await call(`/api/projects/${a.id}/audit?format=jsonl`, { user: "bob", status: 404 });
+    const emptyLog = await globalThis.fetch(origin + `/api/projects/${b.id}/audit?format=jsonl`, { headers: { cookie: `authjs.session-token=${cookies.bob}` } });
+    assert.equal(emptyLog.status, 200); assert.equal(emptyLog.headers.get("x-aegify-event-count"), "0");
+    assert.equal(await emptyLog.text(), ""); checks++;
     assert.deepEqual((await call("/api/projects")).projects.map((project) => project.id), [a.id]);
     assert.equal((await call("/api/projects", { user: "outside" })).projects.length, 0);
     assert.equal((await call("/api/stats")).totalFindings, 1);
@@ -364,6 +369,47 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     const audit = await call(`/api/projects/${a.id}/audit`);
     assert.ok(audit.events.some((event) => event.action === "scan.import.finished"));
     assert.ok(!JSON.stringify(audit).includes(issued.token));
+    const logUrl = `/api/projects/${a.id}/audit`;
+    const firstDate = new Date("2026-01-01T01:02:03.000Z");
+    const records = Array.from({ length: 215 }, (_, index) => ({
+      id: "audit-page-" + String(index).padStart(4, "0"), projectId: a.id,
+      actorId: "history-fixture", action: "import.reviewed", targetId: a.id,
+      details: JSON.stringify({ note: "Two lines\nand a quote \" here" }), createdAt: firstDate,
+    }));
+    await db.auditEvent.createMany({ data: records });
+    const foreignEvent = await db.auditEvent.create({ data: {
+      projectId: b.id, actorId: "history-fixture", action: "project.review", targetId: b.id, details: "FOREIGN-AUDIT-RECORD",
+    } });
+    const observed = await db.auditEvent.findMany({ where: { projectId: a.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+    const firstAudit = await call(logUrl);
+    assert.equal(firstAudit.events.length, 100); assert.ok(firstAudit.nextCursor);
+    await db.auditEvent.create({ data: { projectId: a.id, actorId: "history-fixture", action: "newer.event", targetId: a.id, createdAt: new Date("2099-01-01") } });
+    let page = firstAudit;
+    const ids = page.events.map((event) => event.id);
+    while (page.nextCursor) {
+      page = await call(logUrl + "?cursor=" + encodeURIComponent(page.nextCursor));
+      ids.push(...page.events.map((event) => event.id));
+    }
+    assert.deepEqual(ids, observed.map((event) => event.id)); checks++;
+    await call(logUrl + "?cursor=" + foreignEvent.id, { status: 400 });
+    await call(logUrl + "?format=jsonl&limit=15", { status: 400 });
+    await call(logUrl + "?limit=0", { status: 400 });
+    await call(logUrl + "?format=jsonl", { user: null, token: issued.token, status: 401 });
+    await call(logUrl + "?format=jsonl", { user: "bob", status: 404 });
+    await call(`/api/projects/${b.id}/audit?format=jsonl`, { status: 404 });
+    const headers = { cookie: `authjs.session-token=${cookies.alice}` };
+    const exported = await globalThis.fetch(origin + logUrl + "?format=jsonl", { headers });
+    assert.equal(exported.status, 200); assert.match(exported.headers.get("content-disposition"), /attachment;.*\.jsonl"/);
+    assert.match(exported.headers.get("cache-control"), /no-store/);
+    const text = await exported.text();
+    assert.equal(Number(exported.headers.get("x-aegify-export-bytes")), Buffer.byteLength(text));
+    const expected = await db.auditEvent.findMany({ where: { projectId: a.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+    assert.equal(Number(exported.headers.get("x-aegify-event-count")), expected.length);
+    assert.deepEqual(text.trimEnd().split("\n").map((line) => JSON.parse(line)), JSON.parse(JSON.stringify(expected)));
+    assert.ok(!text.includes("FOREIGN-AUDIT-RECORD") && !text.includes(issued.token)); checks++;
+    const head = await globalThis.fetch(origin + logUrl + "?format=jsonl", { method: "HEAD", headers });
+    assert.equal(head.status, 200); assert.equal(await head.text(), "");
+    assert.equal(head.headers.get("x-aegify-export-bytes"), exported.headers.get("x-aegify-export-bytes")); checks++;
     await db.project.update({ where: { id: a.id }, data: { provider: "github", ownerSlug: "fixture/repository" } });
     await db.account.create({ data: { userId: "alice", provider: "github", providerAccountId: "alice-fixture", type: "oauth", access_token: "synthetic-unused-token" } });
     for (const body of [null, [], { branch: 123 }, { branch: "x".repeat(5000) }]) await call(`/api/projects/${a.id}/scan`, { method: "POST", body, status: 400 });

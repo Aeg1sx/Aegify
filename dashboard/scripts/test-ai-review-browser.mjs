@@ -688,7 +688,7 @@ async function checkProjectDirectory(page, viewer, db, origin) {
   assert.ok(!(await viewer.$eval("main", (node) => node.innerText)).includes("New project")); checks++;
 }
 
-async function checkProjectRecord(page, viewer, db, origin) {
+async function checkProjectRecord(page, viewer, db, origin, downloadDirectory) {
   const artifacts = process.env.AEGIFY_UI_ARTIFACTS;
   const project = await db.project.create({ data: {
     name: "Settlement ledger", description: "Daily settlement batches, ledger postings and bank reconciliation.",
@@ -696,6 +696,10 @@ async function checkProjectRecord(page, viewer, db, origin) {
     repositoryUrl: "https://github.com/payments/settlement-ledger", defaultBranch: "main",
     members: { create: { userId: "bob", role: "viewer" } },
   } });
+  await db.auditEvent.createMany({ data: Array.from({ length: 36 }, (_, i) => ({
+    id: `browser-audit-${String(i).padStart(2, "0")}`, projectId: project.id, actorId: "ledger-auditor",
+    targetId: `approval-${i}`, action: "review.recorded", createdAt: new Date("2026-01-02T00:00:00Z"),
+  })) });
   const route = "/projects/" + project.id, api = "/api" + route;
   const start = Date.parse("2026-11-21T14:32:00Z");
   const branches = ["release/settlement-cutoff", "main", "chore/bank-imports", "fix/ledger-rounding", "", "main"];
@@ -802,6 +806,30 @@ async function checkProjectRecord(page, viewer, db, origin) {
   await page.setViewport({ width: 320, height: 844 });
   assert.ok(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth)); checks++;
   assert.ok(await page.$$eval("#project-settings :is(button, input, select)", (nodes) => nodes.filter((node) => node.checkVisibility()).every((node) => node.getBoundingClientRect().height >= 44))); checks++;
+  const auditRows = 'ol[aria-label="Audit events"] li';
+  const firstEvents = await page.$$eval(auditRows, (nodes) => nodes.map((node) => node.innerText));
+  assert.equal(firstEvents.length, 15); checks++;
+  const older = await button("Older events");
+  await older.focus(); await page.keyboard.press("Enter");
+  const auditPage = (label) => page.waitForFunction((label) =>
+    globalThis.document.querySelector('nav[aria-label="Audit history pages"] [role=status]')?.textContent === label, {}, label);
+  await auditPage("Page 2");
+  const secondEvents = await page.$$eval(auditRows, (nodes) => nodes.map((node) => node.innerText));
+  assert.equal(secondEvents.length, 15);
+  assert.ok(secondEvents.every((text) => !firstEvents.includes(text)));
+  assert.ok(secondEvents.some((text) => text.includes("ledger-auditor"))); checks++;
+  assert.equal(await page.$eval('#project-settings a[href$="format=jsonl"]', (node) => node.textContent.trim()), "Download JSONL"); checks++;
+  await page.browserContext().setDownloadBehavior({ policy: "allow", downloadPath: downloadDirectory });
+  await page.click('#project-settings a[href$="format=jsonl"]');
+  let saved;
+  for (let i = 0; !saved && i < 50; i++) {
+    try { saved = await readFile(join(downloadDirectory, "aegify-project-audit.jsonl"), "utf8"); }
+    catch (error) { if (error.code !== "ENOENT") throw error; await delay(100); }
+  }
+  const recorded = await db.auditEvent.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+  assert.deepEqual(saved?.trimEnd().split("\n").map((line) => JSON.parse(line).id), recorded.map((event) => event.id)); checks++;
+  await (await button("Newer events")).click(); await auditPage("Page 1");
+  assert.deepEqual(await page.$$eval(auditRows, (nodes) => nodes.map((node) => node.innerText)), firstEvents); checks++;
   await page.setViewport({ width: 1440, height: 1000 });
   const tokenForm = 'section[aria-labelledby="project-tokens-heading"] form';
   await page.type(tokenForm + " input", "Reconciliation CI");
@@ -2503,7 +2531,7 @@ try {
         await configurePage(adminPage);
         await projectAdmin.setCookie({ name: "authjs.session-token", value: cookies.root, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" });
         await checkProjectDirectory(adminPage, page, db, origin);
-        await checkProjectRecord(adminPage, page, db, origin);
+        await checkProjectRecord(adminPage, page, db, origin, dirname(reportPath));
         await checkFindingReview(adminPage, page, db, origin);
         await checkCallGraph(adminPage, db, projectId, origin);
         await checkWorkspaceSettings(adminPage, db, origin);

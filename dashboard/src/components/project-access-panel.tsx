@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ProjectAuditHistory, type AuditPage } from "./project-audit-history";
 
 type Member = {
   userId: string;
@@ -17,7 +18,6 @@ type Token = {
   revokedAt: string | null;
   lastUsedAt: string | null;
 };
-type Event = { id: string; action: string; actorId: string; createdAt: string };
 const roles = {
   viewer: "View scans and findings.",
   triager: "Review and assign findings.",
@@ -41,7 +41,7 @@ async function requestJson(url: string, method = "GET", body?: unknown) {
 }
 
 export function ProjectAccessPanel({ projectId, archived }: { projectId: string; archived: boolean }) {
-  const [data, setData] = useState<{ members: Member[]; tokens: Token[]; events: Event[] } | null>(null);
+  const [data, setData] = useState<{ members: Member[]; tokens: Token[]; audit: AuditPage } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<keyof typeof roles>("viewer");
@@ -56,12 +56,12 @@ export function ProjectAccessPanel({ projectId, archived }: { projectId: string;
     const [people, credentials, audit] = await Promise.all([
       requestJson(base + "/members"),
       requestJson(base + "/tokens"),
-      requestJson(base + "/audit"),
+      requestJson(base + "/audit?limit=15"),
     ]);
     return {
       members: people.members as Member[],
       tokens: credentials.tokens as Token[],
-      events: audit.events as Event[],
+      audit: audit as AuditPage,
     };
   }, [base]);
 
@@ -331,23 +331,7 @@ export function ProjectAccessPanel({ projectId, archived }: { projectId: string;
             )}
           </section>
 
-          <section aria-labelledby="project-events-heading">
-            <h3 id="project-events-heading">Recent access and import events</h3>
-            {data.events.length ? (
-              <ol className="divide-y border-y">
-                {data.events.slice(0, 15).map((event) => (
-                  <li key={event.id} className="justify-between">
-                    <span>{event.action.replaceAll(".", " ").replaceAll("_", " ")}</span>
-                    <time className="text-xs text-muted-foreground" dateTime={event.createdAt}>
-                      {new Date(event.createdAt).toLocaleString()}
-                    </time>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-sm text-muted-foreground">No recorded events yet.</p>
-            )}
-          </section>
+          <ProjectAuditHistory key={data.audit.events[0]?.id ?? "empty"} url={base + "/audit"} first={data.audit} />
         </>
       )}
     </section>

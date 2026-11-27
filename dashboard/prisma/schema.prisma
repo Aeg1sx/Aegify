@@ -710,7 +710,7 @@ model AuditEvent {
   details String @default("{}")
   createdAt DateTime @default(now())
 
-  @@index([projectId, createdAt])
+  @@index([projectId, createdAt, id])
   @@index([actorId, createdAt])
   @@index([targetId, action, projectId, createdAt])
 }
