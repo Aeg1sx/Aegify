@@ -48,6 +48,12 @@ from aegify.scanner.call_graph import CallGraphBuilder
 from aegify.scanner.context import ContextAnalyzer
 from aegify.scanner.dataflow import DataflowAnalyzer
 from aegify.scanner.endpoint_detector import EndpointDetector
+from aegify.scanner.gateway_inventory import (
+    ConfigInput,
+    config_inputs,
+    conventional_config,
+    review_gateway_configs,
+)
 from aegify.scanner.openapi_parser import find_openapi_files, parse_openapi_file
 from aegify.scanner.python_signing_keys import (
     REDACTED_SIGNING_KEY,
@@ -196,11 +202,12 @@ class ScanEngine:
             except Exception:
                 pass  # Don't let callback errors break the scan
 
-    def scan(self, target: Path) -> ScanResult:
+    def scan(self, target: Path, *, repository_id: str = "") -> ScanResult:
         """Run a full security scan on the target directory or file."""
         self.source_catalog = None
         start_time = time.time()
         result = self._new_result()
+        result.repository = repository_id
         result.analysis_scope = "files" if target.is_file() else "repository"
 
         try:
@@ -208,6 +215,12 @@ class ScanEngine:
             logger.info("Phase 1: Parsing ASTs...")
             self._emit_progress(1, "Parsing ASTs", start_time)
             if target.is_file():
+                result.gateway_inventory = review_gateway_configs(
+                    config_inputs(
+                        repository_id, target.parent, [target], excludes=self.config.scan.exclude
+                    ),
+                    {},
+                )
                 files = self._select_parse_files([target], result)
                 ast = self.ast_parser.parse_file(target) if files else None
                 file_asts = [ast] if ast is not None else []
@@ -264,6 +277,9 @@ class ScanEngine:
             self._emit_progress(1, "Parsing ASTs", start_time)
 
             file_asts: list[FileAST] = []
+            result.gateway_inventory = review_gateway_configs(
+                config_inputs("", repo_root, files, excludes=self.config.scan.exclude), {}
+            )
             selected = self._select_parse_files(files, result)
             for f in selected:
                 ast = self.ast_parser.parse_file(f, repository_root=repo_root)
@@ -318,14 +334,31 @@ class ScanEngine:
             result.repository = manifest.name
             self._emit_progress(1, "Parsing workspace ASTs", start_time)
             workspace_files: list[tuple[Path, str, Path]] = []
+            configs: list[ConfigInput] = []
             for repository in manifest.repositories:
                 excludes = set(self.config.scan.exclude + repository.exclude)
                 files = self.ast_parser._collect_files(
-                    repository.path, excludes, include_unsupported=True
+                    repository.path,
+                    excludes,
+                    include_unsupported=True,
+                    include_path=conventional_config,
+                )
+                configs.extend(
+                    config_inputs(
+                        repository.id,
+                        repository.path,
+                        files,
+                        repository.gateway_configs,
+                        excludes,
+                    )
                 )
                 for file_path in self._select_parse_files(files, result):
                     workspace_files.append((file_path, repository.id, repository.path))
 
+            result.gateway_inventory = review_gateway_configs(
+                configs,
+                {repository.id: repository.service_names for repository in manifest.repositories},
+            )
             file_asts = self._parse_workspace_files(workspace_files)
             self._record_parse_results(file_asts, [item[0] for item in workspace_files], result)
 
@@ -1833,12 +1866,16 @@ class ScanEngine:
     ) -> list[FileAST]:
         """Reuse ASTs only when source bytes and the parser contract both match."""
         health = result if result is not None else ScanResult()
-        files = self._select_parse_files(
-            self.ast_parser._collect_files(
-                target, set(self.config.scan.exclude), include_unsupported=True
-            ),
-            health,
+        candidates = self.ast_parser._collect_files(
+            target,
+            set(self.config.scan.exclude),
+            include_unsupported=True,
+            include_path=conventional_config,
         )
+        health.gateway_inventory = review_gateway_configs(
+            config_inputs(health.repository, target, candidates), {}
+        )
+        files = self._select_parse_files(candidates, health)
         project_id = str(target)
         fingerprint = parser_fingerprint()
         stored_index = self.storage.load_index(project_id) or {}

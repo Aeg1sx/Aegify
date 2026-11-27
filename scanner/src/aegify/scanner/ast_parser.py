@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Callable
 from functools import lru_cache
 from importlib.metadata import version
 from pathlib import Path
@@ -369,15 +370,24 @@ class ASTParser:
         return results
 
     def _collect_files(
-        self, directory: Path, exclude: set[str], *, include_unsupported: bool = False
+        self,
+        directory: Path,
+        exclude: set[str],
+        *,
+        include_unsupported: bool = False,
+        include_path: Callable[[Path], bool] | None = None,
     ) -> list[Path]:
         """Collect all parseable files, respecting exclusions."""
         files: list[Path] = []
         for path in directory.rglob("*"):
             if not path.is_file():
                 continue
-            if detect_language(path) is None and not (
-                include_unsupported and path.suffix.lower() in UNSUPPORTED_SOURCE_EXTENSIONS
+            if (
+                detect_language(path) is None
+                and not (
+                    include_unsupported and path.suffix.lower() in UNSUPPORTED_SOURCE_EXTENSIONS
+                )
+                and not (include_path and include_path(path))
             ):
                 continue
             rel = str(path.relative_to(directory))

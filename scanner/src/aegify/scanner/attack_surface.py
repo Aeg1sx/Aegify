@@ -24,6 +24,8 @@ from aegify.models import (
     GatewayRoute,
     Language,
 )
+from aegify.scanner.gateway_inventory import MAX_FILE_BYTES, config_documents
+from aegify.source_files import read_regular_source
 
 logger = logging.getLogger(__name__)
 
@@ -270,9 +272,13 @@ class AttackSurfaceAnalyzer:
         repository_id: str = "",
     ) -> list[GatewayRoute]:
         try:
-            source = path.read_text(errors="replace")
-            data = yaml.safe_load(source) or {}
-        except OSError, yaml.YAMLError:
+            raw = read_regular_source(root.resolve(), path.relative_to(root), MAX_FILE_BYTES)
+            documents = iter(config_documents(raw))
+            data: Any = next(documents, None)
+            if next(documents, None) is not None:
+                return []
+            source = raw.decode("utf-8", errors="replace")
+        except OSError, ValueError, NotImplementedError, yaml.YAMLError, RecursionError:
             return []
 
         repository_id = repository_id or self._repository_for_path(path, root, file_asts)
@@ -297,7 +303,7 @@ class AttackSurfaceAnalyzer:
                     continue
                 route_id = str(item.get("id") or f"route-{index}")
                 predicates = item.get("predicates") or []
-                filters = [self._config_item_text(v) for v in item.get("filters") or []]
+                filters = [self._gateway_filter(v) for v in item.get("filters") or []]
                 paths, methods = self._gateway_predicates(predicates)
                 if not paths:
                     continue
@@ -306,7 +312,7 @@ class AttackSurfaceAnalyzer:
                 routes.append(
                     GatewayRoute(
                         id=route_id,
-                        uri=str(item.get("uri") or ""),
+                        uri=self._report_gateway_uri(str(item.get("uri") or "")),
                         path_patterns=paths,
                         methods=methods,
                         filters=filters,
@@ -333,9 +339,36 @@ class AttackSurfaceAnalyzer:
         if isinstance(item, dict):
             name = str(item.get("name") or "")
             args = item.get("args") or {}
+            if not isinstance(args, dict):
+                return name
             rendered = ",".join(str(value) for value in args.values())
             return f"{name}={rendered}" if rendered else name
         return str(item)
+
+    @staticmethod
+    def _report_gateway_uri(uri: str) -> str:
+        try:
+            parts = urlsplit(uri)
+            if (
+                parts.username is not None
+                or parts.password is not None
+                or parts.query
+                or parts.fragment
+            ):
+                return "[redacted]"
+        except ValueError:
+            return "[redacted]"
+        return uri
+
+    def _gateway_filter(self, item: Any) -> str:
+        # Only path-transform filters use operands downstream. Header and custom
+        # filters may contain credentials and only their names belong in reports.
+        name = item.get("name") if isinstance(item, dict) else str(item).partition("=")[0]
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,79}", name):
+            return "[redacted]"
+        if name.lower() in {"stripprefix", "rewritepath", "prefixpath", "setpath"}:
+            return self._config_item_text(item)
+        return name
 
     def _gateway_predicates(self, predicates: Any) -> tuple[list[str], list[str]]:
         paths: list[str] = []
@@ -371,7 +404,7 @@ class AttackSurfaceAnalyzer:
                 routes.append(
                     GatewayRoute(
                         id=start.group(1),
-                        uri=uri.group(1),
+                        uri=self._report_gateway_uri(uri.group(1)),
                         path_patterns=paths,
                         filters=[
                             f"{name}={args.strip()}"

@@ -197,7 +197,9 @@ def run_snapshot(payload: dict[str, Any], workspace: Path) -> dict[str, Any]:
     try:
         # Relative source paths stay stable across worker hosts and retries.
         os.chdir(workspace)
-        result = engine.scan(Path("."))
+        result = engine.scan(
+            Path("."), repository_id=f"{payload['provider']}/{payload['repository']}"
+        )
         result.analysis_scope = "files"  # explicitly selected provider snapshot
         if payload["truncated"]:
             result.add_gap(

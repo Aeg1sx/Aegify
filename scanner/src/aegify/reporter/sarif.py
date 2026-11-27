@@ -97,6 +97,8 @@ class SARIFReporter:
             "runtimeEvidence": scan_result.runtime_evidence.model_dump(mode="json"),
             "findingDisposition": scan_result.disposition_count,
         }
+        if scan_result.gateway_inventory is not None:
+            run_props["gatewayInventory"] = scan_result.gateway_inventory.model_dump(mode="json")
         if scan_result.analyzed_sources:
             run_props["sourceIdentityVersion"] = 1
             run_props["analyzedSources"] = [

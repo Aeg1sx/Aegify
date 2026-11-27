@@ -1040,6 +1040,37 @@ class AnalyzedSource(BaseModel):
     language: Language | None = None
 
 
+class GatewayOwnership(BaseModel):
+    """A declared route and its manifest-based service ownership."""
+
+    schema_path: str
+    document: int
+    line: int
+    route_name: str | None = None
+    status: Literal["resolved", "unresolved", "ambiguous"]
+    reason: str
+    repository_ids: list[str] = Field(default_factory=list)
+
+
+class GatewayConfigReview(BaseModel):
+    repository_id: str
+    path: str
+    sha256: str | None = None
+    routes: list[GatewayOwnership] = Field(default_factory=list)
+    diagnostics: list[str] = Field(default_factory=list)
+
+
+class GatewayInventory(BaseModel):
+    """Source declarations for review, independent of executable reachability."""
+
+    version: Literal[1] = 1
+    input_status: Literal["processed", "partial"] = "processed"
+    digest: str = ""
+    files: list[GatewayConfigReview] = Field(default_factory=list)
+    omitted_files: int = 0
+    omitted_routes: int = 0
+
+
 class ScanResult(BaseModel):
     """Complete result of a security scan."""
 
@@ -1059,6 +1090,7 @@ class ScanResult(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     endpoints: list[EndpointInfo] = Field(default_factory=list)
     frontend_calls: list[FrontendCall] = Field(default_factory=list)
+    gateway_inventory: GatewayInventory | None = None
     gateway_routes: list[GatewayRoute] = Field(default_factory=list)
     attack_surface_links: list[AttackSurfaceLink] = Field(default_factory=list)
     semantic_analysis: SemanticAnalysisSummary = Field(default_factory=SemanticAnalysisSummary)
