@@ -15,6 +15,9 @@ def known_types(root: Node, imports: list[ImportInfo]) -> dict[str, str]:
     }
     java_lang = ("Integer", "Long", "Float", "Double", "String", "Math")
     types.update({f"java.lang.{name}": f"java.lang.{name}" for name in java_lang})
+    for name in ("Connection", "Statement"):
+        types[f"java.sql.{name}"] = f"java.sql.{name}"
+    types["javax.sql.DataSource"] = "javax.sql.DataSource"
     types["java.util.Random"] = "java.util.Random"
     # An explicit import can be shadowed by a nested or generic type.
     short = {name: {f"java.lang.{name}"} for name in java_lang}
