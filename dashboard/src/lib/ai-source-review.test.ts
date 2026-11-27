@@ -122,11 +122,16 @@ test("signing key masks bind to the original file bytes and survive catalog reco
   assert.equal(auth.sourceDigest, "sha256:" + hex(source));
   assert.ok(!JSON.stringify(restored).includes(key));
   assert.throws(() => validateReviewSources({ ...restored, files: [{ ...auth, signingKeyReview: undefined }] }));
-  for (const bad of [undefined, {}, { [hex(source)]: { ...proof, ranges: [[3, 3]] } }]) {
+  const legacy = JSON.parse(JSON.stringify(restored));
+  legacy.files.find((file: { path: string }) => file.path === "auth.py").signingKeyReview = 1;
+  assert.throws(() => packSnapshot({ ...snapshot(), sources: legacy }), /verified signing-key redaction ranges/);
+  const empty = { ranges: [], sha256: hex(source.replace(/\r\n/g, "\n")) };
+  for (const bad of [undefined, {}, { [hex(source)]: empty }, { [hex(source)]: { ...proof, ranges: [[3, 3]] } }]) {
     const unavailable = captureReviewSources(input, input, [], bad);
     assert.equal(unavailable.omittedFiles, 1);
     assert.equal(unavailable.unverifiedSigningKeyFiles, 1);
     assert.deepEqual(unavailable.files.map((file) => file.path), ["app.py"]);
+    assert.ok(!JSON.stringify(unavailable).includes(key));
   }
 });
 

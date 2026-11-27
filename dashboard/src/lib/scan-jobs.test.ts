@@ -107,10 +107,11 @@ test("owned source snapshot runs through the real Python engine and publishes pa
     assert.equal(new URL(url).origin, "https://api.github.com", "Only intercepted fixture-provider requests are permitted");
     assert.equal(init?.redirect, "manual");
     if (url.includes("/commits/main")) return Response.json({ sha: commit, commit: { tree: { sha: tree } } });
-    if (url.includes("/git/trees/")) return Response.json({ tree: ["app.py", "signing.py", "unsupported.php", "wrangler.jsonc"].map((path) => ({ path, type: "blob", mode: "100644" })) });
+    if (url.includes("/git/trees/")) return Response.json({ tree: ["app.py", "signing.py", "configured.py", "unsupported.php", "wrangler.jsonc"].map((path) => ({ path, type: "blob", mode: "100644" })) });
     if (url.includes("/contents/wrangler.jsonc")) return new Response('{"vars":{"API_TOKEN":"owned-configuration-canary"}}');
     if (url.includes("/contents/app.py")) return new Response("from flask import request\ndef read_document():\n    value = request.args.get('path')\n    return open(value)\n");
     if (url.includes("/contents/signing.py")) return new Response("from jwt import encode\nmaterial = 'marker-signing-review-only'\ndef issue(data): return encode(data,material)\n");
+    if (url.includes("/contents/configured.py")) return new Response("from jwt import encode\ndef issue(data, material): return encode(data, material)\n");
     if (url.includes("/contents/unsupported.php")) return new Response("<?php // Synthetic unsupported source\n");
     throw new Error("Unexpected fixture request");
   };
@@ -151,7 +152,13 @@ test("owned source snapshot runs through the real Python engine and publishes pa
     assert.equal(signing?.lineStart, 2);
     assert.ok(!JSON.stringify([saved, findings]).includes("marker-signing-review-only"));
     const retained = JSON.parse(decrypt(saved.sourceCiphertext!));
-    const review = captureReviewSources(retained, retained, [], JSON.parse(saved.resultManifest).signingKeyReviewV1);
+    const masks = JSON.parse(saved.resultManifest).signingKeyReviewV1;
+    const configured = retained.files.find((file: { path: string }) => file.path === "configured.py");
+    assert.ok(configured);
+    assert.ok(!Object.hasOwn(masks, configured.sha256));
+    const review = captureReviewSources(retained, retained, [], masks);
+    assert.equal(review.unverifiedSigningKeyFiles, 1);
+    assert.ok(!review.files.some((file) => file.path === "configured.py"));
     const signingSource = review.files.find((file) => file.path === "signing.py");
     assert.equal(signingSource?.content.split("\n")[1], "[REDACTED_SIGNING_KEY]");
     assert.match(signingSource?.content || "", /return encode\(data,material\)/);

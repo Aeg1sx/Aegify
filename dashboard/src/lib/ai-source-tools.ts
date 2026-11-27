@@ -20,7 +20,7 @@ const bytes = (value: unknown) => {
 export class SourceToolError extends Error {}
 
 export interface ReviewSourceFile {
-  signingKeyReview?: 1;
+  signingKeyReview?: 2;
   id: string; path: string; sourceDigest: string; contentDigest: string; content: string; lineCount: number;
 }
 export interface ReviewSourceCatalog {
@@ -77,7 +77,7 @@ function mayContainSigningKey(path: string, content: string): boolean {
 function signingKeyReviewText(content: string, hash: string, masks: unknown): string | null {
   if (!masks || typeof masks !== "object" || Array.isArray(masks) || !Object.hasOwn(masks, hash)) return null;
   const entry: unknown = (masks as Record<string, unknown>)[hash];
-  if (!entry || typeof entry !== "object" || !("ranges" in entry) || !Array.isArray(entry.ranges)
+  if (!entry || typeof entry !== "object" || !("ranges" in entry) || !Array.isArray(entry.ranges) || entry.ranges.length === 0
     || !("sha256" in entry) || typeof entry.sha256 !== "string" || !HASH.test(entry.sha256)) return null;
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   for (const range of entry.ranges) {
@@ -123,7 +123,7 @@ export function captureReviewSources(raw: unknown, expected: { repository: strin
     if (reviewText === null) { unverifiedSigningKeyFiles += 1; continue; }
     const content = sanitizeLLMSourceText(reviewText);
     const entry = { id: sha(`${expected.repository}\0${file.path}\0${file.sha256}`), path: file.path,
-      sourceDigest: `sha256:${file.sha256}`, contentDigest: sha(content), content, lineCount: content.split("\n").length, ...(checked ? { signingKeyReview: 1 as const } : {}) };
+      sourceDigest: `sha256:${file.sha256}`, contentDigest: sha(content), content, lineCount: content.split("\n").length, ...(checked ? { signingKeyReview: 2 as const } : {}) };
     const size = bytes(entry);
     if (selected.length >= SOURCE_TOOL_LIMITS.files || selectedBytes + size > SOURCE_TOOL_LIMITS.catalogBytes) continue;
     selected.push(entry); selectedBytes += size;
@@ -149,9 +149,9 @@ export function validateReviewSources(value: ReviewSourceCatalog): ReviewSourceC
     object(file);
     safePath(file.path);
     if (withholdSourceFromModel(file.path)) throw new SourceToolError("Configuration values are withheld from source tools");
-    if (file.signingKeyReview !== undefined && file.signingKeyReview !== 1) throw new SourceToolError("Invalid signing-key review version");
-    if (typeof file.content === "string" && mayContainSigningKey(file.path, file.content) && file.signingKeyReview !== 1) {
-      throw new SourceToolError("This saved source review predates signing-key redaction. Start a new source review.");
+    if (file.signingKeyReview !== 2 && (file.signingKeyReview !== undefined
+      || (typeof file.content === "string" && mayContainSigningKey(file.path, file.content)))) {
+      throw new SourceToolError("This saved source review lacks verified signing-key redaction ranges. Start a new source review.");
     }
     if (paths.has(file.path) || ids.has(file.id) || !DIGEST.test(file.id) || !DIGEST.test(file.sourceDigest)
       || file.id !== sha(`${value.repository}\0${file.path}\0${file.sourceDigest.slice(7)}`)

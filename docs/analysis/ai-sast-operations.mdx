@@ -242,7 +242,11 @@ selected project source.
 When Aegify traces a literal Python key to an HMAC JWT signing call, it masks
 the literal in finding excerpts and CLI source reads. For dashboard reviews,
 the worker records the affected lines and the digest of the masked file. The
-dashboard verifies that digest before sharing the source with the model.
+dashboard requires at least one redacted range and verifies that digest before
+sharing the source with the model. If a signing key comes from configuration
+and the worker finds no literal to mask, the dashboard omits that file.
+Start a new review to replace a saved job that used the older signing-key
+redaction check.
 Review history shows how many candidate Python files it omitted when the
 saved scan lacked a verifiable redaction record.
 

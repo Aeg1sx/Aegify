@@ -158,6 +158,8 @@ def _signing_key_review(files: list[dict[str, Any]]) -> dict[str, Any]:
         text = text.replace("\r\n", "\n").replace("\r", "\n")
         facts = signing_keys(text.encode())
         ranges = sorted({(f.line, f.end_line) for f in facts})
+        if not ranges:
+            continue
         lines = text.split("\n")
         for start, end in ranges:
             lines[start - 1 : end] = [REDACTED_SIGNING_KEY] * (end - start + 1)
