@@ -312,3 +312,61 @@ def test_go_argument_order_and_comments_survive_ast_serialization(tmp_path):
         FileAST.model_validate_json(ast.model_dump_json()).calls[0].arguments
         == ast.calls[0].arguments
     )
+
+
+@pytest.mark.parametrize(
+    ("statements", "expected"),
+    [
+        ("c.setHttpOnly(true); c.setSecure(true);", {}),
+        ("c.setSecure(false); c.setHttpOnly(true);", {5: "false"}),
+        ("c.setSecure(true); c.setSecure(false);", {5: "false", 6: "missing"}),
+        ("c.setSecure(false); c.setSecure(true);", {6: "missing"}),
+        ("c.setSecure(enabled);", {5: "unknown", 6: "missing"}),
+        ("c.setSecure(true); c.setPath(path);", {6: "missing"}),
+        ('c.setSecure(true); c.setPath("/cookies/c");', {6: "missing"}),
+        ("if (enabled) c.setSecure(true);", {5: "unknown", 6: "unknown"}),
+        ("c.setSecure(true); mutate(c);", {5: "unknown", 6: "unknown"}),
+        ("Cookie alias = c; c.setSecure(true);", {5: "unknown", 6: "unknown"}),
+        ("c.setSecure(true); c.setPath(change(c));", {5: "unknown", 6: "unknown"}),
+        ("c.setSecure(true); c = other;", {5: "unknown", 6: "unknown"}),
+        ("c.setSecure(true); c.setAttribute(key, value);", {5: "unknown", 6: "unknown"}),
+        ("second.setSecure(true);", {5: "unknown", 6: "unknown"}),
+    ],
+)
+def test_java_servlet_cookie_flags_at_publication(tmp_path, statements, expected):
+    source = (
+        "import jakarta.servlet.http.Cookie; import jakarta.servlet.http.HttpServletResponse;\n"
+        "class App { void send(HttpServletResponse r, boolean enabled) {\n"
+        'Cookie c = new Cookie("n", "v");\n' + statements + "\nr.addCookie(c); } }"
+    )
+    tree = parse(tmp_path, "App.java", source)
+    restored = FileAST.model_validate_json(tree.model_dump_json())
+    found = [f for rule in RULES.values() for f in rule.evaluate([restored], nx.DiGraph(), [])]
+    assert {
+        int(f.rule_id[-3:]): f.message.split("option state: ")[1].split(".")[0] for f in found
+    } == expected
+    assert all(f.line_start == 5 for f in found)
+
+
+@pytest.mark.parametrize(
+    ("receiver", "constructor", "extra"),
+    [
+        ("Response", "Cookie", ""),
+        ("HttpServletResponse", "CustomCookie", ""),
+        ("HttpServletResponse", 'Cookie("n","v") {}', ""),
+        ("HttpServletResponse", "Cookie", "class Cookie {}"),
+        ("HttpServletResponse", "Cookie", "class HttpServletResponse {}"),
+        ("HttpServletResponse", "Cookie", "class Local<Cookie> {}"),
+    ],
+)
+def test_java_unresolved_servlet_api_keeps_both_reviews(tmp_path, receiver, constructor, extra):
+    allocation = constructor if "(" in constructor else constructor + '("n","v")'
+    source = (
+        "import javax.servlet.http.Cookie; import javax.servlet.http.HttpServletResponse;\n"
+        f"class App {{ {extra} void send({receiver} r) {{ Cookie c = new {allocation};"
+        "c.setSecure(true); c.setHttpOnly(true); r.addCookie(c); } }"
+    )
+    tree = parse(tmp_path, "App.java", source)
+    for rule in RULES.values():
+        findings = rule.evaluate([tree], nx.DiGraph(), [])
+        assert len(findings) == 1 and "option state: unknown" in findings[0].message

@@ -57,6 +57,7 @@ from aegify.scanner import (
     python_tls,
     python_values,
     python_xml,
+    servlet_cookies,
     sql_queries,
     wrangler,
 )
@@ -101,6 +102,7 @@ def parser_fingerprint() -> str:
         "schema": 4,
         "extractor": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "wrangler": hashlib.sha256(Path(wrangler.__file__).read_bytes()).hexdigest(),
+        "servlet_cookies": hashlib.sha256(Path(servlet_cookies.__file__).read_bytes()).hexdigest(),
         "call_arguments": hashlib.sha256(Path(call_arguments.__file__).read_bytes()).hexdigest(),
         "sql_queries": hashlib.sha256(Path(sql_queries.__file__).read_bytes()).hexdigest(),
         "flask_sessions": hashlib.sha256(Path(flask_sessions.__file__).read_bytes()).hexdigest(),
@@ -1138,7 +1140,10 @@ class _JavaExtractor(_BaseExtractor):
                 )
             )
 
-        # Calls
+        # Resolve servlet type names only for files that publish cookies.
+        cookie_types = (
+            servlet_cookies.servlet_types(root, imports) if b"addCookie" in source else {}
+        )
         for node in self._find_nodes(root, "method_invocation"):
             name_node = node.child_by_field_name("name")
             if not name_node:
@@ -1171,6 +1176,11 @@ class _JavaExtractor(_BaseExtractor):
                     argument_types=argument_types,
                     receiver=receiver,
                     receiver_type=receiver_type,
+                    structured_arguments=(
+                        servlet_cookies.cookie_arguments(node, enclosing_node, cookie_types)
+                        if callee == "addCookie"
+                        else None
+                    ),
                     in_function=enclosing,
                 )
             )

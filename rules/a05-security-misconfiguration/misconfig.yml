@@ -103,10 +103,15 @@ rules:
         callee_match_mode: full
         languages: [go]
         boolean_option: {name: Secure, location: argument, argument: 1, states: ["false", "missing", "unknown"]}
-      - callee: '(?-i:(?:.*\.)?(?:addCookie|setCookie|Cookie|NewCookie))'
+      - callee: '(?-i:(?:.*\.)?(?:setCookie|Cookie|NewCookie))'
         callee_match_mode: full
         languages: [java]
         args_match: '.'
+      - callee: '(?-i:(?:.*\.)?addCookie)'
+        callee_match_mode: full
+        languages: [java]
+        args_match: '.'
+        boolean_option: {name: secure, location: argument, argument: 0, states: ["false", "missing", "unknown"]}
       - callee: ".*"
         args_match: 'Set-Cookie:(?!.*;\s*[Ss]ecure).*'
       - callee: "(SESSION_COOKIE_SECURE|session\\.cookie_secure)"
@@ -144,10 +149,15 @@ rules:
         callee_match_mode: full
         languages: [go]
         boolean_option: {name: HttpOnly, location: argument, argument: 1, states: ["false", "missing", "unknown"]}
-      - callee: '(?-i:(?:.*\.)?(?:addCookie|setCookie|Cookie|NewCookie))'
+      - callee: '(?-i:(?:.*\.)?(?:setCookie|Cookie|NewCookie))'
         callee_match_mode: full
         languages: [java]
         args_match: '.'
+      - callee: '(?-i:(?:.*\.)?addCookie)'
+        callee_match_mode: full
+        languages: [java]
+        args_match: '.'
+        boolean_option: {name: httpOnly, location: argument, argument: 0, states: ["false", "missing", "unknown"]}
       - callee: "(SESSION_COOKIE_HTTPONLY|session\\.cookie_httponly)"
         args_match: "(False|false|0)"
     message: >
