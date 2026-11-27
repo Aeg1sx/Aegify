@@ -521,6 +521,8 @@ class CallGraphBuilder:
 
     def _resolve_callee(self, call: CallSite) -> str | None:
         """Resolve one overload using locality, arity, and source type evidence."""
+        if call.receiver_type == "builtins.dict" and call.callee == "get":
+            return None
         callee_full = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
         candidate_tiers: list[list[str]] = []
         imported = self._import_map.get((call.file_path, callee_full), [])

@@ -9,12 +9,12 @@ from aegify.scanner.dataflow import DataflowAnalyzer
 from aegify.scanner.engine import ScanEngine
 
 
-def _paths(root: Path, source: str):
+def _paths(root: Path, source: str, *related: Path):
     path = root / "reader.py"
     path.write_text(dedent(source).lstrip())
     config = AegifyConfig()
     config.scan.max_workers = 1
-    scan = ScanEngine(config=config).scan_files(root, [path])
+    scan = ScanEngine(config=config).scan_files(root, [path, *related])
     assert scan.status == "completed"
     return [item for item in scan.findings if item.rule_id == "AEG-PATH-001"]
 
@@ -146,3 +146,28 @@ def test_environment_field_summary_and_proven_operand_are_distinct(tmp_path: Pat
     assert "could not bind" in by_line[5].message
     assert by_line[9].blocks_ci and by_line[11].blocks_ci
     assert "field-store" in {s.propagation_type for s in by_line[9].taint_flow.path}
+
+
+def test_dict_get_preserves_real_data_without_returning_unrelated_method_values(tmp_path):
+    registry = tmp_path / "registry.py"
+    registry.write_text(
+        "from flask import request\nclass Registry:\n"
+        "    def get(self, key):\n        return request.args.get('registry')\n"
+    )
+    findings = _paths(
+        tmp_path,
+        """
+        from flask import request
+        LOOKUP = {"title": "local.txt"}
+        def configured():
+            chosen = LOOKUP.get('title')
+            return open(chosen)
+        def dynamic():
+            values = {'label': request.args.get('path')}
+            chosen = values.get('label')
+            return open(chosen)
+    """,
+        registry,
+    )
+    assert not [f for f in findings if f.line_start == 5]
+    assert any(f.line_start == 9 and f.taint_flow.source.line == 7 for f in findings)

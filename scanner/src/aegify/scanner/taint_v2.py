@@ -1588,6 +1588,8 @@ class StructuredTaintAnalyzer:
         return bindings
 
     def _resolve_call_targets(self, context: _FunctionContext, call: CallSite) -> list[str]:
+        if call.receiver_type == "builtins.dict" and call.callee == "get":
+            return []
         exact = self._edge_targets.get(
             (context.node_id, call.file_path, call.line, call.column), set()
         )

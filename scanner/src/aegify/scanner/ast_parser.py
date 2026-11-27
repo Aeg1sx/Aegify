@@ -746,6 +746,7 @@ class _PythonExtractor(_BaseExtractor):
         downloads = python_requests.download_urls(source)
         xml = python_xml.xml_calls(source)
         buffers = python_buffers.buffer_writes(source)
+        dict_gets = python_storage.dict_get_calls(source)
         stdin = python_code.stdin_calls(source)
         files = python_files.file_calls(source)
         sanitizers = python_scope.assigned_sanitizers(source)
@@ -798,6 +799,7 @@ class _PythonExtractor(_BaseExtractor):
                     python_process_input=processes.get(location),
                     python_assigned_sanitizer=sanitizers.get(location, ""),
                     python_buffer_write=(node.start_point[0] + 1, node.start_point[1]) in buffers,
+                    receiver_type="builtins.dict" if location in dict_gets else "",
                     receiver=receiver,
                     in_function=enclosing,
                 )

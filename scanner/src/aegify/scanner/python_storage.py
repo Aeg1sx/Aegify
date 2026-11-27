@@ -6,7 +6,7 @@ import ast
 from collections import Counter, defaultdict
 
 from aegify.models import PythonStoredRead
-from aegify.scanner.python_scope import PythonScope, function_scopes
+from aegify.scanner.python_scope import PythonScope, function_scopes, python_scopes
 
 
 class LocalValues:
@@ -318,6 +318,72 @@ def _index(node: ast.expr) -> int | None:
     if isinstance(node, ast.Constant) and type(node.value) is int and node.value.bit_length() <= 31:
         return sign * int(node.value)
     return None
+
+
+def dict_get_calls(source: bytes) -> set[tuple[int, int, int, int]]:
+    """Identify exact dict receivers without inferring their type from a method name."""
+    if b"get" not in source or (b"{" not in source and b"dict" not in source):
+        return set()
+    positions = set()
+    module_dicts: dict[str, int] = {}
+    direct_functions: set[ast.stmt] = set()
+    for scope in python_scopes(source):
+        if isinstance(scope.owner, ast.Module):
+            direct_functions = set(scope.owner.body)
+            global_writes = {
+                name
+                for node in ast.walk(scope.owner)
+                if isinstance(node, ast.Global)
+                for name in node.names
+            }
+            for stmt in scope.owner.body:
+                target: ast.expr
+                if isinstance(stmt, ast.AnnAssign):
+                    target = stmt.target
+                elif isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                    target = stmt.targets[0]
+                else:
+                    continue
+                if (
+                    isinstance(target, ast.Name)
+                    and isinstance(stmt.value, ast.Dict | ast.DictComp)
+                    and scope.definitions.get(target.id) == 1
+                    and target.id not in global_writes
+                ):
+                    module_dicts[target.id] = stmt.lineno
+        local = None
+        for node in scope.nodes:
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and node.end_lineno is not None
+                and node.end_col_offset is not None
+            ):
+                continue
+            location = node.lineno, node.col_offset, node.end_lineno, node.end_col_offset
+            receiver = node.func.value
+            if isinstance(receiver, ast.Name):
+                if (
+                    scope.owner in direct_functions
+                    and receiver.id not in scope.definitions
+                    and module_dicts.get(receiver.id, node.lineno) < node.lineno
+                ):
+                    positions.add(location)
+                    continue
+                local = local or LocalValues(scope)
+                value = local.assigned(receiver)
+            else:
+                value = receiver
+            if isinstance(value, ast.Dict | ast.DictComp) or (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "dict"
+                and "dict" not in scope.hidden
+                and "builtins.dict" not in scope.modified
+            ):
+                positions.add(location)
+    return positions
 
 
 def storage_facts(source: bytes) -> tuple[list[PythonStoredRead], set[tuple[int, int]]]:
