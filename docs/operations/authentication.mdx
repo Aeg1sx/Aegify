@@ -156,7 +156,25 @@ project. Bearer credentials cannot read dashboard APIs, create projects, change
 shared rules, or modify integration settings. Member/service uploads never replace
 the workspace rule definitions from untrusted report metadata.
 
-Project administrators can inspect recent membership, token and import events in
-the project screen. Events contain stable actor and resource IDs and survive project
-deletion in the database. These application records require the same protected
-backups as the database; they are not an external immutable audit sink.
+### Project audit history
+
+Open **Project settings → Project audit log** to inspect membership changes, CI
+credential changes and scan imports. Administrators can browse 15 events at a
+time, with the newest first. Each row shows the actor, target and event time.
+
+An authenticated administrator can also read `GET /api/projects/{id}/audit`.
+The response contains up to 100 events by default. Set `limit` to a value from
+1 to 100 and pass the returned `nextCursor` as `cursor` to read the next page.
+A null cursor in the response marks the end of the log.
+
+Choose **Download JSONL** or request `GET /api/projects/{id}/audit?format=jsonl`
+to export a snapshot of every event recorded for that project at the start of
+the read transaction. Each line is a complete event with its stable actor and
+target IDs. The response headers `X-Aegify-Event-Count` and
+`X-Aegify-Export-Bytes` give the record count and uncompressed file size.
+The download requires a current administrator session. CI credentials only
+authorize uploads.
+
+Audit records survive project deletion in the database. Export them before
+deleting a project if you need a downloadable copy. Include the database in
+protected backups and retain exported records according to your audit policy.
