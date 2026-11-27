@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, CircleAlert, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ImportReceipt } from "@/lib/sarif-import";
 import { uploadValidationError } from "@/lib/upload-validation";
 
@@ -11,12 +12,17 @@ type Project = { id: string; name: string; accessRole: string };
 type ImportState =
   | { state: "importing"; filename: string }
   | { state: "error"; filename: string; message: string; checkHistory: boolean }
-  | { state: "saved"; filename: string; receipt: Pick<ImportReceipt, "scanId" | "findingsCount" | "status"> };
+  | { state: "saved"; filename: string; receipt: Pick<ImportReceipt, "scanId" | "findingsCount" | "status" | "gatewayInventory"> };
 
 const scanStatus = { completed: "Completed", partial: "Partial coverage", failed: "Scan failed" };
 const scanCommand = String.raw`aegify scan ./src --no-llm \
   --output sarif \
   --output-file results.sarif`;
+const workspaceCommand = String.raw`aegify scan-workspace workspace.yml \
+  --prepare-to ./prepared-workspace \
+  --output sarif \
+  --output-file results.sarif`;
+const commandClass = "whitespace-pre-wrap rounded-sm bg-muted p-3 font-mono text-xs leading-5 [overflow-wrap:anywhere]";
 const uploadCommand = String.raw`aegify upload results.sarif \
   --dashboard-url https://your-dashboard.example`;
 
@@ -30,6 +36,8 @@ export default function UploadPage() {
   const [result, setResult] = useState<ImportState | null>(null);
   const project = projects.find(({ id }) => id === projectId);
   const uploading = result?.state === "importing";
+
+  const gateway = result?.state === "saved" ? result.receipt.gatewayInventory : undefined;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -79,7 +87,12 @@ export default function UploadPage() {
           typeof receipt.status !== "string" || !Object.hasOwn(scanStatus, receipt.status)) {
         return fail("Check scan history before trying again.", true);
       }
-      setResult({ state: "saved", filename, receipt });
+      const inventory = receipt.gatewayInventory;
+      const hasRouteCounts = inventory && ["processed", "partial"].includes(inventory.inputStatus)
+        && [inventory.resolved, inventory.ambiguous, inventory.unresolved].every(
+          (count) => Number.isSafeInteger(count) && count >= 0,
+        );
+      setResult({ state: "saved", filename, receipt: { ...receipt, gatewayInventory: hasRouteCounts ? inventory : undefined } });
     } catch {
       fail("Check scan history before trying again.", true);
     } finally {
@@ -148,6 +161,23 @@ export default function UploadPage() {
                   <dt className="text-muted-foreground">Findings</dt><dd className="tabular-nums">{result.receipt.findingsCount}</dd>
                 </dl>
               </div>
+              {gateway && <section aria-label="Gateway routes" className="my-3 border-y border-border py-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <h3 className="font-semibold">Gateway routes</h3>
+                  {gateway.inputStatus === "partial" && <span className="text-xs text-muted-foreground">Partial gateway input</span>}
+                </div>
+                <ul className="my-2 grid grid-cols-3 gap-2">
+                  {([["Resolved", gateway.resolved], ["Ambiguous", gateway.ambiguous], ["Unresolved", gateway.unresolved]] as const).map(([label, count]) => (
+                    <li key={label}>
+                      <span className="block text-lg font-semibold tabular-nums">{count}</span>
+                      <span className="text-xs text-muted-foreground">{label}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link href={"/scans/" + encodeURIComponent(result.receipt.scanId) + "#gateway-inventory"} className="inline-flex min-h-11 items-center gap-1.5 font-medium text-primary underline underline-offset-4">
+                  Review gateway routes <ArrowRight aria-hidden className="size-4" />
+                </Link>
+              </section>}
               <Link href={"/scans/" + encodeURIComponent(result.receipt.scanId)} className="mt-1 inline-flex min-h-11 items-center gap-1.5 font-medium text-primary underline underline-offset-4">Open scan <ArrowRight aria-hidden className="size-4" /></Link>
             </>}
           </section>}
@@ -156,10 +186,23 @@ export default function UploadPage() {
         <aside className="min-w-0 border-t border-border pt-5 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-7" aria-label="Command line import">
           <details open>
             <summary className="min-h-11 cursor-pointer text-sm font-semibold">Scan and import from the CLI</summary>
-            <p className="mb-2 text-sm text-muted-foreground">Generate a SARIF report in your repository.</p>
-            <pre className="whitespace-pre-wrap rounded-sm bg-muted p-3 font-mono text-xs leading-5 [overflow-wrap:anywhere]"><code>{scanCommand}</code></pre>
+            <Tabs defaultValue="repository" className="min-w-0">
+              <TabsList aria-label="Scan source" className="min-h-12">
+                <TabsTrigger value="repository" className="min-h-11 text-foreground">Repository</TabsTrigger>
+                <TabsTrigger value="workspace" className="min-h-11 text-foreground">Workspace</TabsTrigger>
+              </TabsList>
+              <TabsContent value="repository">
+                <p className="mb-2 text-sm text-muted-foreground">Generate a SARIF report in your repository.</p>
+                <pre className={commandClass}><code>{scanCommand}</code></pre>
+              </TabsContent>
+              <TabsContent value="workspace">
+                <p className="mb-2 text-sm text-muted-foreground">List local folders and pinned GitHub, GitLab, Bitbucket or Azure Repos sources in your manifest. Use a new preparation directory for each scan.</p>
+                <pre className={commandClass}><code>{workspaceCommand}</code></pre>
+                <a href="https://github.com/Aeg1sx/Aegify/blob/main/scanner/examples/provider-workspace/workspace.yml" className="inline-flex min-h-11 items-center text-sm text-primary underline underline-offset-4">View example manifest</a>
+              </TabsContent>
+            </Tabs>
             <p className="mt-4 mb-2 text-sm text-muted-foreground">Set <code>AEGIFY_UPLOAD_TOKEN</code> to a project token, then use your dashboard URL.</p>
-            <pre className="whitespace-pre-wrap rounded-sm bg-muted p-3 font-mono text-xs leading-5 [overflow-wrap:anywhere]"><code>{uploadCommand}</code></pre>
+            <pre className={commandClass}><code>{uploadCommand}</code></pre>
           </details>
         </aside>
       </div>

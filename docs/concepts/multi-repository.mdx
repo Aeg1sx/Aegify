@@ -92,9 +92,14 @@ The inventory marks its input status as `partial` when a file diagnostic or an
 omitted count indicates a coverage gap. The defaults cover 128 candidate files, 512 KiB per file, 8 MiB total
 and 4,096 emitted routes. YAML aliases and merge keys produce a file diagnostic.
 
-Upload the workspace SARIF to its dashboard project. Each scan in project history
-shows the resolved, ambiguous and unresolved counts. Open **Gateway ownership**
-to inspect a configuration file, its SHA-256, route declarations, logical
+On **Import scan**, choose **Workspace** in the CLI instructions to generate
+the workspace SARIF, then select a project and import the file. When the report
+includes gateway declarations, the receipt shows resolved, ambiguous and
+unresolved route counts. **Review gateway routes** opens the recorded
+configuration files and moves keyboard focus to **Gateway ownership**.
+
+You can also open **Gateway ownership** from the scan in project history.
+Inspect each configuration file, its SHA-256, route declarations, logical
 documents, source lines, candidate owners and review reasons. An incomplete
 inventory displays its partial input status and any omitted counts.
 
@@ -102,7 +107,8 @@ The SARIF upload receipt and the project's scan history expose a
 `gatewayInventory` summary. The authorized scan detail API also includes the
 files and their declarations. Scans saved without an inventory return
 `gatewayInventory: null` in project history and scan details. The dashboard
-accepts up to 8 MiB of projected details per inventory.
+accepts up to 8 MiB of projected details per inventory. Within this budget,
+all 4,096 routes can retain all 32 possible owners in a prepared workspace.
 
 This report describes declarations as written. Active Spring profiles, external
 configuration, Java DSL, Kubernetes resources, deployment DNS, Kong pool members

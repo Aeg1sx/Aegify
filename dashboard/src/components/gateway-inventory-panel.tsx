@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { GatewayFileReview, GatewayReview, GatewayRouteReview } from "@/lib/gateway-inventory";
 
@@ -36,6 +36,14 @@ const filters = [
 
 export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
   const id = useId();
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // The scan request can finish after the browser has tried its fragment jump.
+    if (window.location.hash === "#gateway-inventory" && section.current) {
+      section.current.focus({ preventScroll: true });
+      section.current.scrollIntoView({ block: "start" });
+    }
+  }, []);
   const [fileIndex, setFileIndex] = useState(-1);
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
@@ -49,7 +57,7 @@ export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
   const selectClass = "min-h-11 w-full min-w-0 rounded-md border bg-background px-3 text-sm";
 
   return (
-    <section id="gateway-inventory" aria-labelledby={id + "-heading"} className="min-w-0 space-y-4 border-t pt-4">
+    <section ref={section} id="gateway-inventory" tabIndex={-1} aria-labelledby={id + "-heading"} className="min-w-0 scroll-mt-16 space-y-4 border-t pt-4 lg:scroll-mt-4">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 id={id + "-heading"} className="text-base font-semibold">Gateway ownership</h2>

@@ -50,3 +50,22 @@ test("rejects contradictory ownership, unsafe paths, unbounded evidence and unsu
     assert.throws(() => parseGatewayInventory(data), /Invalid or unsupported gateway inventory/);
   }
 });
+
+test("full-size workspace imports preserve ambiguous owners within the detail budget", () => {
+  const data = fixture();
+  const owners = Array.from({ length: 32 }, (_, index) => "service-" + index);
+  const route = { ...data.files[0].routes[1], repository_ids: owners };
+  data.files[0].routes = Array.from({ length: 4096 }, (_, index) => ({ ...route, line: index + 1 }));
+  const review = parseGatewayInventory(data);
+  assert.ok(review);
+  const stored = gatewayStorage(review);
+  assert.equal(stored.summary.ambiguous, 4096);
+  const restored = storedGatewayReview(stored.data);
+  assert.deepEqual(restored?.files[0].routes.at(-1)?.owners, owners);
+
+  owners.push("additional-owner");
+  assert.throws(() => parseGatewayInventory(data), /Invalid or unsupported gateway inventory/);
+  owners.pop();
+  owners[0] = "a".repeat(2048);
+  assert.throws(() => parseGatewayInventory(data), /Invalid or unsupported gateway inventory/);
+});
