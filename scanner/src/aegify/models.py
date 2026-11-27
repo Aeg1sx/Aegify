@@ -222,6 +222,20 @@ class PythonDirectoryCheck(BaseModel):
     comparison_line: int
 
 
+class ConditionalWrite(BaseModel):
+    read_line: int = Field(gt=0)
+    condition_line: int = Field(gt=0)
+    line: int = Field(gt=0)
+    sql: bool
+    saves_read_value: bool = False
+
+
+class SessionExpiry(BaseModel):
+    line: int = Field(gt=0)
+    api: Literal["starlette", "express", "servlet"]
+    owner: Literal["starlette", "fastapi", ""] = ""
+
+
 class JinjaEnvironment(BaseModel):
     line: int
     use_line: int
@@ -261,6 +275,8 @@ class FileAST(BaseModel):
     session_writes: list[SessionWrite] = Field(default_factory=list)
     flask_routers: list[str] = Field(default_factory=list)
     flask_responses: list[FlaskResponse] = Field(default_factory=list)
+    conditional_writes: list[ConditionalWrite] = Field(default_factory=list)
+    session_expiry: list[SessionExpiry] = Field(default_factory=list)
     jinja_environments: list[JinjaEnvironment] = Field(default_factory=list)
     python_signing_keys: list[PythonSigningKey] = Field(default_factory=list)
     credential_randomness: list[CredentialRandomness] = Field(default_factory=list)
@@ -683,6 +699,7 @@ class Finding(BaseModel):
     file_path: str
     line_start: int
     line_end: int
+    omit_source_snippets: bool = False
     code_snippet: str = ""
     code_snippet_start_line: int | None = Field(default=None, ge=1)
     message: str = ""

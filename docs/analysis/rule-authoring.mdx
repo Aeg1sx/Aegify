@@ -290,6 +290,24 @@ SARIF encodes advisory results as `level: note`, `kind: review`, and
 `blocksCi: false`. Blocking high or critical results produce a non-zero CLI exit
 code. Dashboard ingestion stores and filters both classification fields.
 
+## Session lifetime and conditional write review
+
+The fixed `session_expiry` detector records resolved Starlette middleware with
+`max_age=None`, express-session's implicit MemoryStore with literal options
+that supply no cookie expiry, and a non-positive inactivity interval on a
+typed servlet session. A custom Express store, computed options, and a
+session read leave the lifetime unresolved. The advisory gives the
+configuration line and omits source snippets because the options can contain
+a signing secret.
+
+The fixed `conditional_database_write` detector follows a nearby read through
+the condition that tests it and into a write on the same receiver. A direct
+negative guard returning before the write is supported. A save of the same
+read object is blocking. Matching literal SQL table operations and Prisma
+delegate writes are advisory. Scoped transaction constructs, recognized SQL
+locks and additional optimistic write predicates limit reporting. Transaction
+ownership outside the visible source path requires review.
+
 ## Structured database-race evidence
 
 The `database_race` semantic detector finds a bounded read-modify-write sequence

@@ -102,6 +102,10 @@ class YAMLRule(SecurityRule):
             "python_http_verify_option",
         }:
             return self._eval_tls(file_asts, http_only=semantic.kind == "python_http_verify_option")
+        if semantic is not None and semantic.kind == "session_expiry":
+            return self._eval_session_expiry(file_asts)
+        if semantic is not None and semantic.kind == "conditional_database_write":
+            return self._eval_conditional_writes(file_asts)
         if semantic is not None and semantic.kind == "python_jinja_autoescape":
             return self._eval_jinja_autoescape(file_asts)
         if semantic is not None and semantic.kind == "python_jwt_signing_key":
@@ -191,6 +195,81 @@ class YAMLRule(SecurityRule):
                 if len(findings) >= self._MAX_FINDINGS_PER_FILE:
                     self.evaluation_limited = True
                     break
+        return findings
+
+    def _eval_session_expiry(self, files: list[FileAST]) -> list[Finding]:
+        messages = {
+            "starlette": (
+                "Starlette's session middleware is configured with max_age=None. The "
+                "signer checks no maximum age on incoming session data."
+            ),
+            "express": (
+                "express-session selects its built-in MemoryStore with no cookie expiry. "
+                "This configuration supplies no expiry for stored session records."
+            ),
+            "servlet": (
+                "This servlet call sets a non-positive inactivity interval. The session "
+                "will not expire due to inactivity under this setting."
+            ),
+        }
+        modules = PythonModules(files)
+        findings = []
+        for file in files:
+            if self.definition.languages and file.language not in self.definition.languages:
+                continue
+            count = 0
+            for item in file.session_expiry:
+                if item.api == "starlette" and not all(
+                    modules.external(file, pkg) for pkg in {"starlette", item.owner} if pkg
+                ):
+                    continue
+                if count >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
+                    break
+                findings.append(
+                    self._create_finding(
+                        file_path=file.file_path,
+                        line_start=item.line,
+                        line_end=item.line,
+                        code_snippet="",
+                        message=messages[item.api],
+                        omit_source_snippets=True,
+                        evidence_state=EvidenceState.CANDIDATE,
+                        disposition=FindingDisposition.ADVISORY,
+                    )
+                )
+                count += 1
+        return findings
+
+    def _eval_conditional_writes(self, files: list[FileAST]) -> list[Finding]:
+        findings = []
+        for file in files:
+            if self.definition.languages and file.language not in self.definition.languages:
+                continue
+            for idx, item in enumerate(file.conditional_writes):
+                if idx >= self._MAX_FINDINGS_PER_FILE:
+                    self.evaluation_limited = True
+                    break
+                target = "SQL table" if item.sql else "repository receiver"
+                findings.append(
+                    self._create_finding(
+                        file_path=file.file_path,
+                        line_start=item.line,
+                        line_end=item.line,
+                        code_snippet="",
+                        message=(
+                            f"The condition on line {item.condition_line} checks the result of the "
+                            f"read on line {item.read_line}. The write on line {item.line} uses "
+                            f"the same {target}. Verify transaction isolation or an atomic update."
+                        ),
+                        evidence_state=EvidenceState.REACHABLE
+                        if item.saves_read_value
+                        else EvidenceState.CANDIDATE,
+                        disposition=FindingDisposition.BLOCKING
+                        if item.saves_read_value
+                        else FindingDisposition.ADVISORY,
+                    )
+                )
         return findings
 
     def _eval_deserialization(self, files: list[FileAST], kind: str) -> list[Finding]:
@@ -1408,6 +1487,8 @@ class SemanticSpec:
     """Normalized structured evidence detector configuration."""
 
     FIXED_KINDS = {
+        "session_expiry",
+        "conditional_database_write",
         "python_tls_verification",
         "python_http_verify_option",
         "credential_randomness",

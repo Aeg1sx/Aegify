@@ -116,39 +116,9 @@ rules:
     languages: [python, javascript, typescript, java, go, ruby]
     cwe_id: 362
     owasp_category: "A04:2021-Insecure Design"
-    patterns:
-      - sequence_match:
-          - "SELECT|find|findOne|query|fetch"
-          - "if|unless|guard"
-          - "INSERT|UPDATE|DELETE|save|create|destroy"
-        max_lines_between: 20
-        missing_pattern: "FOR UPDATE|LOCK|transaction|atomic|serializable"
-        disposition: advisory
-      - multi_match:
-          - "await.*find|await.*get|await.*query"
-          - "if.*===|if.*!==|if.*==|if.*!="
-          - "await.*save|await.*update|await.*create"
-        missing_match:
-          - "session|transaction|lock"
-        disposition: advisory
     semantic:
-      kind: database_race
-      read_callee: "(?:findById|findOne|find|get|load|read|query|fetch|select)"
-      write_callee: "(?:save|update|put|write|store|create|delete|destroy|insert)"
-      receiver_match: "(?:^|[._])(?:repo(?:sitory)?|dao|db|database|store|model|entityManager|jdbc|jooq|collection|table|session)(?:$|[._])"
-      required_between: "\\b(?:if|unless|guard)\\b"
-      defense_match: "(?:transaction|atomic|synchronized|for\\s+update|selectForUpdate|lock|mutex|semaphore|serializable|advisoryLock|withLock)"
-      max_lines_between: 20
-      same_receiver: true
-    defense_patterns:
-      - "FOR UPDATE"
-      - "LOCK IN SHARE MODE"
-      - "transaction"
-      - "atomic"
-      - "SERIALIZABLE"
-      - "advisory_lock"
-      - "with_lock"
-    message: "Critical database operations lack locking. Use SELECT FOR UPDATE, explicit transactions with appropriate isolation level, or advisory locks to prevent concurrent modification."
+      kind: conditional_database_write
+    message: "A database read controls a later write to the same store. Check transaction isolation and the write preconditions."
 
   - id: "AEG-RACE-005"
     name: "Concurrent session modification without synchronization"

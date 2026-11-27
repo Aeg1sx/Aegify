@@ -1,0 +1,68 @@
+{
+  "authlib": {
+    "repo": "authlib/demo-oauth-client",
+    "revision": "a9e1abd1aae41805eaa32c8ac39bbcadd79ce0aa",
+    "files": [
+      {
+        "path": "starlette-google-login/app.py",
+        "sha256": "d1c3428d30b4dafe1260fdb7803d95cf86acc977cddcf1ab8c519a267502d34a"
+      }
+    ]
+  },
+  "passport": {
+    "repo": "passport/express-4.x-local-example",
+    "revision": "0505c28e2295ec2c642dc9e8e0f6107e7ba0f8aa",
+    "files": [
+      {
+        "path": "app.js",
+        "sha256": "4ee838803f20b2588d62eb30f784edceb40077b8b2fa108f58a6eab9921f4191"
+      }
+    ]
+  },
+  "nifi-base": {
+    "repo": "apache/nifi",
+    "revision": "376c344edbbeb578ecd450a48a7c9241d7dd4aeb",
+    "files": [
+      {
+        "path": "nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-administration/src/main/java/org/apache/nifi/admin/dao/impl/StandardKeyDAO.java",
+        "sha256": "8c570d1a39de8aaf0d1b4a7514d971a3277b98388c00891627d5714b5ca1c68c"
+      },
+      {
+        "path": "nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-web/nifi-web-api/src/main/java/org/apache/nifi/web/api/AccessResource.java",
+        "sha256": "c3576d19058129cd8e61cef92bb99486db7de3d1b458edb59aa1bc4362e3d74f"
+      },
+      {
+        "path": "nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-web/nifi-web-security/src/main/java/org/apache/nifi/web/security/jwt/JwtService.java",
+        "sha256": "75f3f43b291fbcbe67bb088369a9cbf79bacb63398f8d36ba00664053509a130"
+      }
+    ]
+  },
+  "nifi-fix": {
+    "repo": "apache/nifi",
+    "revision": "cf6f5172503ce438c6c22c334c9367f774db7b24",
+    "files": [
+      {
+        "path": "nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-administration/src/main/java/org/apache/nifi/admin/dao/impl/StandardKeyDAO.java",
+        "sha256": "018c8bd25bdaa740b47905db63996bec0935d794b615865c5563a1c945b7edeb"
+      },
+      {
+        "path": "nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-web/nifi-web-api/src/main/java/org/apache/nifi/web/api/AccessResource.java",
+        "sha256": "9a4194ef11beed2bce6cf54e680cf096a2f8c911f67fb20519cc606b808bc9f0"
+      },
+      {
+        "path": "nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-web/nifi-web-security/src/main/java/org/apache/nifi/web/security/jwt/JwtService.java",
+        "sha256": "9c2d868002887376f0eedfe8769093daaa3fd9bc660fed726463fcffd3206cbd"
+      }
+    ]
+  },
+  "express": {
+    "repo": "expressjs/express",
+    "revision": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "files": [
+      {
+        "path": "examples/auth/index.js",
+        "sha256": "4acca9f794d50f57c41967b471031f7410cc61a2b979c86ad0f264567f06e69b"
+      }
+    ]
+  }
+}
