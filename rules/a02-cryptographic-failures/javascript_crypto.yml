@@ -121,7 +121,7 @@ rules:
     cwe_id: 208
     owasp_category: "A02:2021-Cryptographic Failures"
     patterns:
-      - regex_match: "(?:hmac|digest|(?<!location\\.)(?<!location\\?\\.)hash|signature|mac|token|api_?key|secret)\\s*(?:===?|!==?)\\s*"
+      - regex_match: "(?:hmac|digest|(?<!\\blocation\\.)(?<!\\blocation\\?\\.)hash|signature|mac|token|api_?key|secret)\\s*(?:===?|!==?)\\s*"
       - regex_match: "(?:===?|!==?)\\s*(?:hmac|digest|hash|signature|mac|token|api_?key|secret)"
       - callee_match: "\\.equals\\("
         context_check: "(hmac|digest|hash|signature|token|mac)"

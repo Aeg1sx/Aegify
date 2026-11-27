@@ -595,13 +595,16 @@ def test_upload_rule_distinguishes_request_files_from_browser_file_selection(tmp
     }
 
 
-def test_timing_rule_distinguishes_navigation_hash_from_credential_comparisons(tmp_path: Path):
+@pytest.mark.parametrize("owner", ["stored", "allocation"])
+def test_timing_rule_distinguishes_navigation_hash_from_credential_comparisons(
+    tmp_path: Path, owner: str
+):
     findings = _scan_findings(
         tmp_path,
         RULES_DIR / "a02-cryptographic-failures" / "javascript_crypto.yml",
         "function navigate() { return window.location.hash === '#reports'; }\n"
         "function link() { return globalThis.location?.hash !== '#details'; }\n"
-        "function verify(stored, candidate) { return stored.hash === candidate; }\n"
+        f"function verify({owner}, candidate) {{ return {owner}.hash === candidate; }}\n"
         "function authorize(value, token) { return value !== token; }\n",
         "compare.js",
     )
