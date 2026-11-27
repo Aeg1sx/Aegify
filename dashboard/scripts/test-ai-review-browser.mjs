@@ -1998,11 +1998,23 @@ try {
       await waitText(page, routePath);
       const endpointRows = 'ul[aria-label="Endpoint records"] > li';
       const searchEndpoints = 'section[aria-label="Endpoint inventory"] input[type="search"]';
-      await page.type(searchEndpoints, "unmatched-owned-route-name");
+      await page.type(searchEndpoints, "unmatched-owned-route-name", { delay: 0 });
+      assert.equal(await page.$eval(searchEndpoints, (node) => node.value), "unmatched-owned-route-name"); checks++;
+      assert.equal(new URL(page.url()).searchParams.get("q"), "unmatched-owned-route-name"); checks++;
       await waitText(page, "No endpoints match these filters");
       await (await elementWithText(page, "button", "Clear search")).click();
       assert.equal(await page.$eval(searchEndpoints, (node) => node.value), ""); checks++;
-      await page.type(searchEndpoints, "billing/receipts");
+      assert.equal(new URL(page.url()).searchParams.has("q"), false); checks++;
+      // Create a separate history entry so editing with replaceState preserves Back/Forward.
+      await page.evaluate(() => globalThis.history.pushState(null, "", globalThis.location.href));
+      await page.type(searchEndpoints, "billing/receipts", { delay: 0 });
+      assert.equal(await page.$eval(searchEndpoints, (node) => node.value), "billing/receipts"); checks++;
+      await page.goBack();
+      await page.waitForFunction((selector) => globalThis.document.querySelector(selector)?.value === ""
+        && !new globalThis.URL(globalThis.location.href).searchParams.has("q"), {}, searchEndpoints);
+      await page.goForward();
+      await page.waitForFunction((selector) => globalThis.document.querySelector(selector)?.value === "billing/receipts"
+        && new globalThis.URL(globalThis.location.href).searchParams.get("q") === "billing/receipts", {}, searchEndpoints);
       await waitText(page, "3 routes");
       assert.equal((await page.$$(endpointRows)).length, 3); checks++;
       assert.equal(new URL(page.url()).searchParams.get("q"), "billing/receipts"); checks++;

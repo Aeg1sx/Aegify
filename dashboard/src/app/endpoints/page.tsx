@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -134,8 +134,27 @@ export default function EndpointsPage() {
   );
 }
 
+const inventoryChanged = "aegify:endpoint-inventory-changed";
+
+function subscribeInventory(notify: () => void) {
+  window.addEventListener("popstate", notify);
+  window.addEventListener(inventoryChanged, notify);
+  return () => {
+    window.removeEventListener("popstate", notify);
+    window.removeEventListener(inventoryChanged, notify);
+  };
+}
+
+function currentSearch() {
+  return window.location.search;
+}
+
 function InventoryView() {
-  const search = useSearchParams();
+  const routeSearch = useSearchParams();
+  // The native history mutation is synchronous; Next's route snapshot can trail
+  // a keystroke. Read every control and the filtered list from the same URL.
+  const queryString = useSyncExternalStore(subscribeInventory, currentSearch, () => routeSearch.toString());
+  const search = new URLSearchParams(queryString);
   const framework = search.get("framework") || "";
   const method = search.get("method") || "";
   const authValue = search.get("auth");
@@ -223,6 +242,7 @@ function InventoryView() {
       else url.searchParams.delete(name);
     }
     window.history.replaceState(null, "", url);
+    window.dispatchEvent(new Event(inventoryChanged));
   }
 
   function reset() {
