@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowUpRight,
   Check,
   CheckCircle2,
   CircleDashed,
@@ -107,8 +108,32 @@ const ROLE_LABEL: Record<string, string> = {
 
 export default function AgentRunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  return <AgentRunReview key={id} id={id} />;
+}
+
+function AgentRunReview({ id }: { id: string }) {
   const [run, setRun] = useState<AgentRun | null>(null);
   const [activeRole, setActiveRole] = useState("");
+  const [destination, setDestination] = useState<{ id: string } | null>(null);
+
+  const openRecord = (role: string, id: string) => {
+    setActiveRole(role);
+    setDestination({ id });
+  };
+
+  useEffect(() => {
+    if (!destination) return;
+    const frame = requestAnimationFrame(() => {
+      const node = document.getElementById(destination.id);
+      if (!node) return;
+      const details = node.closest("details");
+      if (details) details.open = true;
+      node.focus({ preventScroll: true });
+      node.scrollIntoView({ block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [destination]);
+
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [evidenceDrafts, setEvidenceDrafts] = useState<Record<string, string>>({});
@@ -232,14 +257,16 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
               className="workbench-panel focus-visible:ring-2 focus-visible:ring-ring">
               <header className="space-y-3 border-b px-4 py-4 sm:px-6 sm:py-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-xl font-semibold tracking-tight">{ROLE_LABEL[stage.role] || stage.role}</h2>
+                  <h2 id={stageHeadingId(stage)} tabIndex={-1} className="rounded-sm text-xl font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-ring">{ROLE_LABEL[stage.role] || stage.role}</h2>
                   <RunState status={stage.status} />
                 </div>
                 {stage.summary && <p className="max-w-prose text-sm leading-6 text-muted-foreground">{stage.summary}</p>}
                 {stage.errorMessage && <p role="alert" className="text-sm text-destructive">{stage.errorMessage}</p>}
               </header>
-              <div className="min-w-0 p-4 sm:p-6">
-                <StageContent stage={stage} approvals={run.approvals} notes={notes} evidenceDrafts={evidenceDrafts}
+              <div className="min-w-0 space-y-6 p-4 sm:p-6">
+                {(stage.role === "static" || stage.role === "synthesis") &&
+                  <ReviewHandoff value={stage.facts.reviewHandoff} stages={run.stages} openRecord={openRecord} />}
+                <StageContent stage={stage} staticStage={run.stages.find((item) => item.role === "static")} openRecord={openRecord} approvals={run.approvals} notes={notes} evidenceDrafts={evidenceDrafts}
                   setNote={(id, value) => setNotes((previous) => ({ ...previous, [id]: value }))}
                   setEvidenceJson={(id, value) => setEvidenceDrafts((previous) => ({ ...previous, [id]: value }))}
                   decide={decide}
@@ -252,7 +279,7 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
                     <InfoRow label="Agent" value={stage.agentName || SECURITY_AGENTS.find((agent) => agent.role === stage.role)?.name || stage.agentCode} />
                     {stage.promptDigest && <InfoRow label="Prompt digest" value={stage.promptDigest} mono />}
                   </dl>
-                  {stage.evidenceIds.length > 0 && <ul aria-label="Evidence references" className="space-y-1 break-all font-mono text-xs">{stage.evidenceIds.map((ref) => <li key={ref}>{ref}</li>)}</ul>}
+                  {stage.evidenceIds.length > 0 && <ul aria-label="Evidence references" className="space-y-1 break-all font-mono text-xs">{stage.evidenceIds.map((ref) => <li key={ref} id={referenceId(stage, ref)} tabIndex={-1} className="w-fit max-w-full rounded-sm p-1 focus-visible:outline-2 focus-visible:outline-ring">{ref}</li>)}</ul>}
                 </div>
               </details>
             </TabsContent>
@@ -285,6 +312,8 @@ export default function AgentRunPage({ params }: { params: Promise<{ id: string 
 
 function StageContent(props: {
   stage: AgentStage;
+  staticStage?: AgentStage;
+  openRecord: (role: string, id: string) => void;
   approvals: Approval[];
   notes: Record<string, string>;
   setNote: (id: string, value: string) => void;
@@ -299,12 +328,83 @@ function StageContent(props: {
   if (stage.role === "dynamic") return <DynamicPanel {...props} />;
   if (stage.role === "cve") return <CvePanel assessments={stage.cveAssessments} />;
   if (stage.role === "steward") return <ImprovementPanel proposals={stage.improvementProposals} />;
-  if (stage.role === "synthesis") return <SynthesisPanel facts={stage.facts} />;
+  if (stage.role === "synthesis") return <SynthesisPanel facts={stage.facts} staticStage={props.staticStage} openRecord={props.openRecord} />;
   return <SurfacePanel facts={stage.facts} />;
 }
 
+const jumpClass = "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-sm text-left text-sm font-medium text-primary underline decoration-primary/35 underline-offset-4 hover:decoration-current focus-visible:outline-2 focus-visible:outline-ring";
+const stageHeadingId = (stage: AgentStage) => `stage-heading-${stage.id}`;
+const referenceId = (stage: AgentStage, ref: string) => `stage-reference-${encodeURIComponent(stage.id)}:${encodeURIComponent(ref)}`;
+const traceId = (findingId: string) => `code-path-${encodeURIComponent(findingId)}`;
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && !!item.trim()))] : [];
+}
+
+function GapList({ gaps, label }: { gaps: string[]; label: string }) {
+  if (!gaps.length) return null;
+  return <div className="mt-3 border-l-2 border-[var(--severity-medium)] pl-3">
+    <p className="text-xs font-semibold">{label}</p>
+    <ul className="mt-1 list-disc space-y-1 pl-4 text-sm leading-5 [overflow-wrap:anywhere]">
+      {gaps.map((gap) => <li key={gap}>{gap}</li>)}
+    </ul>
+  </div>;
+}
+
+function ReviewHandoff({ value, stages, openRecord }: {
+  value: unknown;
+  stages: AgentStage[];
+  openRecord: (role: string, id: string) => void;
+}) {
+  if (!record(value) || value.version !== 1 || !Array.isArray(value.inputs)) return null;
+  const inputs = value.inputs.filter((input): input is Record<string, unknown> =>
+    record(input) && (input.role === "surface" || input.role === "static") && typeof input.status === "string");
+  const gaps = strings(value.gaps);
+  if (!inputs.length && !gaps.length) return null;
+  return <section aria-label="Review handoff" className="rounded-md border bg-muted/20 px-4 py-3">
+    <h3 className="text-base font-semibold tracking-tight">Review handoff</h3>
+    <ul aria-label="Source stages" className="mt-1 divide-y">
+      {inputs.map((input, index) => {
+        const role = String(input.role);
+        const source = stages.find((item) => item.role === role);
+        const refs = strings(input.evidenceIds);
+        const omitted = typeof input.omittedEvidence === "number" && Number.isSafeInteger(input.omittedEvidence) && input.omittedEvidence > 0 ? input.omittedEvidence : 0;
+        return <li key={role + index} className="py-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-3">
+            {source
+              ? <button type="button" className={jumpClass} onClick={() => openRecord(role, stageHeadingId(source))}>
+                  {ROLE_LABEL[role]} <ArrowUpRight aria-hidden className="size-3.5" />
+                </button>
+              : <span className="py-2 text-sm font-medium">{ROLE_LABEL[role]}</span>}
+            <RunState status={String(input.status)} />
+          </div>
+          {refs.length > 0 && <details className="text-xs">
+            <summary className="w-fit max-w-full cursor-pointer rounded-sm py-3 font-medium focus-visible:outline-2 focus-visible:outline-ring">
+              {refs.length} cited {refs.length === 1 ? "reference" : "references"}
+            </summary>
+            <ul className="pb-2 font-mono">
+              {refs.map((ref) => <li key={ref}>
+                {source?.evidenceIds.includes(ref)
+                  ? <button type="button" className={`${jumpClass} break-all text-xs`} onClick={() => openRecord(role, referenceId(source, ref))}>{ref}<ArrowUpRight aria-hidden className="size-3 shrink-0" /></button>
+                  : <span className="block break-all py-1">{ref}</span>}
+              </li>)}
+            </ul>
+          </details>}
+          {!refs.length && <p className="pb-2 text-xs text-muted-foreground">No cited references.</p>}
+          {omitted > 0 && <p className="pb-2 text-xs text-muted-foreground">{omitted} additional {omitted === 1 ? "reference" : "references"} omitted from the handoff.</p>}
+        </li>;
+      })}
+    </ul>
+    <GapList gaps={gaps} label="Unresolved evidence" />
+  </section>;
+}
+
 function SurfacePanel({ facts }: { facts: Record<string, unknown> }) {
-  const scenarios = Array.isArray(facts.threatScenarios) ? facts.threatScenarios as Array<Record<string, unknown>> : [];
+  const scenarios = Array.isArray(facts.threatScenarios) ? facts.threatScenarios.filter(record) : [];
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-x-5 gap-y-4 border-b pb-5 lg:grid-cols-4">
@@ -318,8 +418,11 @@ function SurfacePanel({ facts }: { facts: Record<string, unknown> }) {
         {scenarios.length ? <ul className="mt-2 divide-y border-t">
           {scenarios.map((scenario, index) => (
             <li key={`${scenario.surface}-${index}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
-              <span className="break-all font-mono text-xs">{String(scenario.surface)}</span>
-              <span className="text-xs text-muted-foreground">Auth {String(scenario.auth)}{scenario.runtimeObserved === true && " · Observed at runtime"}</span>
+              <div className="min-w-0">
+                <p className="break-all font-mono text-xs">{String(scenario.surface ?? "Unknown endpoint")}</p>
+                {typeof scenario.trustBoundary === "string" && <p className="mt-1 break-words text-xs text-muted-foreground">Trust boundary · {scenario.trustBoundary}</p>}
+              </div>
+              <span className="text-xs text-muted-foreground">{typeof scenario.auth === "string" && `Auth · ${scenario.auth.replaceAll("_", " ")}`}{scenario.runtimeObserved === true && (scenario.auth ? " · Observed at runtime" : "Observed at runtime")}</span>
             </li>
           ))}
         </ul> : <Empty text="No endpoint evidence was recorded." />}
@@ -332,7 +435,7 @@ function ReachabilityPanel({ traces }: { traces: Reachability[] }) {
   return (
     <div className="space-y-6">
       {traces.map((trace) => (
-        <div key={trace.findingId} className="min-w-0 overflow-hidden rounded-md border">
+        <div key={trace.findingId} id={traceId(trace.findingId)} tabIndex={-1} className="min-w-0 overflow-hidden rounded-md border focus-visible:outline-2 focus-visible:outline-ring">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/25 px-4 py-3">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Network aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -474,7 +577,11 @@ function ImprovementPanel({ proposals }: { proposals: Array<Record<string, unkno
   );
 }
 
-function SynthesisPanel({ facts }: { facts: Record<string, unknown> }) {
+function SynthesisPanel({ facts, staticStage, openRecord }: {
+  facts: Record<string, unknown>;
+  staticStage?: AgentStage;
+  openRecord: (role: string, id: string) => void;
+}) {
   const findings = Array.isArray(facts.findings) ? facts.findings as Array<Record<string, unknown>> : [];
   return (
     <div className="space-y-3">
@@ -489,6 +596,12 @@ function SynthesisPanel({ facts }: { facts: Record<string, unknown> }) {
             <Fact label="Attack surface" value={finding.attackSurface} mono />
             <Fact label="Code remediation" value={finding.remediation} />
           </div>
+          <GapList gaps={strings(finding.preconditions)} label="Open preconditions" />
+          {typeof finding.findingId === "string" && staticStage?.reachability.some((item) => item.findingId === finding.findingId) && (
+            <button type="button" className={jumpClass} onClick={() => openRecord("static", traceId(String(finding.findingId)))}>
+              Review code path <ArrowUpRight aria-hidden className="size-3.5" />
+            </button>
+          )}
         </div>
       ))}
       {findings.length === 0 && <Empty text="No findings are available to synthesize." />}
@@ -520,7 +633,8 @@ function Fact({ label, value, mono }: { label: string; value: unknown; mono?: bo
 function StageIcon({ status }: { status: string }) {
   if (status === "completed") return <CheckCircle2 aria-hidden className="size-4 text-primary" />;
   if (status === "waiting_approval") return <KeyRound aria-hidden className="size-4 text-[var(--severity-medium)]" />;
-  if (status === "partial" || status === "failed") return <AlertTriangle aria-hidden className="size-4 text-destructive" />;
+  if (status === "partial") return <AlertTriangle aria-hidden className="size-4 text-[var(--severity-medium)]" />;
+  if (status === "failed") return <AlertTriangle aria-hidden className="size-4 text-destructive" />;
   return <CircleDashed aria-hidden className="size-4 text-muted-foreground" />;
 }
 

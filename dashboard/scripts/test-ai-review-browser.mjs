@@ -10,6 +10,7 @@ import { URL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import process from "node:process";
 import { log } from "node:console";
+import { checkAgentHandoff } from "./agent-handoff-browser-check.mjs";
 import { runAccessIntegration } from "./test-project-access.mjs";
 import { runLlmWorkerOnce } from "../src/lib/llm-worker.ts";
 import { makeSourceSnapshot, runPythonSnapshot } from "../src/lib/scan-worker.ts";
@@ -1829,6 +1830,8 @@ try {
         }
       }
       await db.finding.delete({ where: { id: reviewed.id } });
+      await page.setViewport({ width: 1280, height: 1000 });
+      await checkAgentHandoff(page, db, origin, displayScan.id);
       await page.setViewport({ width: 1280, height: 1000 });
       const stageRun = await db.agentRun.create({ data: {
         scanId: displayScan.id, status: "completed", currentRole: "steward", mode: "deep",
