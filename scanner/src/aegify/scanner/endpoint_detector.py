@@ -340,7 +340,9 @@ _PARAM_ONLY_ROOT_RE = re.compile(r"^/[{<:][\w:.>}]+$")
 class EndpointDetector:
     """Detects API endpoints from parsed ASTs using framework-specific patterns."""
 
-    def detect(self, file_asts: list[FileAST]) -> list[Endpoint]:
+    def detect(
+        self, file_asts: list[FileAST], *, express_handlers: set[tuple[str, str]] | None = None
+    ) -> list[Endpoint]:
         """Detect all endpoints across the given file ASTs.
 
         Deduplication strategy:
@@ -358,6 +360,15 @@ class EndpointDetector:
                 continue
             endpoints.extend(self._detect_from_decorators(ast))
             endpoints.extend(self._detect_from_source_patterns(ast))
+
+        if express_handlers is not None:
+            # Endpoint inventory coalesces duplicate URLs. Each registration still
+            # has its own request parameter, including middleware on the same path.
+            express_handlers.update(
+                (ep.file_path, ep.handler_function)
+                for ep in endpoints
+                if ep.framework == "Express" and ep.handler_function and self._is_api_endpoint(ep)
+            )
 
         # Phase 1: File-level dedup by (path, method, file)
         file_seen: set[tuple[str, str, str]] = set()
@@ -807,6 +818,11 @@ class EndpointDetector:
 
         # Express.js patterns — only in JS/TS files
         if lang in (Language.JAVASCRIPT, Language.TYPESCRIPT):
+            handlers = {
+                (call.line, call.column, call.callee): call.javascript_handler
+                for call in ast.calls
+                if call.javascript_handler is not None
+            }
             for m in _EXPRESS_RE.finditer(source):
                 method = m.group(1).upper()
                 path = m.group(2)
@@ -831,15 +847,18 @@ class EndpointDetector:
                         if name.strip().strip(",")
                     ]
                     middleware = mw_names
+                # Tree-sitter columns count UTF-8 bytes, including before a second route.
+                column = len(source[source.rfind("\n", 0, m.start()) + 1 : m.start()].encode())
+                handler = handlers.get((line_num, column, m.group(1)))
+                if handler is None:
+                    handler = self._registration_handler(
+                        ast, line_num, self._last_identifier_argument(source, m.end())
+                    )
                 endpoints.append(
                     Endpoint(
                         path=path,
                         method=method,
-                        handler_function=self._registration_handler(
-                            ast,
-                            line_num,
-                            self._last_identifier_argument(source, m.end()),
-                        ),
+                        handler_function=handler,
                         file_path=ast.file_path,
                         line_start=line_num,
                         line_end=line_num,

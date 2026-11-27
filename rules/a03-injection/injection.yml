@@ -271,6 +271,7 @@ rules:
     taint:
       source_types: [http_param, http_body, http_header, http_cookie]
       sink_types: [regex_compile]
+      review_regex_replacement: true
     message: >
       Input from '{source}' (line {source_line}) reaches the regular expression
       pattern in '{sink}' (line {sink_line}). Check whether callers should be

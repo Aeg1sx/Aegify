@@ -615,6 +615,9 @@ class YAMLRule(SecurityRule):
             if self.definition.cwe_id == 918 and self._has_fixed_http_origin(flow, fp_index):
                 continue
 
+            replacement_review = (
+                taint.review_regex_replacement and flow.sink.regex_replacement_review
+            )
             findings.append(
                 self._create_finding(
                     file_path=flow.sink.file_path,
@@ -631,10 +634,18 @@ class YAMLRule(SecurityRule):
                         sink_type=flow.sink.sink_type,
                         line=flow.sink.line,
                         file=flow.sink.file_path,
+                    )
+                    + (
+                        " A global replacement processes the regex metacharacters."
+                        " Review its output before treating the pattern as unsafe."
+                        if replacement_review
+                        else ""
                     ),
                     taint_flow=flow,
                     evidence_state=EvidenceState.REACHABLE,
-                    disposition=taint.disposition,
+                    disposition=FindingDisposition.ADVISORY
+                    if replacement_review
+                    else taint.disposition,
                 )
             )
 
@@ -1411,6 +1422,7 @@ class TaintSpec:
         self.sink_pattern: str | None = data.get("sink_pattern")
         self.source_pattern: str | None = data.get("source_pattern")
         self.subprocess_shell: bool = data.get("subprocess_shell", False)
+        self.review_regex_replacement: bool = data.get("review_regex_replacement", False)
         self.ignore_sanitizers: bool = data.get("ignore_sanitizers", False)
         self.disposition = FindingDisposition(data.get("disposition", "blocking"))
         # Pre-compile regex patterns for performance
@@ -1435,6 +1447,7 @@ class TaintSpec:
             "source_pattern",
             "ignore_sanitizers",
             "subprocess_shell",
+            "review_regex_replacement",
             "disposition",
         }
         errors = []
@@ -1472,8 +1485,9 @@ class TaintSpec:
                 errors.append(f"{key} is not a valid regular expression")
             else:
                 selectors = True
-        if "subprocess_shell" in data and type(data["subprocess_shell"]) is not bool:
-            errors.append("subprocess_shell must be a boolean")
+        for option in ("subprocess_shell", "review_regex_replacement"):
+            if option in data and type(data[option]) is not bool:
+                errors.append(f"{option} must be a boolean")
         if "ignore_sanitizers" in data and type(data["ignore_sanitizers"]) is not bool:
             errors.append("ignore_sanitizers must be a YAML boolean")
         if data.get("disposition", "blocking") not in ("blocking", "advisory"):

@@ -14,6 +14,7 @@ from tree_sitter import Node
 from aegify.graph_types import ProgramGraph
 from aegify.models import FileAST, FunctionDef, Language, ProgramGraphSummary
 from aegify.scanner.ast_parser import _get_parser
+from aegify.scanner.javascript_functions import eager_text
 from aegify.scanner.python_text import iteration_bindings
 from aegify.scanner.python_values import constant_branch, constant_condition, constant_match
 from aegify.text import scrub_quoted_strings
@@ -33,6 +34,8 @@ class ProgramGraphBuilder:
     _FUNCTION_TYPES = {
         "function_definition",
         "function_declaration",
+        "function_expression",
+        "arrow_function",
         "method_definition",
         "method_declaration",
         "constructor_declaration",
@@ -135,8 +138,17 @@ class ProgramGraphBuilder:
                 continue
             tree = _get_parser(ast.language).parse(source)
             definitions = self._function_definitions(ast)
+            positioned = {
+                (f.line_start, f.source_columns[0], f.line_end, f.source_columns[1]): f
+                for f in definitions
+                if f.source_columns is not None
+            }
             for function_node in self._walk_functions(tree.root_node):
-                function = self._match_function(function_node, source, definitions)
+                if positioned:
+                    (row, col), (last, right) = function_node.start_point, function_node.end_point
+                    function = positioned.get((row + 1, col, last + 1, right))
+                else:
+                    function = self._match_function(function_node, source, definitions)
                 if function is None:
                     continue
                 self._build_function(graph, ast, function, function_node, source)
@@ -274,6 +286,7 @@ class ProgramGraphBuilder:
             file_path=ast.module_path or ast.file_path,
             repository_id=ast.repository_id,
             line=function.line_start,
+            javascript_callable=function.source_columns is not None,
         )
         graph.add_node(
             file_id,
@@ -312,6 +325,9 @@ class ProgramGraphBuilder:
                 None,
             )
         statements = self._statements(body) if body is not None else []
+        if node.type == "arrow_function" and body is not None and body.type != "statement_block":
+            # An expression body returns its value even when its syntax is another callable.
+            statements = [body]
         tails = self._emit_sequence(
             graph,
             ast,
@@ -338,9 +354,34 @@ class ProgramGraphBuilder:
         terminal_target: str | None = None,
     ) -> list[tuple[str, str]]:
         tails = incoming
+        js = ast.language in {Language.JAVASCRIPT, Language.TYPESCRIPT}
+        if js:
+            statements = [
+                child
+                for statement in statements
+                for child in (
+                    [n for n in statement.named_children if n.type == "variable_declarator"]
+                    if statement.type in {"variable_declaration", "lexical_declaration"}
+                    else [statement]
+                )
+            ]
         for statement in statements:
+            parent = statement.parent
+            implicit_return = (
+                js
+                and parent is not None
+                and parent.type == "arrow_function"
+                and (
+                    parent.child_by_field_name("body") == statement
+                    and statement.type != "statement_block"
+                )
+            )
+            if js and statement.type == "function_declaration":
+                continue
             statement_id = self._statement_id(function_id, statement)
-            text = self._text(statement, source)
+            text = eager_text(statement, source) if js else self._text(statement, source)
+            if implicit_return:
+                text = "return " + text
             fact_text = text
             if statement.type in self._IF_TYPES | self._LOOP_TYPES | self._SWITCH_TYPES:
                 condition = statement.child_by_field_name("condition")
@@ -393,13 +434,14 @@ class ProgramGraphBuilder:
             graph.add_node(
                 statement_id,
                 kind="statement",
-                syntax_kind=statement.type,
+                syntax_kind="return_statement" if implicit_return else statement.type,
                 function=function_id,
                 repository_id=ast.repository_id,
                 file_path=ast.module_path or ast.file_path,
                 line_start=statement.start_point[0] + 1,
                 line_end=statement.end_point[0] + 1,
                 code=text[:1000],
+                **({"columns": (statement.start_point[1], statement.end_point[1])} if js else {}),
                 **facts,
             )
             graph.add_edge(function_id, statement_id, kind="contains", overlay="ast")
@@ -549,7 +591,7 @@ class ProgramGraphBuilder:
                     overlay="cfg",
                 )
                 tails = []
-            elif statement.type in self._FUNCTION_TERMINAL_TYPES:
+            elif implicit_return or statement.type in self._FUNCTION_TERMINAL_TYPES:
                 target = terminal_target or exit_node
                 graph.add_edge(
                     statement_id,

@@ -98,11 +98,12 @@ rules:
     cwe_id: 943
     owasp_category: "A03:2021-Injection"
     patterns:
-      - callee_chain: ["db|couch|nano", "find|view|query|get|fetch|bulk"]
-        args_match: "(req\\.|request\\.|input|param|query|body|form|data|user)"
-      - pattern: "selector\\s*[=:].*\\b(req|request|input|param|query|body|form|data|user)\\b"
-      - pattern: "(startkey|endkey|key|keys)\\s*[=:].*\\b(req|request|input|param|query|body|form|data|user)\\b"
-      - pattern: "nano\\(.*\\)\\.(find|view|search)\\(.*\\b(req|request|input|param|query|body|form|data|user)\\b"
+      - callee: '\.(?:find|view|query|get|fetch|bulk|search)$'
+        receiver_match: '(^|\.)(?:db|couch|couchdb|nano)(?:$|\.)'
+        args_match: '\b(?:req|request|input|params?|query|body|form|data|user)\b'
+      - callee: '\.(?:find|view|query|search)$'
+        receiver_match: '^nano\('
+        args_match: '\b(?:req|request|input|params?|query|body|form|data|user)\b'
     taint:
       source_types: [http_body, http_param, http_query]
       sink_types: [nosql_query]
@@ -119,7 +120,7 @@ rules:
       - "sanitize"
       - "validator\\."
       - "zod\\.(object|string|number)"
-    message: "CouchDB query at line {line} includes unsanitized user input in a Mango selector or view parameter, enabling document exfiltration or query logic manipulation."
+    message: "Review the query arguments at line {line} for client-controlled selectors or view options. Construct the allowed fields and operators on the server."
 
   - id: "AEG-NOSQL-004"
     name: "DynamoDB Injection via Expression Attributes"

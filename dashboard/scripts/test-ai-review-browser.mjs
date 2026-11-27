@@ -330,6 +330,13 @@ async function checkFindingReview(page, viewer, db, origin) {
   await page.waitForSelector(steps + " li");
   assert.deepEqual(await page.$$eval(steps + " strong", (labels) => labels.map((item) => item.textContent)),
     ["Source", "Assignment", "Shell command argument", "Sink"]); checks++;
+  const jumps = '[aria-label="Jump to a flow step"]';
+  for (const [label, endpoint] of [["Jump to sink", "sink"], ["Jump to source", "source"]]) {
+    const jump = await elementWithText(page, jumps + " button", label);
+    await jump.focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await page.evaluate(() => globalThis.document.activeElement?.getAttribute("data-endpoint")), endpoint); checks++;
+  }
   assert.deepEqual(await page.$$eval(steps + " button", (items) => items.map((item) => item.textContent)),
     ["L12", "L13"]); checks++;
   assert.equal(await page.$$eval(steps + ' [title="Source excerpt unavailable"]', (items) => items.length), 2); checks++;

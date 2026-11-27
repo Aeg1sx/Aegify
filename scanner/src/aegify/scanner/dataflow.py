@@ -554,7 +554,7 @@ class DataflowAnalyzer:
                     break
 
             # Also check arguments for source patterns
-            for arg in call.arguments:
+            for arg in call.evaluated_arguments:
                 for pattern in patterns:
                     if (
                         not pattern.resolved_only

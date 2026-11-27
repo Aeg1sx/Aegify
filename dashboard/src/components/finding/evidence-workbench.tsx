@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowUpRight, ChevronRight, FileCode2, FileText, GitBranch, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpRight, ChevronRight, FileCode2, FileText, GitBranch, X } from "lucide-react";
 import { CodeHighlight } from "@/components/code-highlight";
 import { ConfigurationEvidence } from "@/components/finding/configuration-evidence";
 import { Markdown } from "@/components/markdown";
@@ -25,6 +25,15 @@ export function EvidenceWorkbench({ finding, onClose, detailQuery = "" }: { find
   const views: View[] = !configuration && (flow.steps.length || flow.warning) ? ["source", "flow", "remediation"] : ["source", "remediation"];
   const [selectedLine, setSelectedLine] = useState<number>();
   const tabsId = useId();
+  const flowList = useRef<HTMLOListElement>(null);
+  const sourceIndex = flow.steps.findIndex(step => step.message.startsWith("source: "));
+  const sinkIndex = flow.steps.findLastIndex(step => step.message.startsWith("sink: "));
+  function focusStep(index: number) {
+    const row = flowList.current?.children.item(index);
+    if (!(row instanceof HTMLElement)) return;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: "nearest" });
+  }
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const reader = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -70,10 +79,16 @@ export function EvidenceWorkbench({ finding, onClose, detailQuery = "" }: { find
       {tab === "source" && (configuration ? <ConfigurationEvidence finding={finding} /> :
         <CodeHighlight code={finding.codeSnippet} filePath={finding.filePath} lineStart={start} highlightStart={finding.lineStart} highlightEnd={finding.lineEnd} selectedLine={selectedLine} onLineSelect={setSelectedLine} />)}
       {tab === "flow" && <>
-        <div className="flex items-center gap-2 text-sm font-medium"><GitBranch aria-hidden className="size-4 text-muted-foreground" />Recorded static flow</div>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <h3 className="flex items-center gap-2 text-sm font-medium"><GitBranch aria-hidden className="size-4 text-muted-foreground" />Recorded static flow</h3>
+          {flow.steps.length >= 4 && sourceIndex >= 0 && sinkIndex > sourceIndex && <div className="flow-jumps" role="group" aria-label="Jump to a flow step">
+            <button type="button" onClick={() => focusStep(sourceIndex)}><ArrowUp aria-hidden />Jump to source</button>
+            <button type="button" onClick={() => focusStep(sinkIndex)}><ArrowDown aria-hidden />Jump to sink</button>
+          </div>}
+        </div>
         {flow.warning && <p role="alert" className="text-sm text-amber-600">{flow.warning}</p>}
         {!flow.steps.length && <p className="py-4 text-sm text-muted-foreground">No structured flow evidence in this artifact.</p>}
-        <ol className="evidence-flow" aria-label="Recorded flow steps">{flow.steps.map((step, index) => {
+        <ol ref={flowList} className="evidence-flow" aria-label="Recorded flow steps">{flow.steps.map((step, index) => {
           const available = start !== null && end !== null && step.file === finding.filePath && step.line >= start && step.line <= end;
           const { label, value } = describeFlowMessage(step.message);
           const fileStart = index === 0 || flow.steps[index - 1].file !== step.file;
@@ -82,7 +97,7 @@ export function EvidenceWorkbench({ finding, onClose, detailQuery = "" }: { find
             {label && <strong>{label}</strong>}
             {value && (label ? <code>{value}</code> : <span>{value}</span>)}
           </span>;
-          return <li key={index}>
+          return <li key={index} tabIndex={-1} data-endpoint={label === "Source" || label === "Sink" ? label.toLowerCase() : undefined}>
             {fileStart && <p className="flow-file"><FileCode2 aria-hidden className="size-4 shrink-0" />
               <span className="font-medium">{step.file.slice(separator + 1) || "Unknown file"}</span>
               {separator >= 0 && <span className="flow-directory">{step.file.slice(0, separator + 1)}</span>}
