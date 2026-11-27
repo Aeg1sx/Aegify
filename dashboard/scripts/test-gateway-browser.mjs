@@ -30,7 +30,24 @@ await runAccessIntegration({ async verifyBrowser({ origin, cookies, projectId, g
     assert.match(text, /catalog-service/);
     assert.match(text, /Document 1 · Line 9/);
     assert.match(text, /Kong Upstream pool membership needs review/);
-    log("Gateway project summary, scan evidence and unresolved reason passed in Chromium.");
+    const routeNames = () => panel.$$eval("li", (rows) => rows.map((row) => row.querySelector("span").textContent));
+    const [file, status] = await panel.$$("select");
+    await status.select("ambiguous");
+    await page.waitForFunction((element) => element.querySelector("[aria-live]").textContent.includes("of 26 declarations"), {}, panel);
+    assert.equal((await routeNames()).length, 25);
+    assert.match(await panel.evaluate((element) => element.innerText), /platform · spring\/application.yml/);
+    await page.locator('::-p-aria(Next[role="button"])').click();
+    assert.deepEqual(await routeNames(), ["orders-25"]);
+    await file.select("0");
+    await page.waitForFunction((element) => element.querySelector("[aria-live]").textContent.includes("No declarations match"), {}, panel);
+    assert.deepEqual(await routeNames(), []);
+    await status.select("unresolved");
+    await page.waitForFunction((element) => element.querySelector("li")?.textContent.includes("pool"), {}, panel);
+    assert.deepEqual(await routeNames(), ["pool"]);
+    assert.match(await panel.evaluate((element) => element.innerText), /Configuration SHA-256/);
+    await page.setViewport({ width: 390, height: 844 });
+    assert.ok(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1));
+    log("Verified cross-repository gateway filters, pagination, source evidence and mobile width in Chromium.");
   } finally {
     await browser.close();
   }

@@ -146,7 +146,7 @@ class PythonSigningKey(BaseModel):
 
 
 class CredentialRandomness(BaseModel):
-    """Source and use of a standard Python PRNG value in a credential operation."""
+    """Source and use of a standard-library PRNG value in a credential operation."""
 
     generator: str
     generator_line: int

@@ -263,7 +263,7 @@ function ScanRecord({ id }: { id: string }) {
         </div>
       )}
       {scan.hasSourceJob && <ScanJobPanel scanId={id} onFinished={refresh} />}
-      {scan.gatewayInventory && <GatewayInventoryPanel review={scan.gatewayInventory} />}
+      {scan.gatewayInventory && <GatewayInventoryPanel key={id} review={scan.gatewayInventory} />}
 
       {awaitingFindings ? (
         <section aria-labelledby="scan-findings" className="border-t pt-4">

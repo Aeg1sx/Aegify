@@ -227,7 +227,12 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
         routes: [{ schema_path: "kong.3.0", document: 1, line: 7, route_name: "catalog",
           status: "resolved", reason: "manifest_service_name", repository_ids: ["catalog-service"] },
         { schema_path: "kong.3.0", document: 1, line: 9, route_name: "pool",
-          status: "unresolved", reason: "kong_upstream_pool", repository_ids: [] }] }],
+          status: "unresolved", reason: "kong_upstream_pool", repository_ids: [] }] },
+        { repository_id: "platform", path: "spring/application.yml", sha256: "c".repeat(64), diagnostics: [],
+          routes: Array.from({ length: 26 }, (_, index) => ({
+            schema_path: "spring.cloud.gateway.routes", document: 1, line: index + 2, route_name: "orders-" + index,
+            status: "ambiguous", reason: "multiple_manifest_owners", repository_ids: ["orders-east", "orders-west"],
+          })) }],
     };
     const uploaded = await call("/api/upload?branch=main", { user: null, token: issued.token, method: "POST", body: sarif });
     const inventory = (await call(`/api/scans/${uploaded.scanId}`)).gatewayInventory;
@@ -239,6 +244,7 @@ export async function runAccessIntegration({ verifyBrowser } = {}) {
     assert.deepEqual(overview, uploaded.gatewayInventory);
     assert.equal(overview.resolved, 1);
     assert.equal(overview.unresolved, 1);
+    assert.equal(overview.ambiguous, 26);
     assert.ok(!Object.hasOwn(overview, "files"));
     assert.equal((await call(`/api/scans/${sa.id}`)).gatewayInventory, null);
     await call(`/api/scans/${uploaded.scanId}`, { user: "outside", status: 404 });
