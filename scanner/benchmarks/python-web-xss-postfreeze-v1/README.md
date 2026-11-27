@@ -13,7 +13,7 @@ The first eligible production Python file in lexical order was `airflow/www/view
 
 ## Results
 
-The frozen wheel missed the original label at line 134. It also produced zero warnings at the repaired label on lines 134–135. Both hash-verified module scans completed with all four Python CWE-79 rules evaluated. Each module produced five advisory findings elsewhere, outside the selected patch. Those findings have no labels here. This is one preselected source comparison in one additional product. The same team selected and scored the case. [Raw report](result.json)
+The frozen wheel missed the original label at line 134. It also produced zero warnings at the repaired label on lines 134–135. Both hash-verified module scans completed with all four Python CWE-79 rules evaluated. Each module produced five advisory findings elsewhere, outside the selected patch. Those findings have no labels here. This is one preselected source comparison in one additional product. The same team selected and scored the case. A replay with the previous Flask wheel produced identical site decisions and identical out-of-range findings in both modules. [Frozen Jinja wheel](result.json) · [Previous Flask wheel](previous.json)
 
 ## Replay
 
