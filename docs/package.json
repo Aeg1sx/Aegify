@@ -10,15 +10,15 @@
     "dev": "mint dev"
   },
   "devDependencies": {
-    "mint": "4.2.876"
+    "mint": "4.3.96"
   },
   "overrides": {
     "@puppeteer/browsers": "3.2.1",
-    "express": "4.22.2",
-    "puppeteer": "25.8.0",
-    "puppeteer-core": "25.8.0",
-    "qs": "6.16.0",
-    "sharp": "0.35.4",
+    "express": "4.22.3",
+    "puppeteer": "25.19.0",
+    "puppeteer-core": "25.19.0",
+    "qs": "6.17.1",
+    "sharp": "0.35.5",
     "js-yaml@>=4.0.0 <4.3.2": "4.3.2",
     "adm-zip@<=0.6.0": "0.6.1"
   },
