@@ -555,6 +555,7 @@ class _PythonExtractor(_BaseExtractor):
             imports=imports,
             calls=calls,
             python_stored_reads=stored_reads,
+            python_stdin_resolved=True,
             python_file_access_resolved=True,
             python_process_resolved=True,
             python_redirect_resolved=True,
@@ -741,6 +742,7 @@ class _PythonExtractor(_BaseExtractor):
         downloads = python_requests.download_urls(source)
         xml = python_xml.xml_calls(source)
         buffers = python_buffers.buffer_writes(source)
+        stdin = python_code.stdin_calls(source)
         files = python_files.file_calls(source)
         sanitizers = python_scope.assigned_sanitizers(source)
         for node in self._find_nodes(root, "call"):
@@ -783,6 +785,7 @@ class _PythonExtractor(_BaseExtractor):
                     xml_invocation=xml.get(location),
                     python_deserialization=decoders.get(location),
                     python_file_access=files.get(location),
+                    resolved_source="builtins.input" if location in stdin else "",
                     python_ldap_search=searches.get(location),
                     python_redirect=redirects.get(location),
                     python_template_source=templates.get(location),

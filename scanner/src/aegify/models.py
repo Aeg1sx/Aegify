@@ -244,6 +244,7 @@ class FileAST(BaseModel):
     python_redirect_resolved: bool = False
     python_process_resolved: bool = False
     python_custom_request_data: bool = False
+    python_stdin_resolved: bool = False
     python_file_access_resolved: bool = False
     python_deserialization_resolved: bool = False
     python_yaml_extensions: list[str] = Field(default_factory=list)
@@ -384,6 +385,7 @@ class PythonFileAccess(BaseModel):
     api: str
     path_indices: list[int]
     sink_type: Literal["file_access", "file_metadata"] = "file_access"
+    cli_path_origin_line: int | None = None
 
 
 class LDAPFilterOperand(BaseModel):
@@ -502,7 +504,17 @@ class TaintSink(BaseModel):
     line: int
     sink_type: str  # e.g., "sql_query", "os_command"
     argument_index: int = 0  # dangerous argument; -1 denotes the call receiver
+    cli_path_origin_line: int | None = None
     in_function: str | None = None
+
+
+def inferred_process_field(
+    source: TaintSource, path: list[TaintPropagation] | tuple[TaintPropagation, ...]
+) -> bool:
+    """A process input taints a receiver without a write to the selected field."""
+    return source.source_type in {"environment_variable", "stdin", "cli_arg"} and any(
+        step.propagation_type == "receiver-field-summary" for step in path
+    )
 
 
 class TaintFlow(BaseModel):

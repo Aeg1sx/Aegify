@@ -6,11 +6,14 @@ from typing import Any
 
 from aegify.graph_types import CodeGraph
 from aegify.models import (
+    EvidenceState,
     FileAST,
     Finding,
+    FindingDisposition,
     Language,
     Severity,
     TaintFlow,
+    inferred_process_field,
 )
 from aegify.rules.base import RuleDefinition, SecurityRule, register_rule
 
@@ -63,18 +66,43 @@ class PathTraversalRule(SecurityRule):
             if flow.sanitized:
                 continue
 
+            cli_path = (
+                flow.source.source_type == "cli_arg"
+                and flow.source.file_path == flow.sink.file_path
+                and flow.source.line == flow.sink.cli_path_origin_line
+            )
+            evidence_state = EvidenceState.REACHABLE
+            disposition = FindingDisposition.BLOCKING
+            if cli_path:
+                disposition = FindingDisposition.ADVISORY
+                message = (
+                    f"A script argument at line {flow.source.line} selects the path or a fixed "
+                    f"sibling for {flow.sink.function} at line {flow.sink.line}. "
+                    "Whether its caller must stay within a specific directory needs review."
+                )
+            elif inferred_process_field(flow.source, flow.path):
+                evidence_state = EvidenceState.CANDIDATE
+                disposition = FindingDisposition.ADVISORY
+                message = (
+                    f"Process input ({flow.source.source_type}) at line {flow.source.line} reaches "
+                    "an object. The analysis could not bind that value to the field in the path "
+                    f"for {flow.sink.function} at line {flow.sink.line}."
+                )
+            else:
+                message = (
+                    f"Potential path traversal: {flow.source.source_type} from "
+                    f"'{flow.source.variable}' (line {flow.source.line}) flows to "
+                    f"'{flow.sink.function}' (line {flow.sink.line}). Review path containment."
+                )
             findings.append(
                 self._create_finding(
                     file_path=flow.sink.file_path,
                     line_start=flow.sink.line,
                     line_end=flow.sink.line,
                     code_snippet="",
-                    message=(
-                        f"Potential path traversal: user input from "
-                        f"'{flow.source.variable}' (line {flow.source.line}) "
-                        f"flows to '{flow.sink.function}' (line {flow.sink.line}) "
-                        f"without path validation."
-                    ),
+                    message=message,
+                    evidence_state=evidence_state,
+                    disposition=disposition,
                     taint_flow=flow,
                 )
             )

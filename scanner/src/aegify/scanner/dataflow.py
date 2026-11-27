@@ -57,7 +57,7 @@ class TaintConfig:
                     SourcePattern("sys.argv", "cli_arg"),
                     SourcePattern("os.environ", "environment_variable"),
                     SourcePattern("os.getenv", "environment_variable"),
-                    SourcePattern("input(", "stdin"),
+                    SourcePattern("builtins.input", "stdin", resolved_only=True),
                     SourcePattern("open(", "file_read"),
                     SourcePattern(".read(", "file_read"),
                     SourcePattern("cursor.fetchone", "database_result"),
@@ -351,6 +351,12 @@ class SourcePattern:
     source_type: str
     resolved_only: bool = False
 
+    def resolved_call(self, call: CallSite, file: FileAST) -> bool:
+        if self.pattern == "builtins.input" and not file.python_stdin_resolved:
+            # Pre-binding ASTs still identify an actual call, never a word in a literal.
+            return call.callee == "input" and call.receiver in (None, "builtins")
+        return call.resolved_source == self.pattern
+
 
 @dataclass
 class SinkPattern:
@@ -474,7 +480,7 @@ class DataflowAnalyzer:
             for pattern in patterns:
                 call_text = f"{call.receiver}.{call.callee}" if call.receiver else call.callee
                 if (
-                    call.resolved_source == pattern.pattern
+                    pattern.resolved_call(call, ast)
                     if pattern.resolved_only
                     else pattern.pattern in call_text
                 ):

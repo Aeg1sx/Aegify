@@ -34,6 +34,7 @@ from aegify.models import (
     TaintPropagation,
     TaintSink,
     TaintSource,
+    inferred_process_field,
 )
 from aegify.scanner.flask_responses import linked_response_facts, project_routers, registered_import
 from aegify.scanner.import_bindings import declared_import_names, shares_call_runtime
@@ -541,7 +542,7 @@ class StructuredTaintAnalyzer:
                 call_text = self._call_text(call)
                 for pattern in source_patterns:
                     if (
-                        call.resolved_source == pattern.pattern
+                        pattern.resolved_call(call, context.ast)
                         if pattern.resolved_only
                         else self._call_matches_pattern(pattern.pattern, call)
                     ):
@@ -644,6 +645,11 @@ class StructuredTaintAnalyzer:
                                 line=call.line,
                                 sink_type=sink_type,
                                 argument_index=index,
+                                cli_path_origin_line=(
+                                    call.python_file_access.cli_path_origin_line
+                                    if index == -1 and call.python_file_access
+                                    else None
+                                ),
                                 in_function=context.definition.qualified_name,
                             ),
                             call,
@@ -1365,7 +1371,11 @@ class StructuredTaintAnalyzer:
                     variable=access,
                     file_path=context.definition.file_path,
                     line=statement.line_start,
-                    propagation_type="field-load",
+                    propagation_type=(
+                        "receiver-field-summary"
+                        if context.ast.language == Language.PYTHON
+                        else "field-load"
+                    ),
                     function=context.definition.qualified_name,
                     call_context=call_string,
                 )
@@ -1907,13 +1917,21 @@ class StructuredTaintAnalyzer:
         return changed
 
     @staticmethod
-    def _trace_rank(trace: _Trace) -> tuple[int, int]:
+    def _trace_rank(trace: _Trace) -> tuple[int, bool, int]:
         # An unsanitized path dominates a sanitized path for the same origin.
-        return (1 if trace.sanitized or trace.sanitized_for else 0, len(trace.path))
+        return (
+            1 if trace.sanitized or trace.sanitized_for else 0,
+            inferred_process_field(trace.source, trace.path),
+            len(trace.path),
+        )
 
     @staticmethod
-    def _flow_rank(flow: TaintFlow) -> tuple[int, int]:
-        return (1 if flow.sanitized else 0, len(flow.path))
+    def _flow_rank(flow: TaintFlow) -> tuple[int, bool, int]:
+        return (
+            1 if flow.sanitized else 0,
+            inferred_process_field(flow.source, flow.path),
+            len(flow.path),
+        )
 
     @staticmethod
     def _line_from_key(traces: _TraceMap) -> int:

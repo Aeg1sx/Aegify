@@ -89,6 +89,18 @@ Native and YAML lexical patterns default to `candidate/advisory`. Taint paths
 and structured semantic detectors may emit `reachable/blocking` only when their
 required evidence is satisfied.
 
+For Python file paths, an explicit script entry point can read a file chosen by
+a positional command-line argument or write a fixed sibling. Aegify retains
+that path as reachable and advisory when the file operation and argument are
+bound in the same function. The message asks which directories its caller
+may select. A path formed by joining an independent directory with an
+untrusted name keeps its ordinary path rule evaluation.
+
+A receiver-wide approximation can carry a process input to an object's field
+without identifying a write to that field. The path rule records this as a
+candidate and shows the missing field evidence. Explicit field stores, direct
+operands and request-to-path flows retain their own evidence.
+
 ## Examples of blocking evidence
 
 - an HTTP parameter reaches a modeled SQL, command, SSRF, or template sink;

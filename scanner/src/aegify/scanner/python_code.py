@@ -26,6 +26,20 @@ def _builtin(scope: PythonScope, expression: ast.expr) -> str:
     return ""
 
 
+def stdin_calls(source: bytes) -> set[tuple[int, int, int, int]]:
+    if b"input" not in source:
+        return set()
+    return {
+        (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+        for scope in python_scopes(source)
+        for node in scope.nodes
+        if isinstance(node, ast.Call)
+        and node.end_lineno is not None
+        and node.end_col_offset is not None
+        and _builtin(scope, node.func) == "input"
+    }
+
+
 class _CodeValues(TextValues):
     """Only use text origins whose representation cannot be supplied by application code."""
 

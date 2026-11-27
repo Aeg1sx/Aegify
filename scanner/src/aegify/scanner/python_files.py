@@ -6,7 +6,7 @@ import ast
 from itertools import pairwise
 
 from aegify.models import PythonDirectoryCheck, PythonFileAccess, PythonReadLimit
-from aegify.scanner.python_scope import call_argument, python_scopes
+from aegify.scanner.python_scope import PythonScope, call_argument, python_scopes
 from aegify.scanner.python_storage import LocalValues
 
 _FILE_PARAMS = {
@@ -222,9 +222,95 @@ def post_read_limits(source: bytes) -> list[PythonReadLimit]:
     return sorted(observations, key=lambda check: check.line)
 
 
+def _module_entry_functions(scope: PythonScope) -> set[str]:
+    """Zero-argument functions invoked directly by a Python script entry guard."""
+    if not isinstance(scope.owner, ast.Module) or "__name__" in scope.hidden:
+        return set()
+    names = set()
+    for node in scope.owner.body:
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        if not (
+            isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name)
+            and test.left.id == "__name__"
+            and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.Eq)
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value == "__main__"
+        ):
+            continue
+        for statement in node.body:
+            if isinstance(statement, ast.Raise):
+                expr = statement.exc
+            elif isinstance(statement, ast.Expr):
+                expr = statement.value
+            else:
+                continue
+            if isinstance(expr, ast.Call) and len(expr.args) == 1 and not expr.keywords:
+                if scope.resolve(expr.func) == "sys.exit" or (
+                    isinstance(statement, ast.Raise)
+                    and isinstance(expr.func, ast.Name)
+                    and expr.func.id == "SystemExit"
+                    and "SystemExit" not in scope.hidden
+                ):
+                    expr = expr.args[0]
+            if (
+                isinstance(expr, ast.Call)
+                and isinstance(expr.func, ast.Name)
+                and not expr.args
+                and not expr.keywords
+                and scope.definitions.get(expr.func.id) == 1
+            ):
+                names.add(expr.func.id)
+    return names
+
+
+def _cli_path_line(node: ast.expr, local: LocalValues, depth: int = 0) -> int | None:
+    if depth >= 12:
+        return None
+    if isinstance(node, ast.Name):
+        value = local.assigned(node)
+        return _cli_path_line(value, local, depth + 1) if value is not None else None
+    if isinstance(node, ast.Subscript) and local.scope.resolve(node.value) == "sys.argv":
+        index = node.slice
+        if isinstance(index, ast.Constant) and type(index.value) is int and index.value > 0:
+            return node.lineno
+    if isinstance(node, ast.Call) and len(node.args) == 1 and not node.keywords:
+        if local.scope.resolve(node.func) in _PATH_CLASSES:
+            return _cli_path_line(node.args[0], local, depth + 1)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "with_name":
+            name = node.args[0]
+            if (
+                isinstance(name, ast.Constant)
+                and isinstance(name.value, str)
+                and name.value not in {"", ".", ".."}
+                and "/" not in name.value
+                and "\\\\" not in name.value
+            ):
+                return _cli_path_line(node.func.value, local, depth + 1)
+    return None
+
+
 def file_calls(source: bytes) -> dict[tuple[int, int, int, int], PythonFileAccess]:
     facts: dict[tuple[int, int, int, int], PythonFileAccess] = {}
+    entries: set[ast.FunctionDef] = set()
     for scope in python_scopes(source):
+        if isinstance(scope.owner, ast.Module):
+            names = _module_entry_functions(scope)
+            entries = {
+                node
+                for node in scope.owner.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name in names
+                and not node.decorator_list
+                and not node.args.args
+                and not node.args.posonlyargs
+                and not node.args.kwonlyargs
+                and node.args.vararg is None
+                and node.args.kwarg is None
+            }
         local = LocalValues(scope)
         for node in scope.nodes:
             if (
@@ -234,6 +320,18 @@ def file_calls(source: bytes) -> dict[tuple[int, int, int, int], PythonFileAcces
             ):
                 fact = _operation(node, local)
                 if fact:
+                    if (
+                        scope.owner in entries
+                        and isinstance(node.func, ast.Attribute)
+                        and fact.api
+                        in {
+                            "pathlib.Path.read_text",
+                            "pathlib.Path.read_bytes",
+                            "pathlib.Path.write_text",
+                            "pathlib.Path.write_bytes",
+                        }
+                    ):
+                        fact.cli_path_origin_line = _cli_path_line(node.func.value, local)
                     facts[(node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)] = (
                         fact
                     )
