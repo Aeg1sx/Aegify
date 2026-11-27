@@ -26,6 +26,7 @@ from aegify.scanner.python_deserialization import sink_operand
 from aegify.scanner.python_ldap import LDAPConnections
 from aegify.scanner.python_process import process_input
 from aegify.scanner.python_redirect import redirect_operand
+from aegify.scanner.python_regex import regex_operand
 from aegify.scanner.python_requests import body_accesses
 from aegify.scanner.python_scope import PythonModules
 
@@ -209,11 +210,7 @@ class TaintConfig:
                     SinkPattern("hashlib.md5", "crypto_operation", 0),
                     SinkPattern("hashlib.sha1", "crypto_operation", 0),
                     SinkPattern("DES", "crypto_operation", 0),
-                    SinkPattern("re.compile", "regex_compile", 0),
-                    SinkPattern("re.match", "regex_compile", 0),
-                    SinkPattern("re.search", "regex_compile", 0),
-                    SinkPattern("re.findall", "regex_compile", 0),
-                    SinkPattern("re.sub", "regex_compile", 0),
+                    SinkPattern("python.regex", "regex_compile", python_regex=True),
                     # A negative index denotes the receiver expression. For
                     # ``template.format(value)``, the receiver is the format
                     # program and the arguments are only substitution data.
@@ -422,8 +419,15 @@ class SinkPattern:
     python_process: bool = False
     python_template: bool = False
     python_download: bool = False
+    python_regex: bool = False
 
     def accepts_receiver(self, call: CallSite, language: Language) -> bool:
+        if self.pattern == "RegExp" and self.sink_type == "regex_compile":
+            return (
+                call.receiver is None
+                if call.javascript_regex_pattern is None
+                else call.javascript_regex_pattern
+            )
         return not (
             self.sink_type == "os_command"
             and self.pattern == "exec"
@@ -437,6 +441,7 @@ class SinkPattern:
             self.python_code
             or self.python_template
             or self.python_download
+            or self.python_regex
             or self.python_process
             or self.python_ldap
             or self.python_redirect
@@ -460,6 +465,8 @@ class SinkPattern:
                 if process and process.argument_index is not None
                 else None
             )
+        if self.python_regex:
+            return regex_operand(call, file, modules)
         if self.python_code:
             return code_operand(call, file, modules)
         if self.python_ldap:

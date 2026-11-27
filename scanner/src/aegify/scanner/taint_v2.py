@@ -756,6 +756,16 @@ class StructuredTaintAnalyzer:
             internal_call_on_rhs = False
 
             for call, targets in resolved_calls:
+                values = call.arguments
+                if context.ast.language == Language.PYTHON and call.structured_arguments:
+                    values = list(values)
+                    for i, (raw, arg) in enumerate(
+                        zip(values, call.structured_arguments, strict=False)
+                    ):
+                        if arg.kind == "keyword":
+                            name, separator, value_text = raw.partition("=")
+                            if separator and name.strip() == arg.name:
+                                values[i] = value_text.lstrip()
                 argument_states = [
                     self._expression_traces(
                         argument,
@@ -769,7 +779,7 @@ class StructuredTaintAnalyzer:
                         object_return_sites,
                         include_line_sources=True,
                     )
-                    for argument in call.arguments
+                    for argument in values
                 ]
                 if call.python_buffer_write and call.receiver and len(argument_states) == 1:
                     saved = self._append_step(
@@ -790,7 +800,7 @@ class StructuredTaintAnalyzer:
                         heap_points,
                         call_string,
                     )
-                    for argument in call.arguments
+                    for argument in values
                 ]
                 receiver_state = (
                     self._expression_traces(
