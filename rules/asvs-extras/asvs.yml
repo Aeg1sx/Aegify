@@ -36,10 +36,26 @@ rules:
     owasp_category: "A07:2021-Identification and Authentication Failures"
     asvs_category: "V3.4 Cookie-based Session Management"
     patterns:
-      - callee: "(localStorage\\.setItem|sessionStorage\\.setItem|window\\.localStorage)"
+      - callee: '(?-i:(?:(?:window|globalThis)\.)?(?:localStorage|sessionStorage)\.setItem)'
+        callee_match_mode: full
         args_match: "(token|session|auth|jwt|access_token|refresh_token|credential|session_id)"
-      - callee: "(set_cookie|res\\.cookie|setCookie|addCookie|Cookie)"
-        args_match: "^(?!.*secure)(?!.*httponly)(?!.*HttpOnly)(?!.*Secure).*$"
+      - callee: '(?-i:(?:.*\.)?(?:set_cookie|setCookie|SetCookie|Cookie|cookie|cookies\.set))'
+        callee_match_mode: full
+        args_match: "^(?!.*secure)(?!.*httponly).*$"
+      - callee: '(?-i:(?:.*\.)?addCookie)'
+        callee_match_mode: full
+        languages: [python, javascript, typescript, go]
+        args_match: "^(?!.*secure)(?!.*httponly).*$"
+      - callee: '(?-i:(?:.*\.)?addCookie)'
+        callee_match_mode: full
+        languages: [java]
+        args_match: '.'
+        boolean_option: {name: secure, location: argument, argument: 0, states: ["false", "missing", "unknown"]}
+      - callee: '(?-i:(?:.*\.)?addCookie)'
+        callee_match_mode: full
+        languages: [java]
+        args_match: '.'
+        boolean_option: {name: httpOnly, location: argument, argument: 0, states: ["false", "missing", "unknown"]}
       - callee: "(document\\.cookie)"
         args_match: "(session|token|auth|jwt)"
     message: "Insecure session storage at '{callee}' (line {line}). Use HttpOnly, Secure cookies for session tokens. Avoid localStorage for sensitive authentication data."
