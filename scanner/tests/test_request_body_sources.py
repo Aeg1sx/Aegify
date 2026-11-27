@@ -39,6 +39,10 @@ def test_request_body_reads_require_the_bound_receiver_and_real_operand(tmp_path
         async def starlette(req: WebRequest):
             body = await req.json()
             return open(body["name"])
+        async def mixed_method(req: WebRequest):
+            return (await req.json(), open(req.json))
+        def coroutine(req: WebRequest):
+            return open(req.json())
         def bound_method(req: WebRequest):
             return open(req.json)
         def drf(req: ApiRequest):
@@ -59,7 +63,8 @@ def test_request_body_reads_require_the_bound_receiver_and_real_operand(tmp_path
         ("from_data", "flask.request.data"),
         ("sibling_operand", "incoming.json"),
         ("formatted", "incoming.json"),
-        ("starlette", "req.json"),
+        ("starlette", "await req.json()"),
+        ("mixed_method", "await req.json()"),
         ("drf", "req.data"),
         ("api_view_body", "req.data"),
     }

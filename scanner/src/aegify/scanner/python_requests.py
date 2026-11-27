@@ -164,6 +164,9 @@ def body_reads(source: bytes) -> list[PythonRequestBodyRead]:
                 and node.attr == "json"
                 and isinstance(parent, ast.Call)
                 and parent.func is node
+                and not parent.args
+                and not parent.keywords
+                and isinstance(scope.parents.get(parent), ast.Await)
             )
             if (
                 scope.resolve(node) in _BODY_PROPERTIES
@@ -174,7 +177,9 @@ def body_reads(source: bytes) -> list[PythonRequestBodyRead]:
                     PythonRequestBodyRead(
                         function_line=owner.lineno,
                         line=node.lineno,
-                        expression=ast.unparse(node),
+                        expression=f"await {ast.unparse(node)}()"
+                        if method_read
+                        else ast.unparse(node),
                         pattern=f"request.{node.attr}",
                     )
                 )
@@ -196,12 +201,16 @@ def body_accesses(expression: str) -> frozenset[str]:
             except SyntaxError:
                 tree = ast.parse(expression.strip())
 
-        return frozenset(
-            ast.unparse(node)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Attribute)
-            and isinstance(node.ctx, ast.Load)
-            and node.attr in {"data", "json"}
-        )
+        reads = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+                if node.attr in {"data", "json"}:
+                    reads.add(ast.unparse(node))
+            elif isinstance(node, ast.Await) and isinstance(node.value, ast.Call):
+                call = node.value
+                if isinstance(call.func, ast.Attribute) and call.func.attr == "json":
+                    if not call.args and not call.keywords:
+                        reads.add(ast.unparse(node))
+        return frozenset(reads)
     except SyntaxError, ValueError, RecursionError:
         return frozenset()
