@@ -111,7 +111,7 @@ def test_cli_mixed_source_snapshot(tmp_path, history, local_transport, monkeypat
     receipts = json.loads((output / "sources.json").read_text())["repositories"]
     assert receipts[0] == {"id": "gateway", "provider": "local", "path": str(local)}
     for index, (url, env) in enumerate(local_transport):
-        host = sources._source({"url": url, "revision": commit})[2]
+        host = sources._source({"url": url, "revision": commit}, sources.HOSTS)[2]
         provider, token_name, username = sources.HOSTS[host]
         secret = token_name + "-secret"
         basic = base64.b64encode(f"{username}:{secret}".encode()).decode()
@@ -226,7 +226,7 @@ def test_invalid_azure_bearer_stops_before_fetch(tmp_path, history, local_transp
 )
 def test_rejects_other_transports_and_secrets(url):
     with pytest.raises(ValueError) as caught:
-        sources._source({"url": url, "revision": "b" * 40})
+        sources._source({"url": url, "revision": "b" * 40}, sources.HOSTS)
     assert "private-token" not in str(caught.value)
 
 
@@ -298,3 +298,174 @@ def test_scan_workspace_prepares_hosted_sources_and_uses_original_config(
     assert json.loads((output / "sources.json").read_text())["repositories"][0]["commit"] == commit
     again = CliRunner().invoke(app, ["scan-workspace", str(manifest), "--prepare-to", str(output)])
     assert again.exit_code == 2
+
+
+def test_self_managed_credentials_and_mixed_workspace(
+    tmp_path, history, local_transport, monkeypatch
+):
+    _, commit, tree = history
+    aliases = [
+        {
+            "host": "Code.example.test",
+            "provider": "github",
+            "token_env": "AEGIFY_WORKSPACE_TOKEN_CODE",
+        },
+        {
+            "host": "git.example.test:8443",
+            "provider": "gitlab",
+            "token_env": "AEGIFY_WORKSPACE_TOKEN_TEAM",
+        },
+        {"host": "shared.example.test", "provider": "gitlab"},
+    ]
+    monkeypatch.setenv("AEGIFY_WORKSPACE_GIT_HOSTS", json.dumps(aliases))
+    ca = tmp_path / "enterprise-ca.pem"
+    ca.write_text("test CA path")
+    monkeypatch.setenv("AEGIFY_WORKSPACE_GIT_CA_FILE", str(ca))
+    monkeypatch.setenv("AEGIFY_WORKSPACE_TOKEN_CODE", "code-secret")
+    monkeypatch.setenv("AEGIFY_WORKSPACE_TOKEN_TEAM", "team-secret")
+    monkeypatch.setenv("AEGIFY_GITLAB_TOKEN", "cloud-secret")
+    urls = [
+        "https://code.example.test/team/app.git",
+        "https://git.example.test:8443/org/subgroup/service.git",
+        "https://shared.example.test/org/subgroup/third.git",
+        URLS[1],
+    ]
+    manifest = tmp_path / "sources.yml"
+    manifest.write_text(
+        yaml.safe_dump(
+            {
+                "repositories": [
+                    {"id": f"app-{i}", "source": {"url": url, "revision": commit}}
+                    for i, url in enumerate(urls)
+                ]
+            }
+        )
+    )
+    out = tmp_path / "ready"
+    result = CliRunner().invoke(app, ["scan-workspace", str(manifest), "--prepare-to", str(out)])
+    assert result.exit_code in {0, 1, 3}, result.output
+    receipts = (out / "sources.json").read_text()
+    rows = json.loads(receipts)["repositories"]
+    assert [row["provider"] for row in rows] == [
+        "github-enterprise",
+        "gitlab-self-managed",
+        "gitlab-self-managed",
+        "gitlab",
+    ]
+    assert all(row["commit"] == commit and row["tree"] == tree for row in rows)
+    assert [row["url"] for row in rows] == urls
+    for (url, env), credential in zip(
+        local_transport,
+        ["x-access-token:code-secret", "oauth2:team-secret", None, "oauth2:cloud-secret"],
+        strict=True,
+    ):
+        assert env.get("GIT_SSL_CAINFO") == (None if url == URLS[1] else str(ca))
+        if credential is None:
+            assert "GIT_CONFIG_VALUE_0" not in env
+        else:
+            expected = base64.b64encode(credential.encode()).decode()
+            assert env["GIT_CONFIG_KEY_0"] == f"http.{url}.extraHeader"
+            assert env["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {expected}"
+            assert expected not in receipts + result.output
+        assert not any(key.startswith("AEGIFY_") for key in env)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"host": "example.test/path", "provider": "gitlab"},
+        {"host": "*.example.test", "provider": "gitlab"},
+        {"host": "user@example.test", "provider": "gitlab"},
+        {"host": "example.test:65536", "provider": "gitlab"},
+        {"host": "example.test:bad", "provider": "github"},
+        {"host": "github.com:8443", "provider": "github"},
+        {"host": "team.visualstudio.com", "provider": "gitlab"},
+        {"host": "example.test", "provider": "gitlab", "token_env": "AEGIFY_GITLAB_TOKEN"},
+        {"host": "example.test", "provider": "github", "token": "private-data"},
+        {"host": "example.test", "provider": []},
+    ],
+)
+def test_invalid_operator_policy_excludes_values(monkeypatch, entry):
+    monkeypatch.setenv("AEGIFY_WORKSPACE_GIT_HOSTS", json.dumps([entry]))
+    with pytest.raises(ValueError, match="^invalid AEGIFY_WORKSPACE_GIT_HOSTS configuration$"):
+        sources._configured_hosts()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://git.example.test/team/repo",
+        "https://git.example.test:8444/team/repo",
+        "https://git.example.test.evil.test:8443/team/repo",
+        "https://team@git.example.test:8443/team/repo",
+        "http://git.example.test:8443/team/repo",
+        "https://git.example.test:8443/team/../repo",
+        "https://code.example.test/group/subgroup/repo",
+    ],
+)
+def test_custom_source_requires_exact_operator_authority(monkeypatch, url):
+    monkeypatch.setenv(
+        "AEGIFY_WORKSPACE_GIT_HOSTS",
+        json.dumps(
+            [
+                {"host": "git.example.test:8443", "provider": "gitlab"},
+                {"host": "code.example.test", "provider": "github"},
+            ]
+        ),
+    )
+    with pytest.raises(ValueError):
+        sources._source({"url": url, "revision": "a" * 40}, sources._configured_hosts())
+
+
+def test_host_policy_cannot_come_from_manifest(tmp_path, history, local_transport, monkeypatch):
+    monkeypatch.delenv("AEGIFY_WORKSPACE_GIT_HOSTS", raising=False)
+    _, commit, _ = history
+    path = tmp_path / "workspace.yml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "git_hosts": [{"host": "private.example.test", "provider": "gitlab"}],
+                "repositories": [
+                    {
+                        "id": "app",
+                        "source": {
+                            "url": "https://private.example.test/org/app",
+                            "revision": commit,
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    output = tmp_path / "ready"
+    result = CliRunner().invoke(app, ["prepare-workspace", str(path), "-o", str(output)])
+    assert result.exit_code == 2
+    assert not output.exists() and not local_transport
+
+
+def test_invalid_enterprise_ca_prevents_fetch(tmp_path, history, local_transport, monkeypatch):
+    monkeypatch.setenv(
+        "AEGIFY_WORKSPACE_GIT_HOSTS", '[{"host":"private.example.test","provider":"gitlab"}]'
+    )
+    monkeypatch.setenv("AEGIFY_WORKSPACE_GIT_CA_FILE", "relative-cert.pem")
+    _, commit, _ = history
+    path = tmp_path / "workspace.yml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "repositories": [
+                    {
+                        "id": "app",
+                        "source": {
+                            "url": "https://private.example.test/org/app",
+                            "revision": commit,
+                        },
+                    },
+                ]
+            }
+        )
+    )
+    output = tmp_path / "ready"
+    result = CliRunner().invoke(app, ["prepare-workspace", str(path), "-o", str(output)])
+    assert result.exit_code == 2 and "absolute CA bundle" in " ".join(result.output.split())
+    assert not output.exists() and not local_transport
