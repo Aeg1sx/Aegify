@@ -181,6 +181,13 @@ by ownership status across repositories and retains their file and line.
 The live Codex CLI check passes the six-role source protocol on a three-line
 owned fixture. It does not establish live AI model quality or calibrated confidence.
 
+Session expiry and database guard review now distinguish ordinary session
+access and local collection operations from a supported configuration or a
+conditional storage write. On upstream examples the Express default-store
+advisory was retained while the Authlib accessors and Passport custom-store
+configuration cleared. The published NiFi logout defect remained missed.
+[Inputs and paired results](scanner/benchmarks/session-storage-review-v1/README.md)
+
 ## Work required beyond beta
 
 1. **Detection acceptance:** independently review labels and expand held-out

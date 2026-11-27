@@ -32,32 +32,18 @@ rules:
     message: "Session ID is not regenerated after authentication. Call session.regenerate() or equivalent immediately after successful login to prevent session fixation attacks."
 
   - id: "AEG-SESS-002"
-    name: "Missing session expiry configuration"
+    name: "Session configuration without an expiry bound"
     description: >
-      The application does not configure session timeout or expiration. Without
-      session expiry, abandoned sessions remain valid indefinitely, increasing
-      the window of opportunity for session hijacking through stolen session
-      tokens, shared computers, or network interception.
+      The session middleware or servlet explicitly disables an expiry check,
+      or selects a built-in session store with no expiration on its records.
     severity: high
     confidence: 0.8
-    languages: [python, javascript, typescript, java, ruby, php]
+    languages: [python, javascript, typescript, java]
     cwe_id: 613
     owasp_category: "A07:2021-Identification and Authentication Failures"
-    patterns:
-      - callee_match: "session|SessionMiddleware|express-session|cookie_session"
-        missing_args: "maxAge|expires|timeout|SESSION_COOKIE_AGE|idle_timeout"
-      - file_match: "settings\\.py|config\\.py"
-        missing_pattern: "SESSION_COOKIE_AGE|SESSION_EXPIRE"
-      - file_match: "session.*config|web\\.xml"
-        missing_pattern: "timeout|maxAge|max-age|session-timeout"
-    defense_patterns:
-      - "maxAge"
-      - "SESSION_COOKIE_AGE"
-      - "session-timeout"
-      - "expires"
-      - "idle_timeout"
-      - "absolute_timeout"
-    message: "Session expiration is not configured. Set both idle timeout (15-30 minutes for sensitive apps) and absolute timeout (8-24 hours) to limit the window for session hijacking."
+    semantic:
+      kind: session_expiry
+    message: "Set an appropriate lifetime for the configured session mechanism."
 
   - id: "AEG-SESS-003"
     name: "Session ID exposed in URL"

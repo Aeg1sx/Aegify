@@ -30,12 +30,14 @@ from aegify.models import (
     ImportInfo,
     ParseDiagnostic,
     PythonParameterKind,
+    SessionExpiry,
 )
 from aegify.models import (
     Language as Lang,
 )
 from aegify.scanner import (
     call_arguments,
+    conditional_storage,
     credential_randomness,
     flask_responses,
     flask_sessions,
@@ -62,6 +64,7 @@ from aegify.scanner import (
     python_values,
     python_xml,
     servlet_cookies,
+    session_expiry,
     sql_queries,
     wrangler,
 )
@@ -106,6 +109,10 @@ def parser_fingerprint() -> str:
         "schema": 4,
         "extractor": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "wrangler": hashlib.sha256(Path(wrangler.__file__).read_bytes()).hexdigest(),
+        "conditional_storage": hashlib.sha256(
+            Path(conditional_storage.__file__).read_bytes()
+        ).hexdigest(),
+        "session_expiry": hashlib.sha256(Path(session_expiry.__file__).read_bytes()).hexdigest(),
         "java_randomness": hashlib.sha256(Path(java_randomness.__file__).read_bytes()).hexdigest(),
         "java_sql": hashlib.sha256(Path(java_sql.__file__).read_bytes()).hexdigest(),
         "java_types": hashlib.sha256(Path(java_types.__file__).read_bytes()).hexdigest(),
@@ -290,6 +297,8 @@ class ASTParser:
 
         extractor = _get_extractor(lang)
         ast = extractor.extract(tree.root_node, source, str(file_path), lang)
+        if lang in {Lang.PYTHON, Lang.JAVA, Lang.JAVASCRIPT, Lang.TYPESCRIPT, Lang.GO}:
+            ast.conditional_writes = conditional_storage.guarded_writes(tree.root_node, source)
         call_arguments.annotate_call_arguments(ast, tree.root_node, source)
         sql_queries.annotate_sql_queries(ast, tree.root_node, source)
         pending = [tree.root_node] if tree.root_node.has_error else []
@@ -583,6 +592,7 @@ class _PythonExtractor(_BaseExtractor):
             session_writes=flask_sessions.session_writes(source),
             flask_routers=routers,
             flask_responses=responses,
+            session_expiry=session_expiry.python_settings(source),
             jinja_environments=python_jinja.environments(source),
             python_signing_keys=python_signing_keys.signing_keys(source),
             credential_randomness=credential_randomness.credential_uses(source),
@@ -885,6 +895,7 @@ class _JavaScriptExtractor(_BaseExtractor):
             classes=classes,
             imports=imports,
             calls=calls,
+            session_expiry=session_expiry.javascript_settings(root, source),
         )
 
     def _extract_imports(self, root: Node, source: bytes, imports: list[ImportInfo]) -> None:
@@ -1152,14 +1163,19 @@ class _JavaExtractor(_BaseExtractor):
         ) and (b"Random" in source or b"random" in source)
         known_types = (
             java_types.known_types(root, imports)
-            if b"addCookie" in source or check_randomness
+            if b"addCookie" in source or b"setMaxInactiveInterval" in source or check_randomness
             else {}
         )
+        timeouts: list[SessionExpiry] = []
         for node, enclosing_node, scope_types in self._java_call_scopes(root, source):
             name_node = node.child_by_field_name("name")
             if not name_node:
                 continue
             callee = self._node_text(name_node, source)
+            if callee == "setMaxInactiveInterval" and session_expiry.servlet_setting(
+                node, enclosing_node, known_types
+            ):
+                timeouts.append(SessionExpiry(line=node.start_point[0] + 1, api="servlet"))
             obj_node = node.child_by_field_name("object")
             receiver = self._node_text(obj_node, source) if obj_node else None
 
@@ -1202,6 +1218,7 @@ class _JavaExtractor(_BaseExtractor):
             classes=classes,
             imports=imports,
             calls=calls,
+            session_expiry=timeouts,
             credential_randomness=(
                 java_randomness.credential_uses(
                     self._find_nodes(root, "method_declaration"), known_types

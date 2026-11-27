@@ -75,6 +75,7 @@ class SecurityRule(ABC):
         defense_context: DefenseContext | None = None,
         evidence_state: EvidenceState | None = None,
         disposition: FindingDisposition | None = None,
+        omit_source_snippets: bool = False,
     ) -> Finding:
         """Helper to create a Finding from this rule."""
         if evidence_state is None:
@@ -98,6 +99,7 @@ class SecurityRule(ABC):
             line_start=line_start,
             line_end=line_end,
             code_snippet=code_snippet,
+            omit_source_snippets=omit_source_snippets,
             message=message,
             cwe_id=self.definition.cwe_id,
             owasp_category=self.definition.owasp_category,

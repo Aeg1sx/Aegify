@@ -2174,6 +2174,12 @@ class ScanEngine:
             return file_cache[path]
 
         for finding in findings:
+            if finding.omit_source_snippets:
+                finding.code_snippet = ""
+                finding.code_snippet_start_line = None
+                for step in finding.call_chain:
+                    step.code_snippet = ""
+                continue
             for step in finding.call_chain:
                 if step.file_path in sensitive:
                     step.code_snippet = (
