@@ -86,8 +86,30 @@ transport receives a header scoped to the selected repository. Tokens are
 excluded from arguments, receipts and diagnostic output. Hosted Git fetching
 requires a POSIX environment with system Git and a directly reachable canonical
 host. Interactive login, redirects, proxy environment variables and user Git
-configuration are disabled. For self-hosted forges, SSH-only repositories or
-enterprise authentication that requires a helper, use an existing local checkout.
+configuration are disabled. Use a local checkout for SSH-only repositories or
+authentication that requires an interactive helper.
+
+For GitHub Enterprise Server and GitLab Self-Managed, define trusted hosts in
+the environment of the process running `prepare-workspace` or `scan-workspace`.
+The manifest uses the same `source.url` and full `source.revision` fields.
+Each entry trusts the complete HTTPS authority. Use a hostname dedicated to
+the Git service and include its port when it uses a non-default port.
+
+```sh
+export AEGIFY_WORKSPACE_GIT_HOSTS='[
+  {"host":"code.example.com","provider":"github","token_env":"AEGIFY_WORKSPACE_TOKEN_CODE"},
+  {"host":"git.example.com:8443","provider":"gitlab"}
+]'
+```
+
+Supply the named token through the runner's secret store. Choose a name
+beginning with `AEGIFY_WORKSPACE_TOKEN_` for each private host. An entry
+without `token_env` uses an anonymous fetch. Custom hosts never inherit the
+cloud provider tokens. Set `AEGIFY_WORKSPACE_GIT_CA_FILE` to the absolute
+path of a PEM trust bundle when the server uses an internal certificate
+authority. This setting applies to the configured enterprise hosts. The
+receipts identify the instance URL, provider, commit and tree SHA.
+[GitHub Enterprise HTTPS remotes](https://docs.github.com/en/enterprise-server@3.19/get-started/git-basics/about-remote-repositories) · [GitLab HTTPS cloning](https://docs.gitlab.com/topics/git/clone/)
 
 For Azure Repos, you can paste the HTTPS clone URL from the repository.
 Aegify accepts a matching `ORG@dev.azure.com/ORG` organization hint and the

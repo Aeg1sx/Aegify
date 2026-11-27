@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from aegify.scanner.gateway_inventory import canonical_host
 from aegify.scanner.workspace import WorkspaceManifest, WorkspaceRepository
 
 # One shallow pack, one bounded index, and one bounded batch of raw blobs per repository.
@@ -23,7 +24,9 @@ TREE_BYTES = 8 * 1024 * 1024
 FILE_BYTES = 16 * 1024 * 1024
 TOTAL_BYTES = 256 * 1024 * 1024
 MAX_FILES = 25_000
-HOSTS = {
+type _Host = tuple[str, str, str]  # provider, token environment name, HTTPS username
+
+HOSTS: dict[str, _Host] = {
     "github.com": ("github", "AEGIFY_GITHUB_TOKEN", "x-access-token"),
     "gitlab.com": ("gitlab", "AEGIFY_GITLAB_TOKEN", "oauth2"),
     "bitbucket.org": ("bitbucket", "AEGIFY_BITBUCKET_TOKEN", "x-bitbucket-api-token-auth"),
@@ -31,7 +34,60 @@ HOSTS = {
 }
 
 
-def _source(value: Any) -> tuple[str, str, str]:
+def _configured_hosts() -> dict[str, _Host]:
+    """Read transport policy from the operator environment, outside the source manifest."""
+    raw = os.environ.get("AEGIFY_WORKSPACE_GIT_HOSTS")
+    if raw is None:
+        return HOSTS
+    error = "invalid AEGIFY_WORKSPACE_GIT_HOSTS configuration"
+    if len(raw) > 16_384:
+        raise ValueError(error)
+    try:
+        entries = json.loads(raw)
+    except ValueError, RecursionError:
+        raise ValueError(error) from None
+    if not isinstance(entries, list) or len(entries) > 32:
+        raise ValueError(error)
+    hosts = dict(HOSTS)
+    providers = {
+        "github": ("github-enterprise", "x-access-token"),
+        "gitlab": ("gitlab-self-managed", "oauth2"),
+    }
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) not in (
+            {"host", "provider"},
+            {"host", "provider", "token_env"},
+        ):
+            raise ValueError(error)
+        authority = entry["host"]
+        if not isinstance(authority, str):
+            raise ValueError(error)
+        hostname, colon, port = authority.lower().partition(":")
+        if (
+            canonical_host(hostname) != hostname
+            or hostname in HOSTS
+            or hostname.endswith(".visualstudio.com")
+            or (colon and (not re.fullmatch(r"[1-9][0-9]{0,4}", port) or int(port) > 65535))
+        ):
+            raise ValueError(error)
+        provider, token_env = entry["provider"], entry.get("token_env", "")
+        if (
+            authority.lower() in hosts
+            or not isinstance(provider, str)
+            or provider not in providers
+            or not isinstance(token_env, str)
+            or (
+                "token_env" in entry
+                and not re.fullmatch(r"AEGIFY_WORKSPACE_TOKEN_[A-Z0-9_]{1,64}", token_env)
+            )
+        ):
+            raise ValueError(error)
+        label, username = providers[provider]
+        hosts[authority.lower()] = (label, token_env, username)
+    return hosts
+
+
+def _source(value: Any, hosts: dict[str, _Host]) -> tuple[str, str, str]:
     if not isinstance(value, dict) or set(value) != {"url", "revision"}:
         raise ValueError("source requires only url and revision")
     url, revision = value["url"], value["revision"]
@@ -56,11 +112,11 @@ def _source(value: Any) -> tuple[str, str, str]:
             parts = parts[1:]
         parts.insert(0, legacy[1])
         host = "dev.azure.com"
-    if host not in HOSTS:
+    if host not in hosts:
         raise ValueError("expected a hosted Git HTTPS URL without credentials or options")
     if host == "dev.azure.com":
         valid = len(parts) in {3, 4} and parts[-2] == "_git"
-    elif host == "gitlab.com":
+    elif hosts[host][0] in {"gitlab", "gitlab-self-managed"}:
         valid = 2 <= len(parts) <= 24
     else:
         valid = len(parts) == 2
@@ -136,7 +192,7 @@ def _git(
 def _materialize(
     url: str,
     revision: str,
-    host: str,
+    host_config: _Host,
     destination: Path,
     scratch: Path,
     remaining: int,
@@ -154,9 +210,15 @@ def _materialize(
     }
     bare = scratch / "objects.git"
     _git(scratch, ["init", "--bare", "--template=", str(bare)], env)
-    provider, token_name, username = HOSTS[host]
+    provider, token_name, username = host_config
     transport = dict(env)
-    token = os.environ.get(token_name)
+    if provider in {"github-enterprise", "gitlab-self-managed"}:
+        ca_bundle = os.environ.get("AEGIFY_WORKSPACE_GIT_CA_FILE")
+        if ca_bundle is not None:
+            if not Path(ca_bundle).is_absolute() or not Path(ca_bundle).is_file():
+                raise ValueError("AEGIFY_WORKSPACE_GIT_CA_FILE requires an absolute CA bundle path")
+            transport["GIT_SSL_CAINFO"] = ca_bundle
+    token = os.environ.get(token_name) if token_name else None
     bearer = os.environ.get("AEGIFY_AZURE_REPOS_ENTRA_TOKEN") if provider == "azure" else None
     if bearer:
         if not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", bearer):
@@ -300,11 +362,16 @@ def prepare_workspace(manifest: Path, output: Path) -> Path:
         spec["scip_cache_dir"] = _absolute(spec["scip_cache_dir"], manifest.parent)
     seen: set[str] = set()
     remote: dict[str, tuple[str, str, str]] = {}
+    hosts = (
+        _configured_hosts()
+        if any(isinstance(repo, dict) and "source" in repo for repo in spec["repositories"])
+        else HOSTS
+    )
     for repo in spec["repositories"]:
         if not isinstance(repo, dict) or ("path" in repo) == ("source" in repo):
             raise ValueError("each repository requires exactly one of path or source")
         if "source" in repo:
-            url = _source(repo.pop("source"))
+            url = _source(repo.pop("source"), hosts)
             repo["path"] = "."
         else:
             url = None
@@ -342,8 +409,14 @@ def prepare_workspace(manifest: Path, output: Path) -> Path:
             rid = repo["id"]
             if rid in remote:
                 with tempfile.TemporaryDirectory(dir=tmp) as scratch:
+                    fetch_url, revision, host = remote[rid]
                     receipt = _materialize(
-                        *remote[rid], stage / repo["path"], Path(scratch), remaining
+                        fetch_url,
+                        revision,
+                        hosts[host],
+                        stage / repo["path"],
+                        Path(scratch),
+                        remaining,
                     )
                 remaining -= receipt["bytes"]
             else:
