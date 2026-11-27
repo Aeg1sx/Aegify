@@ -58,6 +58,7 @@ def test_only_direct_cli_path_or_fixed_sibling_is_annotated(tmp_path: Path):
             selected.with_name("summary.txt").write_text("summary")
             (Path("catalog") / sys.argv[1]).read_text()
             selected.with_name(sys.argv[2]).read_text()
+            selected.with_name(r"sub\\used.txt").read_text()
         def secondary():
             Path(sys.argv[1]).read_text()
         if __name__ == "__main__":
@@ -65,12 +66,12 @@ def test_only_direct_cli_path_or_fixed_sibling_is_annotated(tmp_path: Path):
     """,
     )
     by_line = {f.line_start: f for f in findings}
-    assert set(by_line) == {5, 6, 7, 8, 10}
+    assert set(by_line) == {5, 6, 7, 8, 9, 11}
     for line in (5, 6):
         assert not by_line[line].blocks_ci
         assert by_line[line].evidence_state == "reachable"
         assert "caller" in by_line[line].message
-    assert all(by_line[line].blocks_ci for line in (7, 8, 10))
+    assert all(by_line[line].blocks_ci for line in (7, 8, 9, 11))
 
 
 def test_remote_caller_path_remains_blocking_across_package_helper(tmp_path: Path):

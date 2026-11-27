@@ -287,7 +287,7 @@ def _cli_path_line(node: ast.expr, local: LocalValues, depth: int = 0) -> int | 
                 and isinstance(name.value, str)
                 and name.value not in {"", ".", ".."}
                 and "/" not in name.value
-                and "\\\\" not in name.value
+                and "\\" not in name.value
             ):
                 return _cli_path_line(node.func.value, local, depth + 1)
     return None
