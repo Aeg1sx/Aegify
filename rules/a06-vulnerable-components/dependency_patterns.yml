@@ -49,14 +49,13 @@ rules:
         args_exclude: |-
           ^\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`$]*`)\s*$
         note: "jQuery selector with user-controlled string can create DOM elements with scripts"
-      - callee_match: "\\.html\\(|\\.append\\(|\\.prepend\\(|\\.after\\(|\\.before\\("
-        taint_source: "location|document\\.URL|document\\.referrer|window\\.name|\\$\\.param|user|input"
-      - callee_match: "\\.html\\("
-        args_match: "\\$\\(.*\\)\\.val\\(\\)|\\$\\(.*\\)\\.text\\(\\)|req\\.|params"
-      - multi_match:
-          - "jQuery|\\$\\("
-          - "\\.html\\(|\\.append\\("
-          - "location\\.hash|location\\.search|document\\.URL|window\\.name"
+      - callee_match: '(?:^|\.)(?:html|append|prepend|after|before)$'
+        args_match: '\S'
+        args_exclude: |-
+          ^\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`$]*`)\s*$
+        taint_source: 'location|document\.(?:URL|referrer)|window\.name|\$\.param|user|input'
+      - callee_match: '(?:^|\.)html$'
+        args_match: '\$\(.*\)\.(?:val|text)\s*\(|\b(?:req\.|params\b)'
     defense_patterns:
       - "\\.text\\("
       - "DOMPurify|sanitize|xss"
