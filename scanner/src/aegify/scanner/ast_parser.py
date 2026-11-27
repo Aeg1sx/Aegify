@@ -19,7 +19,7 @@ import tree_sitter_python as tspython
 import tree_sitter_rust as tsrust
 import tree_sitter_swift as tsswift
 import tree_sitter_typescript as tsts
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Tree
 
 from aegify.models import (
     CallSite,
@@ -179,6 +179,37 @@ def _get_file_parser(lang: Lang, file_path: Path) -> Parser:
     return _get_parser(lang)
 
 
+# TypeScript permits comments and line breaks between a tag's type arguments
+# and the opening backtick. Match at the grammar-provided end of the arguments.
+_TEMPLATE_AFTER_TYPES = re.compile(rb"(?:\s++|//[^\r\n]*+|/\*.*?\*/)*+`", re.DOTALL)
+
+
+def _parse_typed_templates(parser: Parser, tree: Tree, source: bytes) -> Tree:
+    # In a recovered TS/TSX tree, a valid tag can be an instantiation_expression
+    # under ERROR or a synthetic non-null assertion. Reparse its runtime form.
+    # Byte-for-byte spacing keeps positions and excerpts tied to the original.
+    pending = [tree.root_node]
+    stripped: bytearray | None = None
+    while pending:
+        node = pending.pop()
+        if node.has_error:
+            pending.extend(
+                child for child in node.named_children
+                if child.has_error or child.type == "instantiation_expression"
+            )
+        elif node.type == "instantiation_expression":
+            args = node.child_by_field_name("type_arguments")
+            if (args is None or args.end_byte != node.end_byte
+                    or not _TEMPLATE_AFTER_TYPES.match(source, args.end_byte)):
+                continue
+            if stripped is None:
+                stripped = bytearray(source)
+            stripped[args.start_byte:args.end_byte] = re.sub(
+                rb"[^\r\n]", b" ", source[args.start_byte:args.end_byte]
+            )
+    return parser.parse(bytes(stripped)) if stripped is not None else tree
+
+
 def detect_language(file_path: Path) -> Lang | None:
     """Detect supported source languages and named deployment manifests."""
     if file_path.name in wrangler.MANIFEST_NAMES:
@@ -241,6 +272,8 @@ class ASTParser:
     def _parse_code(self, file_path: Path, source: bytes, lang: Lang) -> FileAST:
         parser = _get_file_parser(lang, file_path)
         tree = parser.parse(source)
+        if lang == Lang.TYPESCRIPT and tree.root_node.has_error and b"`" in source:
+            tree = _parse_typed_templates(parser, tree, source)
 
         extractor = _get_extractor(lang)
         ast = extractor.extract(tree.root_node, source, str(file_path), lang)
