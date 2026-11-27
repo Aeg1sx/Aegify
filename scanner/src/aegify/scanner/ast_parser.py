@@ -38,6 +38,8 @@ from aegify.scanner import (
     credential_randomness,
     flask_responses,
     flask_sessions,
+    java_randomness,
+    java_types,
     python_buffers,
     python_code,
     python_deserialization,
@@ -102,6 +104,8 @@ def parser_fingerprint() -> str:
         "schema": 4,
         "extractor": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "wrangler": hashlib.sha256(Path(wrangler.__file__).read_bytes()).hexdigest(),
+        "java_randomness": hashlib.sha256(Path(java_randomness.__file__).read_bytes()).hexdigest(),
+        "java_types": hashlib.sha256(Path(java_types.__file__).read_bytes()).hexdigest(),
         "servlet_cookies": hashlib.sha256(Path(servlet_cookies.__file__).read_bytes()).hexdigest(),
         "call_arguments": hashlib.sha256(Path(call_arguments.__file__).read_bytes()).hexdigest(),
         "sql_queries": hashlib.sha256(Path(sql_queries.__file__).read_bytes()).hexdigest(),
@@ -1140,9 +1144,13 @@ class _JavaExtractor(_BaseExtractor):
                 )
             )
 
-        # Resolve servlet type names only for files that publish cookies.
-        cookie_types = (
-            servlet_cookies.servlet_types(root, imports) if b"addCookie" in source else {}
+        check_randomness = b"setAttribute" in source and (
+            b"Random" in source or b"random" in source
+        )
+        known_types = (
+            java_types.known_types(root, imports)
+            if b"addCookie" in source or check_randomness
+            else {}
         )
         for node in self._find_nodes(root, "method_invocation"):
             name_node = node.child_by_field_name("name")
@@ -1177,7 +1185,7 @@ class _JavaExtractor(_BaseExtractor):
                     receiver=receiver,
                     receiver_type=receiver_type,
                     structured_arguments=(
-                        servlet_cookies.cookie_arguments(node, enclosing_node, cookie_types)
+                        servlet_cookies.cookie_arguments(node, enclosing_node, known_types)
                         if callee == "addCookie"
                         else None
                     ),
@@ -1192,6 +1200,13 @@ class _JavaExtractor(_BaseExtractor):
             classes=classes,
             imports=imports,
             calls=calls,
+            credential_randomness=(
+                java_randomness.credential_uses(
+                    self._find_nodes(root, "method_declaration"), known_types
+                )
+                if check_randomness and known_types
+                else []
+            ),
         )
 
     def _extract_java_param_details(

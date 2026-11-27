@@ -425,10 +425,15 @@ class YAMLRule(SecurityRule):
     def _eval_credential_randomness(self, file_asts: list[FileAST]) -> list[Finding]:
         findings = []
         for file in file_asts:
-            if file.language != Language.PYTHON or (
+            if file.language not in {Language.PYTHON, Language.JAVA} or (
                 self.definition.languages and file.language not in self.definition.languages
             ):
                 continue
+            generator_api = (
+                "java.security.SecureRandom"
+                if file.language == Language.JAVA
+                else "the secrets module"
+            )
             facts = file.credential_randomness
             if len(facts) > self._MAX_FINDINGS_PER_FILE:
                 self.evaluation_limited = True
@@ -447,7 +452,7 @@ class YAMLRule(SecurityRule):
                         message=(
                             f"{fact.generator} on line {fact.generator_line} supplies the "
                             f"{fact.use} on line {fact.use_line}.{comparison} "
-                            "Use the secrets module for credential values."
+                            f"Use {generator_api} for credential values."
                         ),
                         evidence_state=EvidenceState.REACHABLE,
                         disposition=FindingDisposition.ADVISORY,

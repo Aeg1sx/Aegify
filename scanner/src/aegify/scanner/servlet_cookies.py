@@ -4,49 +4,12 @@ from __future__ import annotations
 
 from tree_sitter import Node
 
-from aegify.models import BooleanOption, CallArgument, ImportInfo
+from aegify.models import BooleanOption, CallArgument
 
 _PACKAGES = ("javax.servlet.http", "jakarta.servlet.http")
 _FLAGS = {b"setSecure": "secure", b"setHttpOnly": "httpOnly"}
 _OTHER_SETTERS = {b"setPath", b"setDomain", b"setValue", b"setMaxAge", b"setComment", b"setVersion"}
 _COMMENTS = {"line_comment", "block_comment"}
-
-
-def servlet_types(root: Node, imports: list[ImportInfo]) -> dict[str, str]:
-    if root.has_error:
-        return {}
-    types = {
-        f"{package}.{name}": f"{package}.{name}"
-        for package in _PACKAGES
-        for name in ("Cookie", "HttpServletResponse")
-    }
-    # An explicit import can be shadowed by a nested or generic type.
-    short: dict[str, set[str]] = {}
-    for item in imports:
-        if item.module in types:
-            short.setdefault(item.module.rsplit(".", 1)[1], set()).add(item.module)
-    if short:
-        pending = [root]
-        while pending:
-            node = pending.pop()
-            if node.type in {
-                "class_declaration",
-                "interface_declaration",
-                "enum_declaration",
-                "record_declaration",
-                "annotation_type_declaration",
-                "type_parameter",
-            }:
-                name = node.child_by_field_name("name")
-                if node.type == "type_parameter":
-                    name = next(
-                        (c for c in node.named_children if c.type == "type_identifier"), None
-                    )
-                if name is not None:
-                    short.pop((name.text or b"").decode(errors="replace"), None)
-            pending.extend(node.named_children)
-    types.update({name: next(iter(values)) for name, values in short.items() if len(values) == 1})
-    return types
 
 
 def _field_text(node: Node, field: str) -> bytes:

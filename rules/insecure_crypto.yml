@@ -22,10 +22,10 @@ rules:
     name: Insecure Random Number Generator
     description: >
       Non-cryptographic random number generator used in security context.
-      Use secrets module (Python) or crypto.randomBytes (Node.js) instead.
+      Use secrets (Python), crypto.randomBytes (Node.js), or SecureRandom (Java).
     severity: medium
     confidence: 0.6
-    languages: [python, javascript]
+    languages: [python, javascript, java]
     cwe_id: 330
     semantic:
       kind: credential_randomness

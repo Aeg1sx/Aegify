@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import type { GatewayFileReview, GatewayReview, GatewayRouteReview } from "@/lib/gateway-inventory";
 
 const explanations: Record<GatewayRouteReview["reason"], string> = {
@@ -22,69 +23,98 @@ const fileIssues: Record<string, string> = {
 };
 const pageSize = 25;
 
-function Declarations({ file }: { file: GatewayFileReview }) {
+function fileLabel(file: GatewayFileReview) {
+  return file.repositoryId ? file.repositoryId + " · " + file.path : file.path;
+}
+
+const filters = [
+  ["all", "All ownership statuses"],
+  ["unresolved", "Unresolved"],
+  ["ambiguous", "Ambiguous"],
+  ["resolved", "Resolved"],
+] as const;
+
+export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
+  const id = useId();
+  const [fileIndex, setFileIndex] = useState(-1);
+  const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
-  const pages = Math.ceil(file.routes.length / pageSize);
+  const selected = review.files[fileIndex];
+  const files = useMemo(() => selected ? [selected] : review.files, [review.files, selected]);
+  const matches = useMemo(() => files.flatMap((file) => file.routes
+    .filter((route) => status === "all" || route.status === status)
+    .map((route) => ({ route, file }))), [files, status]);
+  const pages = Math.ceil(matches.length / pageSize);
+  const start = Math.min(page, Math.max(0, pages - 1)) * pageSize;
+  const selectClass = "min-h-11 w-full min-w-0 rounded-md border bg-background px-3 text-sm";
+
   return (
-    <div className="space-y-3">
-      {file.diagnostics.map((issue) => <p key={issue} className="text-sm">{fileIssues[issue]}</p>)}
-      {file.routes.length === 0 ? <p className="text-sm text-muted-foreground">No route declarations recorded in this file.</p> : (
-        <ul className="divide-y rounded-md border">
-          {file.routes.slice(page * pageSize, (page + 1) * pageSize).map((route, index) => (
-            <li key={index} className="grid gap-1 px-3 py-2 sm:grid-cols-2 sm:gap-4">
-              <div className="min-w-0 text-sm">
-                <span className="block font-medium break-all">{route.name || "Unnamed declaration"}</span>
-                <span className="block text-xs text-muted-foreground break-all">{route.schema} · Document {route.document} · Line {route.line}</span>
+    <section id="gateway-inventory" aria-labelledby={id + "-heading"} className="min-w-0 space-y-4 border-t pt-4">
+      <header className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 id={id + "-heading"} className="text-base font-semibold">Gateway ownership</h2>
+          <p className="text-sm text-muted-foreground">
+            {review.fileCount} configuration {review.fileCount === 1 ? "file" : "files"} · {review.resolved} resolved · {review.ambiguous} ambiguous · {review.unresolved} unresolved
+          </p>
+        </div>
+        <span className="text-xs text-muted-foreground">{review.inputStatus === "partial" ? "Partial input" : "Input processed"}</span>
+      </header>
+      {(review.omittedFiles > 0 || review.omittedRoutes > 0) && (
+        <p className="text-sm">Omitted by scanner limits · {review.omittedFiles} files · {review.omittedRoutes} declarations</p>
+      )}
+      {review.files.length > 0 && (
+        <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <label className="grid min-w-0 gap-1 text-xs font-medium">
+            Configuration file
+            <select className={selectClass} value={fileIndex} onChange={(event) => { setFileIndex(Number(event.target.value)); setPage(0); }}>
+              <option value={-1}>All configuration files</option>
+              {review.files.map((file, index) => <option key={index} value={index}>{fileLabel(file)}</option>)}
+            </select>
+          </label>
+          <label className="grid min-w-0 gap-1 text-xs font-medium">
+            Ownership status
+            <select className={selectClass} value={status} onChange={(event) => { setStatus(event.target.value); setPage(0); }}>
+              {filters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
+      {files.filter((file) => file.diagnostics.length > 0).map((file) => (
+        <div key={JSON.stringify([file.repositoryId, file.path])} className="rounded-md border px-3 py-2 text-sm">
+          <p className="break-all font-medium">{fileLabel(file)}</p>
+          {file.diagnostics.map((issue) => <p key={issue}>{fileIssues[issue]}</p>)}
+        </div>
+      ))}
+      <p aria-live="polite" className="text-xs text-muted-foreground">
+        {matches.length ? `Showing ${start + 1}–${Math.min(start + pageSize, matches.length)} of ${matches.length} declarations`
+          : status === "all" ? "No route declarations recorded." : "No declarations match this ownership status."}
+      </p>
+      {matches.length > 0 && (
+        <ul aria-label="Gateway route declarations" className="divide-y rounded-lg border">
+          {matches.slice(start, start + pageSize).map(({ route, file }, index) => (
+            <li key={start + index} className="grid gap-2 px-4 py-3 sm:grid-cols-2 sm:gap-4">
+              <div className="min-w-0">
+                <span className="block break-all text-sm font-semibold">{route.name || "Unnamed declaration"}</span>
+                <span className="block break-all text-xs text-muted-foreground">{fileLabel(file)}</span>
+                <span className="block break-all text-xs text-muted-foreground">{route.schema} · Document {route.document} · Line {route.line}</span>
               </div>
               <div className="min-w-0 text-sm">
                 <span className="font-medium capitalize">{route.status}</span>
                 {route.owners.length > 0 && <span className="break-all"> · {route.owners.join(", ")}</span>}
-                <span className="block text-xs text-muted-foreground">{explanations[route.reason]}</span>
+                <p className="text-xs text-muted-foreground">{explanations[route.reason]}</p>
               </div>
             </li>
           ))}
         </ul>
       )}
       {pages > 1 && (
-        <nav aria-label="Gateway declarations" className="flex items-center gap-4 text-sm">
-          <button type="button" className="min-h-11 disabled:opacity-50" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
-          <span aria-live="polite">Page {page + 1} of {pages}</span>
-          <button type="button" className="min-h-11 disabled:opacity-50" disabled={page + 1 === pages} onClick={() => setPage(page + 1)}>Next</button>
+        <nav aria-label="Gateway declarations" className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" className="min-h-11" disabled={start === 0} onClick={() => setPage(start / pageSize - 1)}>Previous</Button>
+          <span className="text-sm">Page {start / pageSize + 1} of {pages}</span>
+          <Button type="button" variant="outline" className="min-h-11" disabled={start + pageSize >= matches.length} onClick={() => setPage(start / pageSize + 1)}>Next</Button>
         </nav>
       )}
-      {file.sha256 && <details className="text-xs text-muted-foreground"><summary>Configuration SHA-256</summary><code className="break-all">{file.sha256}</code></details>}
-    </div>
-  );
-}
-
-export function GatewayInventoryPanel({ review }: { review: GatewayReview }) {
-  const selectId = useId();
-  const [selected, setSelected] = useState(0);
-  const file = review.files[selected];
-  return (
-    <section id="gateway-inventory" aria-labelledby="gateway-heading" className="space-y-3 border-t pt-4">
-      <h2 id="gateway-heading" className="text-base font-semibold">Gateway ownership</h2>
-      <p className="text-sm text-muted-foreground">
-        {review.fileCount} configuration {review.fileCount === 1 ? "file" : "files"} · {review.resolved} resolved · {review.ambiguous} ambiguous · {review.unresolved} unresolved
-        {" · "}{review.inputStatus === "partial" ? "Partial input" : "Input processed"}
-      </p>
-      {(review.omittedFiles > 0 || review.omittedRoutes > 0) && (
-        <p className="text-sm">Omitted by scanner limits · {review.omittedFiles} files · {review.omittedRoutes} declarations</p>
-      )}
-      {file && (
-        <>
-          <label htmlFor={selectId} className="block text-sm font-medium">Configuration file</label>
-          <select id={selectId} value={selected} onChange={(event) => setSelected(Number(event.target.value))}
-            className="w-full max-w-full rounded-md border bg-background p-2 text-sm sm:w-auto">
-            {review.files.map((entry, index) => (
-              <option key={JSON.stringify([entry.repositoryId, entry.path])} value={index}>
-                {entry.repositoryId ? entry.repositoryId + " · " : ""}{entry.path}
-              </option>
-            ))}
-          </select>
-          <Declarations key={JSON.stringify([file.repositoryId, file.path])} file={file} />
-        </>
-      )}
+      {selected?.sha256 && <details className="text-xs text-muted-foreground"><summary>Configuration SHA-256</summary><code className="break-all">{selected.sha256}</code></details>}
     </section>
   );
 }
