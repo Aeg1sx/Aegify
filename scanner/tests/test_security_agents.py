@@ -399,6 +399,29 @@ def test_provider_failure_keeps_facts_and_marks_finished_run_partial() -> None:
     assert all(stage.backend_error_code == "" for stage in baseline.stages)
 
 
+def test_backend_exception_content_never_enters_the_record() -> None:
+    private = "private_trace_marker"
+
+    class Backend:
+        provider_name = "openai_api"
+
+        def __init__(self, error: Exception) -> None:
+            self.error = error
+
+        def invoke(self, _spec: Any, _payload: Any) -> AgentNarrative:
+            raise self.error
+
+    for error, expected in (
+        (ValueError(private), "provider_error"),
+        (AgentBackendError(private, private), "provider_error"),
+        (AgentBackendError("timeout", private), "timeout"),
+    ):
+        run = SecurityAgentPipeline(Backend(error)).run(_scan(runtime=True))
+        assert private not in run.model_dump_json()
+        assert all(stage.backend_error_code == expected for stage in run.stages)
+        assert all(stage.facts and stage.narrative is None for stage in run.stages)
+
+
 def test_legacy_run_reads_without_new_error_code_and_keeps_original_digest() -> None:
     legacy = {
         "id": "legacy-run",

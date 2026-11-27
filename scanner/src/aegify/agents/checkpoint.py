@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import stat
 import tempfile
 from collections.abc import Mapping
@@ -21,6 +20,7 @@ from aegify.agents.backends import (
     AnthropicAPIBackend,
     _narrative_schema,
     _validate_narrative,
+    public_backend_code,
 )
 from aegify.agents.catalog import AgentSpec
 from aegify.agents.models import AgentNarrative
@@ -203,10 +203,7 @@ class CheckpointBackend:
             try:
                 response = self._response(self.backend.invoke_turn(spec, payload, schema), schema)
             except Exception as error:
-                code = error.code if isinstance(error, AgentBackendError) else "invalid_response"
-                record.error_code = (
-                    code if re.fullmatch(r"[a-z_]{1,80}", code) else "provider_error"
-                )
+                record.error_code = public_backend_code(error)
                 record.state = "error"
                 self._usage()
                 self._save()

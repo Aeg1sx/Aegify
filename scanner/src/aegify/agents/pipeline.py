@@ -7,7 +7,11 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
-from aegify.agents.backends import AgentBackend, AgentBackendError, AnthropicAPIBackend
+from aegify.agents.backends import (
+    AgentBackend,
+    AnthropicAPIBackend,
+    public_backend_code,
+)
 from aegify.agents.catalog import AGENT_CATALOG, AgentSpec
 from aegify.agents.checkpoint import CheckpointBackend
 from aegify.agents.exploration import AgentSourceExplorer
@@ -553,9 +557,8 @@ class SecurityAgentPipeline:
         try:
             stage.narrative = self.backend.invoke(spec, payload)
         except Exception as error:
-            stage.error = str(error)[:1_000]
-            if isinstance(error, AgentBackendError):
-                stage.backend_error_code = error.code
+            stage.backend_error_code = public_backend_code(error, unexpected="provider_error")
+            stage.error = "The AI provider could not complete this review."
             if stage.status == AgentStageStatus.COMPLETED:
                 stage.status = AgentStageStatus.PARTIAL
         return self._tool_evidence(tool_results)

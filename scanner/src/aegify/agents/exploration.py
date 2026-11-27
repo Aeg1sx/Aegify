@@ -16,6 +16,7 @@ from aegify.agents.backends import (
     _narrative_schema,
     _prompt,
     _validate_narrative,
+    public_backend_code,
 )
 from aegify.agents.catalog import AgentSpec
 from aegify.agents.models import (
@@ -200,7 +201,7 @@ class AgentSourceExplorer:
                 self._validate_turn(response)
                 round_trace.outcome = response["kind"]
             except Exception as error:
-                code = error.code if isinstance(error, AgentBackendError) else "invalid_response"
+                code = public_backend_code(error)
                 round_trace.error_code = code
                 self._stop(stage, code)
                 break
