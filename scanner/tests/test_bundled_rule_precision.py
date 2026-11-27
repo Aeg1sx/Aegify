@@ -498,3 +498,77 @@ def test_session_timeout_rule_matches_exact_token_calls_only(tmp_path: Path):
 
     assert "AEG-ASVS-001" in unsafe_ids
     assert "AEG-ASVS-001" not in unrelated_ids
+
+
+@pytest.mark.parametrize(
+    ("rule_file", "rule_id"),
+    [
+        ("a03-injection/injection.yml", "AEG-A03-007"),
+        ("a06-vulnerable-components/dependency_patterns.yml", "AEG-DEP-005"),
+        ("rce/javascript_rce.yml", "AEG-RCE-JS-003"),
+    ],
+)
+def test_javascript_dollar_names_and_real_eval(tmp_path, rule_file, rule_id):
+    pack = RULES_DIR / rule_file
+    page = (
+        'function names(panel) { return panel.$$eval("li", rows => '
+        'rows.map(row => row.querySelector("span").textContent)); }\n'
+        'function field(p, input) { return p.$eval("div", n => n.textContent, input); }'
+    )
+    assert rule_id not in _scan_rule(tmp_path, pack, page, "browser.mjs")
+    assert rule_id in _scan_rule(
+        tmp_path, pack, "function render(req) { return eval(req.body.input); }", "handler.mjs"
+    )
+
+
+def test_function_constructor_still_reviews_request_argument(tmp_path):
+    pack = RULES_DIR / "a06-vulnerable-components/dependency_patterns.yml"
+    source = "function render(req) { return new Function(req.body.input); }"
+    assert "AEG-DEP-005" in _scan_rule(tmp_path, pack, source, "constructor.mjs")
+
+
+def test_race_advisories_require_store_operations(tmp_path):
+    pack = RULES_DIR / "a04-insecure-design/race_conditions.yml"
+    local = (
+        "function view(review, index) {\n"
+        "  const selected = review.files[index];\n"
+        "  const next = index + 1;\n"
+        "  return restoreSelection(selected, next);\n}"
+    )
+    assert "AEG-RACE-003" not in _scan_rule(tmp_path, pack, local, "view.tsx")
+    writes = (
+        "def update(repo, key):\n    item = repo.get(key)\n"
+        "    item.total = 3\n    repo.save(item)\n"
+    )
+    assert "AEG-RACE-003" in _scan_rule(tmp_path, pack, writes, "ledger.py")
+    io = (
+        "def copy(source, target):\n    buf = source.read()\n"
+        "    buf[0] = 0\n    target.write(buf)\n"
+    )
+    assert "AEG-RACE-003" not in _scan_rule(tmp_path, pack, io, "copy.py")
+    store = (
+        "def edit(order_store, key):\n    record = order_store.read(key)\n"
+        "    record.count += 1\n    order_store.write(record)\n"
+    )
+    assert "AEG-RACE-003" in _scan_rule(tmp_path, pack, store, "store.py")
+
+
+def test_quantity_review_requires_a_submitted_quantity(tmp_path):
+    pack = RULES_DIR / "a04-insecure-design/business_logic.yml"
+    local = (
+        "def analyze(params):\n    visits = Counter()\n    return params.get('language'), visits\n"
+    )
+    assert "AEG-LOGIC-002" not in _scan_rule(tmp_path, pack, local, "analyzer.py")
+    body = "def checkout(request):\n    return request.data['quantity']\n"
+    assert "AEG-LOGIC-002" in _scan_rule(tmp_path, pack, body, "checkout.py")
+
+
+def test_reset_credential_assignment_and_constant_vocabulary(tmp_path):
+    pack = RULES_DIR / "a07-auth-failures/password_security.yml"
+    words = (
+        'def metadata(user_id):\n    keys = {"reset_token", "email"}\n    return keys, user_id\n'
+    )
+    assert "AEG-PASS-005" not in _scan_rule(tmp_path, pack, words, "metadata.py")
+    for i, expr in enumerate(("time.time()", "str(user.email)")):
+        body = f'def issue(session, user):\n    session["reset_token"] = {expr}\n'
+        assert "AEG-PASS-005" in _scan_rule(tmp_path, pack, body, f"reset{i}.py")

@@ -129,16 +129,16 @@ rules:
     cwe_id: 95
     owasp_category: "A03:2021-Injection"
     patterns:
-      - callee: "eval"
+      - callee: '(?:^|\.)eval$'
         args_match: "(req\\.|request\\.|params|query|body|headers|cookies|input|user|data|window\\.location|document\\.URL|document\\.referrer|localStorage|sessionStorage)"
         missing_check: "(JSON\\.parse|parseInt|parseFloat|Number\\(|allowlist|sanitize|validate|whitelist)"
-      - pattern: "eval\\s*\\(\\s*`"
+      - pattern: "(?<![\\w$])eval\\s*\\(\\s*`"
         description: "eval() with template literal interpolation"
-      - pattern: "eval\\s*\\(.*\\+.*\\)"
+      - pattern: "(?<![\\w$])eval\\s*\\(.*\\+.*\\)"
         description: "eval() with string concatenation"
-      - pattern: "eval\\s*\\(\\s*atob\\s*\\("
+      - pattern: "(?<![\\w$])eval\\s*\\(\\s*atob\\s*\\("
         description: "eval() on base64-decoded data"
-      - pattern: "eval\\s*\\(\\s*decodeURIComponent\\s*\\("
+      - pattern: "(?<![\\w$])eval\\s*\\(\\s*decodeURIComponent\\s*\\("
         description: "eval() on URL-decoded data"
       - pattern: "setTimeout\\s*\\(\\s*['\"`]"
         description: "setTimeout with string argument acts like eval()"
@@ -147,7 +147,7 @@ rules:
     taint:
       source_types: [http_param, http_body, http_header, http_cookie, websocket_message, url_fragment, local_storage, query_string]
       sink_types: [code_execution]
-      sink_pattern: "eval|setTimeout\\s*\\(\\s*['\"`]|setInterval\\s*\\(\\s*['\"`]"
+      sink_pattern: "(?<![\\w$])eval(?![\\w$])|setTimeout\\s*\\(\\s*['\"`]|setInterval\\s*\\(\\s*['\"`]"
       # Reference only; propagation comes from scanner models.
       # propagation:
         # - through: "template_literal"

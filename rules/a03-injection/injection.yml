@@ -157,12 +157,12 @@ rules:
     defense_patterns: ["ast.literal_eval", "json.loads", "sandbox", "restricted_exec", "safe_eval"]
     taint:
       source_types: [http_param, http_body, http_header, http_cookie]
-      sink_pattern: "(eval|exec|compile|execfile|__import__|Function\\(|setTimeout\\(.*string|setInterval\\(.*string|vm\\.runInContext|vm\\.runInNewContext)"
+      sink_pattern: "((?<![\\w$])(?:eval|exec|compile|execfile|__import__)(?![\\w$])|Function\\(|setTimeout\\(.*string|setInterval\\(.*string|vm\\.runInContext|vm\\.runInNewContext)"
       sink_types: [code_exec]
     patterns:
-      - callee: "\\beval\\b"
+      - callee: '(?:^|\.)eval$'
         args_match: "(request|req|input|user|param|query|body|data|args)"
-      - callee: "\\bexec\\b"
+      - callee: '(?:^|\.)exec$'
         args_match: "(request|req|input|user|param|query|body|data|args)"
       - callee_match: "^Function$"
         args_match: "(request|req|input|user|param|query|body)"

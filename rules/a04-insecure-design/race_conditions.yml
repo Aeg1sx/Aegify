@@ -80,17 +80,10 @@ rules:
     owasp_category: "A04:2021-Insecure Design"
     patterns:
       - sequence_match:
-          - "SELECT|find|findOne|get|load|read"
-          - "\\+\\s*=|\\-\\s*=|\\+\\s*1|\\-\\s*1|\\+=|\\-="
-          - "UPDATE|save|update|put|write|store"
+          - '\b(?:SELECT\s+[^;\n]+\s+FROM\b|(?:find(?:ById|One)?|get|load)\s*\(|(?:\w*(?:repo(?:sitory)?|store|db|dao|table|collection))\.read\s*\()'
+          - '(?:\+=|-=|\+\+|--|=\s*[\w.]+\s*[+-]\s*1\b|(?:\.\w+|\[[^\]\n]{1,80}\])\s*=(?!=))'
+          - '\b(?:UPDATE\s+[\w.]+\s+SET\b|(?:save|update|put|store)\s*\(|(?:\w*(?:repo(?:sitory)?|store|db|dao|table|collection))\.write\s*\()'
         max_lines_between: 20
-        disposition: advisory
-      - multi_match:
-          - "\\.get\\(|findById|SELECT"
-          - "\\.|\\[.*\\]\\s*=|\\+=|\\-="
-          - "\\.save\\(|update\\(|UPDATE"
-        missing_match:
-          - "lock|atomic|transaction|synchronized"
         disposition: advisory
     semantic:
       kind: database_race
