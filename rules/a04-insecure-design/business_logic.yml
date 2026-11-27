@@ -42,9 +42,10 @@ rules:
     cwe_id: 20
     owasp_category: "A04:2021-Insecure Design"
     patterns:
-      - multi_match:
-          - "quantity|qty|amount|count|units"
-          - "req\\.body|request\\.POST|request\\.data|params|getParameter"
+      - pattern_type: regex
+        match: >-
+          \b(?:req\.(?:body|query|params)|request\.(?:POST|data|args|form)|params)(?:\.get\s*\(\s*["']|\[\s*(?:["']|:)|\.)(?:quantity|qty|amount|count|units)\b|\bgetParameter\s*\(\s*["'](?:quantity|qty|amount|count|units)["']
+        scope: function
         missing_match:
           - ">\\s*0|>=\\s*1|positive|min.*1|min.*0[^.]"
       - callee_match: "add_to_cart|update_cart|process_order|create_line_item"

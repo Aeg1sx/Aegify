@@ -136,8 +136,11 @@ rules:
     cwe_id: 95
     owasp_category: "A06:2021-Vulnerable and Outdated Components"
     patterns:
-      - callee_match: "eval\\(|new\\s+Function\\("
+      - callee: '(?:^|\.)(?:eval|Function)$'
+        args_match: "req\\.body|req\\.query|req\\.params|request|input|user"
+      - callee_match: '\bnew\s+Function\s*\('
         taint_source: "req\\.body|req\\.query|req\\.params|request|input|user"
+        scope: function
       - callee_match: "vm\\.runInNewContext|vm\\.runInThisContext|vm\\.compileFunction"
         taint_source: "req|request|params|input|user"
       - import_match: "safe-eval|static-eval|notevil|sandcastle|sandbox"
