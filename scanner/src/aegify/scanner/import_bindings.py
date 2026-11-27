@@ -1,6 +1,16 @@
 """Source-declared import identities shared by graph and taint resolution."""
 
-from aegify.models import FileAST
+from aegify.models import FileAST, Language
+
+
+def shares_call_runtime(caller: Language, target: Language) -> bool:
+    """Languages where a source-level name can refer directly to the same callable."""
+    if caller == target:
+        return True
+    return {caller, target} in (
+        {Language.JAVASCRIPT, Language.TYPESCRIPT},
+        {Language.JAVA, Language.KOTLIN},
+    )
 
 
 def declared_import_names(ast: FileAST) -> set[str]:

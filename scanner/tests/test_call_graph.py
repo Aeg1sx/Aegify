@@ -111,3 +111,14 @@ def test_external_import_resolution_is_bounded_for_repeated_calls(tmp_path: Path
     graph = CallGraphBuilder().build(asts)
     assert graph.number_of_edges() == 0
     assert time.monotonic() - started < 2
+
+
+def test_same_named_functions_must_share_a_runtime(tmp_path: Path):
+    (tmp_path / "caller.ts").write_text("export function home(value) { return label(value); }\n")
+    (tmp_path / "labels.py").write_text("def label(value):\n    return value\n")
+    parser = ASTParser()
+    assert CallGraphBuilder().build(parser.parse_directory(tmp_path)).number_of_edges() == 0
+    (tmp_path / "labels.js").write_text("export function label(value) { return value; }\n")
+    graph = CallGraphBuilder().build(parser.parse_directory(tmp_path))
+    ((_, callee),) = graph.edges()
+    assert graph.nodes[callee]["data"].file_path.endswith("labels.js")

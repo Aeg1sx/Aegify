@@ -36,7 +36,7 @@ from aegify.models import (
     TaintSource,
 )
 from aegify.scanner.flask_responses import linked_response_facts, project_routers, registered_import
-from aegify.scanner.import_bindings import declared_import_names
+from aegify.scanner.import_bindings import declared_import_names, shares_call_runtime
 from aegify.scanner.python_ldap import LDAPConnections
 from aegify.scanner.python_scope import SANITIZER_DOMAINS, PythonModules
 from aegify.scanner.python_values import assignment as python_assignment
@@ -1609,7 +1609,12 @@ class StructuredTaintAnalyzer:
             # unknown. Do not undo the call graph's import decision by choosing
             # a global same-name function in another file/repository.
             return []
-        candidates = self._functions_by_name.get(call.callee, [])
+        candidates = [
+            target
+            for target in self._functions_by_name.get(call.callee, [])
+            if self._contexts[target].ast.repository_id == context.ast.repository_id
+            and shares_call_runtime(context.ast.language, self._contexts[target].ast.language)
+        ]
         return candidates if len(candidates) == 1 else []
 
     def _next_call_string(

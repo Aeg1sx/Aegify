@@ -12,7 +12,7 @@ import networkx as nx
 
 from aegify.graph_types import CodeGraph
 from aegify.models import CallSite, FileAST, FunctionDef, Language
-from aegify.scanner.import_bindings import declared_import_names
+from aegify.scanner.import_bindings import declared_import_names, shares_call_runtime
 from aegify.semantic.signatures import (
     jvm_overload_score,
     normalize_jvm_type,
@@ -102,6 +102,7 @@ class CallGraphBuilder:
     def __init__(self) -> None:
         self.graph: CodeGraph = nx.MultiDiGraph()
         self._function_index: dict[str, FunctionDef] = {}
+        self._file_languages: dict[str, Language] = {}
         # Precise indexes used before any fuzzy/global fallback. They are
         # essential in multi-repo workspaces where short names collide.
         self._file_function_index: dict[tuple[str, str], list[str]] = {}
@@ -124,6 +125,7 @@ class CallGraphBuilder:
     def build(self, file_asts: list[FileAST]) -> CodeGraph:
         """Build call graph from a list of parsed file ASTs."""
         self.graph = nx.MultiDiGraph()
+        self._file_languages = {ast.file_path: ast.language for ast in file_asts}
         self._function_index = {}
         self._file_function_index = {}
         self._name_index = {}
@@ -559,10 +561,14 @@ class CallGraphBuilder:
                 if candidate in self._function_index
                 and self._function_index[candidate].repository_id == repository_id
             ]
+        language = self._file_languages[call.file_path]
         functions = [
             self._function_index[candidate]
             for candidate in unique
             if candidate in self._function_index
+            and shares_call_runtime(
+                language, self._file_languages[self._function_index[candidate].file_path]
+            )
         ]
         if not functions:
             return None
