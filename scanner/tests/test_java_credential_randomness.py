@@ -19,11 +19,7 @@ def parse(tmp_path, body, namespace="jakarta", extra="", tail=""):
         "import java.util.Random;\n"
         f"{extra}\nclass Tokens {{\n"
         "void save(HttpSession session, HttpSession second, "
-        "HttpServletRequest req, Cookie cookie, String suffix) {\n"
-        + body
-        + "\n}\n"
-        + tail
-        + "\n}"
+        "HttpServletRequest req, Cookie cookie, String suffix) {\n" + body + "\n}\n" + tail + "\n}"
     )
     ast = ASTParser().parse_file(path)
     assert ast is not None
