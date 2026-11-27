@@ -143,3 +143,18 @@ docker compose -f docker-compose.defectdojo.yml down
 # To also delete data:
 docker compose -f docker-compose.defectdojo.yml down -v
 ```
+
+## Scan local and hosted repositories together
+
+From a source checkout, prepare the bundled multi-repository example and scan it.
+
+```sh
+aegify prepare-workspace scanner/examples/workspace-sources.yml --output ./prepared-example
+aegify scan-workspace ./prepared-example/workspace.yml --output json --output-file workspace-report.json
+```
+
+Use a repository's local path or a hosted HTTPS URL and full commit SHA.
+The adjacent `sources.json` identifies each remote commit and tree. For Spring
+Cloud Gateway and Kong, declare each service's `service_names` in the workspace
+manifest to distinguish a matched repository from an ambiguous or unassigned
+target. [Repository credentials and limits](scanner/README.md) · [Gateway configuration](docs/concepts/multi-repository.mdx)

@@ -83,8 +83,13 @@ requires a POSIX environment with system Git and a directly reachable canonical
 host. Interactive login, redirects, proxy environment variables and user Git
 configuration are disabled. For self-hosted forges, SSH-only repositories or
 enterprise authentication that requires a helper, use an existing local checkout.
-The example above was exercised against public GitHub. Private hosted
-credentials are covered by offline transport fixtures. A provider must allow
+The example above was exercised against public GitHub. A second preparation
+fetched GitLab's nested `gitlab-org/project-templates/express` repository at
+`b5c899235f282774e2e5734fe5c1cd0bcb97adee` (11 files) and Bitbucket's
+`tutorials/splitpractice` at `e41307a8b2a8e93c700901ca6bbb3e7b79206aad`
+(13 files). Azure Repos and private credentials were exercised using local
+Git transport fixtures. An anonymous Git probe of the Azure dnceng public
+project requested credentials. A provider must allow
 fetching the named commit. A missing or inaccessible commit fails preparation.
 
 The preparer reads raw Git blobs and never checks out a working tree. Executable
