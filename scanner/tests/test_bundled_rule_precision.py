@@ -541,6 +541,16 @@ def test_race_advisories_require_store_operations(tmp_path):
         "    item.total = 3\n    repo.save(item)\n"
     )
     assert "AEG-RACE-003" in _scan_rule(tmp_path, pack, writes, "ledger.py")
+    io = (
+        "def copy(source, target):\n    buf = source.read()\n"
+        "    buf[0] = 0\n    target.write(buf)\n"
+    )
+    assert "AEG-RACE-003" not in _scan_rule(tmp_path, pack, io, "copy.py")
+    store = (
+        "def edit(order_store, key):\n    record = order_store.read(key)\n"
+        "    record.count += 1\n    order_store.write(record)\n"
+    )
+    assert "AEG-RACE-003" in _scan_rule(tmp_path, pack, store, "store.py")
 
 
 def test_quantity_review_requires_a_submitted_quantity(tmp_path):
