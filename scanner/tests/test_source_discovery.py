@@ -128,6 +128,11 @@ def test_directory_pruning_preserves_file_globs_and_skips_directory_symlinks(tmp
         root, {"vendor/**", "**/cache/*", "*.py"}, on_error=errors.append
     )
     assert files == [source]
+    with monkeypatch.context() as patch:
+        root_attempts = _deny_directories(patch, {root})
+        for pattern in ("*", "**"):
+            assert ASTParser()._collect_files(root, {pattern}, on_error=errors.append) == []
+        assert not root_attempts
     assert attempted == [] and errors == []
 
 
@@ -155,6 +160,9 @@ def test_entry_type_failure_is_reported_without_discarding_other_sources(tmp_pat
     errors = []
     assert ASTParser()._collect_files(tmp_path, set(), on_error=errors.append) == [source]
     assert len(errors) == 1 and isinstance(errors[0], PermissionError)
+    errors.clear()
+    assert ASTParser()._collect_files(tmp_path, {"unknown/**"}, on_error=errors.append) == [source]
+    assert not errors
 
 
 def test_nested_checkout_has_one_owner_and_keeps_parsed_identity_on_later_failure(
