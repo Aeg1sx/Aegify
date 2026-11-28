@@ -135,6 +135,16 @@ physical paths with repository IDs and relative modules. The importer checks
 that each analyzed file has exactly one logical identity. Contradictory finding
 provenance is rejected; malformed inventories make coverage partial.
 
+Workspace scans can also include a versioned `repositoryCoverage` inventory.
+The importer checks each repository's file count against the recorded source
+identities before saving the rows. Discovery errors, inconsistent counts and
+incomplete invocations keep the scan from retiring existing findings, even if
+the run summary says it completed. Older reports can still be imported. Their
+scan detail page shows repository counts only when the report supplied them.
+The importer counts mirrored diagnostics once. If two large lists differ and
+their overlap exceeds the importer's comparison limit, the audit record leaves
+the diagnostic count unknown and the scan retains its incomplete status.
+
 An observed identity supersedes its previous occurrence even when the new scan
 is partial. Marking an unobserved identity absent requires a complete analysis
 on the project's default branch, with no coverage gaps and an explicit list of

@@ -392,6 +392,61 @@ test("imports carry identity management and expire a triage decision only once",
   }
 }));
 
+test("incomplete workspace scans retain current findings until a covered default-branch scan completes", async () => identityDatabase(async (db) => {
+  const project = await db.project.create({ data: { name: "Workspace discovery", defaultBranch: "main" } });
+  const context = importContext(project.id);
+  const first = await importSarif(db, scopedReport({ repositoryId: "gateway" }), context);
+  const finding = await db.finding.findFirstOrThrow({ where: { scanId: first.scanId } });
+  assert.ok(finding.identityId);
+  const identityId = finding.identityId;
+  assert.equal(await db.scanRepositoryCoverage.count({ where: { scanId: first.scanId } }), 0);
+  const empty = scopedReport({ repositoryId: "gateway", empty: true }).runs[0];
+  const rows = [
+    { repositoryId: "gateway", analyzedFiles: 1, discoveryErrors: 0 },
+    { repositoryId: "orders", analyzedFiles: 0, discoveryErrors: 1 },
+  ];
+  const scan = {
+    ...empty, properties: { ...empty.properties, analysisScope: "workspace", repositoryCoverage: { version: 1, repositories: rows } },
+  };
+  const publish = (run: typeof scan) => importSarif(db, { version: "2.1.0", runs: [run] }, context);
+  const partial = await publish(scan);
+  assert.equal(partial.status, "partial");
+  assert.equal((await db.scan.findUniqueOrThrow({ where: { id: partial.scanId } })).filesScanned, 1);
+  assert.deepEqual(await db.scanRepositoryCoverage.findMany({ where: { scanId: partial.scanId },
+    select: { repositoryId: true, analyzedFiles: true, discoveryErrors: true }, orderBy: { repositoryId: "asc" } }), rows);
+  const assertCurrent = async () => {
+    assert.equal((await db.findingIdentity.findUniqueOrThrow({ where: { id: identityId } })).absentAt, null);
+    assert.equal((await db.finding.findUniqueOrThrow({ where: { id: finding.id } })).isCurrent, true);
+  };
+  await assertCurrent();
+
+  const repaired = structuredClone(scan);
+  repaired.properties.repositoryCoverage.repositories[1].discoveryErrors = 0;
+  const laterFailure = structuredClone(repaired);
+  laterFailure.invocations.push({ executionSuccessful: false });
+  assert.equal((await publish(laterFailure)).status, "failed");
+  await assertCurrent();
+  const invalid = structuredClone(repaired);
+  invalid.properties.repositoryCoverage.repositories[0].analyzedFiles = 0;
+  const rejectedRows = await publish(invalid);
+  assert.equal(rejectedRows.status, "partial");
+  assert.equal(await db.scanRepositoryCoverage.count({ where: { scanId: rejectedRows.scanId } }), 0);
+  await assertCurrent();
+
+  const priorRows = await db.scanRepositoryCoverage.count();
+  await assert.rejects(importSarif(db, { version: "2.1.0", runs: [repaired] }, {
+    ...context, onPublished: async () => { throw new Error("Rejected at publication"); },
+  }), /Rejected at publication/);
+  assert.equal(await db.scanRepositoryCoverage.count(), priorRows);
+  await assertCurrent();
+  const complete = await publish(repaired);
+  assert.equal(complete.status, "completed");
+  assert.ok((await db.findingIdentity.findUniqueOrThrow({ where: { id: identityId } })).absentAt);
+  assert.equal((await db.finding.findUniqueOrThrow({ where: { id: finding.id } })).isCurrent, false);
+  await db.scan.delete({ where: { id: partial.scanId } });
+  assert.equal(await db.scanRepositoryCoverage.count({ where: { scanId: partial.scanId } }), 0);
+}));
+
 test("contradictory finding and inventory namespaces roll back the entire report", async () => identityDatabase(async (db) => {
   const project = await db.project.create({ data: { name: "Contradictory scope", defaultBranch: "main" } });
   const invalid = scopedReport();

@@ -181,6 +181,8 @@ interface SARIFReport {
         filesScanned?: number;
         durationSeconds?: number;
         workspaceSnapshot?: string;
+        analysisStatus?: unknown;
+        analysisGaps?: unknown;
       };
     }>;
     properties?: {
@@ -193,6 +195,7 @@ interface SARIFReport {
       analyzedFiles?: unknown;
       sourceIdentityVersion?: unknown;
       analyzedSources?: unknown;
+      repositoryCoverage?: unknown;
       callGraph?: CallGraphData;
       endpoints?: Array<{
         path: string;
@@ -281,6 +284,9 @@ function readReport(value: unknown) {
   const report = value as SARIFReport;
   if (report.version !== "2.1.0" || !Array.isArray(report.runs) || report.runs.length !== 1 || !report.runs[0]?.tool?.driver || !Array.isArray(report.runs[0].results)) throw new SarifValidationError("Upload one SARIF 2.1.0 run with a driver and results array.");
   const run = report.runs[0];
+  if (run.invocations !== undefined && (!Array.isArray(run.invocations) || run.invocations.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry)))) {
+    throw new SarifValidationError("Invalid SARIF invocation list.");
+  }
   const pathEncoding = run.properties?.artifactPathEncoding;
   if (pathEncoding !== undefined && pathEncoding !== "percent-encoded-path-v1") throw new SarifValidationError("Unsupported artifact path encoding.");
   if (run.results.length > 50_000) throw new SarifValidationError("Report exceeds 50,000 results; split the scan scope.");
@@ -325,11 +331,13 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
   const { report: sarif, gateway } = readReport(report);
   const { projectId, repository, branch, commitSha, actorId, canManageWorkspace = false } = context;
   if (repository.length > 2048 || branch.length > 255 || commitSha.length > 128) throw new SarifValidationError("Scan metadata exceeds the size limit.");
+  const run = sarif.runs[0];
+  const invocation = run.invocations?.[0];
+  const parsedHealth = scanHealthForRun(run.properties, run.invocations);
   return writeTransaction(db, async (tx) => {
     await context.authorize(tx);
-    const run = sarif.runs[0];
-    const invocation = run.invocations?.[0];
-    const scanHealth = scanHealthForRun(run.properties, invocation);
+    // Identity migration can append diagnostics on each publication attempt.
+    const scanHealth = { ...parsedHealth, gaps: [...parsedHealth.gaps] };
     const workspaceSnapshot = workspaceSnapshotForRun(
       run.properties,
       invocation?.properties,
@@ -347,7 +355,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
     const isDefaultBranch = Boolean(branch && branch === project?.defaultBranch);
     const metadata = {
       repository, branch, commitSha, status: "running", progressPhaseName: "Importing evidence",
-      filesScanned: invocation?.properties?.filesScanned || 0,
+      filesScanned: scanHealth.repositoryCoverage ? scanHealth.analyzedFiles.length : invocation?.properties?.filesScanned || 0,
       duration: invocation?.properties?.durationSeconds || 0, workspaceSnapshot, projectId,
     };
     if (context.scanId) {
@@ -358,6 +366,9 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
       ? await tx.scan.update({ where: { id: context.scanId }, data: metadata })
       : await tx.scan.create({ data: metadata });
     if (gateway) await tx.scanGatewayInventory.create({ data: { scanId: scan.id, ...gateway.data } });
+    if (scanHealth.repositoryCoverage?.length) {
+      await tx.scanRepositoryCoverage.createMany({ data: scanHealth.repositoryCoverage.map((row) => ({ scanId: scan.id, ...row })) });
+    }
     // A slow queued scan cannot supersede a newer completed scan request.
     const newer = projectId ? await tx.scan.findFirst({
       where: { projectId, branch, status: { in: ["completed", "partial"] }, createdAt: { gt: scan.createdAt } }, select: { id: true },
@@ -783,7 +794,7 @@ export async function importSarif(db: PrismaClient, report: unknown, context: Im
     await publishScanImport(tx, {
       scanId: scan.id, projectId, branch, publishBaseline,
       defaultBranch: project?.defaultBranch || "", health: scanHealth,
-      audit: { actorId, findings: findings.length, coverage: scanCoverageForRun(scanHealth, run.properties, invocation?.properties) },
+      audit: { actorId, findings: findings.length, coverage: scanCoverageForRun(scanHealth, run.properties, run.invocations) },
     });
 
 

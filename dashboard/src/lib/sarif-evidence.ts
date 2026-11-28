@@ -22,7 +22,13 @@ interface RunProperties {
   analyzedFiles?: unknown;
   sourceIdentityVersion?: unknown;
   analyzedSources?: unknown;
+  repositoryCoverage?: unknown;
   taintAnalysis?: unknown;
+}
+
+interface ScanInvocation {
+  executionSuccessful?: unknown;
+  properties?: RunProperties;
 }
 
 export interface ScanHealth {
@@ -33,6 +39,8 @@ export interface ScanHealth {
   analyzedFiles: string[];
   sourceIdentityVersion?: 1;
   analyzedSources?: Array<{ repositoryId: string; modulePath: string; filePath: string }>;
+  repositoryCoverage?: Array<{ repositoryId: string; analyzedFiles: number; discoveryErrors: number }>;
+  producerDiagnostics?: { overflow: number | null; recorded: boolean };
 }
 
 export interface ScanCoverage {
@@ -43,6 +51,127 @@ export interface ScanCoverage {
 }
 
 const diagnosticLimit = 100;
+// Bound import memory for distinct diagnostic bodies and persistence work per scan.
+const diagnosticKeyLimit = 1_024;
+const workspaceRepositoryLimit = 4_096;
+const maxInt = 2_147_483_647;
+
+type Gap = ScanHealth["gaps"][number];
+
+function normalizedGap(raw: unknown): Gap {
+  const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  return {
+    code: typeof item.code === "string" ? item.code.slice(0, 100) : "invalid_diagnostic",
+    stage: typeof item.stage === "string" ? item.stage.slice(0, 100) : "import",
+    message: typeof item.message === "string" ? item.message.slice(0, 1000) : "Malformed scan diagnostic",
+    affected_count: typeof item.affected_count === "number" && Number.isSafeInteger(item.affected_count) && item.affected_count >= 0 ? item.affected_count : 1,
+  };
+}
+
+/** When distinct keys exceed the budget, single reports and identical/prefix mirrors still have an exact count. */
+function oversizedDiagnosticCount(lists: unknown[][]): number | null {
+  const largest = lists.reduce((longest, list) => list.length > longest.length ? list : longest);
+  for (const list of lists) {
+    if (list === largest) continue;
+    for (let index = 0; index < list.length; index++) {
+      if (JSON.stringify(normalizedGap(list[index])) !== JSON.stringify(normalizedGap(largest[index]))) return null;
+    }
+  }
+  return largest.length;
+}
+
+/** Take the maximum multiplicity of each diagnostic across the run and its mirrored invocations. */
+function producerGaps(reports: (RunProperties | undefined)[]) {
+  const gaps: Gap[] = [];
+  const lists: unknown[][] = [];
+  for (const report of reports) {
+    const raw = report?.analysisGaps;
+    if (raw !== undefined) lists.push(Array.isArray(raw) ? raw : [
+      { code: "invalid_diagnostics", stage: "import", message: "Malformed scan diagnostics", affected_count: 1 },
+    ]);
+  }
+  const nonempty = lists.filter((entries) => entries.length > 0);
+  if (nonempty.length <= 1) {
+    const entries = nonempty[0] ?? [];
+    const displayed = entries.slice(0, diagnosticLimit).map(normalizedGap);
+    return { gaps: displayed, overflow: entries.length - displayed.length, recorded: lists.length > 0 };
+  }
+  const multiplicity = new Map<string, { report: number; local: number; maximum: number }>();
+  let count = 0;
+  for (const [report, entries] of lists.entries()) {
+    for (const entry of entries) {
+      const gap = normalizedGap(entry);
+      const key = JSON.stringify(gap);
+      let seen = multiplicity.get(key);
+      if (!seen) {
+        if (multiplicity.size >= diagnosticKeyLimit) {
+          // Unproven overlap is an unknown count in the audit receipt. The displayed gaps still mark the scan partial.
+          const total = oversizedDiagnosticCount(lists);
+          return { gaps, overflow: total === null ? null : total - gaps.length, recorded: true };
+        }
+        seen = { report, local: 0, maximum: 0 };
+        multiplicity.set(key, seen);
+      }
+      if (seen.report !== report) {
+        seen.report = report;
+        seen.local = 0;
+      }
+      if (++seen.local <= seen.maximum) continue;
+      seen.maximum = seen.local;
+      count++;
+      if (gaps.length < diagnosticLimit) gaps.push(gap);
+    }
+  }
+  return { gaps, overflow: count - gaps.length, recorded: lists.length > 0 };
+}
+
+/** Prefer a diagnostic backed by independent scan metadata when it falls outside the display limit. */
+function summaryGap(reports: (RunProperties | undefined)[], gaps: Gap[], code: string, stage: string): Gap | undefined {
+  const displayed = gaps.find((gap) => gap.code === code && gap.stage === stage);
+  if (displayed || gaps.length < diagnosticLimit) return displayed;
+  for (const report of reports) {
+    const entries = report?.analysisGaps;
+    if (!Array.isArray(entries)) continue;
+    const entry = entries.find((item) => item?.code === code && item.stage === stage);
+    if (!entry) continue;
+    const gap = normalizedGap(entry);
+    const index = gaps.slice(0, diagnosticLimit).findLastIndex((item) =>
+      !(item.code === "taint_limit" && item.stage === "taint") &&
+      !(item.code === "source_discovery_error" && item.stage === "discovery"));
+    gaps[index < 0 ? diagnosticLimit - 1 : index] = gap;
+    return gap;
+  }
+  return undefined;
+}
+
+function validCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= maxInt;
+}
+
+function verifiedRepositoryCoverage(raw: unknown, scope: unknown, files: unknown, normalizedFiles: string[],
+  sources: ScanHealth["analyzedSources"]): ScanHealth["repositoryCoverage"] {
+  if (scope !== "workspace" || !Array.isArray(files) || files.length !== normalizedFiles.length ||
+      !sources || !raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const coverage = raw as Record<string, unknown>;
+  if (coverage.version !== 1 || !Array.isArray(coverage.repositories) || !coverage.repositories.length ||
+      coverage.repositories.length > workspaceRepositoryLimit) return undefined;
+
+  const sourceCounts = new Map<string, number>();
+  for (const source of sources) sourceCounts.set(source.repositoryId, (sourceCounts.get(source.repositoryId) ?? 0) + 1);
+  const seen = new Set<string>();
+  const rows: NonNullable<ScanHealth["repositoryCoverage"]> = [];
+  for (const row of coverage.repositories) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return undefined;
+    const { repositoryId, analyzedFiles, discoveryErrors } = row;
+    if (typeof repositoryId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(repositoryId) ||
+        seen.has(repositoryId) || !validCount(analyzedFiles) || !validCount(discoveryErrors) ||
+        analyzedFiles !== (sourceCounts.get(repositoryId) ?? 0)) return undefined;
+    seen.add(repositoryId);
+    sourceCounts.delete(repositoryId);
+    rows.push({ repositoryId, analyzedFiles, discoveryErrors });
+  }
+  return sourceCounts.size ? undefined : rows;
+}
 
 function recordedTaintLimit(summary: Record<string, unknown>, reached: unknown[]): string {
   const warnings = Array.isArray(summary.warnings) ? summary.warnings.slice(0, diagnosticLimit) : [];
@@ -63,47 +192,42 @@ function recordedTaintLimit(summary: Record<string, unknown>, reached: unknown[]
 }
 
 /** Keep artifact counts for exports without copying paths or diagnostic text. */
-export function scanCoverageForRun(health: ScanHealth, run?: RunProperties, invocation?: RunProperties): ScanCoverage {
+export function scanCoverageForRun(health: ScanHealth, run?: RunProperties,
+  invocation?: RunProperties | ScanInvocation | ScanInvocation[]): ScanCoverage {
   function inventory(raw: unknown, normalized: string[]): number | null {
     return normalized.length || (Array.isArray(raw) && raw.length === 0 ? 0 : null);
   }
-  const rawGaps = run?.analysisGaps ?? invocation?.analysisGaps;
-  const overflow = Array.isArray(rawGaps) ? Math.max(0, rawGaps.length - diagnosticLimit) : 0;
+  let receipt = health.producerDiagnostics;
+  if (!receipt) {
+    const properties = Array.isArray(invocation) ? invocation.map((item) => item?.properties)
+      : invocation && ("executionSuccessful" in invocation || "properties" in invocation)
+        ? [invocation.properties] : [invocation as RunProperties | undefined];
+    receipt = producerGaps([run, ...properties]);
+  }
   return {
     scope: health.scope,
     files: inventory(run?.analyzedFiles, health.analyzedFiles),
     rules: inventory(run?.evaluatedRules, health.evaluatedRules),
-    gaps: health.gaps.length || Array.isArray(rawGaps) ? health.gaps.length + overflow : null,
+    gaps: receipt.overflow !== null && (health.gaps.length || receipt.recorded) ? health.gaps.length + receipt.overflow : null,
   };
 }
 
 export function scanHealthForRun(
   runProperties?: RunProperties,
-  invocation?: { executionSuccessful?: unknown; properties?: RunProperties },
+  invocation?: ScanInvocation | ScanInvocation[],
 ): ScanHealth {
-  const declared = runProperties?.analysisStatus ?? invocation?.properties?.analysisStatus;
-  const rawGaps = runProperties?.analysisGaps ?? invocation?.properties?.analysisGaps;
+  const invocations = Array.isArray(invocation) ? invocation : invocation ? [invocation] : [];
+  const reports = [runProperties, ...invocations.map((item) => item?.properties)];
+  const declarations = reports.map((report) => report?.analysisStatus);
   const scope = runProperties?.analysisScope;
-  const gaps: ScanHealth["gaps"] = [];
-  if (Array.isArray(rawGaps)) {
-    for (const raw of rawGaps.slice(0, diagnosticLimit)) {
-      const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-      gaps.push({
-        code: typeof item.code === "string" ? item.code.slice(0, 100) : "invalid_diagnostic",
-        stage: typeof item.stage === "string" ? item.stage.slice(0, 100) : "import",
-        message: typeof item.message === "string" ? item.message.slice(0, 1000) : "Malformed scan diagnostic",
-        affected_count: typeof item.affected_count === "number" && Number.isSafeInteger(item.affected_count) && item.affected_count >= 0 ? item.affected_count : 1,
-      });
-    }
-  } else if (rawGaps !== undefined) {
-    gaps.push({ code: "invalid_diagnostics", stage: "import", message: "Malformed scan diagnostics", affected_count: 1 });
-  }
-  const taint = runProperties?.taintAnalysis;
-  if (taint && typeof taint === "object") {
+  const { gaps, recorded, overflow } = producerGaps(reports);
+  for (const report of reports) {
+    const taint = report?.taintAnalysis;
+    if (!taint || typeof taint !== "object") continue;
     const summary = taint as Record<string, unknown>;
     const reached = Array.isArray(summary.limits_reached) ? summary.limits_reached : [];
     if (summary.truncated === true || reached.includes("contexts") || reached.includes("iterations")) {
-      const gap = gaps.find((item) => item.code === "taint_limit" && item.stage === "taint");
+      const gap = summaryGap(reports, gaps, "taint_limit", "taint");
       if (!gap) gaps.push({ code: "taint_limit", stage: "taint", message: recordedTaintLimit(summary, reached), affected_count: 1 });
       else if (gap.message === "Taint analysis reached its configured bound") gap.message = recordedTaintLimit(summary, reached);
     }
@@ -135,19 +259,36 @@ export function scanHealthForRun(
     if (!analyzedSources) gaps.push({ code: "invalid_source_identity_scope", stage: "import",
       message: "Logical source identities do not match the analyzed file inventory", affected_count: 1 });
   }
-  // A contradictory successful declaration cannot override a failed invocation.
-  // Legacy successful reports remain viewable, but lack a reconciliable scope.
-  const status = declared === "failed" ? "failed"
-    : declared === "partial" ? "partial"
-    : invocation?.executionSuccessful !== true ? "failed"
-    : declared !== undefined && declared !== "completed" ? "failed"
-    : gaps.length > 0 ? "partial" : "completed";
-  return {
+  let repositoryCoverage: ScanHealth["repositoryCoverage"];
+  if (runProperties?.repositoryCoverage !== undefined) {
+    repositoryCoverage = verifiedRepositoryCoverage(runProperties.repositoryCoverage, scope, files, analyzedFiles, analyzedSources);
+    if (!repositoryCoverage) {
+      gaps.push({ code: "invalid_repository_coverage", stage: "import",
+        message: "Workspace repository counts do not match the qualified source inventory", affected_count: 1 });
+    } else {
+      const discoveryErrors = repositoryCoverage.reduce((sum, row) => sum + row.discoveryErrors, 0);
+      if (discoveryErrors && !summaryGap(reports, gaps, "source_discovery_error", "discovery")) {
+        gaps.push({ code: "source_discovery_error", stage: "discovery",
+          message: "Source discovery was incomplete in one or more repositories", affected_count: discoveryErrors });
+      }
+    }
+  }
+  // The producer marks partial scans executionSuccessful=false. Preserve that distinction
+  // while requiring every invocation to agree before treating the full run as completed.
+  const failedDeclaration = declarations.some((status) => status !== undefined && status !== "completed" && status !== "partial");
+  const unsuccessful = invocations.length ? invocations.some((item) => item?.executionSuccessful !== true &&
+    (item?.properties?.analysisStatus ?? runProperties?.analysisStatus) !== "partial") : runProperties?.analysisStatus !== "partial";
+  const status = failedDeclaration || unsuccessful ? "failed"
+    : declarations.includes("partial") || gaps.length ? "partial" : "completed";
+  const health: ScanHealth = {
     status,
     scope: scope === "repository" || scope === "workspace" || scope === "files" ? scope : "unknown",
     gaps, evaluatedRules, analyzedFiles,
+    producerDiagnostics: { overflow, recorded },
     ...(analyzedSources ? { sourceIdentityVersion: 1 as const, analyzedSources } : {}),
+    ...(repositoryCoverage ? { repositoryCoverage } : {}),
   };
+  return health;
 }
 
 export function canReconcileScanAbsence(health: ScanHealth, branch: string, defaultBranch: string): boolean {

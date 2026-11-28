@@ -9,6 +9,8 @@ import logging
 import os
 import time
 from bisect import bisect_left
+from collections import Counter
+from collections.abc import Collection
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -28,6 +30,7 @@ from aegify.models import (
     Finding,
     FindingDisposition,
     Language,
+    RepositorySourceCoverage,
     RuntimeObservation,
     ScanProgress,
     ScanResult,
@@ -224,11 +227,10 @@ class ScanEngine:
                 files = self._select_parse_files([target], result)
                 ast = self.ast_parser.parse_file(target) if files else None
                 file_asts = [ast] if ast is not None else []
-                self._record_parse_results(file_asts, files, result)
+                self._record_parse_results(file_asts, files, result, [target.parent])
             else:
                 file_asts = self._parse_directory_parallel(target, result)
 
-            result.files_scanned = len(file_asts)
             self._emit_progress(
                 1,
                 "Parsing ASTs",
@@ -285,9 +287,8 @@ class ScanEngine:
                 ast = self.ast_parser.parse_file(f, repository_root=repo_root)
                 if ast is not None:
                     file_asts.append(ast)
-            self._record_parse_results(file_asts, selected, result)
+            self._record_parse_results(file_asts, selected, result, [repo_root])
 
-            result.files_scanned = len(file_asts)
             self._emit_progress(
                 1,
                 "Parsing ASTs",
@@ -335,13 +336,16 @@ class ScanEngine:
             self._emit_progress(1, "Parsing workspace ASTs", start_time)
             workspace_files: list[tuple[Path, str, Path]] = []
             configs: list[ConfigInput] = []
-            for repository in manifest.repositories:
+            ids_by_root = {repo.path: repo.id for repo in manifest.repositories}
+            result.repository_coverage = [
+                RepositorySourceCoverage(repository_id=repo.id) for repo in manifest.repositories
+            ]
+            for repository, coverage in zip(
+                manifest.repositories, result.repository_coverage, strict=True
+            ):
                 excludes = set(self.config.scan.exclude + repository.exclude)
-                files = self.ast_parser._collect_files(
-                    repository.path,
-                    excludes,
-                    include_unsupported=True,
-                    include_path=conventional_config,
+                files = self._discover_source_files(
+                    repository.path, excludes, result, coverage, ids_by_root.keys()
                 )
                 configs.extend(
                     config_inputs(
@@ -360,7 +364,12 @@ class ScanEngine:
                 {repository.id: repository.service_names for repository in manifest.repositories},
             )
             file_asts = self._parse_workspace_files(workspace_files)
-            self._record_parse_results(file_asts, [item[0] for item in workspace_files], result)
+            parsed_counts = Counter(ast.repository_id for ast in file_asts)
+            for coverage in result.repository_coverage:
+                coverage.analyzed_files = parsed_counts[coverage.repository_id]
+            self._record_parse_results(
+                file_asts, [item[0] for item in workspace_files], result, list(ids_by_root)
+            )
 
             from aegify.semantic import SemanticAnalyzer
 
@@ -410,7 +419,6 @@ class ScanEngine:
             result.runtime_evidence = runtime.summary
             result.runtime_observations = runtime.observations
 
-            result.files_scanned = len(file_asts)
             self._emit_progress(
                 1,
                 "Parsing workspace ASTs",
@@ -426,8 +434,8 @@ class ScanEngine:
                     manifest_path.parent,
                     result,
                     start_time,
-                    repository_roots=[r.path for r in manifest.repositories],
-                    repository_ids_by_root={r.path.resolve(): r.id for r in manifest.repositories},
+                    repository_roots=list(ids_by_root),
+                    repository_ids_by_root=ids_by_root,
                     semantic_relationships=(
                         semantic.relationships + external.relationships + runtime.relationships
                     ),
@@ -609,17 +617,6 @@ class ScanEngine:
     ) -> None:
         """Run phases 2-7 of the scan pipeline on pre-parsed file ASTs."""
         roots = repository_roots or [target if target.is_dir() else target.parent]
-        result.analyzed_sources = [
-            AnalyzedSource(
-                repository_id=ast.repository_id,
-                module_path=ast.module_path
-                or self._relative_module_path(Path(ast.file_path), roots),
-                file_path=ast.file_path,
-                source_digest=ast.source_digest,
-                language=ast.language,
-            )
-            for ast in sorted(file_asts, key=lambda item: (item.repository_id, item.file_path))
-        ]
         result.workspace_snapshot = self._compute_workspace_snapshot(
             file_asts, roots, repository_ids_by_root
         )
@@ -1814,6 +1811,32 @@ class ScanEngine:
             return S3Backend(self.config.storage.s3_bucket, self.config.storage.s3_prefix)
         return InMemoryBackend()
 
+    def _discover_source_files(
+        self,
+        root: Path,
+        excludes: set[str],
+        result: ScanResult,
+        coverage: RepositorySourceCoverage | None = None,
+        repository_roots: Collection[Path] = (),
+    ) -> list[Path]:
+        def record_error(_error: OSError) -> None:
+            result.add_gap(
+                "source_discovery_error",
+                "discovery",
+                "Could not enumerate a directory or inspect a source entry",
+            )
+            if coverage is not None:
+                coverage.discovery_errors += 1
+
+        return self.ast_parser._collect_files(
+            root,
+            excludes,
+            include_unsupported=True,
+            include_path=conventional_config,
+            on_error=record_error,
+            repository_roots=repository_roots,
+        )
+
     def _select_parse_files(self, files: list[Path], result: ScanResult) -> list[Path]:
         selected: list[Path] = []
         for file_path in sorted(set(files)):
@@ -1851,8 +1874,22 @@ class ScanEngine:
             selected.append(file_path)
         return selected
 
-    @staticmethod
-    def _record_parse_results(asts: list[FileAST], files: list[Path], result: ScanResult) -> None:
+    @classmethod
+    def _record_parse_results(
+        cls, asts: list[FileAST], files: list[Path], result: ScanResult, roots: list[Path]
+    ) -> None:
+        result.analyzed_sources = [
+            AnalyzedSource(
+                repository_id=ast.repository_id,
+                module_path=ast.module_path
+                or cls._relative_module_path(Path(ast.file_path), roots),
+                file_path=ast.file_path,
+                source_digest=ast.source_digest,
+                language=ast.language,
+            )
+            for ast in sorted(asts, key=lambda item: (item.repository_id, item.file_path))
+        ]
+        result.files_scanned = len(asts)
         parsed = {ast.file_path for ast in asts}
         result.analyzed_files = sorted(parsed)
         missing = sum(str(path) not in parsed for path in files)
@@ -1886,12 +1923,7 @@ class ScanEngine:
     ) -> list[FileAST]:
         """Reuse ASTs only when source bytes and the parser contract both match."""
         health = result if result is not None else ScanResult()
-        candidates = self.ast_parser._collect_files(
-            target,
-            set(self.config.scan.exclude),
-            include_unsupported=True,
-            include_path=conventional_config,
-        )
+        candidates = self._discover_source_files(target, set(self.config.scan.exclude), health)
         health.gateway_inventory = review_gateway_configs(
             config_inputs(health.repository, target, candidates), {}
         )
@@ -1958,7 +1990,7 @@ class ScanEngine:
         results.sort(key=lambda ast: ast.file_path)
         for ast in results:
             self.ast_parser.apply_repository_context(ast, repository_id="", repository_root=target)
-        self._record_parse_results(results, files, health)
+        self._record_parse_results(results, files, health, [target])
         # The digest belongs to the bytes used to build each AST. Separate hash
         # writes before parsing could associate an old AST with new source after
         # an interrupted scan. Publish the validated AST and its digest together.
@@ -2065,8 +2097,6 @@ class ScanEngine:
 
         # Enforce per-file global cap (across all rules)
         if max_per_file > 0:
-            from collections import Counter
-
             file_counts: Counter[str] = Counter()
             capped: list[Finding] = []
             deduped.sort(key=self._finding_priority)

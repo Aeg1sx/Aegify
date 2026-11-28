@@ -8,6 +8,7 @@ import { SeverityBadge } from "@/components/severity-badge";
 import { StatusBadge } from "@/components/status-badge";
 import { SeverityChart } from "@/components/severity-chart";
 import { ScanJobPanel } from "@/components/scan-job-panel";
+import { RepositoryCoveragePanel, type RepositoryCoverage } from "@/components/repository-coverage-panel";
 import { GatewayInventoryPanel } from "@/components/gateway-inventory-panel";
 import { scanFindingsHref } from "@/lib/finding-view";
 import type { GatewayReview } from "@/lib/gateway-inventory";
@@ -29,6 +30,7 @@ interface Finding {
 }
 
 interface ScanDetail {
+  repositoryCoverage?: RepositoryCoverage[];
   gatewayInventory?: GatewayReview | null;
   id: string;
   repository: string;
@@ -266,6 +268,9 @@ function ScanRecord({ id }: { id: string }) {
         </div>
       )}
       {scan.hasSourceJob && <ScanJobPanel scanId={id} onFinished={refresh} />}
+      {scan.repositoryCoverage && scan.repositoryCoverage.length > 0 && (
+        <RepositoryCoveragePanel scanId={id} rows={scan.repositoryCoverage} />
+      )}
       {scan.gatewayInventory && <GatewayInventoryPanel key={id} scanId={id} review={scan.gatewayInventory} />}
 
       {awaitingFindings ? (

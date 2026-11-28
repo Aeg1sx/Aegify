@@ -10,6 +10,7 @@ import { URL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import process from "node:process";
 import { log } from "node:console";
+import { checkRepositoryCoverage } from "./repository-coverage-browser-check.mjs";
 import { checkAgentHandoff } from "./agent-handoff-browser-check.mjs";
 import { runAccessIntegration } from "./test-project-access.mjs";
 import { runLlmWorkerOnce } from "../src/lib/llm-worker.ts";
@@ -1799,6 +1800,7 @@ try {
       const exported = await page.evaluate(async (id) => (await globalThis.fetch("/api/findings/" + id + "/report")).text(), binding.id);
       assert.ok(exported.includes("## Configuration settings") && !exported.includes("## Recorded flow")); checks++;
       assert.ok(exported.includes("Owned test binding with a synthetic value.") && exported.includes("This scan observation")); checks++;
+      await checkRepositoryCoverage(page, db, origin, cookies, projectId);
       await checkHistoricalReport(page, db, projectId, origin, dirname(reportPath));
       await page.setViewport({ width: 1280, height: 1000 });
       const shared = await db.finding.findFirstOrThrow({ where: { scanId: uploaded.receipt.scanId, ruleId: "AEG-CF-003" } });

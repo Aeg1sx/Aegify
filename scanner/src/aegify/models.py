@@ -1092,6 +1092,14 @@ class AnalysisGap(BaseModel):
     affected_count: int = Field(default=1, ge=0)
 
 
+class RepositorySourceCoverage(BaseModel):
+    """Source discovery and parsing counts for a declared workspace repository."""
+
+    repository_id: str
+    analyzed_files: int = Field(default=0, ge=0)
+    discovery_errors: int = Field(default=0, ge=0)
+
+
 class AnalyzedSource(BaseModel):
     """A parsed source's logical identity, independent of its physical checkout."""
 
@@ -1153,6 +1161,7 @@ class ScanResult(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     endpoints: list[EndpointInfo] = Field(default_factory=list)
     frontend_calls: list[FrontendCall] = Field(default_factory=list)
+    repository_coverage: list[RepositorySourceCoverage] = Field(default_factory=list)
     gateway_inventory: GatewayInventory | None = None
     gateway_routes: list[GatewayRoute] = Field(default_factory=list)
     attack_surface_links: list[AttackSurfaceLink] = Field(default_factory=list)

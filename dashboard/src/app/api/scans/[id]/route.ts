@@ -15,6 +15,10 @@ export async function GET(
     where: { AND: [{ id }, scanScope(access)] },
     include: {
       gatewayInventory: true,
+      repositoryCoverage: {
+        select: { repositoryId: true, analyzedFiles: true, discoveryErrors: true },
+        orderBy: [{ discoveryErrors: "desc" }, { repositoryId: "asc" }],
+      },
       scanJob: { select: { id: true } },
       findings: {
         orderBy: [
@@ -78,6 +82,7 @@ export async function GET(
     duration: scan.duration,
     createdAt: scan.createdAt,
     gatewayInventory: storedGatewayReview(scan.gatewayInventory),
+    repositoryCoverage: scan.repositoryCoverage,
     findings: scan.findings || [],
     severities: severityMap,
     statuses: statusMap,
