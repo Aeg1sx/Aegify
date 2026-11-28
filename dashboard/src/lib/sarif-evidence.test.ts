@@ -69,6 +69,128 @@ test("coverage receipts distinguish missing inventories, empty arrays and bounde
   ] as const) assert.deepEqual(scanCoverageForRun(scanHealthForRun(input), input), expected);
 });
 
+test("all invocation statuses and diagnostics constrain completion and absence", () => {
+  const run = { analysisStatus: "completed", analysisScope: "workspace", analyzedFiles: ["app.py"], evaluatedRules: ["RULE"], analysisGaps: [] };
+  const done = { executionSuccessful: true, properties: { analysisStatus: "completed", analysisGaps: [] } };
+  const clean = scanHealthForRun(run, [done, done]);
+  assert.equal(canReconcileScanAbsence(clean, "main", "main"), true);
+  for (const [last, status] of [
+    [{ executionSuccessful: true, properties: { analysisStatus: "failed" } }, "failed"],
+    [{ executionSuccessful: true, properties: { analysisStatus: "partial" } }, "partial"],
+    [{ executionSuccessful: false, properties: { analysisStatus: "partial" } }, "partial"],
+    [{ executionSuccessful: false, properties: { analysisStatus: "completed" } }, "failed"],
+    [{ executionSuccessful: true, properties: { analysisStatus: null } }, "failed"],
+    [{}, "failed"],
+    [{ executionSuccessful: true, properties: { analysisGaps: [{ code: "parse_error" }] } }, "partial"],
+    [{ executionSuccessful: true, properties: { analysisGaps: "malformed" } }, "partial"],
+    [{ executionSuccessful: true, properties: { taintAnalysis: { truncated: true } } }, "partial"],
+  ] as const) {
+    for (const invocations of [[done, last], [last, done]]) {
+      const health = scanHealthForRun(run, invocations);
+      assert.equal(health.status, status);
+      assert.equal(canReconcileScanAbsence(health, "main", "main"), false);
+    }
+  }
+  assert.equal(scanHealthForRun(run, []).status, "failed");
+  assert.equal(scanHealthForRun({ ...run, analysisStatus: "partial" }, [done, {
+    executionSuccessful: true, properties: { analysisStatus: "failed" },
+  }]).status, "failed");
+});
+
+test("mirrored diagnostics retain within-report multiplicity and count later invocation-only gaps", () => {
+  const gap = { code: "budget", stage: "analysis", message: "Bound reached", affected_count: 1 };
+  const repeated = Array(105).fill(gap);
+  const run = { analysisGaps: repeated };
+  const first = { executionSuccessful: true, properties: { analysisGaps: [...repeated] } };
+  const last = { executionSuccessful: true, properties: { analysisGaps: [gap, { ...gap, message: "Different bound" }] } };
+  const health = scanHealthForRun(run, [first, last]);
+  assert.equal(health.gaps.length, 100);
+  assert.equal(scanCoverageForRun(health, run, [first, last]).gaps, 106);
+  assert.equal(scanCoverageForRun(scanHealthForRun(run, first), run, first.properties).gaps, 105);
+  assert.equal(scanCoverageForRun(scanHealthForRun(run, first), run, first).gaps, 105);
+  assert.equal(scanCoverageForRun(scanHealthForRun({}, [first, last]), {}, [first, last]).gaps, 106);
+});
+
+test("large diagnostic inventories retain exact mirrored counts and omit unverified totals", () => {
+  const entries = Array.from({ length: 2_000 }, (_, index) => ({ code: "parse", message: String(index) }));
+  const run = { analysisGaps: entries };
+  const invoke = (analysisGaps: typeof entries) => ({ executionSuccessful: true, properties: { analysisGaps } });
+  for (const list of [[...entries], entries.slice(0, 1_500)]) {
+    const health = scanHealthForRun(run, invoke(list));
+    const retry = { ...health, gaps: [...health.gaps] };
+    assert.equal(retry.gaps.length, 100);
+    assert.equal(scanCoverageForRun(retry).gaps, entries.length);
+  }
+  const mixed = scanHealthForRun(run, invoke([...entries].reverse()));
+  assert.equal(mixed.status, "partial");
+  assert.equal(mixed.gaps.length, 100);
+  assert.equal(scanCoverageForRun(mixed).gaps, null);
+});
+
+test("workspace coverage verifies qualified counts including empty repositories", () => {
+  const source = { repositoryId: "web", modulePath: "app.py", filePath: "/workspace/web/app.py" };
+  const api = { ...source, repositoryId: "api-2", filePath: "/workspace/api/app.py" };
+  const rows = [
+    { repositoryId: "web", analyzedFiles: 1, discoveryErrors: 0 },
+    { repositoryId: "api-2", analyzedFiles: 1, discoveryErrors: 0 },
+    { repositoryId: "config_only", analyzedFiles: 0, discoveryErrors: 0 },
+  ];
+  const run = { analysisStatus: "completed", analysisScope: "workspace", evaluatedRules: ["RULE"],
+    analyzedFiles: [source.filePath, api.filePath], sourceIdentityVersion: 1, analyzedSources: [source, api],
+    repositoryCoverage: { version: 1, repositories: rows } };
+  const done = { executionSuccessful: true };
+  const health = scanHealthForRun(run, done);
+  assert.deepEqual(health.repositoryCoverage, rows);
+  assert.equal(canReconcileScanAbsence(health, "main", "main"), true);
+
+  const incomplete = { ...run, repositoryCoverage: { version: 1, repositories: [rows[0], rows[1], { ...rows[2], discoveryErrors: 2 }] } };
+  const discoveryGap = { code: "source_discovery_error", stage: "discovery", message: "Could not enumerate directory", affected_count: 2 };
+  for (const invocation of [done, { ...done, properties: { analysisGaps: [discoveryGap] } }]) {
+    const partial = scanHealthForRun(incomplete, invocation);
+    assert.equal(partial.status, "partial");
+    assert.deepEqual(partial.repositoryCoverage, incomplete.repositoryCoverage.repositories);
+    assert.deepEqual(partial.gaps.map((gap) => gap.code), ["source_discovery_error"]);
+    assert.equal(partial.gaps[0].affected_count, 2);
+    assert.equal(canReconcileScanAbsence(partial, "main", "main"), false);
+  }
+  const fullDiagnostics = Array(105).fill({ code: "parser", message: "parse gap" }).concat([discoveryGap]);
+  const truncatedDisplay = scanHealthForRun({ ...incomplete, analysisGaps: fullDiagnostics }, done);
+  assert.equal(truncatedDisplay.gaps.length, 100);
+  assert.ok(truncatedDisplay.gaps.some((gap) => gap.code === "source_discovery_error"));
+  assert.equal(scanCoverageForRun(truncatedDisplay).gaps, 106);
+  const emptyRun = { ...run, analyzedFiles: [], analyzedSources: [], repositoryCoverage: { version: 1, repositories: [rows[2]] } };
+  assert.deepEqual(scanHealthForRun(emptyRun, done).repositoryCoverage, [rows[2]]);
+  for (const patch of [{ analyzedFiles: undefined }, { analyzedFiles: false }, { analyzedFiles: [false] },
+    { sourceIdentityVersion: undefined }, { analyzedSources: undefined }]) {
+    assert.equal(scanHealthForRun({ ...emptyRun, ...patch }, done).repositoryCoverage, undefined);
+  }
+  for (const patch of [
+    { analysisScope: "repository" }, { analysisScope: "files" }, { analysisScope: undefined },
+    { sourceIdentityVersion: 2 }, { analyzedFiles: undefined }, { analyzedFiles: [source.filePath, api.filePath, api.filePath] },
+    { analyzedSources: undefined }, { analyzedSources: [] }, { analyzedSources: [source, source] },
+    { analyzedSources: [source, { ...api, repositoryId: "" }] },
+    { analyzedSources: [source, { ...api, repositoryId: "orphan" }] },
+    { repositoryCoverage: rows }, { repositoryCoverage: null }, { repositoryCoverage: { version: 2, repositories: rows } },
+    { repositoryCoverage: { version: 1 } },
+    { repositoryCoverage: { version: 1, repositories: rows.concat(Array.from({ length: 4_094 }, (_, i) =>
+      ({ repositoryId: `extra-${i}`, analyzedFiles: 0, discoveryErrors: 0 }))) } },
+    ...[[], [rows[0]], [...rows, rows[2]], [rows[0], rows[1], false],
+      [rows[0], { ...rows[1], analyzedFiles: 0 }, { ...rows[2], analyzedFiles: 1 }],
+      ...["", " leading", ".leading", "slash/id", "a".repeat(129)].map((id) => [rows[0], rows[1], { ...rows[2], repositoryId: id }]),
+      ...[-1, 2.5, "2", 2_147_483_648].flatMap((n) => [
+        [rows[0], rows[1], { ...rows[2], discoveryErrors: n }],
+        [rows[0], rows[1], { ...rows[2], analyzedFiles: n }],
+      ]),
+    ].map((repositories) => ({ repositoryCoverage: { version: 1, repositories } })),
+  ]) {
+    const invalid = scanHealthForRun({ ...run, ...patch }, done);
+    assert.equal(invalid.repositoryCoverage, undefined, JSON.stringify(patch));
+    assert.equal(invalid.status, "partial");
+    assert.ok(invalid.gaps.some((gap) => gap.code === "invalid_repository_coverage"));
+    assert.equal(canReconcileScanAbsence(invalid, "main", "main"), false);
+  }
+});
+
 test("imports a SARIF context region without moving the reported finding", () => {
   assert.deepEqual(normalizeSourceSnippet({ region: { startLine: 12, endLine: 12, snippet: { text: "reported" } }, contextRegion: { startLine: 11, endLine: 13, snippet: { text: "before\nreported\nafter" } } }), { codeSnippet: "before\nreported\nafter", snippetStartLine: 11 });
   assert.deepEqual(normalizeSourceSnippet({ region: { startLine: 12, endLine: 12, snippet: { text: "before\nreported\nafter" } } }), { codeSnippet: "before\nreported\nafter", snippetStartLine: null });

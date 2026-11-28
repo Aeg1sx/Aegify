@@ -103,6 +103,21 @@ Inspect each configuration file, its SHA-256, route declarations, logical
 documents, source lines, candidate owners and review reasons. An incomplete
 inventory displays its partial input status and any omitted counts.
 
+**Repository coverage** lists every repository named in a workspace scan,
+including repositories with zero analyzed source files. The file count covers
+source files the scanner parsed. A repository that contains only gateway
+configuration can have zero analyzed files and still contribute routes to
+**Gateway ownership**. Select a repository to open its findings for this scan.
+When one declared checkout sits inside another, source discovery assigns its
+files to the innermost declared repository. The dashboard accepts coverage
+inventories for up to 4,096 repositories per scan.
+
+If the scanner cannot enumerate a directory or inspect a source entry, it
+records a discovery error against the affected repository and marks the scan
+partial. The error count measures failed discovery operations. One unreadable
+directory may contain many files. Fix access for the scanner and rerun the
+workspace to refresh coverage.
+
 Filter **Destination repository** by a name or part of a name. Select the owner
 of a resolved route to see that repository’s findings in the recorded scan.
 For an ambiguous route, expand **candidate repositories** and choose the

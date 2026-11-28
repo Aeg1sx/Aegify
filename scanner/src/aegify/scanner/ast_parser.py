@@ -5,9 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
+import stat
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
+from fnmatch import fnmatch
 from functools import lru_cache
 from importlib.metadata import version
 from pathlib import Path
@@ -451,32 +454,63 @@ class ASTParser:
         *,
         include_unsupported: bool = False,
         include_path: Callable[[Path], bool] | None = None,
+        on_error: Callable[[OSError], None] | None = None,
+        repository_roots: Collection[Path] = (),
     ) -> list[Path]:
-        """Collect all parseable files, respecting exclusions."""
+        """Collect regular source candidates and report failures within the requested scope."""
         files: list[Path] = []
-        for path in directory.rglob("*"):
-            if not path.is_file():
-                continue
-            if (
-                detect_language(path) is None
-                and not (
-                    include_unsupported and path.suffix.lower() in UNSUPPORTED_SOURCE_EXTENSIONS
-                )
-                and not (include_path and include_path(path))
-            ):
-                continue
-            rel = str(path.relative_to(directory))
-            if any(self._matches_pattern(rel, pat) for pat in exclude):
-                continue
-            files.append(path)
+        # fnmatch's final wildcard also matches slashes. Once it matches a directory
+        # prefix ending in "/", every possible suffix under that prefix is excluded.
+        tree_patterns = [pattern for pattern in exclude if pattern.endswith("*")]
+        if any(fnmatch("", pattern) for pattern in tree_patterns):
+            return files
+
+        def excluded_tree(rel: str) -> bool:
+            prefix = rel + "/"
+            return any(fnmatch(prefix, pattern) for pattern in tree_patterns)
+
+        def candidate(path: Path) -> bool:
+            return (
+                detect_language(path) is not None
+                or (include_unsupported and path.suffix.lower() in UNSUPPORTED_SOURCE_EXTENSIONS)
+                or bool(include_path and include_path(path))
+            )
+
+        pending = [directory]
+        while pending:
+            parent = pending.pop()
+            relative_parent = parent.relative_to(directory)
+            try:
+                with os.scandir(parent) as entries:
+                    for entry in entries:
+                        rel = (relative_parent / entry.name).as_posix()
+                        path = parent / entry.name
+                        # A nested manifest root is enumerated under its own repository ID.
+                        if path in repository_roots:
+                            continue
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                if not excluded_tree(rel) and not entry.is_junction():
+                                    pending.append(path)
+                                continue
+                            if not candidate(path) or any(
+                                fnmatch(rel, pattern) for pattern in exclude
+                            ):
+                                continue
+                            mode = entry.stat(follow_symlinks=False).st_mode
+                            if stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+                                files.append(path)
+                        except OSError as error:
+                            # An unclassified entry can be a directory with an arbitrary name.
+                            if on_error and (
+                                not excluded_tree(rel)
+                                or (candidate(path) and not any(fnmatch(rel, p) for p in exclude))
+                            ):
+                                on_error(error)
+            except OSError as error:
+                if on_error:
+                    on_error(error)
         return sorted(files)
-
-    @staticmethod
-    def _matches_pattern(path: str, pattern: str) -> bool:
-        """Simple glob-like pattern matching."""
-        from fnmatch import fnmatch
-
-        return fnmatch(path, pattern)
 
 
 # --- Language-specific extractors ---

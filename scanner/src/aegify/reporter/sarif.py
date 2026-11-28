@@ -99,7 +99,19 @@ class SARIFReporter:
         }
         if scan_result.gateway_inventory is not None:
             run_props["gatewayInventory"] = scan_result.gateway_inventory.model_dump(mode="json")
-        if scan_result.analyzed_sources:
+        if scan_result.repository_coverage:
+            run_props["repositoryCoverage"] = {
+                "version": 1,
+                "repositories": [
+                    {
+                        "repositoryId": row.repository_id,
+                        "analyzedFiles": row.analyzed_files,
+                        "discoveryErrors": row.discovery_errors,
+                    }
+                    for row in scan_result.repository_coverage
+                ],
+            }
+        if scan_result.analyzed_sources or scan_result.repository_coverage:
             run_props["sourceIdentityVersion"] = 1
             run_props["analyzedSources"] = [
                 {

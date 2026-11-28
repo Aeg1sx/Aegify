@@ -69,10 +69,21 @@ model Scan {
   apiSpecifications ApiSpecification[]
   scanJob ScanJob?
   gatewayInventory ScanGatewayInventory?
+  repositoryCoverage ScanRepositoryCoverage[]
 
   @@index([createdAt])
   @@index([repository])
   @@index([projectId])
+}
+
+model ScanRepositoryCoverage {
+  scanId          String
+  repositoryId    String
+  analyzedFiles   Int
+  discoveryErrors Int
+  scan            Scan   @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@id([scanId, repositoryId])
 }
 
 model ScanGatewayInventory {

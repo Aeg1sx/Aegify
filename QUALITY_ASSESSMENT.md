@@ -20,6 +20,16 @@ The wheel and signed tag were unchanged. See
 
 ## Current implementation evidence
 
+**Workspace source coverage.** With an unreadable source directory in the
+`orders` checkout, the previous CLI marked a two-repository scan completed.
+The updated CLI marked it partial and the dashboard showed one analyzed file
+in `gateway` and one discovery error in `orders`. A database regression kept
+an existing finding current through a partial scan and a failed invocation,
+then retired it after a complete scan covering its source and rule. The
+production scan detail page displayed the uploaded counts at 320, 390 and
+1280 pixels. On five local source directories, both discovery implementations
+returned the same 377 candidate paths. [Workspace coverage](docs/concepts/multi-repository.mdx)
+
 **Workspace review and scanner precision.** Reviewers can follow a Spring or Kong route to one repository's findings in the recorded scan. An imported four-forge report returned its three GitLab findings and zero for each of the other destinations. On a 4,096-declaration workspace, the destination filter returned all 375 routes declaring the selected repository as an owner or candidate. The production dashboard passed 188 HTTP/CLI checks, including scan and project isolation. [Workspace review](docs/concepts/multi-repository.mdx)
 
 The self-scan reported seven new alerts in five dashboard files at revision `9d3c7c1`. They concerned price input, role mutation, jQuery DOM construction, session IDs in URLs and database pagination. Scanning those same five files before and after the rule changes reduced 13 warnings to three. All seven reviewed locations cleared, along with three other matches from the same rules. Twenty-one source controls exercise submitted prices and roles, dynamic jQuery input, session-bearing URLs, unbounded data access and their lookalikes. These figures measure the reviewed sources. [Regression controls](scanner/tests/test_bundled_rule_precision.py)
